@@ -387,9 +387,6 @@ ApplicationWindow {
                         border.color: "#1f2b3d"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        layer.enabled: true
-                        layer.blurRadius: 10
-                        layer.color: "#0a0f17"
 
                         ListView {
                             anchors.fill: parent
