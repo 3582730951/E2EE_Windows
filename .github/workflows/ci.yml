@@ -88,7 +88,7 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          & "$qtbin/windeployqt.exe" --qmldir build/client/ui/qt/qml build/client/ui/mi_e2ee_client_ui.exe
+          & "$qtbin/windeployqt.exe" --qmldir client/ui/qml build/client/ui/mi_e2ee_client_ui.exe
 
       - name: Package client UI
         run: |

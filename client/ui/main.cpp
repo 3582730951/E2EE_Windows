@@ -1,11 +1,13 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QtQml/qqml.h>
 
 #include "quick_client.h"
 
 int main(int argc, char* argv[]) {
   QGuiApplication app(argc, argv);
+  qt_import_qml_plugins();
 
   mi::client::ui::QuickClient client;
   client.init(QStringLiteral("client_config.ini"));
