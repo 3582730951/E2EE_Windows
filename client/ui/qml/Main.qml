@@ -185,9 +185,6 @@ ApplicationWindow {
             radius: 14
             color: "#101726"
             border.color: "#1b2434"
-            layer.enabled: true
-            layer.blurRadius: 16
-            layer.color: "#080b12"
 
             RowLayout {
                 anchors.fill: parent
