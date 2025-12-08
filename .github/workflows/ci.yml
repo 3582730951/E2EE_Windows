@@ -1,4 +1,4 @@
-name: CI
+name: Build
 
 on:
   push:
@@ -6,24 +6,104 @@ on:
   pull_request:
     branches: [ master, main ]
 
+env:
+  BUILD_TYPE: Release
+
 jobs:
-  build-and-test:
+  server-linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mode: [demo, mysql]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure server (Release)
-        run: cmake -S server -B build/server -DCMAKE_BUILD_TYPE=Release
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake libmysqlclient-dev
+
+      - name: Configure server
+        run: |
+          cmake -S server -B build/server-${{ matrix.mode }} \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            $([ "${{ matrix.mode }}" = "mysql" ] && echo "-DMI_E2EE_ENABLE_MYSQL=ON")
 
       - name: Build server
-        run: cmake --build build/server --config Release
+        run: cmake --build build/server-${{ matrix.mode }}
 
       - name: Test server
-        run: ctest --output-on-failure --test-dir build/server
+        run: ctest --output-on-failure --test-dir build/server-${{ matrix.mode }}
 
-      - name: Configure client core (UI off for CI)
-        run: cmake -S client -B build/client -DCMAKE_BUILD_TYPE=Release -DMI_E2EE_BUILD_UI=OFF
+      - name: Package server
+        run: |
+          mkdir -p artifacts/server-${{ matrix.mode }}
+          cp build/server-${{ matrix.mode }}/mi_e2ee_server artifacts/server-${{ matrix.mode }}/
+          cp server/config.example.ini artifacts/server-${{ matrix.mode }}/config.example.ini
+          tar -czf server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz -C artifacts server-${{ matrix.mode }}
 
-      - name: Build client core
-        run: cmake --build build/client --config Release
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}
+          path: server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz
+
+  client-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt (MinGW)
+        uses: jurplel/install-qt@v4
+        with:
+          version: 6.6.3
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          dir: ${{ runner.temp }}/qt
+          modules: qtbase qtdeclarative qtquickcontrols2
+
+      - name: Add Qt to PATH
+        run: |
+          echo "${{ env.QT_ROOT_DIR }}/bin" >> $Env:GITHUB_PATH
+          echo "${{ env.MINGW_DIR }}/bin" >> $Env:GITHUB_PATH
+        env:
+          QT_ROOT_DIR: ${{ env.Qt6_DIR }}
+          MINGW_DIR: ${{ env.Qt6_DIR }}/../Tools/mingw1220_64
+
+      - name: Configure client (UI on)
+        run: |
+          cmake -G "MinGW Makefiles" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+        env:
+          Qt6_DIR: ${{ env.Qt6_DIR }}
+
+      - name: Build client
+        run: cmake --build build/client
+
+      - name: Deploy Qt runtime
+        run: |
+          $qtbin = "${{ env.Qt6_DIR }}/bin"
+          & "$qtbin/windeployqt.exe" --qmldir client/ui/qml build/client/ui/mi_e2ee_client_ui.exe
+
+      - name: Package client UI
+        run: |
+          New-Item -ItemType Directory -Force artifacts/client-ui | Out-Null
+          Copy-Item build/client/ui/mi_e2ee_client_ui.exe artifacts/client-ui/
+          Copy-Item build/client/ui/*.dll artifacts/client-ui/ -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse
+          Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/imageformats artifacts/client-ui/imageformats -Recurse -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/iconengines artifacts/client-ui/iconengines -Recurse -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/networkinformation artifacts/client-ui/networkinformation -Recurse -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/tls artifacts/client-ui/tls -Recurse -ErrorAction SilentlyContinue
+          Copy-Item build/client/ui/generic artifacts/client-ui/generic -Recurse -ErrorAction SilentlyContinue
+          Compress-Archive -Path artifacts/client-ui/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
+
+      - name: Upload client UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-ui-${{ env.BUILD_TYPE }}
+          path: client-ui-${{ env.BUILD_TYPE }}.zip
