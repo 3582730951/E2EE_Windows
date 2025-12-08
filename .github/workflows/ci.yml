@@ -64,7 +64,6 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           dir: 'C:\\Qt'
-          modules: qtdeclarative qtquickcontrols2 qtquickdialogs2
           cache: true
 
       - name: Add Qt to PATH
