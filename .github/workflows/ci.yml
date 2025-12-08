@@ -88,13 +88,14 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          & "$qtbin/windeployqt.exe" --qmldir client/ui/qml build/client/ui/mi_e2ee_client_ui.exe
+          & "$qtbin/windeployqt.exe" --qmldir build/client/qt/qml build/client/ui/mi_e2ee_client_ui.exe
 
       - name: Package client UI
         run: |
           New-Item -ItemType Directory -Force artifacts/client-ui | Out-Null
           Copy-Item build/client/ui/mi_e2ee_client_ui.exe artifacts/client-ui/
           Copy-Item build/client/ui/*.dll artifacts/client-ui/ -ErrorAction SilentlyContinue
+          Copy-Item build/client/qt artifacts/client-ui/qt -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse
           Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/imageformats artifacts/client-ui/imageformats -Recurse -ErrorAction SilentlyContinue
