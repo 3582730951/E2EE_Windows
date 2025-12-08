@@ -1,0 +1,53 @@
+#include "protocol.h"
+
+#include <cstddef>
+
+namespace mi::server::proto {
+
+bool WriteString(const std::string& s, std::vector<std::uint8_t>& out) {
+  const std::uint16_t len =
+      static_cast<std::uint16_t>(s.size() > 0xFFFF ? 0xFFFF : s.size());
+  out.push_back(static_cast<std::uint8_t>(len & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
+  out.insert(out.end(), s.begin(), s.begin() + len);
+  return s.size() <= 0xFFFF;
+}
+
+bool ReadString(const std::vector<std::uint8_t>& data, std::size_t& offset,
+                std::string& out) {
+  if (offset + 2 > data.size()) {
+    return false;
+  }
+  const std::uint16_t len =
+      static_cast<std::uint16_t>(data[offset] | (data[offset + 1] << 8));
+  offset += 2;
+  if (offset + len > data.size()) {
+    return false;
+  }
+  out.assign(reinterpret_cast<const char*>(data.data() + offset), len);
+  offset += len;
+  return true;
+}
+
+bool WriteUint32(std::uint32_t v, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(v & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFF));
+  return true;
+}
+
+bool ReadUint32(const std::vector<std::uint8_t>& data, std::size_t& offset,
+                std::uint32_t& out) {
+  if (offset + 4 > data.size()) {
+    return false;
+  }
+  out = static_cast<std::uint32_t>(data[offset]) |
+        (static_cast<std::uint32_t>(data[offset + 1]) << 8) |
+        (static_cast<std::uint32_t>(data[offset + 2]) << 16) |
+        (static_cast<std::uint32_t>(data[offset + 3]) << 24);
+  offset += 4;
+  return true;
+}
+
+}  // namespace mi::server::proto

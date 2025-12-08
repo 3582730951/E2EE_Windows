@@ -1,0 +1,175 @@
+#include <cassert>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <iostream>
+
+#include "connection_handler.h"
+#include "frame.h"
+#include "protocol.h"
+#include "secure_channel.h"
+#include "server_app.h"
+
+using mi::server::ConnectionHandler;
+using mi::server::Frame;
+using mi::server::FrameType;
+using mi::server::SecureChannel;
+using mi::server::ServerApp;
+using mi::server::proto::WriteString;
+using mi::server::proto::WriteUint32;
+
+static void WriteFile(const std::string& path, const std::string& content) {
+  std::ofstream f(path, std::ios::binary);
+  f << content;
+}
+
+int main() {
+  WriteFile("config.ini",
+            "[mode]\nmode=1\n[server]\nlist_port=7778\n");
+  WriteFile("test_user.txt", "u1:p1\n");
+
+  ServerApp app;
+  std::string err;
+  bool ok = app.Init("config.ini", err);
+  if (!ok) {
+    std::cerr << "init failed: " << err << std::endl;
+    return 1;
+  }
+
+  ConnectionHandler handler(&app);
+
+  Frame login;
+  login.type = FrameType::kLogin;
+  WriteString("u1", login.payload);
+  WriteString("p1", login.payload);
+  auto bytes = mi::server::EncodeFrame(login);
+
+  std::vector<std::uint8_t> resp_bytes;
+  ok = handler.OnData(bytes.data(), bytes.size(), resp_bytes);
+  if (!ok) {
+    std::cerr << "login ondata failed" << std::endl;
+    return 1;
+  }
+
+  Frame resp;
+  ok = mi::server::DecodeFrame(resp_bytes.data(), resp_bytes.size(), resp);
+  if (!ok || resp.type != FrameType::kLogin || resp.payload.empty() ||
+      resp.payload[0] != 1) {
+    std::cerr << "decode login resp failed" << std::endl;
+    return 1;
+  }
+
+  // Extract token for group ops
+  std::size_t off = 1;
+  std::string token;
+  ok = mi::server::proto::ReadString(resp.payload, off, token);
+  if (!ok || token.empty()) {
+    std::cerr << "read token failed" << std::endl;
+    return 1;
+  }
+
+  // Prepare secure channel using session keys
+  auto keys = app.sessions()->GetKeys(token);
+  if (!keys.has_value()) {
+    std::cerr << "get keys failed" << std::endl;
+    return 1;
+  }
+  SecureChannel ch(*keys);
+
+  // Build encrypted group join frame: payload = token (clear) + cipher(action+gid)
+  std::vector<std::uint8_t> plain_join;
+  plain_join.push_back(0);  // action join
+  mi::server::proto::WriteString("g1", plain_join);
+  std::vector<std::uint8_t> cipher_join;
+  ok = ch.Encrypt(0, plain_join, cipher_join);
+  if (!ok) {
+    std::cerr << "encrypt join failed" << std::endl;
+    return 1;
+  }
+
+  Frame group_join;
+  group_join.type = FrameType::kGroupEvent;
+  mi::server::proto::WriteString(token, group_join.payload);
+  group_join.payload.insert(group_join.payload.end(), cipher_join.begin(),
+                            cipher_join.end());
+  auto join_bytes = mi::server::EncodeFrame(group_join);
+
+  resp_bytes.clear();
+  ok = handler.OnData(join_bytes.data(), join_bytes.size(), resp_bytes);
+  if (!ok) {
+    std::cerr << "join ondata failed" << std::endl;
+    return 1;
+  }
+
+  Frame join_resp;
+  ok = mi::server::DecodeFrame(resp_bytes.data(), resp_bytes.size(), join_resp);
+  if (!ok || join_resp.type != FrameType::kGroupEvent) {
+    std::cerr << "decode join resp failed" << std::endl;
+    return 1;
+  }
+  // Decrypt response payload
+  std::size_t off2 = 0;
+  std::string resp_token;
+  ok = mi::server::proto::ReadString(join_resp.payload, off2, resp_token);
+  if (!ok) {
+    std::cerr << "read join token failed" << std::endl;
+    return 1;
+  }
+  std::vector<std::uint8_t> resp_cipher(join_resp.payload.begin() + off2,
+                                        join_resp.payload.end());
+  std::vector<std::uint8_t> resp_plain;
+  ok = ch.Decrypt(resp_cipher, 0, resp_plain);
+  if (!ok || resp_plain.empty() || resp_plain[0] != 1) {
+    std::cerr << "decrypt join resp failed" << std::endl;
+    return 1;
+  }
+
+  // Group message triggers rotation with threshold 1
+  std::vector<std::uint8_t> plain_msg;
+  mi::server::proto::WriteString("g1", plain_msg);
+  mi::server::proto::WriteUint32(1, plain_msg);
+  std::vector<std::uint8_t> cipher_msg;
+  ok = ch.Encrypt(1, plain_msg, cipher_msg);
+  if (!ok) {
+    std::cerr << "encrypt msg failed" << std::endl;
+    return 1;
+  }
+
+  Frame msg_frame;
+  msg_frame.type = FrameType::kMessage;
+  mi::server::proto::WriteString(token, msg_frame.payload);
+  msg_frame.payload.insert(msg_frame.payload.end(), cipher_msg.begin(),
+                           cipher_msg.end());
+  auto msg_bytes = mi::server::EncodeFrame(msg_frame);
+
+  resp_bytes.clear();
+  ok = handler.OnData(msg_bytes.data(), msg_bytes.size(), resp_bytes);
+  if (!ok) {
+    std::cerr << "msg ondata failed" << std::endl;
+    return 1;
+  }
+
+  Frame msg_resp;
+  ok = mi::server::DecodeFrame(resp_bytes.data(), resp_bytes.size(), msg_resp);
+  if (!ok) {
+    std::cerr << "decode msg resp failed" << std::endl;
+    return 1;
+  }
+  std::size_t resp_off = 0;
+  std::string resp_token2;
+  ok = mi::server::proto::ReadString(msg_resp.payload, resp_off, resp_token2);
+  if (!ok) {
+    std::cerr << "read msg token failed" << std::endl;
+    return 1;
+  }
+  std::vector<std::uint8_t> msg_resp_cipher(msg_resp.payload.begin() + resp_off,
+                                            msg_resp.payload.end());
+  std::vector<std::uint8_t> msg_resp_plain;
+  ok = ch.Decrypt(msg_resp_cipher, 1, msg_resp_plain);
+  if (!ok || msg_resp_plain.empty() || msg_resp_plain[0] != 1) {
+    std::cerr << "decrypt msg resp failed" << std::endl;
+    return 1;
+  }
+
+  return 0;
+}
