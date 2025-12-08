@@ -1,20 +1,23 @@
+#include <QFile>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QtQml/qqml.h>
 
 #include "quick_client.h"
 
 int main(int argc, char* argv[]) {
   QGuiApplication app(argc, argv);
-  qt_import_qml_plugins();
 
   mi::client::ui::QuickClient client;
   client.init(QStringLiteral("client_config.ini"));
 
   QQmlApplicationEngine engine;
   engine.rootContext()->setContextProperty("clientBridge", &client);
-  const QUrl url(QStringLiteral("qrc:/qt/qml/mi/e2ee/ui/Main.qml"));
+  const QString local_main =
+      QCoreApplication::applicationDirPath() + "/qml/Main.qml";
+  const QUrl url = QFile::exists(local_main)
+                       ? QUrl::fromLocalFile(local_main)
+                       : QUrl(QStringLiteral("qrc:/qt/qml/mi/e2ee/ui/Main.qml"));
   QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &app,
                    [url](QObject* obj, const QUrl& objUrl) {
                      if (!obj && url == objUrl) {
