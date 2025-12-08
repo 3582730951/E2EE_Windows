@@ -61,8 +61,6 @@ ApplicationWindow {
             radius: 14
             color: "#0f1520"
             border.color: "#1b2434"
-            layer.enabled: true
-            layer.blurRadius: 12
 
             ColumnLayout {
                 anchors.fill: parent
@@ -429,8 +427,6 @@ ApplicationWindow {
                                         opacity: 0.0
                                         Behavior on opacity { NumberAnimation { duration: 220 } }
                                         Component.onCompleted: opacity = 1.0
-                                        layer.enabled: true
-                                        layer.blurRadius: 8
                                         Column {
                                             padding: 10
                                             spacing: 4
