@@ -59,24 +59,27 @@ jobs:
       - name: Install Qt (MinGW)
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.6.3'
+          version: '6.7.3'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_mingw'
+          arch: 'win64_msvc2019_64'
           dir: 'C:\\Qt'
           # qtdeclarative already carries Qt Quick/Controls 2 in Qt6
-          tools: tools_mingw1120
+          cache: true
 
       - name: Add Qt to PATH
         run: |
           $qtBin = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Env:Qt6_DIR))) "bin"
-          $mingwBin = "C:\Qt\Tools\mingw1120_64\bin"
           Add-Content -Path $Env:GITHUB_PATH -Value $qtBin
-          Add-Content -Path $Env:GITHUB_PATH -Value $mingwBin
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Configure client (UI on)
         run: |
-          cmake -G "MinGW Makefiles" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="$Env:Qt6_DIR"
+          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="$Env:Qt6_DIR"
 
       - name: Build client
         run: cmake --build build/client
@@ -90,10 +93,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts/client-ui | Out-Null
           Copy-Item build/client/ui/mi_e2ee_client_ui.exe artifacts/client-ui/
-          Copy-Item "C:\Qt\Tools\mingw1120_64\bin\libstdc++-6.dll" artifacts/client-ui/ -ErrorAction SilentlyContinue
-          Copy-Item "C:\Qt\Tools\mingw1120_64\bin\libgcc_s_seh-1.dll" artifacts/client-ui/ -ErrorAction SilentlyContinue
-          Copy-Item "C:\Qt\Tools\mingw1120_64\bin\libwinpthread-1.dll" artifacts/client-ui/ -ErrorAction SilentlyContinue
-          Copy-Item "C:\Qt\Tools\mingw1120_64\bin\libssp-0.dll" artifacts/client-ui/ -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/*.dll artifacts/client-ui/ -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse
           Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
