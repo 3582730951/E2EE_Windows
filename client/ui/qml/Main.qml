@@ -63,7 +63,6 @@ ApplicationWindow {
             border.color: "#1b2434"
             layer.enabled: true
             layer.blurRadius: 12
-            layer.color: "#080b12"
 
             ColumnLayout {
                 anchors.fill: parent
@@ -432,7 +431,6 @@ ApplicationWindow {
                                         Component.onCompleted: opacity = 1.0
                                         layer.enabled: true
                                         layer.blurRadius: 8
-                                        layer.color: sender === "me" ? "#0d1a2a" : "#111a2a"
                                         Column {
                                             padding: 10
                                             spacing: 4
