@@ -16,6 +16,7 @@ qt_add_qml_module(mi_e2ee_client_ui
     VERSION 1.0
     QML_FILES
       qml/Main.qml
+      qml/Style.qml
     RESOURCES
       icons/login.svg
       icons/logout.svg
