@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(mi_e2ee_client_ui LANGUAGES CXX)
 
-find_package(Qt6 QUIET COMPONENTS Quick REQUIRED)
+find_package(Qt6 QUIET COMPONENTS Quick QuickControls2 QuickDialogs2 REQUIRED)
 
 qt_standard_project_setup()
 
@@ -28,6 +28,8 @@ qt_add_qml_module(mi_e2ee_client_ui
 target_link_libraries(mi_e2ee_client_ui
     PRIVATE
       Qt6::Quick
+      Qt6::QuickControls2
+      Qt6::QuickDialogs2
       mi_e2ee_client_core
 )
 
