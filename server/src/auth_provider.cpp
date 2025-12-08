@@ -1,6 +1,7 @@
 #include "auth_provider.h"
 
 #include <cstring>
+#include <type_traits>
 #include <utility>
 
 #ifdef MI_E2EE_ENABLE_MYSQL
@@ -133,8 +134,9 @@ bool MySqlAuthProvider::Validate(const std::string& username,
   std::memset(bind_result, 0, sizeof(bind_result));
   char pass_buf[256] = {0};
   unsigned long pass_len = 0;
-  my_bool is_null = 0;
-  my_bool error_flag = 0;
+  using BindBool = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
+  BindBool is_null = 0;
+  BindBool error_flag = 0;
   bind_result[0].buffer_type = MYSQL_TYPE_STRING;
   bind_result[0].buffer = pass_buf;
   bind_result[0].buffer_length = sizeof(pass_buf) - 1;
