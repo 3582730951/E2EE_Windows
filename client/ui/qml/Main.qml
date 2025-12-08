@@ -2,7 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 1.3
-import "Style.qml" as Style
+import mi.e2ee.ui 1.0 as UI
 
 ApplicationWindow {
     id: root
@@ -10,9 +10,9 @@ ApplicationWindow {
     height: 700
     visible: true
     title: qsTr("MI E2EE Client")
-    color: Style.bgDark
-    property color accent: Style.accent
-    font.family: Style.fontFamily
+    color: UI.Style.bgDark
+    property color accent: UI.Style.accent
+    font.family: UI.Style.fontFamily
 
     Rectangle {
         anchors.fill: parent
