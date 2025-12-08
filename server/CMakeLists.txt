@@ -89,8 +89,20 @@ target_link_libraries(mi_e2ee_server PRIVATE mi_e2ee_core)
 mi_copy_msvc_runtime(mi_e2ee_server)
 
 if(MI_E2EE_ENABLE_MYSQL)
+  find_path(MYSQL_INCLUDE_DIR mysql.h
+    PATHS /usr/include /usr/local/include
+    PATH_SUFFIXES mysql)
+  find_library(MYSQL_CLIENT_LIB mysqlclient
+    PATHS /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64
+    PATH_SUFFIXES mysql)
+  if(NOT MYSQL_INCLUDE_DIR OR NOT MYSQL_CLIENT_LIB)
+    message(FATAL_ERROR "MySQL client headers or library not found; install libmysqlclient-dev or set MYSQL_INCLUDE_DIR/MYSQL_CLIENT_LIB")
+  endif()
   target_compile_definitions(mi_e2ee_server PRIVATE MI_E2EE_ENABLE_MYSQL=1)
   target_compile_definitions(mi_e2ee_core PRIVATE MI_E2EE_ENABLE_MYSQL=1)
+  target_include_directories(mi_e2ee_core PRIVATE ${MYSQL_INCLUDE_DIR})
+  target_link_libraries(mi_e2ee_core PRIVATE ${MYSQL_CLIENT_LIB})
+  target_link_libraries(mi_e2ee_server PRIVATE ${MYSQL_CLIENT_LIB})
   message(STATUS "MySQL auth enabled (ensure include/lib paths are provided)")
 endif()
 

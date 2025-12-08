@@ -64,7 +64,7 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           dir: 'C:\\Qt'
-          modules: qtdeclarative qtquickcontrols2
+          # qtdeclarative already carries Qt Quick/Controls 2 in Qt6
           tools: tools_mingw1220_64
 
       - name: Add Qt to PATH
