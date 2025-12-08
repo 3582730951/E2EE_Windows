@@ -69,7 +69,8 @@ jobs:
 
       - name: Add Qt to PATH
         run: |
-          $qtBin = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Env:Qt6_DIR))) "bin"
+          $qtRoot = "$Env:QT_ROOT_DIR"
+          $qtBin = Join-Path $qtRoot "bin"
           Add-Content -Path $Env:GITHUB_PATH -Value $qtBin
 
       - name: Setup MSVC environment
@@ -79,14 +80,14 @@ jobs:
 
       - name: Configure client (UI on)
         run: |
-          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="$Env:Qt6_DIR"
+          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
 
       - name: Build client
         run: cmake --build build/client
 
       - name: Deploy Qt runtime
         run: |
-          $qtbin = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Env:Qt6_DIR))) "bin"
+          $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
           & "$qtbin/windeployqt.exe" --qmldir client/ui/qml build/client/ui/mi_e2ee_client_ui.exe
 
       - name: Package client UI
