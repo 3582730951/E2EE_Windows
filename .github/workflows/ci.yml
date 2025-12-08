@@ -96,7 +96,7 @@ jobs:
           Copy-Item build/client/ui/mi_e2ee_client_ui.exe artifacts/client-ui/
           Copy-Item build/client/ui/*.dll artifacts/client-ui/ -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/qt artifacts/client-ui/qt -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse
+          Copy-Item client/ui/qml artifacts/client-ui/qml -Recurse
           Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/imageformats artifacts/client-ui/imageformats -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/iconengines artifacts/client-ui/iconengines -Recurse -ErrorAction SilentlyContinue
