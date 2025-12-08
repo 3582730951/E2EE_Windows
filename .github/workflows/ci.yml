@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure server (Release)
+        run: cmake -S server -B build/server -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build server
+        run: cmake --build build/server --config Release
+
+      - name: Test server
+        run: ctest --output-on-failure --test-dir build/server
+
+      - name: Configure client core (UI off for CI)
+        run: cmake -S client -B build/client -DCMAKE_BUILD_TYPE=Release -DMI_E2EE_BUILD_UI=OFF
+
+      - name: Build client core
+        run: cmake --build build/client --config Release
