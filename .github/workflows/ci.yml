@@ -98,7 +98,7 @@ jobs:
           # 包含 windeploy 输出的 Qt QML 依赖和源 QML
           Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse -ErrorAction SilentlyContinue
           Copy-Item client/ui/qml/* artifacts/client-ui/qml/ -Recurse -Force
-          Copy-Item "$Env:QT_ROOT_DIR/qml" artifacts/client-ui/qml/Qt -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "$Env:QT_ROOT_DIR/qml/*" artifacts/client-ui/qml/ -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/imageformats artifacts/client-ui/imageformats -Recurse -ErrorAction SilentlyContinue
           Copy-Item build/client/ui/iconengines artifacts/client-ui/iconengines -Recurse -ErrorAction SilentlyContinue
