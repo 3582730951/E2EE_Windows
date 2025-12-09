@@ -19,7 +19,7 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 12, 20, 10);
+    root->setContentsMargins(12, 16, 22, 10);
     root->setSpacing(8);
 
     buildHeader(root);
@@ -38,7 +38,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:10px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(10, 6, 14, 6);
+    layout->setContentsMargins(12, 6, 16, 6);
     layout->setSpacing(8);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);
