@@ -16,11 +16,13 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     : QWidget(parent), palette_(palette), showHeader_(showHeader) {
     if (parent == nullptr) {
         setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+        setMinimumSize(400, 300);
+        setMaximumWidth(900);
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(16, 30, 46, 12);
-    root->setSpacing(8);
+    root->setContentsMargins(8, 16, 16, 8);
+    root->setSpacing(4);
 
     buildHeader(root);
     buildMessageArea(root);
@@ -35,11 +37,11 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
 void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_ = new QWidget(this);
     titleBar_->setObjectName(QStringLiteral("TitleBar"));
-    titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:10px; }")
+    titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:8px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(18, 6, 24, 6);
-    layout->setSpacing(10);
+    layout->setContentsMargins(12, 4, 16, 4);
+    layout->setSpacing(6);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);
     titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
@@ -50,8 +52,8 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     auto makeBtn = [&](const QString& text) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
-        btn->setFixedSize(24, 24);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:12px; font-weight:700;")
+        btn->setFixedSize(28, 28);
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:14px; font-weight:700;")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
@@ -59,9 +61,10 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     btnMin_ = makeBtn(QStringLiteral("-"));
     btnMax_ = makeBtn(QStringLiteral("□"));
     btnClose_ = makeBtn(QStringLiteral("×"));
-    layout->addWidget(btnMin_);
-    layout->addWidget(btnMax_);
-    layout->addWidget(btnClose_);
+    
+    layout->addWidget(btnMin_, 0, Qt::AlignRight);
+    layout->addWidget(btnMax_, 0, Qt::AlignRight);
+    layout->addWidget(btnClose_, 0, Qt::AlignRight);
 
     connect(btnMin_, &QToolButton::clicked, this, [this]() {
         if (window()) {
@@ -89,31 +92,32 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
 
 void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
     messageContainer_ = new QWidget(this);
-    messageContainer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    messageContainer_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     messageLayout_ = new QVBoxLayout(messageContainer_);
-    messageLayout_->setContentsMargins(6, 4, 6, 4);
-    messageLayout_->setSpacing(6);
+    messageLayout_->setContentsMargins(4, 2, 4, 2);
+    messageLayout_->setSpacing(4);
     messageLayout_->setAlignment(Qt::AlignTop);
 
     messageScroll_ = new QScrollArea(this);
     messageScroll_->setWidgetResizable(true);
-    messageScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    messageScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     messageScroll_->setFrameShape(QFrame::NoFrame);
     messageScroll_->setWidget(messageContainer_);
+    messageScroll_->setMaximumWidth(800);
 
     parentLayout->addWidget(messageScroll_, 1);
 }
 
 void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
-    // toolbar above input
     auto* toolsRow = new QHBoxLayout();
-    toolsRow->setContentsMargins(4, 0, 4, 0);
-    toolsRow->setSpacing(4);
+    toolsRow->setContentsMargins(2, 0, 2, 0);
+    toolsRow->setSpacing(2);
+    
     auto* folderBtn = new QToolButton(this);
     folderBtn->setText(QStringLiteral("📁"));
     folderBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
     folderBtn->setCursor(Qt::PointingHandCursor);
-    folderBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:10px; padding:6px 10px;")
+    folderBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:8px; padding:4px 8px;")
                                  .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     auto* menu = new QMenu(folderBtn);
     menu->addAction(tr("文件上传（占位）"));
@@ -126,15 +130,17 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* row = new QHBoxLayout();
     row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(8);
+    row->setSpacing(4);
 
     input_ = new QLineEdit(this);
     input_->setPlaceholderText(tr("输入消息（本地展示，后续仍走触发/轮换路径）"));
+    input_->setMaximumWidth(600);
     row->addWidget(input_, 1);
 
     auto* sendButton = new QPushButton(tr("发送消息"), this);
-    sendButton->setMinimumWidth(120);
-    sendButton->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:10px;")
+    sendButton->setMinimumWidth(100);
+    sendButton->setMaximumWidth(150);
+    sendButton->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:8px;")
                                   .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     sendButton->setCursor(Qt::PointingHandCursor);
     connect(sendButton, &QPushButton::clicked, this, [this]() {
@@ -152,7 +158,7 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* inputPanel = new QWidget(this);
     inputPanel->setLayout(row);
-    inputPanel->setContentsMargins(4, 4, 4, 0);
+    inputPanel->setContentsMargins(2, 2, 2, 0);
     parentLayout->addWidget(inputPanel);
 }
 
@@ -163,7 +169,7 @@ void ChatWindow::addMessage(const ChatMessage& message) {
     auto* wrapper = new QWidget(messageContainer_);
     auto* row = new QHBoxLayout(wrapper);
     row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(10);
+    row->setSpacing(6);
 
     if (message.fromSelf) {
         row->addStretch(1);
@@ -188,14 +194,14 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
                               .arg(bg));
 
     auto* layout = new QHBoxLayout(bubble);
-    layout->setContentsMargins(10, 8, 10, 8);
-    layout->setSpacing(8);
+    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setSpacing(6);
 
     auto addAvatar = [&](Qt::Alignment align) {
         auto* avatar = new QLabel(bubble);
         const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
-        avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
-        avatar->setFixedSize(32, 32);
+        avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 28));
+        avatar->setFixedSize(28, 28);
         avatar->setScaledContents(true);
         avatar->setStyleSheet(QStringLiteral("background:transparent;"));
         layout->addWidget(avatar, 0, align);
@@ -203,7 +209,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
 
     auto* column = new QVBoxLayout();
     column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(2);
+    column->setSpacing(1);
 
     auto* textLabel =
         new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, bubble);
