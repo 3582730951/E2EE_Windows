@@ -19,7 +19,7 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 12, 14, 10);
+    root->setContentsMargins(12, 12, 20, 10);
     root->setSpacing(8);
 
     buildHeader(root);
@@ -38,8 +38,8 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:10px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(10, 6, 10, 6);
-    layout->setSpacing(6);
+    layout->setContentsMargins(10, 6, 14, 6);
+    layout->setSpacing(8);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);
     titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
@@ -51,7 +51,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
         btn->setFixedSize(22, 22);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:11px; font-weight:600;")
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:11px; font-weight:700;")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
