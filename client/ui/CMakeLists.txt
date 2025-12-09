@@ -55,6 +55,11 @@ target_link_libraries(mi_e2ee_client_ui
 
 target_include_directories(mi_e2ee_client_ui PRIVATE ${UI_COMMON_INCLUDES})
 
+add_custom_command(TARGET mi_e2ee_client_ui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:mi_e2ee_client_ui>/qml
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/qml $<TARGET_FILE_DIR:mi_e2ee_client_ui>/qml
+)
+
 if(MSVC)
   target_compile_options(mi_e2ee_client_ui PRIVATE /utf-8)
   target_compile_options(mi_e2ee_client_desktop PRIVATE /utf-8)
