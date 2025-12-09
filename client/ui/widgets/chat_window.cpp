@@ -16,21 +16,35 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     : QWidget(parent), palette_(palette), showHeader_(showHeader) {
     if (parent == nullptr) {
         setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+        setAttribute(Qt::WA_TranslucentBackground, true);
         setMinimumSize(360, 260);
     }
     setObjectName(QStringLiteral("Panel"));
+
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(6, 5, 14, 6);
     root->setSpacing(4);
 
-    buildHeader(root);
-    buildMessageArea(root);
-    buildInputArea(root);
+    // rounded wrapper for whole content
+    auto* wrapper = new QFrame(this);
+    wrapper->setObjectName(QStringLiteral("Wrapper"));
+    wrapper->setStyleSheet(QStringLiteral(
+        "QFrame#Wrapper { background:%1; border-radius:14px; border:1px solid #1f1f2b; }")
+                               .arg(palette_.background.name()));
+    auto* wrapLayout = new QVBoxLayout(wrapper);
+    wrapLayout->setContentsMargins(8, 8, 8, 8);
+    wrapLayout->setSpacing(4);
+
+    buildHeader(wrapLayout);
+    buildMessageArea(wrapLayout);
+    buildInputArea(wrapLayout);
 
     addMessage({QStringLiteral("S"), QStringLiteral("欢迎进入安全群"), QStringLiteral("10:00"),
                 false});
     addMessage({QStringLiteral("我"), QStringLiteral("消息示例，静态展示"), QStringLiteral("10:01"),
                 true});
+
+    root->addWidget(wrapper);
 }
 
 void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
