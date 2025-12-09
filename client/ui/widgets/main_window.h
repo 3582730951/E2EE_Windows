@@ -5,11 +5,11 @@
 #include <QListWidget>
 #include <QMainWindow>
 #include <QSplitter>
+#include <QComboBox>
+#include <QLabel>
+#include <QPushButton>
 
 #include "chat_window.h"
-#include "conversation_item.h"
-#include "member_panel.h"
-#include "navigation_button.h"
 #include "theme.h"
 
 namespace mi::client::ui::widgets {
@@ -25,19 +25,15 @@ public:
 
 private:
     void buildLayout();
-    void buildNavigation(QHBoxLayout* rootLayout);
-    void buildConversations(QHBoxLayout* rootLayout);
-    void buildChatArea(QHBoxLayout* rootLayout);
-    void populateConversations();
+    void buildLeftPanel(QHBoxLayout* rootLayout);
+    void buildMiddlePanel(QHBoxLayout* rootLayout);
+    void buildRightPanel(QHBoxLayout* rootLayout);
+    void populateGroups();
 
     UiPalette palette_;
     QWidget* central_{nullptr};
-    NavigationButton* contactsBtn_{nullptr};
-    NavigationButton* groupsBtn_{nullptr};
-    NavigationButton* filesBtn_{nullptr};
     QListWidget* conversationList_{nullptr};
     ChatWindow* chatWindow_{nullptr};
-    MemberPanel* memberPanel_{nullptr};
 };
 
 }  // namespace mi::client::ui::widgets

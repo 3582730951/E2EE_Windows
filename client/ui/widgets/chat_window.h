@@ -1,14 +1,15 @@
 #ifndef MI_E2EE_CLIENT_UI_WIDGETS_CHAT_WINDOW_H
 #define MI_E2EE_CLIENT_UI_WIDGETS_CHAT_WINDOW_H
 
-#include <QScrollArea>
+#include <QComboBox>
 #include <QLabel>
-#include <QTextEdit>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QScrollArea>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include "image_preview_dialog.h"
 #include "message_bubble.h"
 #include "theme.h"
 
@@ -32,15 +33,14 @@ private:
     void buildMessageArea(QVBoxLayout* parentLayout);
     void buildInputArea(QVBoxLayout* parentLayout);
     void scrollToBottom();
-    void openPreviewDialog();
 
     UiPalette palette_;
     QLabel* titleLabel_{nullptr};
     QScrollArea* messageScroll_{nullptr};
     QWidget* messageContainer_{nullptr};
     QVBoxLayout* messageLayout_{nullptr};
-    QTextEdit* input_{nullptr};
-    ImagePreviewDialog* previewDialog_{nullptr};
+    QLineEdit* input_{nullptr};
+    QComboBox* threshold_{nullptr};
 };
 
 }  // namespace mi::client::ui::widgets

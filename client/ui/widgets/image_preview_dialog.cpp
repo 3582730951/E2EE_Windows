@@ -12,6 +12,7 @@ ImagePreviewDialog::ImagePreviewDialog(const UiPalette& palette, QWidget* parent
     setWindowTitle(tr("图片预览"));
     resize(720, 520);
     setModal(true);
+    setStyleSheet(QStringLiteral("QDialog { background:%1; }").arg(palette_.background.name()));
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
@@ -21,7 +22,7 @@ ImagePreviewDialog::ImagePreviewDialog(const UiPalette& palette, QWidget* parent
     view_ = new QGraphicsView(scene_, this);
     view_->setFrameShape(QFrame::NoFrame);
     view_->setStyleSheet(QStringLiteral(
-        "QGraphicsView { background:%1; border-radius:12px; border:none; }")
+        "QGraphicsView { background:%1; border-radius:6px; border:none; }")
                              .arg(palette_.panel.name()));
     view_->setAlignment(Qt::AlignCenter);
     layout->addWidget(view_, 1);
@@ -39,17 +40,7 @@ ImagePreviewDialog::ImagePreviewDialog(const UiPalette& palette, QWidget* parent
         applyTransform();
     });
     controls->addWidget(rotate, 0, Qt::AlignLeft);
-
-    zoomSlider_ = new QSlider(Qt::Horizontal, this);
-    zoomSlider_->setRange(50, 200);
-    zoomSlider_->setValue(100);
-    zoomSlider_->setCursor(Qt::PointingHandCursor);
-    connect(zoomSlider_, &QSlider::valueChanged, this, [this](int v) {
-        currentScale_ = static_cast<double>(v) / 100.0;
-        applyTransform();
-    });
-    controls->addWidget(new QLabel(tr("缩放"), this));
-    controls->addWidget(zoomSlider_, 1);
+    controls->addStretch(1);
 
     layout->addLayout(controls);
 }
@@ -64,11 +55,7 @@ void ImagePreviewDialog::setImage(const QPixmap& pixmap) {
     item_->setTransformOriginPoint(rect.center());
     item_->setPos(0, 0);
     scene_->setSceneRect(rect.adjusted(-50, -50, 50, 50));
-    currentScale_ = 1.0;
     currentRotation_ = 0;
-    if (zoomSlider_) {
-        zoomSlider_->setValue(100);
-    }
     applyTransform();
 }
 
@@ -77,7 +64,6 @@ void ImagePreviewDialog::applyTransform() {
         return;
     }
     QTransform transform;
-    transform.scale(currentScale_, currentScale_);
     transform.rotate(static_cast<double>(currentRotation_));
     item_->setTransform(transform);
 }

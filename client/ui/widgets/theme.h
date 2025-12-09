@@ -9,15 +9,15 @@
 namespace mi::client::ui::widgets {
 
 struct UiPalette {
-    QColor background{QStringLiteral("#1a1a1a")};
-    QColor panel{QStringLiteral("#20242b")};
-    QColor panelMuted{QStringLiteral("#1f1f1f")};
-    QColor accent{QStringLiteral("#0066ff")};
-    QColor accentHover{QStringLiteral("#1c7dff")};
+    QColor background{QStringLiteral("#0a0a14")};
+    QColor panel{QStringLiteral("#121222")};
+    QColor panelMuted{QStringLiteral("#0f0f1c")};
+    QColor accent{QStringLiteral("#1f6bff")};
+    QColor accentHover{QStringLiteral("#2f7bff")};
     QColor textPrimary{QStringLiteral("#ffffff")};
-    QColor textSecondary{QStringLiteral("#b8c0cc")};
-    QColor bubbleSelf{QStringLiteral("#0f52b6")};
-    QColor bubblePeer{QStringLiteral("#2b2f36")};
+    QColor textSecondary{QStringLiteral("#c8ccd6")};
+    QColor bubbleSelf{QStringLiteral("#1a3a80")};
+    QColor bubblePeer{QStringLiteral("#1d1f2e")};
     QColor danger{QStringLiteral("#ff4d4f")};
 };
 
@@ -29,13 +29,13 @@ inline QString BuildGlobalStyleSheet(const UiPalette& c = DefaultPalette()) {
     return QStringLiteral(R"(
         QWidget { background: %1; color: %2; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
         QDialog, QMainWindow { background: %1; }
-        QFrame#Panel, QWidget#Panel { background: %3; border-radius: 12px; border: none; }
-        QLineEdit, QComboBox, QTextEdit, QListWidget, QScrollArea { background: %3; border: none; border-radius: 10px; padding: 8px; selection-background-color: %4; selection-color: %2; }
+        QFrame#Panel, QWidget#Panel { background: %3; border-radius: 6px; border: none; }
+        QLineEdit, QComboBox, QTextEdit, QListWidget, QScrollArea { background: %3; border: none; border-radius: 6px; padding: 8px; selection-background-color: %4; selection-color: %2; }
         QLineEdit::focus, QComboBox::focus, QTextEdit::focus { border: 1px solid %4; }
-        QToolButton, QPushButton { background: %4; color: %2; border: none; border-radius: 10px; padding: 8px 14px; }
+        QToolButton, QPushButton { background: #000000; color: %2; border: none; border-radius: 6px; padding: 8px 14px; }
         QPushButton:flat, QToolButton:flat { background: transparent; color: %2; }
         QPushButton:hover, QToolButton:hover { background: %5; }
-        QPushButton:disabled, QToolButton:disabled { background: #3a3a3a; color: #8a8a8a; }
+        QPushButton:disabled, QToolButton:disabled { background: #2a2a2a; color: #7a7a7a; }
         QListWidget::item { padding: 10px; }
         QScrollBar:vertical { background: transparent; width: 10px; margin: 4px 2px; }
         QScrollBar::handle:vertical { background: #3a3f47; border-radius: 5px; min-height: 30px; }

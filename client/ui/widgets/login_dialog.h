@@ -21,21 +21,15 @@ public:
     QString username() const;
     void setAccounts(const QStringList& users);
 
-signals:
-    void addAccountRequested();
-    void removeAccountRequested(const QString& user);
-
 private:
     void setupUi();
     void setupPalette();
     void connectSignals();
 
     UiPalette palette_;
-    QLabel* avatarLabel_{nullptr};
     QComboBox* userBox_{nullptr};
+    QLineEdit* passwordEdit_{nullptr};
     QPushButton* loginButton_{nullptr};
-    QPushButton* addAccountLink_{nullptr};
-    QPushButton* removeAccountLink_{nullptr};
 };
 
 }  // namespace mi::client::ui::widgets

@@ -5,7 +5,6 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsView>
-#include <QSlider>
 
 #include "theme.h"
 
@@ -27,8 +26,6 @@ private:
     QGraphicsScene* scene_{nullptr};
     QGraphicsView* view_{nullptr};
     QGraphicsPixmapItem* item_{nullptr};
-    QSlider* zoomSlider_{nullptr};
-    double currentScale_{1.0};
     int currentRotation_{0};
 };
 

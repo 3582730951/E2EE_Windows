@@ -30,9 +30,9 @@ public:
         row->addWidget(nameLabel, 1, Qt::AlignVCenter);
 
         if (isAdmin) {
-            auto* admin = new QLabel(QObject::tr("管理员"), this);
+            auto* admin = new QLabel(QObject::tr("Owner"), this);
             admin->setStyleSheet(QStringLiteral(
-                "color:%1; background:%2; border-radius:8px; padding:4px 8px; font-size:11px;")
+                "color:%1; background:%2; border-radius:6px; padding:4px 8px; font-size:11px;")
                                      .arg(palette.textPrimary.name(), palette.accent.name()));
             row->addWidget(admin, 0, Qt::AlignVCenter);
         }

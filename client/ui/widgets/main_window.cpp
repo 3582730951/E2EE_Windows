@@ -6,8 +6,6 @@
 #include <QLinearGradient>
 #include <QListWidgetItem>
 #include <QPalette>
-#include <QSplitter>
-#include <QStyle>
 #include <QVBoxLayout>
 
 namespace mi::client::ui::widgets {
@@ -15,149 +13,142 @@ namespace mi::client::ui::widgets {
 MainWindow::MainWindow(const UiPalette& palette, QWidget* parent)
     : QMainWindow(parent), palette_(palette) {
     setWindowTitle(tr("MI E2EE Client"));
-    resize(1280, 780);
+    resize(1280, 760);
 
     central_ = new QWidget(this);
     central_->setAutoFillBackground(true);
     QPalette pal = central_->palette();
     QLinearGradient grad(0, 0, 0, 720);
     grad.setColorAt(0.0, palette_.background);
-    grad.setColorAt(1.0, palette_.panelMuted.darker(110));
+    grad.setColorAt(1.0, palette_.background);
     pal.setBrush(QPalette::Window, grad);
     central_->setPalette(pal);
 
     auto* rootLayout = new QHBoxLayout(central_);
-    rootLayout->setContentsMargins(16, 16, 16, 16);
+    rootLayout->setContentsMargins(12, 12, 12, 12);
     rootLayout->setSpacing(12);
 
-    buildNavigation(rootLayout);
-    buildConversations(rootLayout);
-    buildChatArea(rootLayout);
+    buildLeftPanel(rootLayout);
+    buildMiddlePanel(rootLayout);
+    buildRightPanel(rootLayout);
 
     setCentralWidget(central_);
-    populateConversations();
+    populateGroups();
 }
 
-void MainWindow::buildNavigation(QHBoxLayout* rootLayout) {
-    auto* navContainer = new QFrame(central_);
-    navContainer->setObjectName(QStringLiteral("Panel"));
-    navContainer->setFixedWidth(100);
-    auto* navLayout = new QVBoxLayout(navContainer);
-    navLayout->setContentsMargins(12, 12, 12, 12);
-    navLayout->setSpacing(12);
-    navLayout->setAlignment(Qt::AlignTop);
+void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
+    auto* panel = new QFrame(central_);
+    panel->setObjectName(QStringLiteral("Panel"));
+    panel->setFixedWidth(300);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
 
-    contactsBtn_ = new NavigationButton(tr("联系人"),
-                                        style()->standardIcon(QStyle::SP_FileDialogListView),
-                                        navContainer);
-    contactsBtn_->setChecked(true);
-    contactsBtn_->setUnreadCount(2);
-    navLayout->addWidget(contactsBtn_);
+    auto addTitle = [&](const QString& text) {
+        auto* lbl = new QLabel(text, panel);
+        lbl->setStyleSheet(QStringLiteral("font-weight:700; color:%1; font-size:14px;")
+                               .arg(palette_.textPrimary.name()));
+        layout->addWidget(lbl);
+    };
 
-    groupsBtn_ =
-        new NavigationButton(tr("群组"), style()->standardIcon(QStyle::SP_DirIcon), navContainer);
-    groupsBtn_->setUnreadCount(5);
-    navLayout->addWidget(groupsBtn_);
+    addTitle(tr("群组"));
+    auto* groupEdit = new QLineEdit(panel);
+    groupEdit->setPlaceholderText(tr("群组 ID"));
+    layout->addWidget(groupEdit);
 
-    filesBtn_ = new NavigationButton(tr("文件"), style()->standardIcon(QStyle::SP_DriveHDIcon),
-                                     navContainer);
-    filesBtn_->setUnreadCount(0);
-    navLayout->addWidget(filesBtn_);
+    auto* joinBtn = new QPushButton(tr("加入群"), panel);
+    joinBtn->setMinimumHeight(36);
+    layout->addWidget(joinBtn);
 
-    navLayout->addStretch(1);
+    addTitle(tr("离线/文件"));
+    auto* uploadBtn = new QPushButton(tr("文件上传（占位）"), panel);
+    uploadBtn->setMinimumHeight(36);
+    layout->addWidget(uploadBtn);
 
-    rootLayout->addWidget(navContainer, 0);
+    auto* pullOfflineBtn = new QPushButton(tr("拉取离线（占位）"), panel);
+    pullOfflineBtn->setMinimumHeight(36);
+    pullOfflineBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                                      .arg(palette_.accent.name(), palette_.textPrimary.name()));
+    layout->addWidget(pullOfflineBtn);
+
+    layout->addStretch(1);
+    rootLayout->addWidget(panel, 0);
 }
 
-void MainWindow::buildConversations(QHBoxLayout* rootLayout) {
-    auto* column = new QFrame(central_);
-    column->setObjectName(QStringLiteral("Panel"));
-    column->setMinimumWidth(320);
-    column->setMaximumWidth(380);
-    auto* v = new QVBoxLayout(column);
-    v->setContentsMargins(12, 12, 12, 12);
-    v->setSpacing(10);
+void MainWindow::buildMiddlePanel(QHBoxLayout* rootLayout) {
+    auto* panel = new QFrame(central_);
+    panel->setObjectName(QStringLiteral("Panel"));
+    panel->setFixedWidth(250);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
 
-    auto* search = new QLineEdit(column);
-    search->setPlaceholderText(tr("搜索联系人 / 群组"));
-    search->setClearButtonEnabled(true);
-    v->addWidget(search);
-
-    conversationList_ = new QListWidget(column);
+    conversationList_ = new QListWidget(panel);
     conversationList_->setFrameShape(QFrame::NoFrame);
-    conversationList_->setSpacing(8);
+    conversationList_->setSpacing(6);
     conversationList_->setSelectionMode(QAbstractItemView::SingleSelection);
     conversationList_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    v->addWidget(conversationList_, 1);
+    layout->addWidget(conversationList_, 1);
 
-    connect(conversationList_, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (row < 0 || !conversationList_) {
-            return;
-        }
-        auto* item = conversationList_->item(row);
-        if (!item) {
-            return;
-        }
-        auto* widget = qobject_cast<ConversationItem*>(conversationList_->itemWidget(item));
-        if (widget && chatWindow_) {
-            chatWindow_->setGroupName(widget->title());
-        }
-    });
-
-    rootLayout->addWidget(column, 0);
+    rootLayout->addWidget(panel, 0);
 }
 
-void MainWindow::buildChatArea(QHBoxLayout* rootLayout) {
-    auto* area = new QFrame(central_);
-    area->setObjectName(QStringLiteral("Panel"));
-    auto* areaLayout = new QHBoxLayout(area);
-    areaLayout->setContentsMargins(12, 12, 12, 12);
-    areaLayout->setSpacing(10);
+void MainWindow::buildRightPanel(QHBoxLayout* rootLayout) {
+    auto* panel = new QFrame(central_);
+    panel->setObjectName(QStringLiteral("Panel"));
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(12);
 
-    auto* splitter = new QSplitter(Qt::Horizontal, area);
-    splitter->setHandleWidth(2);
+    chatWindow_ = new ChatWindow(palette_, panel);
+    layout->addWidget(chatWindow_);
 
-    chatWindow_ = new ChatWindow(palette_, splitter);
-    memberPanel_ = new MemberPanel(palette_, splitter);
-    memberPanel_->setMinimumWidth(240);
-    memberPanel_->setMaximumWidth(320);
-
-    splitter->addWidget(chatWindow_);
-    splitter->addWidget(memberPanel_);
-    splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 1);
-
-    areaLayout->addWidget(splitter);
-    rootLayout->addWidget(area, 1);
+    rootLayout->addWidget(panel, 1);
 }
 
-void MainWindow::populateConversations() {
+void MainWindow::populateGroups() {
     if (!conversationList_) {
         return;
     }
     struct ItemData {
         QString title;
-        QString summary;
-        QString time;
-        int unread;
+        bool online;
+        bool highlight;
     };
     const QList<ItemData> items = {
-        {tr("安全群"), tr("@全体成员 今晚 9 点准时轮换密钥"), QStringLiteral("09:36"), 3},
-        {tr("产品讨论"), tr("上线 Checklist 已同步，等待确认"), QStringLiteral("08:20"), 1},
-        {tr("文件分发"), tr("离线文件准备完成，待推送"), QStringLiteral("昨天"), 0},
-        {tr("演示群"), tr("自动示例：消息收发展示"), QStringLiteral("昨天"), 12},
+        {tr("全局公告"), true, false},
+        {tr("安全群"), true, true},
+        {tr("工作群"), false, false},
     };
     for (const auto& it : items) {
-        auto* widget = new ConversationItem(it.title, it.summary, it.time, it.unread, palette_,
-                                            conversationList_);
-        auto* item = new QListWidgetItem(conversationList_);
-        item->setSizeHint(widget->sizeHint());
+        auto* item = new QListWidgetItem(it.title, conversationList_);
+        item->setSizeHint(QSize(220, 54));
         conversationList_->addItem(item);
-        conversationList_->setItemWidget(item, widget);
+
+        QWidget* wrapper = new QWidget(conversationList_);
+        auto* row = new QHBoxLayout(wrapper);
+        row->setContentsMargins(10, 8, 10, 8);
+        row->setSpacing(12);
+
+        auto* indicator = new QLabel(wrapper);
+        indicator->setFixedSize(14, 14);
+        indicator->setStyleSheet(QStringLiteral("background:%1; border-radius:7px;")
+                                     .arg(it.online ? QStringLiteral("#4caf50")
+                                                    : QStringLiteral("#666870")));
+        row->addWidget(indicator, 0, Qt::AlignVCenter);
+
+        auto* name = new QLabel(it.title, wrapper);
+        name->setStyleSheet(QStringLiteral("color:%1; font-weight:%2;")
+                                .arg(palette_.textPrimary.name(), it.highlight ? "700" : "500"));
+        row->addWidget(name, 1);
+
+        wrapper->setLayout(row);
+        if (it.highlight) {
+            wrapper->setStyleSheet(QStringLiteral("background:#1a1a2e; border-radius:6px;"));
+        }
+        conversationList_->setItemWidget(item, wrapper);
     }
-    if (conversationList_->count() > 0) {
-        conversationList_->setCurrentRow(0);
-    }
+    conversationList_->setCurrentRow(1);
 }
 
 void MainWindow::setCurrentUser(const QString& user) {
