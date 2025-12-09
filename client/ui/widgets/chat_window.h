@@ -26,7 +26,7 @@ class ChatWindow : public QWidget {
 
 public:
     explicit ChatWindow(const UiPalette& palette = DefaultPalette(),
-                        QWidget* parent = nullptr);
+                        QWidget* parent = nullptr, bool showHeader = true);
 
     void setGroupName(const QString& name);
     void addMessage(const ChatMessage& message);
@@ -47,6 +47,7 @@ private:
     QVBoxLayout* messageLayout_{nullptr};
     QLineEdit* input_{nullptr};
     QComboBox* threshold_{nullptr};
+    bool showHeader_{true};
 };
 
 }  // namespace mi::client::ui::widgets

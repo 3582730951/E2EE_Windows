@@ -113,7 +113,7 @@ void MainWindow::buildRightPanel(QHBoxLayout* rootLayout) {
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(12);
 
-    chatWindow_ = new ChatWindow(palette_, panel);
+    chatWindow_ = new ChatWindow(palette_, panel, true);
     layout->addWidget(chatWindow_);
 
     rootLayout->addWidget(panel, 1);

@@ -53,7 +53,10 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
         if (!item) {
             return;
         }
-        emit entrySelected(item->data(Qt::UserRole).toString());
+        const QString id = item->data(Qt::UserRole).toString();
+        const bool isGroup = item->data(Qt::UserRole + 1).toBool();
+        const QString name = item->data(Qt::UserRole + 2).toString();
+        emit entrySelected(id, isGroup, name);
     });
 }
 
@@ -67,7 +70,9 @@ void ListWindow::populate() {
     for (const auto& entry : entries_) {
         auto* item = new QListWidgetItem(list_);
         item->setSizeHint(QSize(320, 64));
-        item->setData(Qt::UserRole, entry.name);
+        item->setData(Qt::UserRole, entry.id);
+        item->setData(Qt::UserRole + 1, entry.isGroup);
+        item->setData(Qt::UserRole + 2, entry.name);
         list_->addItem(item);
         list_->setItemWidget(item, buildItem(entry, list_));
     }

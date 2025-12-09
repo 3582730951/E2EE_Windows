@@ -15,9 +15,42 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    mi::client::ui::widgets::MainWindow mainWindow(palette);
-    mainWindow.setCurrentUser(login.username());
-    mainWindow.show();
+    mi::client::ui::widgets::MainWindow groupWindow(palette);
+    groupWindow.setCurrentUser(login.username());
+
+    mi::client::ui::widgets::ChatWindow friendChat(palette, nullptr, false);
+    friendChat.setWindowTitle(QObject::tr("好友聊天"));
+    friendChat.resize(960, 720);
+
+    QVector<mi::client::ui::widgets::ListEntry> combined = {
+        {QStringLiteral("alice"), QObject::tr("Alice"), QObject::tr("在线"),
+         QColor(QStringLiteral("#4caf50")),
+         QDateTime::currentDateTime().addSecs(-60), false},
+        {QStringLiteral("security"), QObject::tr("安全群"), QObject::tr("端到端加密"),
+         QColor(QStringLiteral("#1f6bff")),
+         QDateTime::currentDateTime().addSecs(-10), true},
+        {QStringLiteral("work"), QObject::tr("工作群"), QObject::tr("未读 3"),
+         QColor(QStringLiteral("#ff9800")),
+         QDateTime::currentDateTime().addSecs(-30), true},
+        {QStringLiteral("bob"), QObject::tr("Bob"), QObject::tr("离线"),
+         QColor(QStringLiteral("#666870")),
+         QDateTime::currentDateTime().addSecs(-300), false},
+    };
+
+    mi::client::ui::widgets::ListWindow listWindow(QObject::tr("好友/群聊"), combined, palette);
+    QObject::connect(&listWindow, &mi::client::ui::widgets::ListWindow::entrySelected,
+                     [&](const QString& id, bool isGroup, const QString& name) {
+                         Q_UNUSED(id);
+                         if (isGroup) {
+                             groupWindow.openConversation(name);
+                         } else {
+                             friendChat.setWindowTitle(QObject::tr("好友聊天 - %1").arg(name));
+                             friendChat.show();
+                             friendChat.raise();
+                             friendChat.activateWindow();
+                         }
+                     });
+    listWindow.show();
 
     return app.exec();
 }

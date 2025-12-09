@@ -17,6 +17,7 @@ struct ListEntry {
     QString detail;
     QColor indicator;
     QDateTime lastTime;
+    bool isGroup{false};
 };
 
 class ListWindow : public QMainWindow {
@@ -28,7 +29,7 @@ public:
                         QWidget* parent = nullptr);
 
 signals:
-    void entrySelected(const QString& name);
+    void entrySelected(const QString& id, bool isGroup, const QString& name);
 
 private:
     void populate();
