@@ -22,7 +22,6 @@ public:
                   QWidget* parent = nullptr);
 
 private:
-    QString renderRichText(const QString& raw, const UiPalette& palette) const;
     UiPalette palette_;
 };
 

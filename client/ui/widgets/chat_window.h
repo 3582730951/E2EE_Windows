@@ -35,7 +35,6 @@ private:
     void scrollToBottom();
 
     UiPalette palette_;
-    QLabel* titleLabel_{nullptr};
     QScrollArea* messageScroll_{nullptr};
     QWidget* messageContainer_{nullptr};
     QVBoxLayout* messageLayout_{nullptr};

@@ -4,9 +4,6 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
-#include <QSplitter>
-#include <QComboBox>
-#include <QLabel>
 #include <QPushButton>
 
 #include "chat_window.h"
@@ -34,6 +31,10 @@ private:
     QWidget* central_{nullptr};
     QListWidget* conversationList_{nullptr};
     ChatWindow* chatWindow_{nullptr};
+    QLineEdit* accountEdit_{nullptr};
+    QLineEdit* passwordEdit_{nullptr};
+    QPushButton* loginButton_{nullptr};
+    QLineEdit* groupEdit_{nullptr};
 };
 
 }  // namespace mi::client::ui::widgets

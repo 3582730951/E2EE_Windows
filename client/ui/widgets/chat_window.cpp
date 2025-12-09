@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QToolButton>
 #include <QTime>
 #include <QVBoxLayout>
 
@@ -14,24 +15,23 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent)
     : QWidget(parent), palette_(palette) {
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 12, 12, 12);
-    root->setSpacing(12);
+    root->setContentsMargins(16, 16, 16, 16);
+    root->setSpacing(16);
 
     buildHeader(root);
     buildMessageArea(root);
     buildInputArea(root);
 
-    addMessage({QStringLiteral("System"), QStringLiteral("欢迎进入安全群"), QStringLiteral("10:00"),
+    addMessage({QStringLiteral("S"), QStringLiteral("欢迎进入安全群"), QStringLiteral("10:00"),
                 false});
-    addMessage({QStringLiteral("Me"), QStringLiteral("消息示例，静态展示"), QStringLiteral("10:01"),
+    addMessage({QStringLiteral("我"), QStringLiteral("消息示例，静态展示"), QStringLiteral("10:01"),
                 true});
 }
 
 void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
-    auto* header = new QFrame(this);
-    header->setObjectName(QStringLiteral("Panel"));
+    auto* header = new QWidget(this);
     auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(12, 8, 12, 8);
+    headerLayout->setContentsMargins(8, 6, 8, 6);
     headerLayout->setSpacing(10);
 
     auto* thresholdLabel = new QLabel(tr("轮换阈值"), header);
@@ -40,7 +40,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
 
     threshold_ = new QComboBox(header);
     threshold_->addItems({QStringLiteral("1000"), QStringLiteral("5000"), QStringLiteral("10000")});
-    threshold_->setFixedWidth(100);
+    threshold_->setFixedWidth(120);
     headerLayout->addWidget(threshold_);
 
     auto* roundBtn = new QToolButton(header);
@@ -49,19 +49,21 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     headerLayout->addWidget(roundBtn);
 
     auto* clearBtn = new QPushButton(tr("清理日志"), header);
-    clearBtn->setMinimumHeight(30);
+    clearBtn->setMinimumHeight(32);
+    clearBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                                .arg(palette_.accent.name(), palette_.textPrimary.name()));
     headerLayout->addWidget(clearBtn);
 
     auto addDot = [&](const QString& color) {
         auto* dot = new QToolButton(header);
-        dot->setFixedSize(12, 12);
-        dot->setStyleSheet(QStringLiteral("background:%1; border-radius:6px; border:none;")
+        dot->setFixedSize(20, 20);
+        dot->setStyleSheet(QStringLiteral("background:%1; border-radius:10px; border:none;")
                                .arg(color));
         headerLayout->addWidget(dot);
     };
-    addDot(QStringLiteral("#444"));
-    addDot(QStringLiteral("#666"));
-    addDot(QStringLiteral("#888"));
+    addDot(QStringLiteral("#2a2a32"));
+    addDot(QStringLiteral("#383844"));
+    addDot(QStringLiteral("#4a4a56"));
 
     headerLayout->addStretch(1);
 
@@ -72,8 +74,8 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
     messageContainer_ = new QWidget(this);
     messageContainer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     messageLayout_ = new QVBoxLayout(messageContainer_);
-    messageLayout_->setContentsMargins(4, 4, 4, 4);
-    messageLayout_->setSpacing(6);
+    messageLayout_->setContentsMargins(8, 8, 8, 8);
+    messageLayout_->setSpacing(12);
     messageLayout_->setAlignment(Qt::AlignTop);
 
     messageScroll_ = new QScrollArea(this);
@@ -86,10 +88,8 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
 }
 
 void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
-    auto* inputPanel = new QFrame(this);
-    inputPanel->setObjectName(QStringLiteral("Panel"));
-    auto* row = new QHBoxLayout(inputPanel);
-    row->setContentsMargins(12, 8, 12, 8);
+    auto* row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(10);
 
     input_ = new QLineEdit(this);
@@ -98,6 +98,8 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* sendButton = new QPushButton(tr("发送消息"), this);
     sendButton->setMinimumWidth(120);
+    sendButton->setStyleSheet(QStringLiteral("background:#000; color:%1; border-radius:6px;")
+                                  .arg(palette_.textPrimary.name()));
     sendButton->setCursor(Qt::PointingHandCursor);
     connect(sendButton, &QPushButton::clicked, this, [this]() {
         const QString text = input_->text().trimmed();
@@ -112,6 +114,8 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
     });
     row->addWidget(sendButton, 0, Qt::AlignVCenter);
 
+    auto* inputPanel = new QWidget(this);
+    inputPanel->setLayout(row);
     parentLayout->addWidget(inputPanel);
 }
 
@@ -124,13 +128,11 @@ void ChatWindow::addMessage(const ChatMessage& message) {
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(0);
 
+    auto* bubble = new MessageBubble(message, palette_, wrapper);
     if (message.fromSelf) {
         row->addStretch(1);
     }
-
-    auto* bubble = new MessageBubble(message, palette_, wrapper);
     row->addWidget(bubble, 0, message.fromSelf ? Qt::AlignRight : Qt::AlignLeft);
-
     if (!message.fromSelf) {
         row->addStretch(1);
     }

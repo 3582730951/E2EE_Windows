@@ -61,6 +61,8 @@ qt_add_executable(mi_e2ee_client_desktop
     widgets/image_preview_dialog.h
     widgets/main_window.cpp
     widgets/main_window.h
+    widgets/list_window.cpp
+    widgets/list_window.h
 )
 
 target_link_libraries(mi_e2ee_client_desktop
