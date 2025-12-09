@@ -3,6 +3,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTime>
@@ -92,6 +93,25 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
 }
 
 void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
+    // toolbar above input
+    auto* toolsRow = new QHBoxLayout();
+    toolsRow->setContentsMargins(0, 0, 0, 0);
+    toolsRow->setSpacing(8);
+    auto* folderBtn = new QToolButton(this);
+    folderBtn->setText(QStringLiteral("📁"));
+    folderBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    folderBtn->setCursor(Qt::PointingHandCursor);
+    folderBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px; padding:6px 10px;")
+                                 .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
+    auto* menu = new QMenu(folderBtn);
+    menu->addAction(tr("文件上传（占位）"));
+    menu->addAction(tr("拉取离线文件"));
+    folderBtn->setMenu(menu);
+    folderBtn->setPopupMode(QToolButton::InstantPopup);
+    toolsRow->addWidget(folderBtn, 0, Qt::AlignLeft);
+    toolsRow->addStretch(1);
+    parentLayout->addLayout(toolsRow);
+
     auto* row = new QHBoxLayout();
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(10);
@@ -158,21 +178,18 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     layout->setContentsMargins(10, 8, 10, 8);
     layout->setSpacing(10);
 
-    auto* avatar = new QLabel(bubble);
-    const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
-    avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
-    avatar->setFixedSize(32, 32);
-    avatar->setScaledContents(true);
-    layout->addWidget(avatar, 0, Qt::AlignTop);
+    auto addAvatar = [&](Qt::Alignment align) {
+        auto* avatar = new QLabel(bubble);
+        const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
+        avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
+        avatar->setFixedSize(32, 32);
+        avatar->setScaledContents(true);
+        layout->addWidget(avatar, 0, align);
+    };
 
     auto* column = new QVBoxLayout();
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(2);
-
-    auto* nameLabel = new QLabel(message.sender, bubble);
-    nameLabel->setStyleSheet(
-        QStringLiteral("color:%1; font-weight:600;").arg(palette_.textPrimary.name()));
-    column->addWidget(nameLabel, 0, Qt::AlignLeft);
 
     auto* textLabel =
         new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, bubble);
@@ -186,7 +203,13 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
         QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
     column->addWidget(timeLabel, 0, Qt::AlignLeft);
 
-    layout->addLayout(column, 1);
+    if (!message.fromSelf) {
+        addAvatar(Qt::AlignTop);
+        layout->addLayout(column, 1);
+    } else {
+        layout->addLayout(column, 1);
+        addAvatar(Qt::AlignTop);
+    }
 
     return bubble;
 }

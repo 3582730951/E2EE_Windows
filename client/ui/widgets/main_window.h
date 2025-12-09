@@ -22,16 +22,11 @@ public:
     void openConversation(const QString& title);
 
 private:
-    void buildLeftPanel(QHBoxLayout* rootLayout);
-    void buildMiddlePanel(QHBoxLayout* rootLayout);
-    void buildRightPanel(QHBoxLayout* rootLayout);
-    void populateGroups();
+    void buildChatOnly(QHBoxLayout* rootLayout);
 
     UiPalette palette_;
     QWidget* central_{nullptr};
-    QListWidget* conversationList_{nullptr};
     ChatWindow* chatWindow_{nullptr};
-    QLineEdit* groupEdit_{nullptr};
 };
 
 }  // namespace mi::client::ui::widgets
