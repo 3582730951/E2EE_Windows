@@ -45,6 +45,7 @@ int main(int argc, char* argv[]) {
                              groupWindow.openConversation(name);
                          } else {
                              friendChat.setWindowTitle(QObject::tr("好友聊天 - %1").arg(name));
+                             friendChat.setGroupName(name);
                              friendChat.show();
                              friendChat.raise();
                              friendChat.activateWindow();

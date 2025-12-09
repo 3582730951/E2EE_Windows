@@ -48,6 +48,9 @@ void MainWindow::openConversation(const QString& title) {
     if (!title.isEmpty()) {
         setWindowTitle(tr("MI E2EE Client - %1").arg(title));
     }
+    if (chatWindow_) {
+        chatWindow_->setGroupName(title);
+    }
     show();
     raise();
     activateWindow();

@@ -76,6 +76,11 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
 }
 
 void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
+    titleLabel_ = new QLabel(tr(""), this);
+    titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
+                                   .arg(palette_.textPrimary.name()));
+    parentLayout->addWidget(titleLabel_);
+
     messageContainer_ = new QWidget(this);
     messageContainer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     messageLayout_ = new QVBoxLayout(messageContainer_);
@@ -122,7 +127,7 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* sendButton = new QPushButton(tr("发送消息"), this);
     sendButton->setMinimumWidth(120);
-    sendButton->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+    sendButton->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:10px;")
                                   .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     sendButton->setCursor(Qt::PointingHandCursor);
     connect(sendButton, &QPushButton::clicked, this, [this]() {
@@ -170,7 +175,7 @@ void ChatWindow::addMessage(const ChatMessage& message) {
 QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto* bubble = new QFrame(parent);
     bubble->setObjectName(QStringLiteral("Bubble"));
-    const QString bg = message.fromSelf ? QStringLiteral("#1a3a80") : QStringLiteral("#121222");
+    const QString bg = message.fromSelf ? QStringLiteral("#1a3a80") : palette_.accent.name();
     bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:10px; }")
                               .arg(bg));
 
@@ -224,7 +229,9 @@ void ChatWindow::scrollToBottom() {
 }
 
 void ChatWindow::setGroupName(const QString& name) {
-    Q_UNUSED(name);
+    if (titleLabel_) {
+        titleLabel_->setText(name);
+    }
 }
 
 }  // namespace mi::client::ui::widgets

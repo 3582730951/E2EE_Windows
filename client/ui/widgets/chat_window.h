@@ -47,6 +47,7 @@ private:
     QVBoxLayout* messageLayout_{nullptr};
     QLineEdit* input_{nullptr};
     QComboBox* threshold_{nullptr};
+    QLabel* titleLabel_{nullptr};
     bool showHeader_{true};
 };
 
