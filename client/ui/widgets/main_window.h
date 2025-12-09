@@ -21,7 +21,6 @@ public:
     void setCurrentUser(const QString& user);
 
 private:
-    void buildLayout();
     void buildLeftPanel(QHBoxLayout* rootLayout);
     void buildMiddlePanel(QHBoxLayout* rootLayout);
     void buildRightPanel(QHBoxLayout* rootLayout);

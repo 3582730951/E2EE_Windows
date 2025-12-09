@@ -10,10 +10,16 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include "message_bubble.h"
 #include "theme.h"
 
 namespace mi::client::ui::widgets {
+
+struct ChatMessage {
+    QString sender;
+    QString text;
+    QString time;
+    bool fromSelf{false};
+};
 
 class ChatWindow : public QWidget {
     Q_OBJECT

@@ -5,8 +5,8 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollBar>
-#include <QToolButton>
 #include <QTime>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace mi::client::ui::widgets {
@@ -45,7 +45,8 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
 
     auto* roundBtn = new QToolButton(header);
     roundBtn->setFixedSize(24, 24);
-    roundBtn->setStyleSheet(QStringLiteral("background:#000; border-radius:12px;"));
+    roundBtn->setStyleSheet(QStringLiteral("background:%1; border-radius:12px; border:none;")
+                                .arg(palette_.buttonDark.name()));
     headerLayout->addWidget(roundBtn);
 
     auto* clearBtn = new QPushButton(tr("清理日志"), header);
@@ -61,9 +62,9 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
                                .arg(color));
         headerLayout->addWidget(dot);
     };
-    addDot(QStringLiteral("#2a2a32"));
-    addDot(QStringLiteral("#383844"));
-    addDot(QStringLiteral("#4a4a56"));
+    addDot(QStringLiteral("#2c2c36"));
+    addDot(QStringLiteral("#373744"));
+    addDot(QStringLiteral("#444454"));
 
     headerLayout->addStretch(1);
 
@@ -98,8 +99,8 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* sendButton = new QPushButton(tr("发送消息"), this);
     sendButton->setMinimumWidth(120);
-    sendButton->setStyleSheet(QStringLiteral("background:#000; color:%1; border-radius:6px;")
-                                  .arg(palette_.textPrimary.name()));
+    sendButton->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                                  .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     sendButton->setCursor(Qt::PointingHandCursor);
     connect(sendButton, &QPushButton::clicked, this, [this]() {
         const QString text = input_->text().trimmed();
@@ -107,7 +108,7 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
             return;
         }
         const QString now = QTime::currentTime().toString(QStringLiteral("hh:mm"));
-        ChatMessage msg{QStringLiteral("Me"), text, now, true};
+        ChatMessage msg{QStringLiteral("S"), text, now, true};
         addMessage(msg);
         emit messageSent(msg);
         input_->clear();
@@ -126,13 +127,37 @@ void ChatWindow::addMessage(const ChatMessage& message) {
     auto* wrapper = new QWidget(messageContainer_);
     auto* row = new QHBoxLayout(wrapper);
     row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(0);
+    row->setSpacing(10);
 
-    auto* bubble = new MessageBubble(message, palette_, wrapper);
     if (message.fromSelf) {
         row->addStretch(1);
     }
-    row->addWidget(bubble, 0, message.fromSelf ? Qt::AlignRight : Qt::AlignLeft);
+
+    auto* avatar = new QLabel(wrapper);
+    const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
+    avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
+    avatar->setFixedSize(32, 32);
+    avatar->setScaledContents(true);
+    row->addWidget(avatar, 0, Qt::AlignTop);
+
+    auto* column = new QVBoxLayout();
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(4);
+
+    auto* textLabel =
+        new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, wrapper);
+    textLabel->setWordWrap(true);
+    textLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-size:13px;").arg(palette_.textPrimary.name()));
+    column->addWidget(textLabel);
+
+    auto* timeLabel = new QLabel(message.time, wrapper);
+    timeLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
+    column->addWidget(timeLabel, 0, Qt::AlignLeft);
+
+    row->addLayout(column, 1);
+
     if (!message.fromSelf) {
         row->addStretch(1);
     }

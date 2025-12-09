@@ -8,7 +8,7 @@ namespace mi::client::ui::widgets {
 
 LoginDialog::LoginDialog(const UiPalette& palette, QWidget* parent)
     : QDialog(parent), palette_(palette) {
-    setWindowTitle(tr("MI E2EE Client - 登录"));
+    setWindowTitle(tr("QQ 登录"));
     setModal(true);
     setFixedSize(420, 520);
     setSizeGripEnabled(false);
@@ -28,13 +28,14 @@ void LoginDialog::setupUi() {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(32, 32, 32, 32);
     layout->setSpacing(14);
+    layout->setAlignment(Qt::AlignCenter);
 
     layout->addStretch(1);
 
     auto* title = new QLabel(tr("QQ 登录"), this);
     title->setAlignment(Qt::AlignCenter);
     title->setStyleSheet(
-        QStringLiteral("font-size:24px; font-weight:700; color:%1;")
+        QStringLiteral("font-size:22px; font-weight:700; color:%1;")
             .arg(palette_.textPrimary.name()));
     layout->addWidget(title, 0, Qt::AlignHCenter);
 
@@ -61,8 +62,9 @@ void LoginDialog::setupUi() {
     loginButton_ = new QPushButton(tr("登录"), this);
     loginButton_->setMinimumHeight(42);
     loginButton_->setFixedWidth(200);
+    loginButton_->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                                    .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     loginButton_->setCursor(Qt::PointingHandCursor);
-    layout->addSpacing(6);
     layout->addWidget(loginButton_, 0, Qt::AlignHCenter);
 
     auto* linkRow = new QHBoxLayout();

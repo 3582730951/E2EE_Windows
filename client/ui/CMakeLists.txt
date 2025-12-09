@@ -47,18 +47,8 @@ qt_add_executable(mi_e2ee_client_desktop
     widgets/theme.h
     widgets/login_dialog.cpp
     widgets/login_dialog.h
-    widgets/navigation_button.cpp
-    widgets/navigation_button.h
-    widgets/conversation_item.cpp
-    widgets/conversation_item.h
-    widgets/message_bubble.cpp
-    widgets/message_bubble.h
     widgets/chat_window.cpp
     widgets/chat_window.h
-    widgets/member_panel.cpp
-    widgets/member_panel.h
-    widgets/image_preview_dialog.cpp
-    widgets/image_preview_dialog.h
     widgets/main_window.cpp
     widgets/main_window.h
     widgets/list_window.cpp

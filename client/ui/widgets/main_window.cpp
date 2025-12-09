@@ -65,8 +65,8 @@ void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
     loginButton_->setMinimumHeight(40);
     loginButton_->setFixedWidth(200);
     loginButton_->setStyleSheet(
-        QStringLiteral("background:#000; color:%1; border-radius:6px; padding:8px 16px;")
-            .arg(palette_.textPrimary.name()));
+        QStringLiteral("background:%1; color:%2; border-radius:6px;")
+            .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     layout->addWidget(loginButton_, 0, Qt::AlignHCenter);
 
     auto createDivider = [&]() {
@@ -87,8 +87,8 @@ void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
 
     auto* joinBtn = new QPushButton(tr("加入群"), panel);
     joinBtn->setMinimumHeight(36);
-    joinBtn->setStyleSheet(QStringLiteral("background:#000; color:%1; border-radius:6px;")
-                               .arg(palette_.textPrimary.name()));
+    joinBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                               .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     layout->addWidget(joinBtn);
 
     layout->addWidget(createDivider());
@@ -96,8 +96,8 @@ void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
     addTitle(tr("离线/文件"));
     auto* uploadBtn = new QPushButton(tr("文件上传（占位）"), panel);
     uploadBtn->setMinimumHeight(36);
-    uploadBtn->setStyleSheet(QStringLiteral("background:#000; color:%1; border-radius:6px;")
-                                 .arg(palette_.textPrimary.name()));
+    uploadBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
+                                 .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     layout->addWidget(uploadBtn);
 
     auto* pullOfflineBtn = new QPushButton(tr("拉取离线（占位）"), panel);
@@ -157,7 +157,7 @@ void MainWindow::populateGroups() {
     };
     for (const auto& it : items) {
         auto* item = new QListWidgetItem(it.title, conversationList_);
-        item->setSizeHint(QSize(220, 50));
+        item->setSizeHint(QSize(220, 48));
         conversationList_->addItem(item);
 
         QWidget* wrapper = new QWidget(conversationList_);
