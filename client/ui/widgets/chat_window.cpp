@@ -19,18 +19,19 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
         setAttribute(Qt::WA_TranslucentBackground, true);
         setMinimumSize(360, 260);
     }
+    setStyleSheet(QStringLiteral("background:transparent;"));
     setObjectName(QStringLiteral("Panel"));
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(6, 5, 14, 6);
+    root->setContentsMargins(6, 5, 6, 6);
     root->setSpacing(4);
 
     // rounded wrapper for whole content
     auto* wrapper = new QFrame(this);
     wrapper->setObjectName(QStringLiteral("Wrapper"));
     wrapper->setStyleSheet(QStringLiteral(
-        "QFrame#Wrapper { background:%1; border-radius:14px; border:1px solid #1f1f2b; }")
-                               .arg(palette_.background.name()));
+        "QFrame#Wrapper { background:%1; border-radius:18px; border:1px solid #1f1f2b; }")
+                               .arg(QStringLiteral("#101018")));
     auto* wrapLayout = new QVBoxLayout(wrapper);
     wrapLayout->setContentsMargins(8, 8, 8, 8);
     wrapLayout->setSpacing(4);
@@ -51,7 +52,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_ = new QWidget(this);
     titleBar_->setObjectName(QStringLiteral("TitleBar"));
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:12px; }")
-                                 .arg(palette_.panel.name()));
+                                 .arg(QStringLiteral("#11111a")));
     auto* layout = new QHBoxLayout(titleBar_);
     layout->setContentsMargins(6, 4, 10, 4);
     layout->setSpacing(4);
@@ -123,13 +124,13 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
 void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
     auto* toolsRow = new QHBoxLayout();
     toolsRow->setContentsMargins(2, 0, 2, 0);
-    toolsRow->setSpacing(2);
+    toolsRow->setSpacing(4);
     
     auto* folderBtn = new QToolButton(this);
     folderBtn->setText(QStringLiteral("📁"));
     folderBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
     folderBtn->setCursor(Qt::PointingHandCursor);
-    folderBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:8px; padding:4px 8px;")
+    folderBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:10px; padding:6px 10px;")
                                  .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
     auto* menu = new QMenu(folderBtn);
     menu->addAction(tr("文件上传（占位）"));
@@ -200,7 +201,7 @@ void ChatWindow::addMessage(const ChatMessage& message) {
 QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto* bubble = new QFrame(parent);
     bubble->setObjectName(QStringLiteral("Bubble"));
-    const QString bg = message.fromSelf ? QStringLiteral("#13306e") : QStringLiteral("#1b4aa3");
+    const QString bg = message.fromSelf ? QStringLiteral("#1a1f28") : QStringLiteral("#161c25");
     bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:16px; border:none; }")
                               .arg(bg));
 
@@ -211,7 +212,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto addAvatar = [&](Qt::Alignment align) {
         auto* avatar = new QLabel(bubble);
         const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
-        avatar->setPixmap(BuildAvatar(avatarText, QColor(QStringLiteral("#7aa6ff")), 28));
+        avatar->setPixmap(BuildAvatar(avatarText, QColor(QStringLiteral("#8fb7ff")), 28));
         avatar->setFixedSize(28, 28);
         avatar->setScaledContents(true);
         avatar->setStyleSheet(QStringLiteral("background:transparent;"));
