@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 project(mi_e2ee_client_ui LANGUAGES CXX)
 
-find_package(Qt6 QUIET COMPONENTS Quick QuickControls2 QuickDialogs2 REQUIRED)
+find_package(Qt6 QUIET COMPONENTS Quick QuickControls2 QuickDialogs2 Widgets Gui REQUIRED)
 
 qt_standard_project_setup()
+
+set(UI_COMMON_INCLUDES
+    ../include
+    ../../server/include
+    ../../shard
+)
 
 qt_add_executable(mi_e2ee_client_ui
     main.cpp
@@ -34,12 +40,39 @@ target_link_libraries(mi_e2ee_client_ui
       mi_e2ee_client_core
 )
 
-target_include_directories(mi_e2ee_client_ui PRIVATE
-    ../include
-    ../../server/include
-    ../../shard
+target_include_directories(mi_e2ee_client_ui PRIVATE ${UI_COMMON_INCLUDES})
+
+qt_add_executable(mi_e2ee_client_desktop
+    widget_main.cpp
+    widgets/theme.h
+    widgets/login_dialog.cpp
+    widgets/login_dialog.h
+    widgets/navigation_button.cpp
+    widgets/navigation_button.h
+    widgets/conversation_item.cpp
+    widgets/conversation_item.h
+    widgets/message_bubble.cpp
+    widgets/message_bubble.h
+    widgets/chat_window.cpp
+    widgets/chat_window.h
+    widgets/member_panel.cpp
+    widgets/member_panel.h
+    widgets/image_preview_dialog.cpp
+    widgets/image_preview_dialog.h
+    widgets/main_window.cpp
+    widgets/main_window.h
 )
+
+target_link_libraries(mi_e2ee_client_desktop
+    PRIVATE
+      Qt6::Widgets
+      Qt6::Gui
+      mi_e2ee_client_core
+)
+
+target_include_directories(mi_e2ee_client_desktop PRIVATE ${UI_COMMON_INCLUDES})
 
 if(MSVC)
   target_compile_options(mi_e2ee_client_ui PRIVATE /utf-8)
+  target_compile_options(mi_e2ee_client_desktop PRIVATE /utf-8)
 endif()

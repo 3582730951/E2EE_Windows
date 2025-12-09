@@ -1,0 +1,85 @@
+#include "image_preview_dialog.h"
+
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QVBoxLayout>
+
+namespace mi::client::ui::widgets {
+
+ImagePreviewDialog::ImagePreviewDialog(const UiPalette& palette, QWidget* parent)
+    : QDialog(parent), palette_(palette) {
+    setWindowTitle(tr("图片预览"));
+    resize(720, 520);
+    setModal(true);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(12);
+
+    scene_ = new QGraphicsScene(this);
+    view_ = new QGraphicsView(scene_, this);
+    view_->setFrameShape(QFrame::NoFrame);
+    view_->setStyleSheet(QStringLiteral(
+        "QGraphicsView { background:%1; border-radius:12px; border:none; }")
+                             .arg(palette_.panel.name()));
+    view_->setAlignment(Qt::AlignCenter);
+    layout->addWidget(view_, 1);
+
+    item_ = new QGraphicsPixmapItem();
+    scene_->addItem(item_);
+
+    auto* controls = new QHBoxLayout();
+    controls->setSpacing(10);
+
+    auto* rotate = new QPushButton(tr("向左旋转"), this);
+    rotate->setMinimumWidth(120);
+    connect(rotate, &QPushButton::clicked, this, [this]() {
+        currentRotation_ -= 90;
+        applyTransform();
+    });
+    controls->addWidget(rotate, 0, Qt::AlignLeft);
+
+    zoomSlider_ = new QSlider(Qt::Horizontal, this);
+    zoomSlider_->setRange(50, 200);
+    zoomSlider_->setValue(100);
+    zoomSlider_->setCursor(Qt::PointingHandCursor);
+    connect(zoomSlider_, &QSlider::valueChanged, this, [this](int v) {
+        currentScale_ = static_cast<double>(v) / 100.0;
+        applyTransform();
+    });
+    controls->addWidget(new QLabel(tr("缩放"), this));
+    controls->addWidget(zoomSlider_, 1);
+
+    layout->addLayout(controls);
+}
+
+void ImagePreviewDialog::setImage(const QPixmap& pixmap) {
+    if (!item_ || pixmap.isNull()) {
+        return;
+    }
+    item_->setPixmap(pixmap);
+    const QRectF rect = pixmap.rect();
+    item_->setOffset(-rect.width() / 2.0, -rect.height() / 2.0);
+    item_->setTransformOriginPoint(rect.center());
+    item_->setPos(0, 0);
+    scene_->setSceneRect(rect.adjusted(-50, -50, 50, 50));
+    currentScale_ = 1.0;
+    currentRotation_ = 0;
+    if (zoomSlider_) {
+        zoomSlider_->setValue(100);
+    }
+    applyTransform();
+}
+
+void ImagePreviewDialog::applyTransform() {
+    if (!item_) {
+        return;
+    }
+    QTransform transform;
+    transform.scale(currentScale_, currentScale_);
+    transform.rotate(static_cast<double>(currentRotation_));
+    item_->setTransform(transform);
+}
+
+}  // namespace mi::client::ui::widgets
