@@ -18,15 +18,15 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
 
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(12, 16, 20, 12);
-    root->setSpacing(8);
+    root->setContentsMargins(8, 10, 12, 10);
+    root->setSpacing(6);
 
     titleBar_ = buildTitleBar(title, central);
     root->addWidget(titleBar_);
 
     list_ = new QListWidget(central);
     list_->setFrameShape(QFrame::NoFrame);
-    list_->setSpacing(10);
+    list_->setSpacing(6);
     list_->setSelectionMode(QAbstractItemView::SingleSelection);
     list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     root->addWidget(list_, 1);
@@ -67,8 +67,8 @@ void ListWindow::populate() {
 QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
     auto* item = new QWidget(parent);
     auto* row = new QHBoxLayout(item);
-    row->setContentsMargins(10, 10, 10, 10);
-    row->setSpacing(8);
+    row->setContentsMargins(8, 8, 8, 8);
+    row->setSpacing(6);
 
     auto* indicator = new QLabel(item);
     indicator->setFixedSize(10, 10);
@@ -106,11 +106,11 @@ QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
 QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
     auto* bar = new QWidget(parent);
     bar->setObjectName(QStringLiteral("ListTitleBar"));
-    bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:10px; }")
+    bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:8px; }")
                            .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(14, 8, 22, 8);
-    layout->setSpacing(10);
+    layout->setContentsMargins(7, 4, 11, 4);
+    layout->setSpacing(5);
 
     auto* lbl = new QLabel(title, bar);
     lbl->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")

@@ -16,12 +16,11 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     : QWidget(parent), palette_(palette), showHeader_(showHeader) {
     if (parent == nullptr) {
         setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
-        setMinimumSize(400, 300);
-        setMaximumWidth(900);
+        setMinimumSize(360, 260);
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(8, 16, 16, 8);
+    root->setContentsMargins(6, 10, 14, 6);
     root->setSpacing(4);
 
     buildHeader(root);
@@ -40,8 +39,8 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:8px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(12, 4, 16, 4);
-    layout->setSpacing(6);
+    layout->setContentsMargins(6, 4, 10, 4);
+    layout->setSpacing(4);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);
     titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
@@ -103,7 +102,6 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
     messageScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     messageScroll_->setFrameShape(QFrame::NoFrame);
     messageScroll_->setWidget(messageContainer_);
-    messageScroll_->setMaximumWidth(800);
 
     parentLayout->addWidget(messageScroll_, 1);
 }
@@ -134,7 +132,6 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     input_ = new QLineEdit(this);
     input_->setPlaceholderText(tr("输入消息（本地展示，后续仍走触发/轮换路径）"));
-    input_->setMaximumWidth(600);
     row->addWidget(input_, 1);
 
     auto* sendButton = new QPushButton(tr("发送消息"), this);
