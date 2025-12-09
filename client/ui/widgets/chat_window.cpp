@@ -36,7 +36,7 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
 void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_ = new QWidget(this);
     titleBar_->setObjectName(QStringLiteral("TitleBar"));
-    titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:10px; }")
+    titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:12px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
     layout->setContentsMargins(6, 4, 10, 4);
@@ -51,8 +51,8 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     auto makeBtn = [&](const QString& text) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
-        btn->setFixedSize(42, 28);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:14px; font-weight:700;")
+        btn->setFixedSize(52, 52);
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:26px; font-weight:700;")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
@@ -187,7 +187,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto* bubble = new QFrame(parent);
     bubble->setObjectName(QStringLiteral("Bubble"));
     const QString bg = message.fromSelf ? QStringLiteral("#13306e") : QStringLiteral("#1b4aa3");
-    bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:12px; border:none; }")
+    bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:16px; border:none; }")
                               .arg(bg));
 
     auto* layout = new QHBoxLayout(bubble);
