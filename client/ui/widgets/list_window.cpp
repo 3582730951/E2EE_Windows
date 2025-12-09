@@ -3,6 +3,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListWidgetItem>
 #include <QPalette>
 #include <QVBoxLayout>
 
@@ -27,7 +28,7 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
     auto* panel = new QFrame(central);
     panel->setObjectName(QStringLiteral("Panel"));
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
 
     auto* heading = new QLabel(title, panel);
@@ -36,13 +37,40 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
             .arg(palette_.textPrimary.name()));
     layout->addWidget(heading);
 
-    for (const auto& entry : entries_) {
-        layout->addWidget(buildItem(entry, panel));
-    }
-    layout->addStretch(1);
+    list_ = new QListWidget(panel);
+    list_->setFrameShape(QFrame::NoFrame);
+    list_->setSpacing(8);
+    list_->setSelectionMode(QAbstractItemView::SingleSelection);
+    list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    layout->addWidget(list_, 1);
 
     root->addWidget(panel);
     setCentralWidget(central);
+
+    populate();
+
+    connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+        if (!item) {
+            return;
+        }
+        emit entrySelected(item->data(Qt::UserRole).toString());
+    });
+}
+
+void ListWindow::populate() {
+    if (!list_) {
+        return;
+    }
+    std::sort(entries_.begin(), entries_.end(),
+              [](const ListEntry& a, const ListEntry& b) { return a.lastTime > b.lastTime; });
+
+    for (const auto& entry : entries_) {
+        auto* item = new QListWidgetItem(list_);
+        item->setSizeHint(QSize(320, 64));
+        item->setData(Qt::UserRole, entry.name);
+        list_->addItem(item);
+        list_->setItemWidget(item, buildItem(entry, list_));
+    }
 }
 
 QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
@@ -72,6 +100,14 @@ QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
     textCol->addWidget(detail);
 
     row->addLayout(textCol, 1);
+
+    auto* timeLabel =
+        new QLabel(entry.lastTime.isValid() ? entry.lastTime.toString(QStringLiteral("hh:mm"))
+                                            : QStringLiteral("--:--"),
+                   item);
+    timeLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
+    row->addWidget(timeLabel, 0, Qt::AlignVCenter);
 
     return item;
 }

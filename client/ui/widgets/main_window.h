@@ -19,6 +19,7 @@ public:
                         QWidget* parent = nullptr);
 
     void setCurrentUser(const QString& user);
+    void openConversation(const QString& title);
 
 private:
     void buildLeftPanel(QHBoxLayout* rootLayout);

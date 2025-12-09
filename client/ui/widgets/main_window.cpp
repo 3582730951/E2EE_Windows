@@ -168,4 +168,13 @@ void MainWindow::setCurrentUser(const QString& user) {
     setWindowTitle(tr("MI E2EE Client - %1").arg(user));
 }
 
+void MainWindow::openConversation(const QString& title) {
+    if (!title.isEmpty()) {
+        setWindowTitle(tr("MI E2EE Client - %1").arg(title));
+    }
+    show();
+    raise();
+    activateWindow();
+}
+
 }  // namespace mi::client::ui::widgets
