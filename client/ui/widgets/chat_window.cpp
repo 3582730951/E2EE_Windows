@@ -20,7 +20,7 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(6, 10, 14, 6);
+    root->setContentsMargins(6, 5, 14, 6);
     root->setSpacing(4);
 
     buildHeader(root);
@@ -186,7 +186,7 @@ void ChatWindow::addMessage(const ChatMessage& message) {
 QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto* bubble = new QFrame(parent);
     bubble->setObjectName(QStringLiteral("Bubble"));
-    const QString bg = message.fromSelf ? QStringLiteral("#1a3a80") : palette_.accent.name();
+    const QString bg = message.fromSelf ? QStringLiteral("#13306e") : QStringLiteral("#1b4aa3");
     bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:12px; border:none; }")
                               .arg(bg));
 
@@ -197,7 +197,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto addAvatar = [&](Qt::Alignment align) {
         auto* avatar = new QLabel(bubble);
         const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
-        avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 28));
+        avatar->setPixmap(BuildAvatar(avatarText, QColor(QStringLiteral("#7aa6ff")), 28));
         avatar->setFixedSize(28, 28);
         avatar->setScaledContents(true);
         avatar->setStyleSheet(QStringLiteral("background:transparent;"));
