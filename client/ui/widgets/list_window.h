@@ -2,9 +2,12 @@
 #define MI_E2EE_CLIENT_UI_WIDGETS_LIST_WINDOW_H
 
 #include <QColor>
+#include <QEvent>
 #include <QDateTime>
 #include <QListWidget>
 #include <QMainWindow>
+#include <QMouseEvent>
+#include <QToolButton>
 #include <QVector>
 
 #include "theme.h"
@@ -34,10 +37,17 @@ signals:
 private:
     void populate();
     QWidget* buildItem(const ListEntry& entry, QWidget* parent);
+    QWidget* buildTitleBar(const QString& title, QWidget* parent);
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     UiPalette palette_;
     QVector<ListEntry> entries_;
     QListWidget* list_{nullptr};
+    QWidget* titleBar_{nullptr};
+    QToolButton* btnMin_{nullptr};
+    QToolButton* btnMax_{nullptr};
+    QToolButton* btnClose_{nullptr};
+    QPoint dragPos_;
 };
 
 }  // namespace mi::client::ui::widgets

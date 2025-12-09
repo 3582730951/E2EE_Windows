@@ -19,7 +19,7 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 16, 22, 10);
+    root->setContentsMargins(12, 18, 26, 10);
     root->setSpacing(8);
 
     buildHeader(root);

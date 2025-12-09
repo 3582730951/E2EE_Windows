@@ -13,12 +13,16 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
                        const UiPalette& palette, QWidget* parent)
     : QMainWindow(parent), palette_(palette), entries_(entries) {
     setWindowTitle(title);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     resize(360, 520);
 
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(10, 10, 10, 10);
-    root->setSpacing(10);
+    root->setContentsMargins(10, 12, 14, 12);
+    root->setSpacing(8);
+
+    titleBar_ = buildTitleBar(title, central);
+    root->addWidget(titleBar_);
 
     auto* heading = new QLabel(title, central);
     heading->setStyleSheet(
@@ -103,6 +107,84 @@ QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
     row->addWidget(timeLabel, 0, Qt::AlignVCenter);
 
     return item;
+}
+
+QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
+    auto* bar = new QWidget(parent);
+    bar->setObjectName(QStringLiteral("ListTitleBar"));
+    bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:10px; }")
+                           .arg(palette_.panel.name()));
+    auto* layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(10, 6, 14, 6);
+    layout->setSpacing(8);
+
+    auto* lbl = new QLabel(title, bar);
+    lbl->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
+                           .arg(palette_.textPrimary.name()));
+    layout->addWidget(lbl, 0, Qt::AlignVCenter);
+    layout->addStretch(1);
+
+    auto makeBtn = [&](const QString& text) {
+        auto* btn = new QToolButton(bar);
+        btn->setText(text);
+        btn->setFixedSize(22, 22);
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:11px; font-weight:700;")
+                               .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
+        btn->setCursor(Qt::PointingHandCursor);
+        return btn;
+    };
+    btnMin_ = makeBtn(QStringLiteral("-"));
+    btnMax_ = makeBtn(QStringLiteral("□"));
+    btnClose_ = makeBtn(QStringLiteral("×"));
+    layout->addWidget(btnMin_);
+    layout->addWidget(btnMax_);
+    layout->addWidget(btnClose_);
+
+    connect(btnMin_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            window()->showMinimized();
+        }
+    });
+    connect(btnMax_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            if (window()->isMaximized()) {
+                window()->showNormal();
+            } else {
+                window()->showMaximized();
+            }
+        }
+    });
+    connect(btnClose_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            window()->close();
+        }
+    });
+
+    bar->installEventFilter(this);
+    return bar;
+}
+
+bool ListWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == titleBar_) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                dragPos_ = me->globalPosition().toPoint();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->buttons() & Qt::LeftButton) {
+                const QPoint delta = me->globalPosition().toPoint() - dragPos_;
+                dragPos_ = me->globalPosition().toPoint();
+                if (window()) {
+                    window()->move(window()->pos() + delta);
+                }
+                return true;
+            }
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 }  // namespace mi::client::ui::widgets
