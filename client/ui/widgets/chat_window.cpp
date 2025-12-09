@@ -197,6 +197,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
         avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
         avatar->setFixedSize(32, 32);
         avatar->setScaledContents(true);
+        avatar->setStyleSheet(QStringLiteral("background:transparent;"));
         layout->addWidget(avatar, 0, align);
     };
 
@@ -208,12 +209,14 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
         new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, bubble);
     textLabel->setWordWrap(true);
     textLabel->setStyleSheet(
-        QStringLiteral("color:%1; font-size:13px;").arg(palette_.textPrimary.name()));
+        QStringLiteral("color:%1; font-size:13px; background:transparent;")
+            .arg(palette_.textPrimary.name()));
     column->addWidget(textLabel);
 
     auto* timeLabel = new QLabel(message.time, bubble);
     timeLabel->setStyleSheet(
-        QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
+        QStringLiteral("color:%1; font-size:11px; background:transparent;")
+            .arg(palette_.textSecondary.name()));
     column->addWidget(timeLabel, 0, Qt::AlignLeft);
 
     if (!message.fromSelf) {
