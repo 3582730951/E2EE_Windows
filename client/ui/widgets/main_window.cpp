@@ -49,26 +49,6 @@ void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
         layout->addWidget(lbl);
     };
 
-    addTitle(tr("账户"));
-    accountEdit_ = new QLineEdit(panel);
-    accountEdit_->setPlaceholderText(tr("用户名"));
-    accountEdit_->setMinimumHeight(36);
-    layout->addWidget(accountEdit_);
-
-    passwordEdit_ = new QLineEdit(panel);
-    passwordEdit_->setPlaceholderText(tr("密码"));
-    passwordEdit_->setEchoMode(QLineEdit::Password);
-    passwordEdit_->setMinimumHeight(36);
-    layout->addWidget(passwordEdit_);
-
-    loginButton_ = new QPushButton(tr("登录"), panel);
-    loginButton_->setMinimumHeight(40);
-    loginButton_->setFixedWidth(200);
-    loginButton_->setStyleSheet(
-        QStringLiteral("background:%1; color:%2; border-radius:6px;")
-            .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
-    layout->addWidget(loginButton_, 0, Qt::AlignHCenter);
-
     auto createDivider = [&]() {
         auto* line = new QFrame(panel);
         line->setFrameShape(QFrame::HLine);
@@ -76,8 +56,6 @@ void MainWindow::buildLeftPanel(QHBoxLayout* rootLayout) {
         line->setStyleSheet(QStringLiteral("color:#22222c; background:#22222c; height:1px;"));
         return line;
     };
-
-    layout->addWidget(createDivider());
 
     addTitle(tr("群组"));
     groupEdit_ = new QLineEdit(panel);

@@ -30,9 +30,6 @@ private:
     QWidget* central_{nullptr};
     QListWidget* conversationList_{nullptr};
     ChatWindow* chatWindow_{nullptr};
-    QLineEdit* accountEdit_{nullptr};
-    QLineEdit* passwordEdit_{nullptr};
-    QPushButton* loginButton_{nullptr};
     QLineEdit* groupEdit_{nullptr};
 };
 
