@@ -133,30 +133,8 @@ void ChatWindow::addMessage(const ChatMessage& message) {
         row->addStretch(1);
     }
 
-    auto* avatar = new QLabel(wrapper);
-    const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
-    avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
-    avatar->setFixedSize(32, 32);
-    avatar->setScaledContents(true);
-    row->addWidget(avatar, 0, Qt::AlignTop);
-
-    auto* column = new QVBoxLayout();
-    column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(4);
-
-    auto* textLabel =
-        new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, wrapper);
-    textLabel->setWordWrap(true);
-    textLabel->setStyleSheet(
-        QStringLiteral("color:%1; font-size:13px;").arg(palette_.textPrimary.name()));
-    column->addWidget(textLabel);
-
-    auto* timeLabel = new QLabel(message.time, wrapper);
-    timeLabel->setStyleSheet(
-        QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
-    column->addWidget(timeLabel, 0, Qt::AlignLeft);
-
-    row->addLayout(column, 1);
+    row->addWidget(buildBubble(message, wrapper),
+                   0, message.fromSelf ? Qt::AlignRight : Qt::AlignLeft);
 
     if (!message.fromSelf) {
         row->addStretch(1);
@@ -164,6 +142,50 @@ void ChatWindow::addMessage(const ChatMessage& message) {
 
     messageLayout_->addWidget(wrapper);
     scrollToBottom();
+}
+
+QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
+    auto* bubble = new QFrame(parent);
+    bubble->setObjectName(QStringLiteral("Bubble"));
+    const QString bg = message.fromSelf ? QStringLiteral("#1a3a80") : QStringLiteral("#121222");
+    bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:10px; }")
+                              .arg(bg));
+
+    auto* layout = new QHBoxLayout(bubble);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(10);
+
+    auto* avatar = new QLabel(bubble);
+    const QString avatarText = message.sender.isEmpty() ? QStringLiteral("S") : message.sender;
+    avatar->setPixmap(BuildAvatar(avatarText, palette_.accent, 32));
+    avatar->setFixedSize(32, 32);
+    avatar->setScaledContents(true);
+    layout->addWidget(avatar, 0, Qt::AlignTop);
+
+    auto* column = new QVBoxLayout();
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(2);
+
+    auto* nameLabel = new QLabel(message.sender, bubble);
+    nameLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-weight:600;").arg(palette_.textPrimary.name()));
+    column->addWidget(nameLabel, 0, Qt::AlignLeft);
+
+    auto* textLabel =
+        new QLabel(message.text.isEmpty() ? tr("示例消息") : message.text, bubble);
+    textLabel->setWordWrap(true);
+    textLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-size:13px;").arg(palette_.textPrimary.name()));
+    column->addWidget(textLabel);
+
+    auto* timeLabel = new QLabel(message.time, bubble);
+    timeLabel->setStyleSheet(
+        QStringLiteral("color:%1; font-size:11px;").arg(palette_.textSecondary.name()));
+    column->addWidget(timeLabel, 0, Qt::AlignLeft);
+
+    layout->addLayout(column, 1);
+
+    return bubble;
 }
 
 void ChatWindow::scrollToBottom() {

@@ -39,6 +39,7 @@ private:
     void buildMessageArea(QVBoxLayout* parentLayout);
     void buildInputArea(QVBoxLayout* parentLayout);
     void scrollToBottom();
+    QWidget* buildBubble(const ChatMessage& message, QWidget* parent);
 
     UiPalette palette_;
     QScrollArea* messageScroll_{nullptr};
