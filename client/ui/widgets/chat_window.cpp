@@ -33,57 +33,61 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
 }
 
 void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
-    if (!showHeader_) {
-        return;
-    }
-    auto* header = new QWidget(this);
-    auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(8, 6, 8, 6);
-    headerLayout->setSpacing(10);
+    titleBar_ = new QWidget(this);
+    titleBar_->setObjectName(QStringLiteral("TitleBar"));
+    titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:8px; }")
+                                 .arg(palette_.panel.name()));
+    auto* layout = new QHBoxLayout(titleBar_);
+    layout->setContentsMargins(10, 6, 10, 6);
+    layout->setSpacing(8);
 
-    auto* thresholdLabel = new QLabel(tr("轮换阈值"), header);
-    thresholdLabel->setStyleSheet(QStringLiteral("color:%1;").arg(palette_.textPrimary.name()));
-    headerLayout->addWidget(thresholdLabel);
+    titleLabel_ = new QLabel(tr(""), titleBar_);
+    titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
+                                   .arg(palette_.textPrimary.name()));
+    layout->addWidget(titleLabel_, 0, Qt::AlignVCenter);
+    layout->addStretch(1);
 
-    threshold_ = new QComboBox(header);
-    threshold_->addItems({QStringLiteral("1000"), QStringLiteral("5000"), QStringLiteral("10000")});
-    threshold_->setFixedWidth(120);
-    headerLayout->addWidget(threshold_);
-
-    auto* roundBtn = new QToolButton(header);
-    roundBtn->setFixedSize(24, 24);
-    roundBtn->setStyleSheet(QStringLiteral("background:%1; border-radius:12px; border:none;")
-                                .arg(palette_.buttonDark.name()));
-    headerLayout->addWidget(roundBtn);
-
-    auto* clearBtn = new QPushButton(tr("清理日志"), header);
-    clearBtn->setMinimumHeight(32);
-    clearBtn->setStyleSheet(QStringLiteral("background:%1; color:%2; border-radius:6px;")
-                                .arg(palette_.accent.name(), palette_.textPrimary.name()));
-    headerLayout->addWidget(clearBtn);
-
-    auto addDot = [&](const QString& color) {
-        auto* dot = new QToolButton(header);
-        dot->setFixedSize(20, 20);
-        dot->setStyleSheet(QStringLiteral("background:%1; border-radius:10px; border:none;")
-                               .arg(color));
-        headerLayout->addWidget(dot);
+    auto makeBtn = [&](const QString& text) {
+        auto* btn = new QToolButton(titleBar_);
+        btn->setText(text);
+        btn->setFixedSize(20, 20);
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:4px;")
+                               .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
+        btn->setCursor(Qt::PointingHandCursor);
+        return btn;
     };
-    addDot(QStringLiteral("#2c2c36"));
-    addDot(QStringLiteral("#373744"));
-    addDot(QStringLiteral("#444454"));
+    btnMin_ = makeBtn(QStringLiteral("-"));
+    btnMax_ = makeBtn(QStringLiteral("□"));
+    btnClose_ = makeBtn(QStringLiteral("×"));
+    layout->addWidget(btnMin_);
+    layout->addWidget(btnMax_);
+    layout->addWidget(btnClose_);
 
-    headerLayout->addStretch(1);
+    connect(btnMin_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            window()->showMinimized();
+        }
+    });
+    connect(btnMax_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            if (window()->isMaximized()) {
+                window()->showNormal();
+            } else {
+                window()->showMaximized();
+            }
+        }
+    });
+    connect(btnClose_, &QToolButton::clicked, this, [this]() {
+        if (window()) {
+            window()->close();
+        }
+    });
 
-    parentLayout->addWidget(header);
+    titleBar_->installEventFilter(this);
+    parentLayout->addWidget(titleBar_);
 }
 
 void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
-    titleLabel_ = new QLabel(tr(""), this);
-    titleLabel_->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
-                                   .arg(palette_.textPrimary.name()));
-    parentLayout->addWidget(titleLabel_);
-
     messageContainer_ = new QWidget(this);
     messageContainer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     messageLayout_ = new QVBoxLayout(messageContainer_);
@@ -220,6 +224,29 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     }
 
     return bubble;
+}
+
+bool ChatWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == titleBar_) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                dragPos_ = me->globalPosition().toPoint();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->buttons() & Qt::LeftButton) {
+                const QPoint delta = me->globalPosition().toPoint() - dragPos_;
+                dragPos_ = me->globalPosition().toPoint();
+                if (window()) {
+                    window()->move(window()->pos() + delta);
+                }
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ChatWindow::scrollToBottom() {

@@ -7,6 +7,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QToolButton>
+#include <QEvent>
+#include <QMouseEvent>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -40,15 +42,20 @@ private:
     void buildInputArea(QVBoxLayout* parentLayout);
     void scrollToBottom();
     QWidget* buildBubble(const ChatMessage& message, QWidget* parent);
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     UiPalette palette_;
     QScrollArea* messageScroll_{nullptr};
     QWidget* messageContainer_{nullptr};
     QVBoxLayout* messageLayout_{nullptr};
     QLineEdit* input_{nullptr};
-    QComboBox* threshold_{nullptr};
     QLabel* titleLabel_{nullptr};
+    QWidget* titleBar_{nullptr};
+    QToolButton* btnMin_{nullptr};
+    QToolButton* btnMax_{nullptr};
+    QToolButton* btnClose_{nullptr};
     bool showHeader_{true};
+    QPoint dragPos_;
 };
 
 }  // namespace mi::client::ui::widgets
