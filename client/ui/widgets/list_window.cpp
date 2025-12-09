@@ -18,17 +18,11 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
 
     auto* central = new QWidget(this);
     auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(10, 12, 14, 12);
-    root->setSpacing(8);
+    root->setContentsMargins(10, 12, 16, 12);
+    root->setSpacing(10);
 
     titleBar_ = buildTitleBar(title, central);
     root->addWidget(titleBar_);
-
-    auto* heading = new QLabel(title, central);
-    heading->setStyleSheet(
-        QStringLiteral("color:%1; font-weight:700; font-size:16px;")
-            .arg(palette_.textPrimary.name()));
-    root->addWidget(heading);
 
     list_ = new QListWidget(central);
     list_->setFrameShape(QFrame::NoFrame);
@@ -115,7 +109,7 @@ QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
     bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:10px; }")
                            .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(10, 6, 14, 6);
+    layout->setContentsMargins(12, 8, 18, 8);
     layout->setSpacing(8);
 
     auto* lbl = new QLabel(title, bar);
