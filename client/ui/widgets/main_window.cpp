@@ -10,6 +10,7 @@ namespace mi::client::ui::widgets {
 MainWindow::MainWindow(const UiPalette& palette, QWidget* parent)
     : QMainWindow(parent), palette_(palette) {
     setWindowTitle(tr("MI E2EE Client"));
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     resize(1180, 760);
 
     central_ = new QWidget(this);

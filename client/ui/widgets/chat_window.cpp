@@ -14,6 +14,9 @@ namespace mi::client::ui::widgets {
 
 ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeader)
     : QWidget(parent), palette_(palette), showHeader_(showHeader) {
+    if (parent == nullptr) {
+        setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(16, 16, 16, 16);
