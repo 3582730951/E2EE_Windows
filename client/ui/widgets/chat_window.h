@@ -2,6 +2,7 @@
 #define MI_E2EE_CLIENT_UI_WIDGETS_CHAT_WINDOW_H
 
 #include <QScrollArea>
+#include <QLabel>
 #include <QTextEdit>
 #include <QToolButton>
 #include <QVBoxLayout>
