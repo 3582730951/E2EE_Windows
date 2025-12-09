@@ -16,35 +16,23 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
     resize(360, 520);
 
     auto* central = new QWidget(this);
-    central->setAutoFillBackground(true);
-    QPalette pal = central->palette();
-    pal.setColor(QPalette::Window, palette_.background);
-    central->setPalette(pal);
-
     auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(12, 12, 12, 12);
-    root->setSpacing(12);
+    root->setContentsMargins(10, 10, 10, 10);
+    root->setSpacing(10);
 
-    auto* panel = new QFrame(central);
-    panel->setObjectName(QStringLiteral("Panel"));
-    auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(10);
-
-    auto* heading = new QLabel(title, panel);
+    auto* heading = new QLabel(title, central);
     heading->setStyleSheet(
         QStringLiteral("color:%1; font-weight:700; font-size:16px;")
             .arg(palette_.textPrimary.name()));
-    layout->addWidget(heading);
+    root->addWidget(heading);
 
-    list_ = new QListWidget(panel);
+    list_ = new QListWidget(central);
     list_->setFrameShape(QFrame::NoFrame);
     list_->setSpacing(8);
     list_->setSelectionMode(QAbstractItemView::SingleSelection);
     list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    layout->addWidget(list_, 1);
+    root->addWidget(list_, 1);
 
-    root->addWidget(panel);
     setCentralWidget(central);
 
     populate();

@@ -19,8 +19,8 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     }
     setObjectName(QStringLiteral("Panel"));
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 10, 12, 10);
-    root->setSpacing(10);
+    root->setContentsMargins(10, 8, 10, 8);
+    root->setSpacing(8);
 
     buildHeader(root);
     buildMessageArea(root);
@@ -38,7 +38,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:10px; }")
                                  .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setContentsMargins(8, 4, 8, 4);
     layout->setSpacing(6);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);
@@ -91,8 +91,8 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
     messageContainer_ = new QWidget(this);
     messageContainer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     messageLayout_ = new QVBoxLayout(messageContainer_);
-    messageLayout_->setContentsMargins(6, 6, 6, 6);
-    messageLayout_->setSpacing(8);
+    messageLayout_->setContentsMargins(6, 4, 6, 4);
+    messageLayout_->setSpacing(6);
     messageLayout_->setAlignment(Qt::AlignTop);
 
     messageScroll_ = new QScrollArea(this);
@@ -107,8 +107,8 @@ void ChatWindow::buildMessageArea(QVBoxLayout* parentLayout) {
 void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
     // toolbar above input
     auto* toolsRow = new QHBoxLayout();
-    toolsRow->setContentsMargins(0, 0, 0, 0);
-    toolsRow->setSpacing(6);
+    toolsRow->setContentsMargins(4, 0, 4, 0);
+    toolsRow->setSpacing(4);
     auto* folderBtn = new QToolButton(this);
     folderBtn->setText(QStringLiteral("📁"));
     folderBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
@@ -152,6 +152,7 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
 
     auto* inputPanel = new QWidget(this);
     inputPanel->setLayout(row);
+    inputPanel->setContentsMargins(4, 4, 4, 0);
     parentLayout->addWidget(inputPanel);
 }
 
@@ -183,7 +184,7 @@ QWidget* ChatWindow::buildBubble(const ChatMessage& message, QWidget* parent) {
     auto* bubble = new QFrame(parent);
     bubble->setObjectName(QStringLiteral("Bubble"));
     const QString bg = message.fromSelf ? QStringLiteral("#1a3a80") : palette_.accent.name();
-    bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:12px; }")
+    bubble->setStyleSheet(QStringLiteral("QFrame#Bubble { background:%1; border-radius:12px; border:none; }")
                               .arg(bg));
 
     auto* layout = new QHBoxLayout(bubble);
