@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QLinearGradient>
 #include <QPainter>
+#include <QPushButton>
 #include <QScrollBar>
 #include <QStyle>
 #include <QTimer>
