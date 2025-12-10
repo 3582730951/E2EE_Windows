@@ -14,26 +14,49 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
     : QMainWindow(parent), palette_(palette), entries_(entries) {
     setWindowTitle(title);
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    setAttribute(Qt::WA_TranslucentBackground, true);
+    setStyleSheet(QStringLiteral("background:transparent;"));
     resize(360, 520);
 
     auto* central = new QWidget(this);
+    central->setStyleSheet(QStringLiteral("background:transparent;"));
     auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(8, 10, 12, 10);
-    root->setSpacing(6);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
-    titleBar_ = buildTitleBar(title, central);
-    root->addWidget(titleBar_);
+    auto* shell = new QFrame(central);
+    shell->setObjectName(QStringLiteral("ListShell"));
+    shell->setStyleSheet(QStringLiteral(
+        "QFrame#ListShell { background:%1; border-radius:14px; border:none; }")
+                             .arg(QStringLiteral("#101018")));
+    auto* shellLayout = new QVBoxLayout(shell);
+    shellLayout->setContentsMargins(10, 10, 10, 10);
+    shellLayout->setSpacing(8);
 
-    list_ = new QListWidget(central);
+    titleBar_ = buildTitleBar(title, shell);
+    shellLayout->addWidget(titleBar_);
+
+    list_ = new QListWidget(shell);
     list_->setFrameShape(QFrame::NoFrame);
-    list_->setSpacing(6);
+    list_->setSpacing(8);
     list_->setSelectionMode(QAbstractItemView::SingleSelection);
     list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    root->addWidget(list_, 1);
+    list_->setStyleSheet(QStringLiteral(
+        "QListWidget { background:transparent; border:none; outline:0; padding:2px; }"
+        "QListWidget::item { margin:0; }"
+        "QScrollBar:vertical { background:transparent; width:6px; margin:4px 0; }"
+        "QScrollBar::handle:vertical { background:#3a3f47; border-radius:3px; min-height:30px; }"
+        "QScrollBar::handle:vertical:hover { background:%1; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0px; }")
+                           .arg(palette_.accentHover.name()));
+    shellLayout->addWidget(list_, 1);
+
+    root->addWidget(shell);
 
     setCentralWidget(central);
 
     populate();
+    refreshSelection();
 
     connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
         if (!item) {
@@ -44,6 +67,7 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
         const QString name = item->data(Qt::UserRole + 2).toString();
         emit entrySelected(id, isGroup, name);
     });
+    connect(list_, &QListWidget::itemSelectionChanged, this, &ListWindow::refreshSelection);
 }
 
 void ListWindow::populate() {
@@ -55,7 +79,7 @@ void ListWindow::populate() {
 
     for (const auto& entry : entries_) {
         auto* item = new QListWidgetItem(list_);
-        item->setSizeHint(QSize(320, 64));
+        item->setSizeHint(QSize(320, 68));
         item->setData(Qt::UserRole, entry.id);
         item->setData(Qt::UserRole + 1, entry.isGroup);
         item->setData(Qt::UserRole + 2, entry.name);
@@ -66,13 +90,20 @@ void ListWindow::populate() {
 
 QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
     auto* item = new QWidget(parent);
+    item->setObjectName(QStringLiteral("ListItem"));
+    const QString baseBg = QStringLiteral("#12121c");
+    item->setStyleSheet(QStringLiteral(
+        "QWidget#ListItem { background:%1; border-radius:10px; border:1px solid %2; }"
+        "QWidget#ListItem[selected=\"true\"] { background:%3; border:1px solid %3; }")
+                            .arg(baseBg, palette_.border.name(), palette_.accent.name()));
+
     auto* row = new QHBoxLayout(item);
-    row->setContentsMargins(8, 8, 8, 8);
-    row->setSpacing(6);
+    row->setContentsMargins(10, 10, 10, 10);
+    row->setSpacing(10);
 
     auto* indicator = new QLabel(item);
-    indicator->setFixedSize(10, 10);
-    indicator->setStyleSheet(QStringLiteral("background:%1; border-radius:5px;")
+    indicator->setFixedSize(12, 12);
+    indicator->setStyleSheet(QStringLiteral("background:%1; border-radius:6px;")
                                  .arg(entry.indicator.name()));
     row->addWidget(indicator, 0, Qt::AlignTop);
 
@@ -81,7 +112,7 @@ QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
     textCol->setSpacing(2);
 
     auto* name = new QLabel(entry.name, item);
-    name->setStyleSheet(QStringLiteral("color:%1; font-weight:600;")
+    name->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:13px;")
                             .arg(palette_.textPrimary.name()));
     textCol->addWidget(name);
 
@@ -106,11 +137,11 @@ QWidget* ListWindow::buildItem(const ListEntry& entry, QWidget* parent) {
 QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
     auto* bar = new QWidget(parent);
     bar->setObjectName(QStringLiteral("ListTitleBar"));
-    bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:8px; }")
+    bar->setStyleSheet(QStringLiteral("QWidget#ListTitleBar { background:%1; border-radius:10px; }")
                            .arg(palette_.panel.name()));
     auto* layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(7, 4, 11, 4);
-    layout->setSpacing(5);
+    layout->setContentsMargins(8, 3, 8, 3);
+    layout->setSpacing(6);
 
     auto* lbl = new QLabel(title, bar);
     lbl->setStyleSheet(QStringLiteral("color:%1; font-weight:700; font-size:14px;")
@@ -121,8 +152,9 @@ QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
     auto makeBtn = [&](const QString& text) {
         auto* btn = new QToolButton(bar);
         btn->setText(text);
-        btn->setFixedSize(22, 22);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:11px; font-weight:700;")
+        btn->setFixedSize(18, 18);
+        btn->setStyleSheet(QStringLiteral(
+                               "background:%1; color:%2; border:none; border-radius:9px; font-weight:900; font-size:10px; padding:0;")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;

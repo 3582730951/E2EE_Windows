@@ -23,17 +23,17 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     setObjectName(QStringLiteral("Panel"));
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(6, 5, 6, 6);
-    root->setSpacing(4);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
     // rounded wrapper for whole content
     auto* wrapper = new QFrame(this);
     wrapper->setObjectName(QStringLiteral("Wrapper"));
     wrapper->setStyleSheet(QStringLiteral(
-        "QFrame#Wrapper { background:%1; border-radius:18px; border:1px solid #1f1f2b; }")
+        "QFrame#Wrapper { background:%1; border-radius:14px; border:none; }")
                                .arg(QStringLiteral("#101018")));
     auto* wrapLayout = new QVBoxLayout(wrapper);
-    wrapLayout->setContentsMargins(8, 8, 8, 8);
+    wrapLayout->setContentsMargins(6, 6, 6, 6);
     wrapLayout->setSpacing(4);
 
     buildHeader(wrapLayout);
@@ -54,7 +54,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     titleBar_->setStyleSheet(QStringLiteral("QWidget#TitleBar { background:%1; border-radius:12px; }")
                                  .arg(QStringLiteral("#11111a")));
     auto* layout = new QHBoxLayout(titleBar_);
-    layout->setContentsMargins(6, 2, 10, 2);
+    layout->setContentsMargins(6, 2, 6, 2);
     layout->setSpacing(4);
 
     titleLabel_ = new QLabel(tr(""), titleBar_);

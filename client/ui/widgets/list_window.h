@@ -38,6 +38,7 @@ private:
     void populate();
     QWidget* buildItem(const ListEntry& entry, QWidget* parent);
     QWidget* buildTitleBar(const QString& title, QWidget* parent);
+    void refreshSelection();
     bool eventFilter(QObject* watched, QEvent* event) override;
 
     UiPalette palette_;
