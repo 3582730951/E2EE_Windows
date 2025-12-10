@@ -200,7 +200,7 @@ void ListWindow::refreshSelection() {
         if (!widget) {
             continue;
         }
-        widget->setProperty(QStringLiteral("selected"), item->isSelected());
+        widget->setProperty("selected", item->isSelected());
         widget->style()->unpolish(widget);
         widget->style()->polish(widget);
         widget->update();
