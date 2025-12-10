@@ -67,7 +67,7 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
         btn->setFixedSize(35, 35);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:17px; font-weight:900; font-size:14px;")
+        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:17px; font-weight:900; font-size:20px;")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
