@@ -66,10 +66,10 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
     auto makeBtn = [&](const QString& text) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
-        btn->setFixedSize(35, 35);
+        btn->setFixedSize(18, 18);
         btn->setStyleSheet(QStringLiteral(
-                               "background:%1; color:%2; border:none; border-radius:17px;"
-                               "font-weight:900; font-size:20px; padding:0; font-family:'Segoe UI Symbol','Microsoft YaHei';")
+                               "background:%1; color:%2; border:none; border-radius:9px;"
+                               "font-weight:900; font-size:10px; padding:0; font-family:'Segoe UI Symbol','Microsoft YaHei';")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
