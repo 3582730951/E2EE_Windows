@@ -30,8 +30,8 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
         "QFrame#ListShell { background:%1; border-radius:14px; border:none; }")
                              .arg(QStringLiteral("#101018")));
     auto* shellLayout = new QVBoxLayout(shell);
-    shellLayout->setContentsMargins(10, 10, 10, 10);
-    shellLayout->setSpacing(8);
+    shellLayout->setContentsMargins(0, 0, 0, 0);
+    shellLayout->setSpacing(6);
 
     titleBar_ = buildTitleBar(title, shell);
     shellLayout->addWidget(titleBar_);

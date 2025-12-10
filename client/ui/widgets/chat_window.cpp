@@ -33,8 +33,8 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
         "QFrame#Wrapper { background:%1; border-radius:14px; border:none; }")
                                .arg(QStringLiteral("#101018")));
     auto* wrapLayout = new QVBoxLayout(wrapper);
-    wrapLayout->setContentsMargins(6, 6, 6, 6);
-    wrapLayout->setSpacing(4);
+    wrapLayout->setContentsMargins(0, 0, 0, 0);
+    wrapLayout->setSpacing(0);
 
     buildHeader(wrapLayout);
     buildMessageArea(wrapLayout);
