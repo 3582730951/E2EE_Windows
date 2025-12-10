@@ -190,6 +190,23 @@ QWidget* ListWindow::buildTitleBar(const QString& title, QWidget* parent) {
     return bar;
 }
 
+void ListWindow::refreshSelection() {
+    if (!list_) {
+        return;
+    }
+    for (int i = 0; i < list_->count(); ++i) {
+        auto* item = list_->item(i);
+        QWidget* widget = list_->itemWidget(item);
+        if (!widget) {
+            continue;
+        }
+        widget->setProperty(QStringLiteral("selected"), item->isSelected());
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    }
+}
+
 bool ListWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == titleBar_) {
         if (event->type() == QEvent::MouseButtonPress) {
