@@ -38,14 +38,14 @@ ListWindow::ListWindow(const QString& title, const QVector<ListEntry>& entries,
 
     list_ = new QListWidget(shell);
     list_->setFrameShape(QFrame::NoFrame);
-    list_->setSpacing(8);
+    list_->setSpacing(0);
     list_->setSelectionMode(QAbstractItemView::SingleSelection);
     list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     list_->setStyleSheet(QStringLiteral(
-        "QListWidget { background:transparent; border:none; outline:0; padding:2px; }"
+        "QListWidget { background:transparent; border:none; outline:0; padding:0px; }"
         "QListWidget::item { margin:0; }"
-        "QScrollBar:vertical { background:transparent; width:6px; margin:4px 0; }"
-        "QScrollBar::handle:vertical { background:#3a3f47; border-radius:3px; min-height:30px; }"
+        "QScrollBar:vertical { background:transparent; width:8px; margin:0; }"
+        "QScrollBar::handle:vertical { background:#3a3f47; border-radius:4px; min-height:30px; }"
         "QScrollBar::handle:vertical:hover { background:%1; }"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0px; }")
                            .arg(palette_.accentHover.name()));
