@@ -67,12 +67,14 @@ void ChatWindow::buildHeader(QVBoxLayout* parentLayout) {
         auto* btn = new QToolButton(titleBar_);
         btn->setText(text);
         btn->setFixedSize(35, 35);
-        btn->setStyleSheet(QStringLiteral("background:%1; color:%2; border:none; border-radius:17px; font-weight:900; font-size:20px;")
+        btn->setStyleSheet(QStringLiteral(
+                               "background:%1; color:%2; border:none; border-radius:17px;"
+                               "font-weight:900; font-size:20px; padding:0; font-family:'Segoe UI Symbol','Microsoft YaHei';")
                                .arg(palette_.buttonDark.name(), palette_.textPrimary.name()));
         btn->setCursor(Qt::PointingHandCursor);
         return btn;
     };
-    btnMin_ = makeBtn(QStringLiteral("-"));
+    btnMin_ = makeBtn(QStringLiteral("–"));
     btnMax_ = makeBtn(QStringLiteral("□"));
     btnClose_ = makeBtn(QStringLiteral("×"));
     
