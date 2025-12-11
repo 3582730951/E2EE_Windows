@@ -86,7 +86,21 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
-          Copy-Item server/config.example.ini artifacts/server-win/config.ini
+          @'
+[mode]
+mode=1  # 0=mysql, 1=demo
+[mysql]
+mysql_ip=
+mysql_port=
+mysql_database=
+mysql_username=
+mysql_password=
+[server]
+list_port=9000
+rotation_threshold=10000
+offline_dir=offline_store
+debug_log=0
+'@ | Out-File -Encoding ASCII artifacts/server-win/config.ini
           Copy-Item server/test_user.txt artifacts/server-win/test_user.txt -ErrorAction SilentlyContinue
           Compress-Archive -Path artifacts/server-win/* -DestinationPath server-win-${{ env.BUILD_TYPE }}.zip
 
@@ -155,6 +169,11 @@ jobs:
           if (Test-Path $iconSrc) {
             Copy-Item "$iconSrc/*.svg" $dist -Force -ErrorAction SilentlyContinue
           }
+          @'
+[client]
+server_ip=127.0.0.1
+server_port=9000
+'@ | Out-File -Encoding ASCII (Join-Path $dist "client_config.ini")
 
       - name: Package client UI
         run: |
