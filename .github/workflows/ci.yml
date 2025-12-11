@@ -99,23 +99,23 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          $targets = @(
-            "build/client/ui/qq_main_list/qq_main_list.exe",
-            "build/client/ui/qq_login/qq_login.exe",
-            "build/client/ui/qq_group_chat/qq_group_chat.exe",
-            "build/client/ui/qq_chat_empty/qq_chat_empty.exe"
-          )
-          foreach ($exe in $targets) {
-            if (Test-Path $exe) {
-              & "$qtbin/windeployqt.exe" $exe
-            } else {
-              Write-Host "skip deploy for missing $exe"
-            }
+          $exe = "build/client/ui/qq_main_list/qq_main_list.exe"
+          $dist = "build/client/ui/dist"
+          if (!(Test-Path $exe)) {
+            Write-Error "main ui exe not found at $exe"
+            exit 1
+          }
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item $exe (Join-Path $dist "mi_e2ee.exe") -Force
+          & "$qtbin/windeployqt.exe" "--dir" $dist (Join-Path $dist "mi_e2ee.exe")
+          $iconSrc = "client/ui/icons"
+          if (Test-Path $iconSrc) {
+            Copy-Item "$iconSrc/*.svg" $dist -Force -ErrorAction SilentlyContinue
           }
 
       - name: Package client UI
         run: |
-          Compress-Archive -Path build/client/ui/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
+          Compress-Archive -Path build/client/ui/dist/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
 
       - name: Upload client UI artifact
         uses: actions/upload-artifact@v4
