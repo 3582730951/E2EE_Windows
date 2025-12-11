@@ -26,16 +26,26 @@ target_compile_definitions(mi_ui_common PUBLIC
 )
 
 function(copy_ref_images target_name)
-    add_custom_command(TARGET ${target_name} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:${target_name}>/assets/ref"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${UI_ROOT}/../assets/ref/ref_login.png
-            ${UI_ROOT}/../assets/ref/ref_main_list.png
-            ${UI_ROOT}/../assets/ref/ref_group_chat.png
-            ${UI_ROOT}/../assets/ref/ref_chat_empty.png
-            "$<TARGET_FILE_DIR:${target_name}>/assets/ref"
-    )
+    set(REF_DIR "${UI_ROOT}/../assets/ref")
+    if(NOT EXISTS "${REF_DIR}")
+        message(WARNING "ref assets not found at ${REF_DIR}, skip copying")
+        return()
+    endif()
+    file(GLOB REF_FILES "${REF_DIR}/*.png")
+    if(REF_FILES)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:${target_name}>/assets/ref"
+        )
+        foreach(ref ${REF_FILES})
+            get_filename_component(ref_name "${ref}" NAME)
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${ref}"
+                    "$<TARGET_FILE_DIR:${target_name}>/assets/ref/${ref_name}"
+            )
+        endforeach()
+    endif()
 endfunction()
 
 function(add_ui_executable target_name)
