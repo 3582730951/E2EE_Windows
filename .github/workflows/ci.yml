@@ -9,10 +9,6 @@ on:
 env:
   BUILD_TYPE: Release
 
-defaults:
-  run:
-    working-directory: core
-
 jobs:
   server-linux:
     runs-on: ubuntu-latest
