@@ -72,9 +72,12 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure server (Release, no MySQL)
+      - name: Configure server (Release, TCP on, no MySQL)
         run: |
-          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=OFF
+          cmake -G "Ninja" -S server -B build/server-win `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DMI_E2EE_ENABLE_MYSQL=OFF `
+            -DMI_E2EE_ENABLE_TCP_SERVER=ON
 
       - name: Build server
         run: cmake --build build/server-win
@@ -83,7 +86,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
-          Copy-Item server/config.example.ini artifacts/server-win/config.example.ini
+          Copy-Item server/config.example.ini artifacts/server-win/config.ini
+          Copy-Item server/test_user.txt artifacts/server-win/test_user.txt -ErrorAction SilentlyContinue
           Compress-Archive -Path artifacts/server-win/* -DestinationPath server-win-${{ env.BUILD_TYPE }}.zip
 
       - name: Upload server-windows artifact
