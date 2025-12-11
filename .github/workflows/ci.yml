@@ -99,25 +99,23 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          & "$qtbin/windeployqt.exe" --qmldir client/ui/qml build/client/ui/mi_e2ee_client_ui.exe
+          $targets = @(
+            "build/client/ui/qq_main_list/qq_main_list.exe",
+            "build/client/ui/qq_login/qq_login.exe",
+            "build/client/ui/qq_group_chat/qq_group_chat.exe",
+            "build/client/ui/qq_chat_empty/qq_chat_empty.exe"
+          )
+          foreach ($exe in $targets) {
+            if (Test-Path $exe) {
+              & "$qtbin/windeployqt.exe" $exe
+            } else {
+              Write-Host "skip deploy for missing $exe"
+            }
+          }
 
       - name: Package client UI
         run: |
-          New-Item -ItemType Directory -Force artifacts/client-ui | Out-Null
-          Copy-Item build/client/ui/mi_e2ee_client_ui.exe artifacts/client-ui/
-          Copy-Item build/client/ui/*.dll artifacts/client-ui/ -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/qt artifacts/client-ui/qt -Recurse -ErrorAction SilentlyContinue
-          # 包含 windeploy 输出的 Qt QML 依赖和源 QML
-          Copy-Item build/client/ui/qml artifacts/client-ui/qml -Recurse -ErrorAction SilentlyContinue
-          Copy-Item client/ui/qml/* artifacts/client-ui/qml/ -Recurse -Force
-          Copy-Item "$Env:QT_ROOT_DIR/qml/*" artifacts/client-ui/qml/ -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/platforms artifacts/client-ui/platforms -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/imageformats artifacts/client-ui/imageformats -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/iconengines artifacts/client-ui/iconengines -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/networkinformation artifacts/client-ui/networkinformation -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/tls artifacts/client-ui/tls -Recurse -ErrorAction SilentlyContinue
-          Copy-Item build/client/ui/generic artifacts/client-ui/generic -Recurse -ErrorAction SilentlyContinue
-          Compress-Archive -Path artifacts/client-ui/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
+          Compress-Archive -Path build/client/ui/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
 
       - name: Upload client UI artifact
         uses: actions/upload-artifact@v4
