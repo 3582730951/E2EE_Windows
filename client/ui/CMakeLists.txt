@@ -1,66 +1,50 @@
 cmake_minimum_required(VERSION 3.15)
 project(mi_e2ee_client_ui LANGUAGES CXX)
 
-find_package(Qt6 QUIET COMPONENTS Widgets Gui REQUIRED)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-qt_standard_project_setup()
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-set(UI_COMMON_INCLUDES
-    ../include
-    ../../server/include
-    ../../shard
+set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(UI_COMMON_SOURCES
+    common/FramelessWindowBase.cpp
+    common/IconButton.cpp
+    common/OverlayWidget.cpp
+    common/Theme.cpp
 )
 
-qt_add_executable(mi_e2ee_client_desktop
-    widget_main.cpp
-    widgets/theme.h
-    widgets/login_dialog.cpp
-    widgets/login_dialog.h
-    widgets/chat_window.cpp
-    widgets/chat_window.h
-    widgets/main_window.cpp
-    widgets/main_window.h
-    widgets/list_window.cpp
-    widgets/list_window.h
+add_library(mi_ui_common STATIC ${UI_COMMON_SOURCES})
+target_include_directories(mi_ui_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common)
+target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets)
+target_compile_definitions(mi_ui_common PUBLIC
+    UI_REF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/ref"
 )
 
-target_link_libraries(mi_e2ee_client_desktop
-    PRIVATE
-      Qt6::Widgets
-      Qt6::Gui
-      mi_e2ee_client_core
-)
+function(copy_ref_images target_name)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${target_name}>/assets/ref"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${UI_ROOT}/../assets/ref/ref_login.png
+            ${UI_ROOT}/../assets/ref/ref_main_list.png
+            ${UI_ROOT}/../assets/ref/ref_group_chat.png
+            ${UI_ROOT}/../assets/ref/ref_chat_empty.png
+            "$<TARGET_FILE_DIR:${target_name}>/assets/ref"
+    )
+endfunction()
 
-target_include_directories(mi_e2ee_client_desktop PRIVATE ${UI_COMMON_INCLUDES})
+function(add_ui_executable target_name)
+    add_executable(${target_name} ${ARGN})
+    target_link_libraries(${target_name} PRIVATE mi_ui_common Qt6::Widgets)
+    copy_ref_images(${target_name})
+endfunction()
 
-qt_add_executable(mi_e2ee_client_ui
-    main.cpp
-    widgets/theme.h
-    widgets/login_dialog.cpp
-    widgets/login_dialog.h
-    widgets/chat_window.cpp
-    widgets/chat_window.h
-    widgets/main_window.cpp
-    widgets/main_window.h
-    widgets/list_window.cpp
-    widgets/list_window.h
-)
-
-target_link_libraries(mi_e2ee_client_ui
-    PRIVATE
-      Qt6::Widgets
-      Qt6::Gui
-      mi_e2ee_client_core
-)
-
-target_include_directories(mi_e2ee_client_ui PRIVATE ${UI_COMMON_INCLUDES})
-
-add_custom_command(TARGET mi_e2ee_client_ui POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:mi_e2ee_client_ui>/qml
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/qml $<TARGET_FILE_DIR:mi_e2ee_client_ui>/qml
-)
-
-if(MSVC)
-  target_compile_options(mi_e2ee_client_ui PRIVATE /utf-8)
-  target_compile_options(mi_e2ee_client_desktop PRIVATE /utf-8)
-endif()
+add_subdirectory(qq_login)
+add_subdirectory(qq_main_list)
+add_subdirectory(qq_group_chat)
+add_subdirectory(qq_chat_empty)
