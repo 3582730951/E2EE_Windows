@@ -70,10 +70,10 @@ jobs:
       - name: Install Qt (MinGW)
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.3'
+          version: '6.7.2'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
+          arch: 'win64_msvc2019_64'
           dir: 'C:\\Qt'
           modules: 'qtsvg qttools qtimageformats'
           use-official: true
