@@ -76,6 +76,7 @@ jobs:
           arch: 'win64_msvc2019_64'
           dir: 'C:\\Qt'
           modules: 'qtbase qtsvg qttools qtimageformats'
+          use-official: true
           cache: true
 
       - name: Add Qt to PATH
