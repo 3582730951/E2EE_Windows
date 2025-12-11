@@ -75,7 +75,7 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           dir: 'C:\\Qt'
-          modules: 'qtsvg qttools qtimageformats'
+          modules: 'qtsvg'
           use-official: true
           cache: true
 
