@@ -84,6 +84,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
+          Copy-Item build/server-win/*.dll artifacts/server-win/ -ErrorAction SilentlyContinue
           @"
           [mode]
           mode=1  # 0=mysql, 1=demo
