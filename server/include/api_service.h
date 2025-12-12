@@ -78,11 +78,20 @@ struct OfflinePullResponse {
 
 struct FriendListResponse {
   bool success{false};
-  std::vector<std::string> friends;
+  struct Entry {
+    std::string username;
+    std::string remark;
+  };
+  std::vector<Entry> friends;
   std::string error;
 };
 
 struct FriendAddResponse {
+  bool success{false};
+  std::string error;
+};
+
+struct FriendRemarkResponse {
   bool success{false};
   std::string error;
 };
@@ -125,12 +134,17 @@ class ApiService {
                                      const std::string& recipient,
                                      std::vector<std::uint8_t> payload);
 
- OfflinePullResponse PullOffline(const std::string& token);
+  OfflinePullResponse PullOffline(const std::string& token);
 
   FriendListResponse ListFriends(const std::string& token);
 
- FriendAddResponse AddFriend(const std::string& token,
-                              const std::string& friend_username);
+  FriendAddResponse AddFriend(const std::string& token,
+                              const std::string& friend_username,
+                              const std::string& remark = "");
+
+  FriendRemarkResponse SetFriendRemark(const std::string& token,
+                                       const std::string& friend_username,
+                                       const std::string& remark);
 
  std::uint32_t default_group_threshold() const { return group_threshold_; }
 
@@ -145,6 +159,9 @@ class ApiService {
 
   std::mutex friends_mutex_;
   std::unordered_map<std::string, std::unordered_set<std::string>> friends_;
+  std::unordered_map<std::string,
+                     std::unordered_map<std::string, std::string>>
+      friend_remarks_;
 };
 
 }  // namespace mi::server

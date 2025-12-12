@@ -283,6 +283,7 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
         "CREATE TABLE IF NOT EXISTS user_friend ("
         "username VARCHAR(64) NOT NULL,"
         "friend_username VARCHAR(64) NOT NULL,"
+        "remark VARCHAR(128) NOT NULL DEFAULT '',"
         "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
         "PRIMARY KEY(username, friend_username),"
         "INDEX idx_friend_username(friend_username)"
@@ -292,9 +293,13 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
       mysql_close(conn);
       return resp;
     }
+    // Best-effort migration for older schemas missing remark column.
+    mysql_query(conn,
+                "ALTER TABLE user_friend "
+                "ADD COLUMN remark VARCHAR(128) NOT NULL DEFAULT ''");
 
     const char* query =
-        "SELECT friend_username FROM user_friend WHERE username=? "
+        "SELECT friend_username, remark FROM user_friend WHERE username=? "
         "ORDER BY friend_username";
     MYSQL_STMT* stmt = mysql_stmt_init(conn);
     if (!stmt) {
@@ -333,17 +338,28 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
 
     char name_buf[256] = {0};
     unsigned long name_len = 0;
-    MYSQL_BIND bind_result[1];
+    char remark_buf[256] = {0};
+    unsigned long remark_len = 0;
+    MYSQL_BIND bind_result[2];
     std::memset(bind_result, 0, sizeof(bind_result));
-    using BindBool = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
-    BindBool is_null = 0;
-    BindBool error_flag = 0;
+    using BindBool0 = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
+    using BindBool1 = std::remove_pointer_t<decltype(bind_result[1].is_null)>;
+    BindBool0 name_is_null = 0;
+    BindBool0 name_error_flag = 0;
+    BindBool1 remark_is_null = 0;
+    BindBool1 remark_error_flag = 0;
     bind_result[0].buffer_type = MYSQL_TYPE_STRING;
     bind_result[0].buffer = name_buf;
     bind_result[0].buffer_length = sizeof(name_buf) - 1;
     bind_result[0].length = &name_len;
-    bind_result[0].is_null = &is_null;
-    bind_result[0].error = &error_flag;
+    bind_result[0].is_null = &name_is_null;
+    bind_result[0].error = &name_error_flag;
+    bind_result[1].buffer_type = MYSQL_TYPE_STRING;
+    bind_result[1].buffer = remark_buf;
+    bind_result[1].buffer_length = sizeof(remark_buf) - 1;
+    bind_result[1].length = &remark_len;
+    bind_result[1].is_null = &remark_is_null;
+    bind_result[1].error = &remark_error_flag;
 
     if (mysql_stmt_bind_result(stmt, bind_result) != 0) {
       resp.error = "mysql_stmt_bind_result failed";
@@ -359,7 +375,7 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
       return resp;
     }
 
-    std::vector<std::string> out;
+    std::vector<FriendListResponse::Entry> out;
     while (true) {
       const int fetch_status = mysql_stmt_fetch(stmt);
       if (fetch_status == MYSQL_NO_DATA) {
@@ -372,7 +388,7 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
         mysql_close(conn);
         return resp;
       }
-      if (is_null) {
+      if (name_is_null) {
         continue;
       }
       if (name_len >= sizeof(name_buf)) {
@@ -383,39 +399,74 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
         return resp;
       }
       name_buf[name_len] = '\0';
-      out.emplace_back(name_buf, name_len);
+      if (!remark_is_null) {
+        if (remark_len >= sizeof(remark_buf)) {
+          resp.error = "remark too long";
+          mysql_stmt_free_result(stmt);
+          mysql_stmt_close(stmt);
+          mysql_close(conn);
+          return resp;
+        }
+        remark_buf[remark_len] = '\0';
+      } else {
+        remark_len = 0;
+      }
+      FriendListResponse::Entry e;
+      e.username.assign(name_buf, name_len);
+      if (remark_len > 0) {
+        e.remark.assign(remark_buf, remark_len);
+      }
+      out.push_back(std::move(e));
     }
 
     mysql_stmt_free_result(stmt);
     mysql_stmt_close(stmt);
     mysql_close(conn);
 
-    std::sort(out.begin(), out.end());
+    std::sort(out.begin(), out.end(),
+              [](const FriendListResponse::Entry& a,
+                 const FriendListResponse::Entry& b) {
+                return a.username < b.username;
+              });
     resp.success = true;
     resp.friends = std::move(out);
     return resp;
   }
 #endif
 
-  std::vector<std::string> out;
+  std::vector<FriendListResponse::Entry> out;
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
     auto it = friends_.find(sess->username);
     if (it != friends_.end()) {
       out.reserve(it->second.size());
+      const auto remarks_it = friend_remarks_.find(sess->username);
       for (const auto& f : it->second) {
-        out.push_back(f);
+        FriendListResponse::Entry e;
+        e.username = f;
+        if (remarks_it != friend_remarks_.end()) {
+          const auto r = remarks_it->second.find(f);
+          if (r != remarks_it->second.end()) {
+            e.remark = r->second;
+          }
+        }
+        out.push_back(std::move(e));
       }
     }
   }
-  std::sort(out.begin(), out.end());
+  std::sort(out.begin(), out.end(),
+            [](const FriendListResponse::Entry& a,
+               const FriendListResponse::Entry& b) {
+              return a.username < b.username;
+            });
   resp.success = true;
   resp.friends = std::move(out);
   return resp;
 }
 
 FriendAddResponse ApiService::AddFriend(const std::string& token,
-                                        const std::string& friend_username) {
+                                        const std::string& friend_username,
+                                        const std::string& remark) {
   FriendAddResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
@@ -432,6 +483,10 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
   }
   if (friend_username == sess->username) {
     resp.error = "cannot add self";
+    return resp;
+  }
+  if (remark.size() > 128) {
+    resp.error = "remark too long";
     return resp;
   }
 
@@ -463,6 +518,7 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
         "CREATE TABLE IF NOT EXISTS user_friend ("
         "username VARCHAR(64) NOT NULL,"
         "friend_username VARCHAR(64) NOT NULL,"
+        "remark VARCHAR(128) NOT NULL DEFAULT '',"
         "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
         "PRIMARY KEY(username, friend_username),"
         "INDEX idx_friend_username(friend_username)"
@@ -472,10 +528,13 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
       mysql_close(conn);
       return resp;
     }
+    mysql_query(conn,
+                "ALTER TABLE user_friend "
+                "ADD COLUMN remark VARCHAR(128) NOT NULL DEFAULT ''");
 
     const char* query =
-        "INSERT IGNORE INTO user_friend(username, friend_username) VALUES(?, "
-        "?)";
+        "INSERT IGNORE INTO user_friend(username, friend_username, remark) "
+        "VALUES(?, ?, ?)";
     MYSQL_STMT* stmt = mysql_stmt_init(conn);
     if (!stmt) {
       resp.error = "mysql_stmt_init failed";
@@ -492,8 +551,9 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
     }
 
     auto bind_and_exec = [&](const std::string& u,
-                             const std::string& f) -> bool {
-      MYSQL_BIND bind_param[2];
+                             const std::string& f,
+                             const std::string& r) -> bool {
+      MYSQL_BIND bind_param[3];
       std::memset(bind_param, 0, sizeof(bind_param));
       bind_param[0].buffer_type = MYSQL_TYPE_STRING;
       bind_param[0].buffer = const_cast<char*>(u.c_str());
@@ -501,14 +561,17 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
       bind_param[1].buffer_type = MYSQL_TYPE_STRING;
       bind_param[1].buffer = const_cast<char*>(f.c_str());
       bind_param[1].buffer_length = static_cast<unsigned long>(f.size());
+      bind_param[2].buffer_type = MYSQL_TYPE_STRING;
+      bind_param[2].buffer = const_cast<char*>(r.c_str());
+      bind_param[2].buffer_length = static_cast<unsigned long>(r.size());
       if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
         return false;
       }
       return mysql_stmt_execute(stmt) == 0;
     };
 
-    const bool ok1 = bind_and_exec(sess->username, friend_username);
-    const bool ok2 = bind_and_exec(friend_username, sess->username);
+    const bool ok1 = bind_and_exec(sess->username, friend_username, remark);
+    const bool ok2 = bind_and_exec(friend_username, sess->username, "");
 
     mysql_stmt_close(stmt);
     mysql_close(conn);
@@ -526,6 +589,216 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
     std::lock_guard<std::mutex> lock(friends_mutex_);
     friends_[sess->username].insert(friend_username);
     friends_[friend_username].insert(sess->username);
+    if (!remark.empty()) {
+      friend_remarks_[sess->username][friend_username] = remark;
+    }
+  }
+  resp.success = true;
+  return resp;
+}
+
+FriendRemarkResponse ApiService::SetFriendRemark(const std::string& token,
+                                                 const std::string& friend_username,
+                                                 const std::string& remark) {
+  FriendRemarkResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  auto sess = sessions_->GetSession(token);
+  if (!sess.has_value()) {
+    resp.error = "unauthorized";
+    return resp;
+  }
+  if (friend_username.empty()) {
+    resp.error = "friend username empty";
+    return resp;
+  }
+  if (remark.size() > 128) {
+    resp.error = "remark too long";
+    return resp;
+  }
+
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+      resp.error = "mysql_init failed";
+      return resp;
+    }
+    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
+                                    friend_mysql_->username.c_str(),
+                                    friend_mysql_->password.get().c_str(),
+                                    friend_mysql_->database.c_str(),
+                                    friend_mysql_->port, nullptr, 0);
+    if (!res) {
+      resp.error = "mysql_connect failed";
+      mysql_close(conn);
+      return resp;
+    }
+
+    const char* ddl =
+        "CREATE TABLE IF NOT EXISTS user_friend ("
+        "username VARCHAR(64) NOT NULL,"
+        "friend_username VARCHAR(64) NOT NULL,"
+        "remark VARCHAR(128) NOT NULL DEFAULT '',"
+        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "PRIMARY KEY(username, friend_username),"
+        "INDEX idx_friend_username(friend_username)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+    if (mysql_query(conn, ddl) != 0) {
+      resp.error = "mysql_schema_failed";
+      mysql_close(conn);
+      return resp;
+    }
+    mysql_query(conn,
+                "ALTER TABLE user_friend "
+                "ADD COLUMN remark VARCHAR(128) NOT NULL DEFAULT ''");
+
+    // Ensure friend relation exists.
+    {
+      const char* exist_query =
+          "SELECT 1 FROM user_friend WHERE username=? AND friend_username=? "
+          "LIMIT 1";
+      MYSQL_STMT* stmt = mysql_stmt_init(conn);
+      if (!stmt) {
+        resp.error = "mysql_stmt_init failed";
+        mysql_close(conn);
+        return resp;
+      }
+      if (mysql_stmt_prepare(stmt, exist_query,
+                             static_cast<unsigned long>(
+                                 std::strlen(exist_query))) != 0) {
+        resp.error = "mysql_stmt_prepare failed";
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      MYSQL_BIND bind_param[2];
+      std::memset(bind_param, 0, sizeof(bind_param));
+      bind_param[0].buffer_type = MYSQL_TYPE_STRING;
+      bind_param[0].buffer = const_cast<char*>(sess->username.c_str());
+      bind_param[0].buffer_length =
+          static_cast<unsigned long>(sess->username.size());
+      bind_param[1].buffer_type = MYSQL_TYPE_STRING;
+      bind_param[1].buffer = const_cast<char*>(friend_username.c_str());
+      bind_param[1].buffer_length =
+          static_cast<unsigned long>(friend_username.size());
+      if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
+        resp.error = "mysql_stmt_bind_param failed";
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      if (mysql_stmt_execute(stmt) != 0) {
+        resp.error = "mysql_stmt_execute failed";
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      int value = 0;
+      MYSQL_BIND bind_result[1];
+      std::memset(bind_result, 0, sizeof(bind_result));
+      using BindBool = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
+      BindBool is_null = 0;
+      BindBool error_flag = 0;
+      bind_result[0].buffer_type = MYSQL_TYPE_LONG;
+      bind_result[0].buffer = &value;
+      bind_result[0].is_null = &is_null;
+      bind_result[0].error = &error_flag;
+      if (mysql_stmt_bind_result(stmt, bind_result) != 0) {
+        resp.error = "mysql_stmt_bind_result failed";
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      if (mysql_stmt_store_result(stmt) != 0) {
+        resp.error = "mysql_stmt_store_result failed";
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      const int fetch_status = mysql_stmt_fetch(stmt);
+      mysql_stmt_free_result(stmt);
+      mysql_stmt_close(stmt);
+      if (fetch_status == MYSQL_NO_DATA || is_null) {
+        resp.error = "not friends";
+        mysql_close(conn);
+        return resp;
+      }
+      if (fetch_status != 0 && fetch_status != MYSQL_DATA_TRUNCATED) {
+        resp.error = "mysql_stmt_fetch failed";
+        mysql_close(conn);
+        return resp;
+      }
+    }
+
+    const char* query =
+        "UPDATE user_friend SET remark=? WHERE username=? AND friend_username=?";
+    MYSQL_STMT* stmt = mysql_stmt_init(conn);
+    if (!stmt) {
+      resp.error = "mysql_stmt_init failed";
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_prepare(stmt, query,
+                           static_cast<unsigned long>(std::strlen(query))) !=
+        0) {
+      resp.error = "mysql_stmt_prepare failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+    MYSQL_BIND bind_param[3];
+    std::memset(bind_param, 0, sizeof(bind_param));
+    bind_param[0].buffer_type = MYSQL_TYPE_STRING;
+    bind_param[0].buffer = const_cast<char*>(remark.c_str());
+    bind_param[0].buffer_length = static_cast<unsigned long>(remark.size());
+    bind_param[1].buffer_type = MYSQL_TYPE_STRING;
+    bind_param[1].buffer = const_cast<char*>(sess->username.c_str());
+    bind_param[1].buffer_length =
+        static_cast<unsigned long>(sess->username.size());
+    bind_param[2].buffer_type = MYSQL_TYPE_STRING;
+    bind_param[2].buffer = const_cast<char*>(friend_username.c_str());
+    bind_param[2].buffer_length =
+        static_cast<unsigned long>(friend_username.size());
+    if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
+      resp.error = "mysql_stmt_bind_param failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_execute(stmt) != 0) {
+      resp.error = "mysql_stmt_execute failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+
+    resp.success = true;
+    return resp;
+  }
+#endif
+
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    auto it = friends_.find(sess->username);
+    if (it == friends_.end() ||
+        it->second.find(friend_username) == it->second.end()) {
+      resp.error = "not friends";
+      return resp;
+    }
+    if (remark.empty()) {
+      auto r = friend_remarks_.find(sess->username);
+      if (r != friend_remarks_.end()) {
+        r->second.erase(friend_username);
+      }
+    } else {
+      friend_remarks_[sess->username][friend_username] = remark;
+    }
   }
   resp.success = true;
   return resp;

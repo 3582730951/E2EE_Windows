@@ -407,8 +407,8 @@ std::vector<std::vector<std::uint8_t>> ClientCore::PullOffline() {
   return messages;
 }
 
-std::vector<std::string> ClientCore::ListFriends() {
-  std::vector<std::string> out;
+std::vector<ClientCore::FriendEntry> ClientCore::ListFriends() {
+  std::vector<FriendEntry> out;
   if (!EnsureChannel()) {
     return out;
   }
@@ -426,23 +426,49 @@ std::vector<std::string> ClientCore::ListFriends() {
   }
   out.reserve(count);
   for (std::uint32_t i = 0; i < count; ++i) {
-    std::string name;
-    if (!mi::server::proto::ReadString(resp_payload, off, name)) {
+    FriendEntry e;
+    if (!mi::server::proto::ReadString(resp_payload, off, e.username)) {
       break;
     }
-    out.push_back(std::move(name));
+    if (off < resp_payload.size()) {
+      std::string remark;
+      if (!mi::server::proto::ReadString(resp_payload, off, remark)) {
+        break;
+      }
+      e.remark = std::move(remark);
+    }
+    out.push_back(std::move(e));
   }
   return out;
 }
 
-bool ClientCore::AddFriend(const std::string& friend_username) {
+bool ClientCore::AddFriend(const std::string& friend_username,
+                           const std::string& remark) {
   if (!EnsureChannel()) {
     return false;
   }
   std::vector<std::uint8_t> plain;
   mi::server::proto::WriteString(friend_username, plain);
+  mi::server::proto::WriteString(remark, plain);
   std::vector<std::uint8_t> resp_payload;
-  if (!ProcessEncrypted(mi::server::FrameType::kFriendAdd, plain, resp_payload)) {
+  if (!ProcessEncrypted(mi::server::FrameType::kFriendAdd, plain,
+                        resp_payload)) {
+    return false;
+  }
+  return !resp_payload.empty() && resp_payload[0] == 1;
+}
+
+bool ClientCore::SetFriendRemark(const std::string& friend_username,
+                                 const std::string& remark) {
+  if (!EnsureChannel()) {
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(friend_username, plain);
+  mi::server::proto::WriteString(remark, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kFriendRemarkSet, plain,
+                        resp_payload)) {
     return false;
   }
   return !resp_payload.empty() && resp_payload[0] == 1;

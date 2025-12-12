@@ -2,7 +2,7 @@
 
 #include <QObject>
 #include <QString>
-#include <QStringList>
+#include <QVector>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -16,10 +16,18 @@ class BackendAdapter : public QObject {
 public:
     explicit BackendAdapter(QObject *parent = nullptr);
 
+    struct FriendEntry {
+        QString username;
+        QString remark;
+
+        QString displayName() const { return remark.isEmpty() ? username : remark; }
+    };
+
     bool init(const QString &configPath = QString());
     bool login(const QString &account, const QString &password, QString &err);
-    QStringList listFriends(QString &err);
-    bool addFriend(const QString &account, QString &err);
+    QVector<FriendEntry> listFriends(QString &err);
+    bool addFriend(const QString &account, const QString &remark, QString &err);
+    bool setFriendRemark(const QString &account, const QString &remark, QString &err);
     bool sendText(const QString &targetId, const QString &text, QString &err);
     bool sendFile(const QString &targetId, const QString &filePath, QString &err);
     void startPolling(int intervalMs = 2000);

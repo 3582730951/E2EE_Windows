@@ -14,6 +14,7 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QTime>
+#include <QMenu>
 
 #include "../common/IconButton.h"
 #include "../common/Theme.h"
@@ -341,10 +342,10 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
 
     if (backend_) {
         QString err;
-        const QStringList friends = backend_->listFriends(err);
+        const auto friends = backend_->listFriends(err);
         if (!friends.isEmpty()) {
             for (const auto &f : friends) {
-                addRow(f, f, QStringLiteral("点击开始聊天"), QString(), 0, true, false);
+                addRow(f.username, f.displayName(), QStringLiteral("点击开始聊天"), QString(), 0, true, false);
             }
         } else {
             addRow(QStringLiteral("__placeholder__"),
@@ -367,6 +368,48 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     connect(listView_, &QListView::clicked, this, &MainListWindow::openChatForIndex);
     connect(listView_, &QListView::doubleClicked, this, &MainListWindow::openChatForIndex);
     connect(listView_, &QListView::activated, this, &MainListWindow::openChatForIndex);
+
+    listView_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(listView_, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        if (!backend_ || !model_) {
+            return;
+        }
+        const QModelIndex idx = listView_->indexAt(pos);
+        if (!idx.isValid()) {
+            return;
+        }
+        const QString id = idx.data(IdRole).toString();
+        if (id.startsWith(QStringLiteral("__"))) {
+            return;
+        }
+        QMenu menu(this);
+        QAction *edit = menu.addAction(QStringLiteral("修改备注"));
+        QAction *picked = menu.exec(listView_->viewport()->mapToGlobal(pos));
+        if (picked != edit) {
+            return;
+        }
+        bool ok = false;
+        const QString current = idx.data(TitleRole).toString();
+        const QString newRemark =
+            QInputDialog::getText(this, QStringLiteral("修改备注"),
+                                  QStringLiteral("输入备注（可留空）"),
+                                  QLineEdit::Normal, current, &ok);
+        if (!ok) {
+            return;
+        }
+        QString err;
+        if (!backend_->setFriendRemark(id, newRemark.trimmed(), err)) {
+            QMessageBox::warning(this, QStringLiteral("修改备注"),
+                                 err.isEmpty() ? QStringLiteral("修改失败") : err);
+            return;
+        }
+        const QString display = newRemark.trimmed().isEmpty() ? id : newRemark.trimmed();
+        if (auto *item = model_->itemFromIndex(idx)) {
+            item->setData(display, TitleRole);
+            item->setData(QStringLiteral("备注已更新"), PreviewRole);
+            item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
+        }
+    });
 
     mainLayout2->addWidget(listView_);
 
@@ -420,8 +463,16 @@ void MainListWindow::handleAddFriend() {
         return;
     }
     if (backend_) {
+        const QString defaultRemark = account.trimmed();
+        const QString remark =
+            QInputDialog::getText(this, QStringLiteral("添加好友"),
+                                  QStringLiteral("输入备注（可留空）"),
+                                  QLineEdit::Normal, defaultRemark, &ok);
+        if (!ok) {
+            return;
+        }
         QString err;
-        if (backend_->addFriend(account.trimmed(), err)) {
+        if (backend_->addFriend(account.trimmed(), remark.trimmed(), err)) {
             for (int i = model_->rowCount() - 1; i >= 0; --i) {
                 if (model_->item(i)->data(IdRole).toString().startsWith(QStringLiteral("__"))) {
                     model_->removeRow(i);
@@ -436,9 +487,10 @@ void MainListWindow::handleAddFriend() {
                 }
             }
             if (!exists) {
+                const QString display = remark.trimmed().isEmpty() ? account.trimmed() : remark.trimmed();
                 auto *item = new QStandardItem();
                 item->setData(account.trimmed(), IdRole);
-                item->setData(account.trimmed(), TitleRole);
+                item->setData(display, TitleRole);
                 item->setData(QStringLiteral("已添加好友"), PreviewRole);
                 item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
                 item->setData(0, UnreadRole);

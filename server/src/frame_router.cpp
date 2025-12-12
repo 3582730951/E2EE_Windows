@@ -89,8 +89,9 @@ std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.friends.size()), out);
-    for (const auto& name : resp.friends) {
-      proto::WriteString(name, out);
+    for (const auto& e : resp.friends) {
+      proto::WriteString(e.username, out);
+      proto::WriteString(e.remark, out);
     }
   } else {
     proto::WriteString(resp.error, out);
@@ -99,6 +100,16 @@ std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
 }
 
 std::vector<std::uint8_t> EncodeFriendAddResp(const FriendAddResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeFriendRemarkResp(
+    const FriendRemarkResponse& resp) {
   std::vector<std::uint8_t> out;
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
@@ -204,8 +215,26 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token) 
       if (!proto::ReadString(in.payload, offset, s1)) {
         return false;
       }
-      auto resp = api_->AddFriend(token, s1);
+      s2.clear();
+      if (offset < in.payload.size()) {
+        if (!proto::ReadString(in.payload, offset, s2)) {
+          return false;
+        }
+      }
+      auto resp = api_->AddFriend(token, s1, s2);
       out.payload = EncodeFriendAddResp(resp);
+      return true;
+    }
+    case FrameType::kFriendRemarkSet: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadString(in.payload, offset, s1) ||
+          !proto::ReadString(in.payload, offset, s2)) {
+        return false;
+      }
+      auto resp = api_->SetFriendRemark(token, s1, s2);
+      out.payload = EncodeFriendRemarkResp(resp);
       return true;
     }
     default:

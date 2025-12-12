@@ -82,8 +82,8 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
     return true;
 }
 
-QStringList BackendAdapter::listFriends(QString &err) {
-    QStringList out;
+QVector<BackendAdapter::FriendEntry> BackendAdapter::listFriends(QString &err) {
+    QVector<FriendEntry> out;
     if (!loggedIn_) {
         err = QStringLiteral("尚未登录");
         return out;
@@ -94,13 +94,16 @@ QStringList BackendAdapter::listFriends(QString &err) {
     const auto friends = core_.ListFriends();
     out.reserve(static_cast<int>(friends.size()));
     for (const auto &f : friends) {
-        out << QString::fromStdString(f);
+        FriendEntry e;
+        e.username = QString::fromStdString(f.username);
+        e.remark = QString::fromStdString(f.remark);
+        out.push_back(std::move(e));
     }
     err.clear();
     return out;
 }
 
-bool BackendAdapter::addFriend(const QString &account, QString &err) {
+bool BackendAdapter::addFriend(const QString &account, const QString &remark, QString &err) {
     const QString target = account.trimmed();
     if (target.isEmpty()) {
         err = QStringLiteral("账号为空");
@@ -113,8 +116,29 @@ bool BackendAdapter::addFriend(const QString &account, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.AddFriend(target.toStdString())) {
+    if (!core_.AddFriend(target.toStdString(), remark.trimmed().toStdString())) {
         err = QStringLiteral("添加好友失败：账号不存在或服务器异常");
+        return false;
+    }
+    err.clear();
+    return true;
+}
+
+bool BackendAdapter::setFriendRemark(const QString &account, const QString &remark, QString &err) {
+    const QString target = account.trimmed();
+    if (target.isEmpty()) {
+        err = QStringLiteral("账号为空");
+        return false;
+    }
+    if (!loggedIn_) {
+        err = QStringLiteral("尚未登录");
+        return false;
+    }
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!core_.SetFriendRemark(target.toStdString(), remark.trimmed().toStdString())) {
+        err = QStringLiteral("备注更新失败：账号不存在或服务器异常");
         return false;
     }
     err.clear();

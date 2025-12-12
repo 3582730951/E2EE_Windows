@@ -15,6 +15,11 @@ namespace mi::client {
 
 class ClientCore {
  public:
+  struct FriendEntry {
+    std::string username;
+    std::string remark;
+  };
+
   ClientCore();
   ~ClientCore();
 
@@ -29,8 +34,11 @@ class ClientCore {
                    const std::vector<std::uint8_t>& payload);
   std::vector<std::vector<std::uint8_t>> PullOffline();
 
-  std::vector<std::string> ListFriends();
-  bool AddFriend(const std::string& friend_username);
+  std::vector<FriendEntry> ListFriends();
+  bool AddFriend(const std::string& friend_username,
+                 const std::string& remark = "");
+  bool SetFriendRemark(const std::string& friend_username,
+                       const std::string& remark);
 
   const std::string& token() const { return token_; }
 

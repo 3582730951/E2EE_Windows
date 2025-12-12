@@ -51,7 +51,8 @@ int main() {
   if (!bob_list.success) {
     return 1;
   }
-  if (std::find(bob_list.friends.begin(), bob_list.friends.end(), "alice") ==
+  if (std::find_if(bob_list.friends.begin(), bob_list.friends.end(),
+                   [](const auto& e) { return e.username == "alice"; }) ==
       bob_list.friends.end()) {
     return 1;
   }
@@ -60,7 +61,8 @@ int main() {
   if (!alice_list.success) {
     return 1;
   }
-  if (std::find(alice_list.friends.begin(), alice_list.friends.end(), "bob") ==
+  if (std::find_if(alice_list.friends.begin(), alice_list.friends.end(),
+                   [](const auto& e) { return e.username == "bob"; }) ==
       alice_list.friends.end()) {
     return 1;
   }
@@ -72,4 +74,3 @@ int main() {
 
   return 0;
 }
-
