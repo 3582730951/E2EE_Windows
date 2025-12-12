@@ -1,9 +1,28 @@
 #include "quick_client.h"
 
+#include <QCoreApplication>
+#include <QFile>
 #include <utility>
 #include <fstream>
 
 namespace mi::client::ui {
+
+namespace {
+QString FindConfigFile(const QString& name) {
+  if (name.isEmpty()) {
+    return {};
+  }
+  const QString in_app =
+      QCoreApplication::applicationDirPath() + QStringLiteral("/") + name;
+  if (QFile::exists(in_app)) {
+    return in_app;
+  }
+  if (QFile::exists(name)) {
+    return name;
+  }
+  return {};
+}
+}  // namespace
 
 QuickClient::QuickClient(QObject* parent) : QObject(parent) {}
 
@@ -12,8 +31,17 @@ QuickClient::~QuickClient() {
 }
 
 bool QuickClient::init(const QString& configPath) {
-  config_path_ = configPath.isEmpty() ? QStringLiteral("client_config.ini")
-                                      : configPath;
+  if (!configPath.isEmpty()) {
+    config_path_ = configPath;
+  } else {
+    config_path_ = FindConfigFile(QStringLiteral("client_config.ini"));
+    if (config_path_.isEmpty()) {
+      config_path_ = FindConfigFile(QStringLiteral("config.ini"));
+    }
+    if (config_path_.isEmpty()) {
+      config_path_ = QStringLiteral("client_config.ini");
+    }
+  }
   const bool ok = core_.Init(config_path_.toStdString());
   if (!ok) {
     emit status(QStringLiteral("初始化失败"));

@@ -22,6 +22,9 @@ target_include_directories(mi_e2ee_client_core PUBLIC
     ../shard
 )
 target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_core)
+if(WIN32)
+  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32)
+endif()
 
 add_executable(mi_e2ee_client
     demo_client.cpp

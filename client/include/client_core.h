@@ -36,8 +36,13 @@ class ClientCore {
   bool ProcessEncrypted(mi::server::FrameType type,
                         const std::vector<std::uint8_t>& plain,
                         std::vector<std::uint8_t>& out_plain);
+  bool ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
+                  std::vector<std::uint8_t>& out_bytes);
 
-  mi_server_handle* handle_{nullptr};
+  mi_server_handle* local_handle_{nullptr};
+  bool remote_mode_{false};
+  std::string server_ip_;
+  std::uint16_t server_port_{0};
   std::string config_path_{"config.ini"};
   std::string username_;
   std::string password_;

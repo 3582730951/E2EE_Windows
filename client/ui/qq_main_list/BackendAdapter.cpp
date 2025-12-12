@@ -1,5 +1,6 @@
 #include "BackendAdapter.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QTimer>
@@ -8,22 +9,43 @@
 
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
 
+namespace {
+QString ResolveConfigPath(const QString& name) {
+    if (name.isEmpty()) {
+        return {};
+    }
+    const QFileInfo info(name);
+    if (info.isAbsolute() && QFile::exists(name)) {
+        return name;
+    }
+    if (QFile::exists(name)) {
+        return name;
+    }
+    const QString candidate = QCoreApplication::applicationDirPath() + QStringLiteral("/") + name;
+    if (QFile::exists(candidate)) {
+        return candidate;
+    }
+    return name;
+}
+}  // namespace
+
 bool BackendAdapter::init(const QString &configPath) {
     if (inited_) {
         if (!configPath.isEmpty() && configPath != configPath_) {
             // 允许在首次之后更新配置路径
-            configPath_ = configPath;
+            configPath_ = ResolveConfigPath(configPath);
             inited_ = core_.Init(configPath_.toStdString());
         }
         return inited_;
     }
     // 兼容旧版配置文件名：优先 client_config.ini，若不存在则回落 config.ini
     if (!configPath.isEmpty()) {
-        configPath_ = configPath;
-    } else if (QFile::exists(QStringLiteral("client_config.ini"))) {
-        configPath_ = QStringLiteral("client_config.ini");
+        configPath_ = ResolveConfigPath(configPath);
+    } else if (!ResolveConfigPath(QStringLiteral("client_config.ini")).isEmpty() &&
+               QFile::exists(ResolveConfigPath(QStringLiteral("client_config.ini")))) {
+        configPath_ = ResolveConfigPath(QStringLiteral("client_config.ini"));
     } else {
-        configPath_ = QStringLiteral("config.ini");
+        configPath_ = ResolveConfigPath(QStringLiteral("config.ini"));
     }
     inited_ = core_.Init(configPath_.toStdString());
     return inited_;
@@ -32,7 +54,8 @@ bool BackendAdapter::init(const QString &configPath) {
 bool BackendAdapter::ensureInited(QString &err) {
     if (!inited_) {
         if (!init(configPath_)) {
-            err = QStringLiteral("后端初始化失败（检查 config.ini）");
+            err = QStringLiteral("后端初始化失败（检查 %1）")
+                      .arg(configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_);
             return false;
         }
     }
