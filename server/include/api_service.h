@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "config.h"
 #include "group_manager.h"
 #include "group_directory.h"
 #include "offline_storage.h"
@@ -92,7 +93,8 @@ class ApiService {
              GroupDirectory* directory = nullptr,
              OfflineStorage* storage = nullptr,
              OfflineQueue* queue = nullptr,
-             std::uint32_t group_threshold = 10000);
+             std::uint32_t group_threshold = 10000,
+             std::optional<MySqlConfig> friend_mysql = std::nullopt);
 
   LoginResponse Login(const LoginRequest& req);
   LogoutResponse Logout(const LogoutRequest& req);
@@ -123,14 +125,14 @@ class ApiService {
                                      const std::string& recipient,
                                      std::vector<std::uint8_t> payload);
 
-  OfflinePullResponse PullOffline(const std::string& token);
+ OfflinePullResponse PullOffline(const std::string& token);
 
   FriendListResponse ListFriends(const std::string& token);
 
-  FriendAddResponse AddFriend(const std::string& token,
+ FriendAddResponse AddFriend(const std::string& token,
                               const std::string& friend_username);
 
-  std::uint32_t default_group_threshold() const { return group_threshold_; }
+ std::uint32_t default_group_threshold() const { return group_threshold_; }
 
  private:
   SessionManager* sessions_;
@@ -139,6 +141,7 @@ class ApiService {
   OfflineStorage* storage_;
   OfflineQueue* queue_;
   std::uint32_t group_threshold_;
+  std::optional<MySqlConfig> friend_mysql_;
 
   std::mutex friends_mutex_;
   std::unordered_map<std::string, std::unordered_set<std::string>> friends_;

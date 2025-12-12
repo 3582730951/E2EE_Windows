@@ -50,7 +50,11 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),
                                       directory_.get(), offline_storage_.get(),
                                       offline_queue_.get(),
-                                      config_.server.group_rotation_threshold);
+                                      config_.server.group_rotation_threshold,
+                                      config_.mode == AuthMode::kMySQL
+                                          ? std::optional<MySqlConfig>(
+                                                config_.mysql)
+                                          : std::nullopt);
   router_ = std::make_unique<FrameRouter>(api_.get());
   last_cleanup_ = std::chrono::steady_clock::now();
   return true;

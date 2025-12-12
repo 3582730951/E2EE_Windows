@@ -32,7 +32,9 @@ server_port=9000
 ### 3) 好友列表 / 添加好友（当前实现）
 - 登录后主列表会向后端拉取好友列表（为空会提示“暂无好友”）。
 - 点击右上角 `+` 输入好友账号（必须在认证用户表里存在），后端会直接建立**双向好友关系**，列表立刻出现该好友。
-- 说明：当前好友关系在服务端内存中保存，服务端重启会清空（未做持久化）。
+- 说明：
+  - `mode=1`（demo）：好友关系在服务端内存中保存，服务端重启会清空。
+  - `mode=0`（mysql）：好友关系写入 MySQL 表 `user_friend`，服务端重启不丢失。
 
 ## MySQL 登录（`mode=0`）建库建表示例
 
@@ -51,6 +53,15 @@ CREATE TABLE IF NOT EXISTS user_auth (
   username VARCHAR(64) NOT NULL,
   password VARCHAR(255) NOT NULL,
   PRIMARY KEY (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 好友关系（双向各一行）
+CREATE TABLE IF NOT EXISTS user_friend (
+  username VARCHAR(64) NOT NULL,
+  friend_username VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (username, friend_username),
+  INDEX idx_friend_username(friend_username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ```
 

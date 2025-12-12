@@ -1,19 +1,27 @@
 #include "api_service.h"
 
 #include <algorithm>
+#include <cstring>
+#include <type_traits>
 #include <utility>
+
+#ifdef MI_E2EE_ENABLE_MYSQL
+#include <mysql.h>
+#endif
 
 namespace mi::server {
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupDirectory* directory, OfflineStorage* storage,
-                       OfflineQueue* queue, std::uint32_t group_threshold)
+                       OfflineQueue* queue, std::uint32_t group_threshold,
+                       std::optional<MySqlConfig> friend_mysql)
     : sessions_(sessions),
       groups_(groups),
       directory_(directory),
       storage_(storage),
       queue_(queue),
-      group_threshold_(group_threshold == 0 ? 10000 : group_threshold) {}
+      group_threshold_(group_threshold == 0 ? 10000 : group_threshold),
+      friend_mysql_(std::move(friend_mysql)) {}
 
 LoginResponse ApiService::Login(const LoginRequest& req) {
   LoginResponse resp;
@@ -253,6 +261,142 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
     return resp;
   }
 
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+      resp.error = "mysql_init failed";
+      return resp;
+    }
+    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
+                                    friend_mysql_->username.c_str(),
+                                    friend_mysql_->password.get().c_str(),
+                                    friend_mysql_->database.c_str(),
+                                    friend_mysql_->port, nullptr, 0);
+    if (!res) {
+      resp.error = "mysql_connect failed";
+      mysql_close(conn);
+      return resp;
+    }
+
+    const char* ddl =
+        "CREATE TABLE IF NOT EXISTS user_friend ("
+        "username VARCHAR(64) NOT NULL,"
+        "friend_username VARCHAR(64) NOT NULL,"
+        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "PRIMARY KEY(username, friend_username),"
+        "INDEX idx_friend_username(friend_username)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+    if (mysql_query(conn, ddl) != 0) {
+      resp.error = "mysql_schema_failed";
+      mysql_close(conn);
+      return resp;
+    }
+
+    const char* query =
+        "SELECT friend_username FROM user_friend WHERE username=? "
+        "ORDER BY friend_username";
+    MYSQL_STMT* stmt = mysql_stmt_init(conn);
+    if (!stmt) {
+      resp.error = "mysql_stmt_init failed";
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_prepare(stmt, query,
+                           static_cast<unsigned long>(std::strlen(query))) !=
+        0) {
+      resp.error = "mysql_stmt_prepare failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+
+    MYSQL_BIND bind_param[1];
+    std::memset(bind_param, 0, sizeof(bind_param));
+    bind_param[0].buffer_type = MYSQL_TYPE_STRING;
+    bind_param[0].buffer = const_cast<char*>(sess->username.c_str());
+    bind_param[0].buffer_length =
+        static_cast<unsigned long>(sess->username.size());
+
+    if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
+      resp.error = "mysql_stmt_bind_param failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_execute(stmt) != 0) {
+      resp.error = "mysql_stmt_execute failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+
+    char name_buf[256] = {0};
+    unsigned long name_len = 0;
+    MYSQL_BIND bind_result[1];
+    std::memset(bind_result, 0, sizeof(bind_result));
+    using BindBool = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
+    BindBool is_null = 0;
+    BindBool error_flag = 0;
+    bind_result[0].buffer_type = MYSQL_TYPE_STRING;
+    bind_result[0].buffer = name_buf;
+    bind_result[0].buffer_length = sizeof(name_buf) - 1;
+    bind_result[0].length = &name_len;
+    bind_result[0].is_null = &is_null;
+    bind_result[0].error = &error_flag;
+
+    if (mysql_stmt_bind_result(stmt, bind_result) != 0) {
+      resp.error = "mysql_stmt_bind_result failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_store_result(stmt) != 0) {
+      resp.error = "mysql_stmt_store_result failed";
+      mysql_stmt_free_result(stmt);
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+
+    std::vector<std::string> out;
+    while (true) {
+      const int fetch_status = mysql_stmt_fetch(stmt);
+      if (fetch_status == MYSQL_NO_DATA) {
+        break;
+      }
+      if (fetch_status != 0 && fetch_status != MYSQL_DATA_TRUNCATED) {
+        resp.error = "mysql_stmt_fetch failed";
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      if (is_null) {
+        continue;
+      }
+      if (name_len >= sizeof(name_buf)) {
+        resp.error = "friend name too long";
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return resp;
+      }
+      name_buf[name_len] = '\0';
+      out.emplace_back(name_buf, name_len);
+    }
+
+    mysql_stmt_free_result(stmt);
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+
+    std::sort(out.begin(), out.end());
+    resp.success = true;
+    resp.friends = std::move(out);
+    return resp;
+  }
+#endif
+
   std::vector<std::string> out;
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
@@ -296,6 +440,87 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
     resp.error = exist_err.empty() ? "friend not found" : exist_err;
     return resp;
   }
+
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+      resp.error = "mysql_init failed";
+      return resp;
+    }
+    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
+                                    friend_mysql_->username.c_str(),
+                                    friend_mysql_->password.get().c_str(),
+                                    friend_mysql_->database.c_str(),
+                                    friend_mysql_->port, nullptr, 0);
+    if (!res) {
+      resp.error = "mysql_connect failed";
+      mysql_close(conn);
+      return resp;
+    }
+
+    const char* ddl =
+        "CREATE TABLE IF NOT EXISTS user_friend ("
+        "username VARCHAR(64) NOT NULL,"
+        "friend_username VARCHAR(64) NOT NULL,"
+        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "PRIMARY KEY(username, friend_username),"
+        "INDEX idx_friend_username(friend_username)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+    if (mysql_query(conn, ddl) != 0) {
+      resp.error = "mysql_schema_failed";
+      mysql_close(conn);
+      return resp;
+    }
+
+    const char* query =
+        "INSERT IGNORE INTO user_friend(username, friend_username) VALUES(?, "
+        "?)";
+    MYSQL_STMT* stmt = mysql_stmt_init(conn);
+    if (!stmt) {
+      resp.error = "mysql_stmt_init failed";
+      mysql_close(conn);
+      return resp;
+    }
+    if (mysql_stmt_prepare(stmt, query,
+                           static_cast<unsigned long>(std::strlen(query))) !=
+        0) {
+      resp.error = "mysql_stmt_prepare failed";
+      mysql_stmt_close(stmt);
+      mysql_close(conn);
+      return resp;
+    }
+
+    auto bind_and_exec = [&](const std::string& u,
+                             const std::string& f) -> bool {
+      MYSQL_BIND bind_param[2];
+      std::memset(bind_param, 0, sizeof(bind_param));
+      bind_param[0].buffer_type = MYSQL_TYPE_STRING;
+      bind_param[0].buffer = const_cast<char*>(u.c_str());
+      bind_param[0].buffer_length = static_cast<unsigned long>(u.size());
+      bind_param[1].buffer_type = MYSQL_TYPE_STRING;
+      bind_param[1].buffer = const_cast<char*>(f.c_str());
+      bind_param[1].buffer_length = static_cast<unsigned long>(f.size());
+      if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
+        return false;
+      }
+      return mysql_stmt_execute(stmt) == 0;
+    };
+
+    const bool ok1 = bind_and_exec(sess->username, friend_username);
+    const bool ok2 = bind_and_exec(friend_username, sess->username);
+
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+
+    if (!ok1 || !ok2) {
+      resp.error = "mysql insert failed";
+      return resp;
+    }
+    resp.success = true;
+    return resp;
+  }
+#endif
 
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
