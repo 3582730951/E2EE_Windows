@@ -88,6 +88,19 @@ target_include_directories(mi_e2ee_server PRIVATE include ../shard)
 target_link_libraries(mi_e2ee_server PRIVATE mi_e2ee_core)
 mi_copy_msvc_runtime(mi_e2ee_server)
 
+# Generate demo auth user sample into build and output directories.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/test_user.txt" [=[# Demo auth user table (mode=1).
+# Format: username:password per line.
+# Lines starting with # are comments; inline comments after whitespace are allowed.
+u1:p1  # example user 1
+alice:alice123
+bob:bob123
+]=])
+add_custom_command(TARGET mi_e2ee_server POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_CURRENT_BINARY_DIR}/test_user.txt"
+          $<TARGET_FILE_DIR:mi_e2ee_server>)
+
 if(MI_E2EE_ENABLE_MYSQL)
   find_path(MYSQL_INCLUDE_DIR mysql.h
     PATHS /usr/include /usr/local/include

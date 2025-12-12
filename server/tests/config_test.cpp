@@ -17,10 +17,10 @@ int main() {
   {
     const std::string path = "tmp_config_mysql.ini";
     WriteFile(path,
-              "[mode]\nmode=0\n"
+              "[mode]  # auth mode\nmode=0  # mysql\n"
               "[mysql]\nmysql_ip=127.0.0.1\nmysql_port=3306\n"
               "mysql_database=test\nmysql_username=root\nmysql_password=pass\n"
-              "[server]\nlist_port=9000\n");
+              "[server]\nlist_port=9000  # listen port\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
@@ -34,8 +34,8 @@ int main() {
   {
     const std::string path = "tmp_config_demo.ini";
     WriteFile(path,
-              "[mode]\nmode=1\n"
-              "[server]\nlist_port=8000\n");
+              "[mode]  # auth mode\nmode=1  # demo\n"
+              "[server]\nlist_port=8000  # listen port\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);

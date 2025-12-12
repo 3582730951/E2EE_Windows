@@ -45,6 +45,7 @@ jobs:
           mkdir -p artifacts/server-${{ matrix.mode }}
           cp build/server-${{ matrix.mode }}/mi_e2ee_server artifacts/server-${{ matrix.mode }}/
           cp server/config.example.ini artifacts/server-${{ matrix.mode }}/config.example.ini
+          cp build/server-${{ matrix.mode }}/test_user.txt artifacts/server-${{ matrix.mode }}/test_user.txt
           tar -czf server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz -C artifacts server-${{ matrix.mode }}
 
       - name: Upload server artifact
@@ -98,7 +99,7 @@ jobs:
           offline_dir=offline_store
           debug_log=0
           "@ | Set-Content -Encoding ASCII artifacts/server-win/config.ini
-          Copy-Item server/test_user.txt artifacts/server-win/test_user.txt -ErrorAction SilentlyContinue
+          Copy-Item build/server-win/test_user.txt artifacts/server-win/test_user.txt -ErrorAction Stop
           Compress-Archive -Path artifacts/server-win/* -DestinationPath server-win-${{ env.BUILD_TYPE }}.zip
 
       - name: Upload server-windows artifact

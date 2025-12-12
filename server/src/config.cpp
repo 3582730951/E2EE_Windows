@@ -22,6 +22,18 @@ std::string Trim(const std::string& input) {
   return std::string(begin, end);
 }
 
+std::string StripInlineComment(const std::string& input) {
+  for (std::size_t i = 0; i < input.size(); ++i) {
+    const char ch = input[i];
+    if ((ch == '#' || ch == ';') &&
+        (i == 0 ||
+         std::isspace(static_cast<unsigned char>(input[i - 1])) != 0)) {
+      return Trim(input.substr(0, i));
+    }
+  }
+  return input;
+}
+
 bool ParseUint16(const std::string& text, std::uint16_t& out) {
   if (text.empty()) {
     return false;
@@ -113,8 +125,8 @@ bool ParseIni(const std::string& path, ServerConfig& out, std::string& error) {
   std::size_t line_no = 0;
   while (std::getline(file, line)) {
     ++line_no;
-    const std::string trimmed = Trim(line);
-    if (trimmed.empty() || trimmed[0] == '#') {
+    const std::string trimmed = StripInlineComment(Trim(line));
+    if (trimmed.empty()) {
       continue;
     }
     if (trimmed.front() == '[' && trimmed.back() == ']') {
@@ -176,8 +188,8 @@ bool LoadDemoUsers(const std::string& path, DemoUserTable& users,
   std::size_t line_no = 0;
   while (std::getline(file, line)) {
     ++line_no;
-    const std::string trimmed = Trim(line);
-    if (trimmed.empty() || trimmed[0] == '#') {
+    const std::string trimmed = StripInlineComment(Trim(line));
+    if (trimmed.empty()) {
       continue;
     }
     const auto pos = trimmed.find(':');
