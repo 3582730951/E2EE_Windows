@@ -17,7 +17,14 @@ bool BackendAdapter::init(const QString &configPath) {
         }
         return inited_;
     }
-    configPath_ = configPath.isEmpty() ? QStringLiteral("client_config.ini") : configPath;
+    // 兼容旧版配置文件名：优先 client_config.ini，若不存在则回落 config.ini
+    if (!configPath.isEmpty()) {
+        configPath_ = configPath;
+    } else if (QFile::exists(QStringLiteral("client_config.ini"))) {
+        configPath_ = QStringLiteral("client_config.ini");
+    } else {
+        configPath_ = QStringLiteral("config.ini");
+    }
     inited_ = core_.Init(configPath_.toStdString());
     return inited_;
 }

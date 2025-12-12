@@ -171,6 +171,7 @@ jobs:
           server_ip=127.0.0.1
           server_port=9000
           "@ | Set-Content -Encoding ASCII (Join-Path $dist "client_config.ini")
+          Copy-Item (Join-Path $dist "client_config.ini") (Join-Path $dist "config.ini") -Force
 
       - name: Package client UI
         run: |
