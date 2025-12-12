@@ -82,6 +82,45 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
     return true;
 }
 
+QStringList BackendAdapter::listFriends(QString &err) {
+    QStringList out;
+    if (!loggedIn_) {
+        err = QStringLiteral("尚未登录");
+        return out;
+    }
+    if (!ensureInited(err)) {
+        return out;
+    }
+    const auto friends = core_.ListFriends();
+    out.reserve(static_cast<int>(friends.size()));
+    for (const auto &f : friends) {
+        out << QString::fromStdString(f);
+    }
+    err.clear();
+    return out;
+}
+
+bool BackendAdapter::addFriend(const QString &account, QString &err) {
+    const QString target = account.trimmed();
+    if (target.isEmpty()) {
+        err = QStringLiteral("账号为空");
+        return false;
+    }
+    if (!loggedIn_) {
+        err = QStringLiteral("尚未登录");
+        return false;
+    }
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!core_.AddFriend(target.toStdString())) {
+        err = QStringLiteral("添加好友失败：账号不存在或服务器异常");
+        return false;
+    }
+    err.clear();
+    return true;
+}
+
 bool BackendAdapter::sendText(const QString &targetId, const QString &text, QString &err) {
     if (text.trimmed().isEmpty()) {
         err = QStringLiteral("发送内容为空");
@@ -94,7 +133,11 @@ bool BackendAdapter::sendText(const QString &targetId, const QString &text, QStr
     if (!ensureInited(err)) {
         return false;
     }
-    const QByteArray payload = text.toUtf8();
+    QByteArray payload;
+    if (!currentUser_.isEmpty()) {
+        payload = QByteArray("CONV:") + currentUser_.toUtf8() + QByteArray("\n");
+    }
+    payload += text.toUtf8();
     std::vector<std::uint8_t> bytes(payload.begin(), payload.end());
     if (!core_.SendOffline(targetId.toStdString(), bytes)) {
         err = QStringLiteral("后端发送失败");
@@ -119,7 +162,11 @@ bool BackendAdapter::sendFile(const QString &targetId, const QString &filePath, 
     }
     const QByteArray data = file.readAll();
     const QString name = QFileInfo(filePath).fileName();
-    QByteArray payload = QByteArray("FILE:") + name.toUtf8() + QByteArray("\n") + data;
+    QByteArray payload;
+    if (!currentUser_.isEmpty()) {
+        payload = QByteArray("CONV:") + currentUser_.toUtf8() + QByteArray("\n");
+    }
+    payload += QByteArray("FILE:") + name.toUtf8() + QByteArray("\n") + data;
     std::vector<std::uint8_t> bytes(payload.begin(), payload.end());
     if (!core_.SendOffline(targetId.toStdString(), bytes)) {
         err = QStringLiteral("发送文件失败");

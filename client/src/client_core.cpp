@@ -407,4 +407,45 @@ std::vector<std::vector<std::uint8_t>> ClientCore::PullOffline() {
   return messages;
 }
 
+std::vector<std::string> ClientCore::ListFriends() {
+  std::vector<std::string> out;
+  if (!EnsureChannel()) {
+    return out;
+  }
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kFriendList, {}, resp_payload)) {
+    return out;
+  }
+  if (resp_payload.empty() || resp_payload[0] == 0) {
+    return out;
+  }
+  std::size_t off = 1;
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    std::string name;
+    if (!mi::server::proto::ReadString(resp_payload, off, name)) {
+      break;
+    }
+    out.push_back(std::move(name));
+  }
+  return out;
+}
+
+bool ClientCore::AddFriend(const std::string& friend_username) {
+  if (!EnsureChannel()) {
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(friend_username, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kFriendAdd, plain, resp_payload)) {
+    return false;
+  }
+  return !resp_payload.empty() && resp_payload[0] == 1;
+}
+
 }  // namespace mi::client

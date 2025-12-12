@@ -84,6 +84,29 @@ std::vector<std::uint8_t> EncodeOfflinePullResp(
   return out;
 }
 
+std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteUint32(static_cast<std::uint32_t>(resp.friends.size()), out);
+    for (const auto& name : resp.friends) {
+      proto::WriteString(name, out);
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeFriendAddResp(const FriendAddResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
 }  // namespace
 
 FrameRouter::FrameRouter(ApiService* api) : api_(api) {}
@@ -164,6 +187,25 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token) 
     case FrameType::kOfflinePull: {
       auto resp = api_->PullOffline(token);
       out.payload = EncodeOfflinePullResp(resp);
+      return true;
+    }
+    case FrameType::kFriendList: {
+      if (token.empty()) {
+        return false;
+      }
+      auto resp = api_->ListFriends(token);
+      out.payload = EncodeFriendListResp(resp);
+      return true;
+    }
+    case FrameType::kFriendAdd: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadString(in.payload, offset, s1)) {
+        return false;
+      }
+      auto resp = api_->AddFriend(token, s1);
+      out.payload = EncodeFriendAddResp(resp);
       return true;
     }
     default:

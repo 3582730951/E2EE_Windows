@@ -1,0 +1,75 @@
+#include <algorithm>
+#include <string>
+
+#include "api_service.h"
+#include "auth_provider.h"
+#include "session_manager.h"
+
+using mi::server::ApiService;
+using mi::server::DemoAuthProvider;
+using mi::server::DemoUser;
+using mi::server::DemoUserTable;
+using mi::server::GroupManager;
+using mi::server::Session;
+using mi::server::SessionManager;
+
+static DemoUser MakeDemoUser(const std::string& username,
+                             const std::string& password) {
+  DemoUser user;
+  user.username.set(username);
+  user.password.set(password);
+  user.username_plain = username;
+  user.password_plain = password;
+  return user;
+}
+
+int main() {
+  DemoUserTable users;
+  users.emplace("bob", MakeDemoUser("bob", "pwd123"));
+  users.emplace("alice", MakeDemoUser("alice", "alice123"));
+
+  SessionManager sessions(std::make_unique<DemoAuthProvider>(std::move(users)));
+  GroupManager groups;
+  ApiService api(&sessions, &groups);
+
+  Session bob;
+  Session alice;
+  std::string err;
+  if (!sessions.Login("bob", "pwd123", bob, err)) {
+    return 1;
+  }
+  if (!sessions.Login("alice", "alice123", alice, err)) {
+    return 1;
+  }
+
+  auto add = api.AddFriend(bob.token, "alice");
+  if (!add.success) {
+    return 1;
+  }
+
+  auto bob_list = api.ListFriends(bob.token);
+  if (!bob_list.success) {
+    return 1;
+  }
+  if (std::find(bob_list.friends.begin(), bob_list.friends.end(), "alice") ==
+      bob_list.friends.end()) {
+    return 1;
+  }
+
+  auto alice_list = api.ListFriends(alice.token);
+  if (!alice_list.success) {
+    return 1;
+  }
+  if (std::find(alice_list.friends.begin(), alice_list.friends.end(), "bob") ==
+      alice_list.friends.end()) {
+    return 1;
+  }
+
+  auto bad = api.AddFriend(bob.token, "nobody");
+  if (bad.success) {
+    return 1;
+  }
+
+  return 0;
+}
+

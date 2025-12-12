@@ -1,5 +1,6 @@
 #include "api_service.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace mi::server {
@@ -236,6 +237,71 @@ OfflinePullResponse ApiService::PullOffline(const std::string& token) {
     return resp;
   }
   resp.messages = queue_->Drain(sess->username);
+  resp.success = true;
+  return resp;
+}
+
+FriendListResponse ApiService::ListFriends(const std::string& token) {
+  FriendListResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  auto sess = sessions_->GetSession(token);
+  if (!sess.has_value()) {
+    resp.error = "unauthorized";
+    return resp;
+  }
+
+  std::vector<std::string> out;
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    auto it = friends_.find(sess->username);
+    if (it != friends_.end()) {
+      out.reserve(it->second.size());
+      for (const auto& f : it->second) {
+        out.push_back(f);
+      }
+    }
+  }
+  std::sort(out.begin(), out.end());
+  resp.success = true;
+  resp.friends = std::move(out);
+  return resp;
+}
+
+FriendAddResponse ApiService::AddFriend(const std::string& token,
+                                        const std::string& friend_username) {
+  FriendAddResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  auto sess = sessions_->GetSession(token);
+  if (!sess.has_value()) {
+    resp.error = "unauthorized";
+    return resp;
+  }
+  if (friend_username.empty()) {
+    resp.error = "friend username empty";
+    return resp;
+  }
+  if (friend_username == sess->username) {
+    resp.error = "cannot add self";
+    return resp;
+  }
+
+  std::string exist_err;
+  if (!sessions_->UserExists(friend_username, exist_err)) {
+    resp.error = exist_err.empty() ? "friend not found" : exist_err;
+    return resp;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    friends_[sess->username].insert(friend_username);
+    friends_[friend_username].insert(sess->username);
+  }
   resp.success = true;
   return resp;
 }

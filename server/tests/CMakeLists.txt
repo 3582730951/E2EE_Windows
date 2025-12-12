@@ -9,6 +9,17 @@ if(MSVC)
 endif()
 add_test(NAME config_test COMMAND config_test)
 
+add_executable(friend_test
+    friend_test.cpp
+)
+target_link_libraries(friend_test PRIVATE mi_e2ee_core)
+target_include_directories(friend_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(friend_test)
+if(MSVC)
+  target_compile_options(friend_test PRIVATE $<$<CONFIG:Release>:/Od /RTC1>)
+endif()
+add_test(NAME friend_test COMMAND friend_test)
+
 add_executable(group_manager_test
     group_manager_test.cpp
 )

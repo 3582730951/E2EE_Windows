@@ -2,8 +2,11 @@
 #define MI_E2EE_SERVER_API_SERVICE_H
 
 #include <array>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "group_manager.h"
@@ -72,6 +75,17 @@ struct OfflinePullResponse {
   std::string error;
 };
 
+struct FriendListResponse {
+  bool success{false};
+  std::vector<std::string> friends;
+  std::string error;
+};
+
+struct FriendAddResponse {
+  bool success{false};
+  std::string error;
+};
+
 class ApiService {
  public:
   ApiService(SessionManager* sessions, GroupManager* groups,
@@ -111,6 +125,11 @@ class ApiService {
 
   OfflinePullResponse PullOffline(const std::string& token);
 
+  FriendListResponse ListFriends(const std::string& token);
+
+  FriendAddResponse AddFriend(const std::string& token,
+                              const std::string& friend_username);
+
   std::uint32_t default_group_threshold() const { return group_threshold_; }
 
  private:
@@ -120,6 +139,9 @@ class ApiService {
   OfflineStorage* storage_;
   OfflineQueue* queue_;
   std::uint32_t group_threshold_;
+
+  std::mutex friends_mutex_;
+  std::unordered_map<std::string, std::unordered_set<std::string>> friends_;
 };
 
 }  // namespace mi::server

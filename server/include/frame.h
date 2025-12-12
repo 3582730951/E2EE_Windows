@@ -13,7 +13,9 @@ enum class FrameType : std::uint16_t {
   kGroupEvent = 4,
   kHeartbeat = 5,
   kOfflinePush = 6,
-  kOfflinePull = 7
+  kOfflinePull = 7,
+  kFriendList = 8,
+  kFriendAdd = 9
 };
 
 struct Frame {

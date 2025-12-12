@@ -29,6 +29,9 @@ class ClientCore {
                    const std::vector<std::uint8_t>& payload);
   std::vector<std::vector<std::uint8_t>> PullOffline();
 
+  std::vector<std::string> ListFriends();
+  bool AddFriend(const std::string& friend_username);
+
   const std::string& token() const { return token_; }
 
  private:

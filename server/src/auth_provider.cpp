@@ -71,6 +71,21 @@ bool DemoAuthProvider::Validate(const std::string& username,
   return true;
 }
 
+bool DemoAuthProvider::UserExists(const std::string& username,
+                                  std::string& error) {
+  if (username.empty()) {
+    error = "username empty";
+    return false;
+  }
+  const auto it = users_.find(username);
+  if (it == users_.end()) {
+    error = "user not found";
+    return false;
+  }
+  error.clear();
+  return true;
+}
+
 MySqlAuthProvider::MySqlAuthProvider(MySqlConfig cfg) : cfg_(std::move(cfg)) {}
 
 bool MySqlAuthProvider::Validate(const std::string& username,
@@ -186,6 +201,106 @@ bool MySqlAuthProvider::Validate(const std::string& username,
     error = "invalid credentials";
     return false;
   }
+  return true;
+#endif
+}
+
+bool MySqlAuthProvider::UserExists(const std::string& username,
+                                   std::string& error) {
+#ifndef MI_E2EE_ENABLE_MYSQL
+  error = "mysql provider not built (enable MI_E2EE_ENABLE_MYSQL)";
+  return false;
+#else
+  MYSQL* conn = mysql_init(nullptr);
+  if (!conn) {
+    error = "mysql_init failed";
+    return false;
+  }
+
+  MYSQL* res = mysql_real_connect(conn, cfg_.host.c_str(),
+                                  cfg_.username.c_str(),
+                                  cfg_.password.get().c_str(),
+                                  cfg_.database.c_str(), cfg_.port, nullptr, 0);
+  if (!res) {
+    error = "mysql_connect failed";
+    mysql_close(conn);
+    return false;
+  }
+
+  const char* query = "SELECT 1 FROM user_auth WHERE username=? LIMIT 1";
+  MYSQL_STMT* stmt = mysql_stmt_init(conn);
+  if (!stmt) {
+    error = "mysql_stmt_init failed";
+    mysql_close(conn);
+    return false;
+  }
+  if (mysql_stmt_prepare(stmt, query,
+                         static_cast<unsigned long>(std::strlen(query))) != 0) {
+    error = "mysql_stmt_prepare failed";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return false;
+  }
+
+  MYSQL_BIND bind_param[1];
+  std::memset(bind_param, 0, sizeof(bind_param));
+  bind_param[0].buffer_type = MYSQL_TYPE_STRING;
+  bind_param[0].buffer = const_cast<char*>(username.c_str());
+  bind_param[0].buffer_length = static_cast<unsigned long>(username.size());
+
+  if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
+    error = "mysql_stmt_bind_param failed";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return false;
+  }
+  if (mysql_stmt_execute(stmt) != 0) {
+    error = "mysql_stmt_execute failed";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return false;
+  }
+
+  int value = 0;
+  MYSQL_BIND bind_result[1];
+  std::memset(bind_result, 0, sizeof(bind_result));
+  using BindBool = std::remove_pointer_t<decltype(bind_result[0].is_null)>;
+  BindBool is_null = 0;
+  BindBool error_flag = 0;
+  bind_result[0].buffer_type = MYSQL_TYPE_LONG;
+  bind_result[0].buffer = &value;
+  bind_result[0].is_null = &is_null;
+  bind_result[0].error = &error_flag;
+
+  if (mysql_stmt_bind_result(stmt, bind_result) != 0) {
+    error = "mysql_stmt_bind_result failed";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return false;
+  }
+  if (mysql_stmt_store_result(stmt) != 0) {
+    error = "mysql_stmt_store_result failed";
+    mysql_stmt_free_result(stmt);
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return false;
+  }
+
+  int fetch_status = mysql_stmt_fetch(stmt);
+  mysql_stmt_free_result(stmt);
+  mysql_stmt_close(stmt);
+  mysql_close(conn);
+
+  if (fetch_status == MYSQL_NO_DATA || is_null) {
+    error = "user not found";
+    return false;
+  }
+  if (fetch_status != 0 && fetch_status != MYSQL_DATA_TRUNCATED) {
+    error = "mysql_stmt_fetch failed";
+    return false;
+  }
+
+  error.clear();
   return true;
 #endif
 }

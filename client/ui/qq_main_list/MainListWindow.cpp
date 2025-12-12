@@ -339,20 +339,31 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         model_->appendRow(item);
     };
 
-    addRow(QStringLiteral("1"), QStringLiteral("QNB0XT工具箱捐赠群"), QStringLiteral("[有新文件] 文件已经上传完成,等待处理"),
-           QStringLiteral("昨天23:43"), 120, false, true);
-    addRow(QStringLiteral("2"), QStringLiteral("逆向思维导图"), QStringLiteral("[有新文件] 新文件: 更新图谱……"),
-           QStringLiteral("09:25"), 120, false, true);
-    addRow(QStringLiteral("3"), QStringLiteral("逆向技术交流"), QStringLiteral("[@全体成员] 疫情关注 今日事项"),
-           QStringLiteral("12:01"), 120, true, true);
-    addRow(QStringLiteral("4"), QStringLiteral("开源项目讨论"), QStringLiteral("[@全体成员] 待确认事项"),
-           QStringLiteral("11:58"), 5, true, true);
-    addRow(QStringLiteral("5"), QStringLiteral("BUG 反馈群"), QStringLiteral("[有新文件] 新的反馈已经提交"),
-           QStringLiteral("09:05"), 3, true, true);
+    if (backend_) {
+        QString err;
+        const QStringList friends = backend_->listFriends(err);
+        if (!friends.isEmpty()) {
+            for (const auto &f : friends) {
+                addRow(f, f, QStringLiteral("点击开始聊天"), QString(), 0, true, false);
+            }
+        } else {
+            addRow(QStringLiteral("__placeholder__"),
+                   QStringLiteral("暂无好友"),
+                   err.isEmpty() ? QStringLiteral("点击右上角 + 添加好友") : err,
+                   QString(), 0, true, false);
+        }
+    } else {
+        addRow(QStringLiteral("__placeholder__"),
+               QStringLiteral("暂无好友"),
+               QStringLiteral("未连接后端，点击右上角 + 添加好友"),
+               QString(), 0, true, false);
+    }
 
     listView_->setModel(model_);
     listView_->setItemDelegate(new ConversationDelegate(listView_));
-    listView_->setCurrentIndex(model_->index(1, 0));
+    if (model_->rowCount() > 0) {
+        listView_->setCurrentIndex(model_->index(0, 0));
+    }
     connect(listView_, &QListView::clicked, this, &MainListWindow::openChatForIndex);
     connect(listView_, &QListView::doubleClicked, this, &MainListWindow::openChatForIndex);
     connect(listView_, &QListView::activated, this, &MainListWindow::openChatForIndex);
@@ -377,6 +388,9 @@ void MainListWindow::openChatForIndex(const QModelIndex &index) {
         return;
     }
     const QString id = index.data(IdRole).toString();
+    if (id.startsWith(QStringLiteral("__"))) {
+        return;
+    }
     const QString title = index.data(TitleRole).toString();
 
     if (chatWindows_.contains(id) && chatWindows_[id]) {
@@ -407,17 +421,41 @@ void MainListWindow::handleAddFriend() {
     }
     if (backend_) {
         QString err;
-        if (backend_->sendText(account.trimmed(),
-                               QStringLiteral("[添加好友请求] %1").arg(account.trimmed()), err)) {
+        if (backend_->addFriend(account.trimmed(), err)) {
+            for (int i = model_->rowCount() - 1; i >= 0; --i) {
+                if (model_->item(i)->data(IdRole).toString().startsWith(QStringLiteral("__"))) {
+                    model_->removeRow(i);
+                }
+            }
+            // insert to top if not exists
+            bool exists = false;
+            for (int i = 0; i < model_->rowCount(); ++i) {
+                if (model_->item(i)->data(IdRole).toString() == account.trimmed()) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                auto *item = new QStandardItem();
+                item->setData(account.trimmed(), IdRole);
+                item->setData(account.trimmed(), TitleRole);
+                item->setData(QStringLiteral("已添加好友"), PreviewRole);
+                item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
+                item->setData(0, UnreadRole);
+                item->setData(true, GreyBadgeRole);
+                item->setData(false, HasTagRole);
+                model_->insertRow(0, item);
+                listView_->setCurrentIndex(model_->index(0, 0));
+            }
             QMessageBox::information(this, QStringLiteral("添加好友"),
-                                     QStringLiteral("已发送添加好友请求：%1").arg(account.trimmed()));
+                                     QStringLiteral("已添加好友：%1").arg(account.trimmed()));
         } else {
             QMessageBox::warning(this, QStringLiteral("添加好友"),
                                  QStringLiteral("发送失败：%1").arg(err));
         }
     } else {
-        QMessageBox::information(this, QStringLiteral("添加好友"),
-                                 QStringLiteral("已发送添加好友请求：%1").arg(account.trimmed()));
+        QMessageBox::warning(this, QStringLiteral("添加好友"),
+                             QStringLiteral("未连接后端"));
     }
 }
 

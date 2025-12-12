@@ -57,6 +57,15 @@ bool SessionManager::Login(const std::string& username,
   return true;
 }
 
+bool SessionManager::UserExists(const std::string& username,
+                                std::string& error) const {
+  if (!auth_) {
+    error = "auth provider missing";
+    return false;
+  }
+  return auth_->UserExists(username, error);
+}
+
 std::optional<Session> SessionManager::GetSession(const std::string& token) {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = sessions_.find(token);

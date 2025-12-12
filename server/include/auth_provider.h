@@ -14,6 +14,7 @@ class AuthProvider {
   virtual bool Validate(const std::string& username,
                         const std::string& password,
                         std::string& error) = 0;
+  virtual bool UserExists(const std::string& username, std::string& error) = 0;
 };
 
 class DemoAuthProvider final : public AuthProvider {
@@ -21,6 +22,7 @@ class DemoAuthProvider final : public AuthProvider {
   explicit DemoAuthProvider(DemoUserTable users);
   bool Validate(const std::string& username, const std::string& password,
                 std::string& error) override;
+  bool UserExists(const std::string& username, std::string& error) override;
 
  private:
   DemoUserTable users_;
@@ -31,6 +33,7 @@ class MySqlAuthProvider final : public AuthProvider {
   explicit MySqlAuthProvider(MySqlConfig cfg);
   bool Validate(const std::string& username, const std::string& password,
                 std::string& error) override;
+  bool UserExists(const std::string& username, std::string& error) override;
 
  private:
   MySqlConfig cfg_;

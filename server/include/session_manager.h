@@ -28,6 +28,8 @@ class SessionManager {
   bool Login(const std::string& username, const std::string& password,
              Session& out_session, std::string& error);
 
+  bool UserExists(const std::string& username, std::string& error) const;
+
   std::optional<Session> GetSession(const std::string& token);
 
   std::optional<DerivedKeys> GetKeys(const std::string& token);
