@@ -32,21 +32,19 @@ std::vector<std::uint8_t> BuildGroupNoticePayload(
   return out;
 }
 
-#ifdef MI_E2EE_ENABLE_MYSQL
-bool AreFriendsMysql(const mi::server::MySqlConfig& cfg,
-                     const std::string& username,
-                     const std::string& friend_username,
-                     std::string& error);
-
-bool IsBlockedMysql(const mi::server::MySqlConfig& cfg,
-                    const std::string& username,
-                    const std::string& blocked_username,
-                    std::string& error);
-#endif
-
 }  // namespace
 
 namespace mi::server {
+
+namespace {
+#ifdef MI_E2EE_ENABLE_MYSQL
+bool AreFriendsMysql(const MySqlConfig& cfg, const std::string& username,
+                     const std::string& friend_username, std::string& error);
+
+bool IsBlockedMysql(const MySqlConfig& cfg, const std::string& username,
+                    const std::string& blocked_username, std::string& error);
+#endif
+}  // namespace
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupDirectory* directory, OfflineStorage* storage,

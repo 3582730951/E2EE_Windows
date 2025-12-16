@@ -44,8 +44,6 @@ namespace mi::server {
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
 namespace {
 
-constexpr std::size_t kFrameHeaderSize = 12;
-
 struct ScopedCertStore {
   HCERTSTORE store{nullptr};
   ~ScopedCertStore() {
