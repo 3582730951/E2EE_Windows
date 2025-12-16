@@ -39,6 +39,51 @@ bool ParseUint16(const std::string& text, std::uint16_t& out) {
   return true;
 }
 
+bool ParseBool(const std::string& text, bool& out) {
+  if (text == "1" || text == "true" || text == "on") {
+    out = true;
+    return true;
+  }
+  if (text == "0" || text == "false" || text == "off") {
+    out = false;
+    return true;
+  }
+  return false;
+}
+
+std::string ToLower(std::string s) {
+  for (auto& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
+}
+
+bool ParseProxyType(const std::string& text, ProxyType& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "none" || t == "off" || t == "0") {
+    out = ProxyType::kNone;
+    return true;
+  }
+  if (t == "socks5" || t == "socks") {
+    out = ProxyType::kSocks5;
+    return true;
+  }
+  return false;
+}
+
+bool ParseDeviceSyncRole(const std::string& text, DeviceSyncRole& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "primary" || t == "0") {
+    out = DeviceSyncRole::kPrimary;
+    return true;
+  }
+  if (t == "linked" || t == "secondary" || t == "1") {
+    out = DeviceSyncRole::kLinked;
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
@@ -76,6 +121,30 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         out_cfg.server_ip = val;
       } else if (key == "server_port") {
         ParseUint16(val, out_cfg.server_port);
+      } else if (key == "use_tls") {
+        ParseBool(val, out_cfg.use_tls);
+      } else if (key == "trust_store") {
+        out_cfg.trust_store = val;
+      }
+    } else if (section == "proxy") {
+      if (key == "type") {
+        ParseProxyType(val, out_cfg.proxy.type);
+      } else if (key == "host") {
+        out_cfg.proxy.host = val;
+      } else if (key == "port") {
+        ParseUint16(val, out_cfg.proxy.port);
+      } else if (key == "username") {
+        out_cfg.proxy.username = val;
+      } else if (key == "password") {
+        out_cfg.proxy.password = val;
+      }
+    } else if (section == "device_sync") {
+      if (key == "enabled") {
+        ParseBool(val, out_cfg.device_sync.enabled);
+      } else if (key == "role") {
+        ParseDeviceSyncRole(val, out_cfg.device_sync.role);
+      } else if (key == "key_path") {
+        out_cfg.device_sync.key_path = val;
       }
     }
   }
@@ -85,6 +154,11 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   }
   if (out_cfg.server_port == 0) {
     error = "server_port missing";
+    return false;
+  }
+  if (out_cfg.proxy.type == ProxyType::kSocks5 &&
+      (out_cfg.proxy.host.empty() || out_cfg.proxy.port == 0)) {
+    error = "proxy config incomplete";
     return false;
   }
   return true;

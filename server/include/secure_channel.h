@@ -5,39 +5,38 @@
 #include <cstdint>
 #include <vector>
 
-#include "crypto.h"
+#include "frame.h"
 #include "pake.h"
 
 namespace mi::server {
+
+enum class SecureChannelRole : std::uint8_t { kClient = 0, kServer = 1 };
 
 class SecureChannel {
  public:
   SecureChannel() = default;
 
-  explicit SecureChannel(const DerivedKeys& keys);
+  explicit SecureChannel(const DerivedKeys& keys, SecureChannelRole role);
 
   bool Encrypt(std::uint64_t seq,
+               FrameType frame_type,
                const std::vector<std::uint8_t>& plaintext,
                std::vector<std::uint8_t>& out);
 
   bool Decrypt(const std::vector<std::uint8_t>& input,
-               std::uint64_t expected_seq,
+               FrameType frame_type,
                std::vector<std::uint8_t>& out_plain);
 
-  //  ratchet_root + counter
-  static bool DeriveMessageKey(const std::array<std::uint8_t, 32>& ratchet_root,
-                               std::uint64_t counter,
-                               std::array<std::uint8_t, 32>& out_key);
-
  private:
-  bool DerivePerMessageKeys(std::uint64_t seq,
-                            std::array<std::uint8_t, 32>& enc_key,
-                            std::array<std::uint8_t, 32>& auth_key) const;
-  bool HasRatchetRoot() const;
+  bool CanAcceptSeq(std::uint64_t seq) const;
+  void MarkSeqReceived(std::uint64_t seq);
 
-  std::array<std::uint8_t, 32> enc_key_{};
-  std::array<std::uint8_t, 32> auth_key_{};
-  std::array<std::uint8_t, 32> ratchet_root_{};
+  std::array<std::uint8_t, 32> tx_key_{};
+  std::array<std::uint8_t, 32> rx_key_{};
+
+  bool recv_inited_{false};
+  std::uint64_t recv_max_seq_{0};
+  std::uint64_t recv_window_{0};
 };
 
 }  // namespace mi::server

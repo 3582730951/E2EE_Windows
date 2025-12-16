@@ -42,7 +42,7 @@ int main() {
     return 1;
   }
 
-  auto add = api.AddFriend(bob.token, "alice");
+  auto add = api.AddFriend(bob.token, "alice", "Ali");
   if (!add.success) {
     return 1;
   }
@@ -51,9 +51,13 @@ int main() {
   if (!bob_list.success) {
     return 1;
   }
-  if (std::find_if(bob_list.friends.begin(), bob_list.friends.end(),
-                   [](const auto& e) { return e.username == "alice"; }) ==
-      bob_list.friends.end()) {
+  auto bob_entry = std::find_if(
+      bob_list.friends.begin(), bob_list.friends.end(),
+      [](const auto& e) { return e.username == "alice"; });
+  if (bob_entry == bob_list.friends.end()) {
+    return 1;
+  }
+  if (bob_entry->remark != "Ali") {
     return 1;
   }
 
@@ -61,9 +65,41 @@ int main() {
   if (!alice_list.success) {
     return 1;
   }
-  if (std::find_if(alice_list.friends.begin(), alice_list.friends.end(),
-                   [](const auto& e) { return e.username == "bob"; }) ==
-      alice_list.friends.end()) {
+  auto alice_entry = std::find_if(
+      alice_list.friends.begin(), alice_list.friends.end(),
+      [](const auto& e) { return e.username == "bob"; });
+  if (alice_entry == alice_list.friends.end()) {
+    return 1;
+  }
+  if (!alice_entry->remark.empty()) {
+    return 1;
+  }
+
+  auto remark = api.SetFriendRemark(bob.token, "alice", "Alice2");
+  if (!remark.success) {
+    return 1;
+  }
+  bob_list = api.ListFriends(bob.token);
+  if (!bob_list.success) {
+    return 1;
+  }
+  bob_entry = std::find_if(bob_list.friends.begin(), bob_list.friends.end(),
+                           [](const auto& e) { return e.username == "alice"; });
+  if (bob_entry == bob_list.friends.end() || bob_entry->remark != "Alice2") {
+    return 1;
+  }
+
+  remark = api.SetFriendRemark(bob.token, "alice", "");
+  if (!remark.success) {
+    return 1;
+  }
+  bob_list = api.ListFriends(bob.token);
+  if (!bob_list.success) {
+    return 1;
+  }
+  bob_entry = std::find_if(bob_list.friends.begin(), bob_list.friends.end(),
+                           [](const auto& e) { return e.username == "alice"; });
+  if (bob_entry == bob_list.friends.end() || !bob_entry->remark.empty()) {
     return 1;
   }
 

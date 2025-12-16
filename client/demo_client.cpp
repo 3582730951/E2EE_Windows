@@ -1,26 +1,29 @@
-#include <cstdio>
-#include <string>
-
 #include "include/client_core.h"
+#include "include/endpoint_hardening.h"
+
+namespace {
+struct EarlyEndpointHardening {
+    EarlyEndpointHardening() noexcept {
+        mi::client::security::StartEndpointHardening();
+    }
+};
+
+EarlyEndpointHardening gEarlyEndpointHardening;
+}  // namespace
 
 int main() {
-  mi::client::ClientCore client;
-  if (!client.Init("config.ini")) {
-    std::puts("[error] init failed");
-    return 1;
-  }
-  if (!client.Login("u", "p")) {
-    std::puts("[error] login failed");
-    return 1;
-  }
-  if (!client.JoinGroup("g1")) {
-    std::puts("[error] join failed");
-    return 1;
-  }
-  if (!client.SendGroupMessage("g1", 1)) {
-    std::puts("[error] send group message failed");
-    return 1;
-  }
-  std::puts("[client] demo finished");
-  return 0;
+    mi::client::ClientCore client;
+    if (!client.Init("config.ini")) {
+        return 1;
+    }
+    if (!client.Login("u", "p")) {
+        return 1;
+    }
+    if (!client.JoinGroup("g1")) {
+        return 1;
+    }
+    if (!client.SendGroupMessage("g1", 1)) {
+        return 1;
+    }
+    return 0;
 }

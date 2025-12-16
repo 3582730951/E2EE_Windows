@@ -2,6 +2,16 @@
 
 #include <array>
 #include <cstring>
+#include <random>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#endif
 
 namespace mi::server::crypto {
 
@@ -165,11 +175,14 @@ void HmacSha256(const std::uint8_t* key, std::size_t key_len,
   }
 
   // inner = SHA256(k_ipad || data)
-  std::array<std::uint8_t, block_size + 1024> inner_buf{};
+  std::vector<std::uint8_t> inner_buf;
+  inner_buf.resize(block_size + data_len);
   std::memcpy(inner_buf.data(), k_ipad, block_size);
-  std::memcpy(inner_buf.data() + block_size, data, data_len);
+  if (data_len > 0) {
+    std::memcpy(inner_buf.data() + block_size, data, data_len);
+  }
   Sha256Digest inner_hash;
-  Sha256(inner_buf.data(), block_size + data_len, inner_hash);
+  Sha256(inner_buf.data(), inner_buf.size(), inner_hash);
 
   // outer = SHA256(k_opad || inner_hash)
   std::array<std::uint8_t, block_size + 32> outer_buf{};
@@ -207,19 +220,17 @@ bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
   std::size_t generated = 0;
   for (std::size_t i = 1; i <= n_blocks; ++i) {
     // T = HMAC(PRK, T_prev || info || i)
-    std::array<std::uint8_t, 32 + 1024> buf{};
-    std::size_t offset = 0;
+    std::vector<std::uint8_t> buf;
+    buf.reserve(hash_len + info_len + 1);
     if (generated > 0) {
-      std::memcpy(buf.data(), t.data(), hash_len);
-      offset += hash_len;
+      buf.insert(buf.end(), t.begin(), t.end());
     }
     if (info && info_len > 0) {
-      std::memcpy(buf.data() + offset, info, info_len);
-      offset += info_len;
+      buf.insert(buf.end(), info, info + info_len);
     }
-    buf[offset] = static_cast<std::uint8_t>(i);
+    buf.push_back(static_cast<std::uint8_t>(i));
     Sha256Digest h;
-    HmacSha256(prk.bytes.data(), prk.bytes.size(), buf.data(), offset + 1, h);
+    HmacSha256(prk.bytes.data(), prk.bytes.size(), buf.data(), buf.size(), h);
     std::memcpy(t.data(), h.bytes.data(), hash_len);
 
     const std::size_t to_copy =
@@ -229,6 +240,22 @@ bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
   }
 
   return true;
+}
+
+bool RandomBytes(std::uint8_t* out, std::size_t len) {
+  if (!out || len == 0) {
+    return false;
+  }
+#ifdef _WIN32
+  return BCryptGenRandom(nullptr, out, static_cast<ULONG>(len),
+                         BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#else
+  std::random_device rd;
+  for (std::size_t i = 0; i < len; ++i) {
+    out[i] = static_cast<std::uint8_t>(rd());
+  }
+  return true;
+#endif
 }
 
 }  // namespace mi::server::crypto

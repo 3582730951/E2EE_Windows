@@ -2,11 +2,61 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <vector>
 #include <string>
 
 #include "crypto.h"
 
 namespace mi::server {
+
+bool DeriveKeysFromHybridKeyExchange(
+    const std::array<std::uint8_t, 32>& dh_shared,
+    const std::array<std::uint8_t, 32>& kem_shared,
+    const std::string& username,
+    const std::string& token,
+    DerivedKeys& out_keys,
+    std::string& error) {
+  if (username.empty() || token.empty()) {
+    error = "invalid kex context";
+    return false;
+  }
+
+  std::array<std::uint8_t, 64> ikm{};
+  std::copy_n(dh_shared.begin(), dh_shared.size(), ikm.begin() + 0);
+  std::copy_n(kem_shared.begin(), kem_shared.size(), ikm.begin() + 32);
+
+  constexpr char kInfoPrefix[] = "mi_e2ee_login_hybrid_v1";
+  std::vector<std::uint8_t> info;
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size());
+  info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
+  info.push_back(0);
+  info.insert(info.end(), username.begin(), username.end());
+  info.push_back(0);
+  info.insert(info.end(), token.begin(), token.end());
+
+  std::array<std::uint8_t, 128> buf{};
+  const bool ok = mi::server::crypto::HkdfSha256(
+      ikm.data(), ikm.size(),
+      nullptr, 0,
+      info.data(), info.size(),
+      buf.data(), buf.size());
+  if (!ok) {
+    error = "hkdf derivation failed";
+    return false;
+  }
+
+  std::copy_n(buf.begin() + 0, out_keys.root_key.size(),
+              out_keys.root_key.begin());
+  std::copy_n(buf.begin() + 32, out_keys.header_key.size(),
+              out_keys.header_key.begin());
+  std::copy_n(buf.begin() + 64, out_keys.kcp_key.size(),
+              out_keys.kcp_key.begin());
+  std::copy_n(buf.begin() + 96, out_keys.ratchet_root.size(),
+              out_keys.ratchet_root.begin());
+  error.clear();
+  return true;
+}
 
 bool DeriveKeysFromPake(const std::string& pake_shared,
                         DerivedKeys& out_keys,
@@ -45,6 +95,92 @@ bool DeriveKeysFromPake(const std::string& pake_shared,
   return true;
 }
 
+bool DeriveKeysFromPakeHandshake(
+    const std::array<std::uint8_t, 32>& handshake_key,
+    const std::string& username,
+    const std::string& token,
+    DerivedKeys& out_keys,
+    std::string& error) {
+  if (username.empty() || token.empty()) {
+    error = "invalid pake context";
+    return false;
+  }
+
+  constexpr char kInfoPrefix[] = "mi_e2ee_pake_session_v1";
+  std::vector<std::uint8_t> info;
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 +
+               token.size());
+  info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
+  info.push_back(0);
+  info.insert(info.end(), username.begin(), username.end());
+  info.push_back(0);
+  info.insert(info.end(), token.begin(), token.end());
+
+  std::array<std::uint8_t, 128> buf{};
+  const bool ok = mi::server::crypto::HkdfSha256(
+      handshake_key.data(), handshake_key.size(), nullptr, 0, info.data(),
+      info.size(), buf.data(), buf.size());
+  if (!ok) {
+    error = "hkdf derivation failed";
+    return false;
+  }
+
+  std::copy_n(buf.begin() + 0, out_keys.root_key.size(),
+              out_keys.root_key.begin());
+  std::copy_n(buf.begin() + 32, out_keys.header_key.size(),
+              out_keys.header_key.begin());
+  std::copy_n(buf.begin() + 64, out_keys.kcp_key.size(),
+              out_keys.kcp_key.begin());
+  std::copy_n(buf.begin() + 96, out_keys.ratchet_root.size(),
+              out_keys.ratchet_root.begin());
+  error.clear();
+  return true;
+}
+
+bool DeriveKeysFromOpaqueSessionKey(const std::vector<std::uint8_t>& session_key,
+                                    const std::string& username,
+                                    const std::string& token,
+                                    DerivedKeys& out_keys,
+                                    std::string& error) {
+  if (session_key.empty()) {
+    error = "opaque session key empty";
+    return false;
+  }
+  if (username.empty() || token.empty()) {
+    error = "invalid opaque context";
+    return false;
+  }
+
+  constexpr char kInfoPrefix[] = "mi_e2ee_opaque_session_v1";
+  std::vector<std::uint8_t> info;
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size());
+  info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
+  info.push_back(0);
+  info.insert(info.end(), username.begin(), username.end());
+  info.push_back(0);
+  info.insert(info.end(), token.begin(), token.end());
+
+  std::array<std::uint8_t, 128> buf{};
+  const bool ok = mi::server::crypto::HkdfSha256(
+      session_key.data(), session_key.size(), nullptr, 0, info.data(),
+      info.size(), buf.data(), buf.size());
+  if (!ok) {
+    error = "hkdf derivation failed";
+    return false;
+  }
+
+  std::copy_n(buf.begin() + 0, out_keys.root_key.size(),
+              out_keys.root_key.begin());
+  std::copy_n(buf.begin() + 32, out_keys.header_key.size(),
+              out_keys.header_key.begin());
+  std::copy_n(buf.begin() + 64, out_keys.kcp_key.size(),
+              out_keys.kcp_key.begin());
+  std::copy_n(buf.begin() + 96, out_keys.ratchet_root.size(),
+              out_keys.ratchet_root.begin());
+  error.clear();
+  return true;
+}
+
 bool DeriveKeysFromCredentials(const std::string& username,
                                const std::string& password,
                                DerivedKeys& out_keys,
@@ -60,10 +196,15 @@ bool DeriveMessageKey(const std::array<std::uint8_t, 32>& ratchet_root,
                       std::uint64_t counter,
                       std::array<std::uint8_t, 32>& out_key) {
   constexpr char kInfo[] = "mi_e2ee_ratchet_msg_v1";
+  std::uint8_t info[sizeof(kInfo) - 1 + 8];
+  std::memcpy(info, kInfo, sizeof(kInfo) - 1);
+  for (int i = 0; i < 8; ++i) {
+    info[sizeof(kInfo) - 1 + i] =
+        static_cast<std::uint8_t>((counter >> (i * 8)) & 0xFF);
+  }
   return crypto::HkdfSha256(ratchet_root.data(), ratchet_root.size(),
                             nullptr, 0,
-                            reinterpret_cast<const std::uint8_t*>(kInfo),
-                            sizeof(kInfo) - 1,
+                            info, sizeof(info),
                             out_key.data(), out_key.size());
 }
 

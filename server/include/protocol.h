@@ -15,6 +15,10 @@ bool WriteUint32(std::uint32_t v, std::vector<std::uint8_t>& out);
 bool ReadUint32(const std::vector<std::uint8_t>& data, std::size_t& offset,
                 std::uint32_t& out);
 
+bool WriteUint64(std::uint64_t v, std::vector<std::uint8_t>& out);
+bool ReadUint64(const std::vector<std::uint8_t>& data, std::size_t& offset,
+                std::uint64_t& out);
+
 inline bool WriteBytes(const std::vector<std::uint8_t>& buf,
                        std::vector<std::uint8_t>& out) {
   return WriteUint32(static_cast<std::uint32_t>(buf.size()), out) &&

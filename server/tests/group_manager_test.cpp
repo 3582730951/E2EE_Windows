@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <iostream>
 
 #include "group_manager.h"
 
@@ -8,7 +7,6 @@ using mi::server::GroupManager;
 using mi::server::RotationReason;
 
 int main() {
-  std::cout << "start" << std::endl;
   GroupManager gm;
 
   auto key1 = gm.Rotate("g1", RotationReason::kJoin);
@@ -37,6 +35,5 @@ int main() {
     return 1;
   }
 
-  std::cout << "ok\n";
   return 0;
 }

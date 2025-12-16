@@ -8,6 +8,8 @@
 
 using mi::server::DerivedKeys;
 using mi::server::SecureChannel;
+using mi::server::SecureChannelRole;
+using mi::server::FrameType;
 
 static DerivedKeys MakeKeys() {
   DerivedKeys k;
@@ -21,34 +23,44 @@ static DerivedKeys MakeKeys() {
 
 int main() {
   auto keys = MakeKeys();
-  SecureChannel ch(keys);
+  SecureChannel client(keys, SecureChannelRole::kClient);
+  SecureChannel server(keys, SecureChannelRole::kServer);
 
-  // Without ratchet_root (zero), fallback to static keys
   DerivedKeys no_root{};
-  SecureChannel ch2(no_root);
+  SecureChannel client2(no_root, SecureChannelRole::kClient);
+  SecureChannel server2(no_root, SecureChannelRole::kServer);
 
   std::vector<std::uint8_t> plain = {1, 2, 3, 4, 5};
   std::vector<std::uint8_t> cipher;
-  bool ok = ch.Encrypt(7, plain, cipher);
+  bool ok = client.Encrypt(7, FrameType::kMessage, plain, cipher);
   assert(ok);
-  assert(cipher.size() == plain.size() + 12 + 32);
+  assert(cipher.size() == plain.size() + 8 + 16);
 
   std::vector<std::uint8_t> out;
-  ok = ch.Decrypt(cipher, 7, out);
+  ok = server.Decrypt(cipher, FrameType::kMessage, out);
   assert(ok);
   assert(out == plain);
 
   // Tamper tag
   cipher.back() ^= 0xFF;
-  ok = ch.Decrypt(cipher, 7, out);
+  ok = server.Decrypt(cipher, FrameType::kMessage, out);
   assert(!ok);
 
-  // Fallback channel with zero root should still operate
+  // Replay should fail
+  std::vector<std::uint8_t> cipher_replay;
+  ok = client.Encrypt(8, FrameType::kMessage, plain, cipher_replay);
+  assert(ok);
+  ok = server.Decrypt(cipher_replay, FrameType::kMessage, out);
+  assert(ok);
+  ok = server.Decrypt(cipher_replay, FrameType::kMessage, out);
+  assert(!ok);
+
+  // Zero keys should still operate (insecure but functional)
   std::vector<std::uint8_t> cipher2;
-  ok = ch2.Encrypt(1, plain, cipher2);
+  ok = client2.Encrypt(1, FrameType::kMessage, plain, cipher2);
   assert(ok);
   std::vector<std::uint8_t> out2;
-  ok = ch2.Decrypt(cipher2, 1, out2);
+  ok = server2.Decrypt(cipher2, FrameType::kMessage, out2);
   assert(ok);
   assert(out2 == plain);
 

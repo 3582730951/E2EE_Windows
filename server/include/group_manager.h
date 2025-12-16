@@ -1,7 +1,6 @@
 #ifndef MI_E2EE_SERVER_GROUP_MANAGER_H
 #define MI_E2EE_SERVER_GROUP_MANAGER_H
 
-#include <array>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -21,7 +20,6 @@ enum class RotationReason : std::uint8_t {
 
 struct GroupKey {
   std::uint32_t version{0};
-  std::array<std::uint8_t, 32> sender_key{};
   RotationReason reason{RotationReason::kPeriodic};
 };
 

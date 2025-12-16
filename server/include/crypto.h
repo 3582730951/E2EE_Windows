@@ -22,6 +22,8 @@ bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
                 const std::uint8_t* info, std::size_t info_len,
                 std::uint8_t* out_key, std::size_t out_len);
 
+bool RandomBytes(std::uint8_t* out, std::size_t len);
+
 }  // namespace mi::server::crypto
 
 #endif  // MI_E2EE_SERVER_CRYPTO_H

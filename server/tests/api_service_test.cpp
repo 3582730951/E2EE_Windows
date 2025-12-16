@@ -56,8 +56,8 @@ int main() {
   if (!join.success || join.version != 1) {
     return 1;
   }
-  auto members = api.GroupMembers("g1");
-  if (members.empty()) {
+  auto members = api.GroupMembers(login_ok.token, "g1");
+  if (!members.success || members.members.empty()) {
     return 1;
   }
 
@@ -78,6 +78,22 @@ int main() {
   auto download =
       api.LoadEphemeralFile(login_ok.token, upload.file_id, upload.file_key);
   if (!download.success || download.plaintext != file_payload) {
+    return 1;
+  }
+
+  const std::vector<std::uint8_t> blob_payload = {5, 6, 7, 8, 9};
+  auto blob_upload = api.StoreE2eeFileBlob(login_ok.token, blob_payload);
+  if (!blob_upload.success || blob_upload.file_id.empty()) {
+    return 1;
+  }
+  auto blob_download =
+      api.LoadE2eeFileBlob(login_ok.token, blob_upload.file_id, true);
+  if (!blob_download.success || blob_download.blob != blob_payload) {
+    return 1;
+  }
+  auto blob_download2 =
+      api.LoadE2eeFileBlob(login_ok.token, blob_upload.file_id, true);
+  if (blob_download2.success) {
     return 1;
   }
 

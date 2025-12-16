@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -53,7 +54,8 @@ bool ParseUint32(const std::string& text, std::uint32_t& out) {
   }
   char* end_ptr = nullptr;
   const unsigned long value = std::strtoul(text.c_str(), &end_ptr, 10);
-  if (end_ptr == text.c_str()) {
+  if (end_ptr == text.c_str() || *end_ptr != '\0' ||
+      value > (std::numeric_limits<std::uint32_t>::max)()) {
     return false;
   }
   out = static_cast<std::uint32_t>(value);
@@ -106,6 +108,24 @@ void ApplyKV(IniState& state, const std::string& key,
       state.cfg->server.offline_dir = value;
     } else if (key == "debug_log") {
       ParseBool(value, state.cfg->server.debug_log);
+    } else if (key == "max_connections") {
+      ParseUint32(value, state.cfg->server.max_connections);
+    } else if (key == "max_connections_per_ip") {
+      ParseUint32(value, state.cfg->server.max_connections_per_ip);
+    } else if (key == "max_connection_bytes") {
+      ParseUint32(value, state.cfg->server.max_connection_bytes);
+    } else if (key == "tls_enable") {
+      ParseBool(value, state.cfg->server.tls_enable);
+    } else if (key == "require_tls") {
+      ParseBool(value, state.cfg->server.require_tls);
+    } else if (key == "tls_cert") {
+      state.cfg->server.tls_cert = value;
+    } else if (key == "ops_enable") {
+      ParseBool(value, state.cfg->server.ops_enable);
+    } else if (key == "ops_allow_remote") {
+      ParseBool(value, state.cfg->server.ops_allow_remote);
+    } else if (key == "ops_token") {
+      state.cfg->server.ops_token.set(value);
     }
     return;
   }
@@ -171,6 +191,28 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   }
   if (out_config.server.listen_port == 0) {
     error = "server listen port missing";
+    return false;
+  }
+  if (out_config.server.max_connections == 0) {
+    out_config.server.max_connections = 256;
+  }
+  if (out_config.server.max_connections_per_ip == 0) {
+    out_config.server.max_connections_per_ip = 64;
+  }
+  if (out_config.server.max_connection_bytes < 4096) {
+    error = "max_connection_bytes too small";
+    return false;
+  }
+  if (out_config.server.require_tls && !out_config.server.tls_enable) {
+    error = "require_tls enabled";
+    return false;
+  }
+  if (out_config.server.tls_enable && out_config.server.tls_cert.empty()) {
+    error = "tls_cert empty";
+    return false;
+  }
+  if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {
+    error = "ops_token missing";
     return false;
   }
   return true;

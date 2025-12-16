@@ -1,5 +1,4 @@
 #include <cassert>
-#include <iostream>
 #include <string>
 
 #include "pake.h"
@@ -15,18 +14,15 @@ int main() {
 
   bool ok = DeriveKeysFromCredentials("u", "p", a, err);
   if (!ok) {
-    std::cerr << "derive cred failed: " << err << std::endl;
     return 1;
   }
   ok = DeriveKeysFromPake("u:p", b, err);
   if (!ok) {
-    std::cerr << "derive pake failed: " << err << std::endl;
     return 1;
   }
 
   if (a.root_key != b.root_key || a.header_key != b.header_key ||
       a.kcp_key != b.kcp_key || a.ratchet_root != b.ratchet_root) {
-    std::cerr << "mismatch keys" << std::endl;
     return 1;
   }
 
@@ -34,7 +30,6 @@ int main() {
   DerivedKeys c{};
   ok = DeriveKeysFromCredentials("", "", c, err);
   if (ok) {
-    std::cerr << "empty should fail" << std::endl;
     return 1;
   }
   return 0;

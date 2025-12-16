@@ -1,15 +1,27 @@
 #include <QApplication>
-#include <QDebug>
 
 #include "../common/Theme.h"
+#include "../common/UiSettings.h"
 #include "BackendAdapter.h"
 #include "LoginDialog.h"
 #include "MainListWindow.h"
 
+#include "endpoint_hardening.h"
+
+namespace {
+struct EarlyEndpointHardening {
+    EarlyEndpointHardening() noexcept { mi::client::security::StartEndpointHardening(); }
+};
+
+EarlyEndpointHardening gEarlyEndpointHardening;
+}  // namespace
+
 int main(int argc, char *argv[]) {
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
-    QApplication::setFont(Theme::defaultFont(10));
+
+    UiSettings::Load();
+    UiSettings::ApplyToApp(app);
 
     BackendAdapter backend;
     backend.init();  // 尝试按默认 config.ini 初始化，失败时仍可继续尝试登录

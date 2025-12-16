@@ -1,6 +1,5 @@
 #include <fstream>
 #include <string>
-#include <iostream>
 
 #include "frame.h"
 #include "server_app.h"
@@ -23,7 +22,6 @@ int main() {
   std::string err;
   bool ok = app.Init("config.ini", err);
   if (!ok) {
-    std::cerr << "init failed: " << err << std::endl;
     return 1;
   }
 
@@ -41,7 +39,6 @@ int main() {
   Frame resp;
   ok = app.HandleFrame(login, resp, err);
   if (!ok || resp.payload.empty() || resp.payload[0] != 1) {
-    std::cerr << "login resp fail" << std::endl;
     return 1;
   }
 

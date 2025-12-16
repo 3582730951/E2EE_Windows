@@ -3,10 +3,13 @@
 #include <QEnterEvent>
 #include <QPainter>
 
+#include "UiIcons.h"
+
 IconButton::IconButton(const QString &glyph, QWidget *parent)
     : QPushButton(parent),
       m_glyph(glyph),
       m_pointSize(10),
+      m_svgSize(16),
       m_round(false),
       m_padding(6),
       m_fg(Qt::white),
@@ -24,9 +27,21 @@ IconButton::IconButton(const QString &glyph, QWidget *parent)
 void IconButton::setGlyph(const QString &glyph, int pointSize) {
     m_glyph = glyph;
     m_pointSize = pointSize;
+    if (!glyph.trimmed().isEmpty()) {
+        m_svgPath.clear();
+    }
     QFont f = font();
     f.setPointSize(pointSize);
     setFont(f);
+    update();
+}
+
+void IconButton::setSvgIcon(const QString &resourcePath, int size) {
+    m_svgPath = resourcePath.trimmed();
+    m_svgSize = qMax(8, size);
+    if (!m_svgPath.isEmpty()) {
+        m_glyph.clear();
+    }
     update();
 }
 
@@ -88,5 +103,22 @@ void IconButton::paintEvent(QPaintEvent *event) {
     }
 
     painter.setPen(fg);
-    painter.drawText(r, Qt::AlignCenter, m_glyph);
+    if (!m_svgPath.isEmpty()) {
+        const int side = qMin(qMin(r.width(), r.height()), m_svgSize);
+        const QRect iconRect(r.center().x() - side / 2, r.center().y() - side / 2, side, side);
+        painter.drawPixmap(iconRect, UiIcons::TintedSvg(m_svgPath, side, fg));
+    } else {
+        painter.drawText(r, Qt::AlignCenter, m_glyph);
+    }
+
+    if (hasFocus() && isEnabled()) {
+        QColor ring = fg;
+        ring.setAlpha(140);
+        QPen pen(ring);
+        pen.setWidthF(1.5);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        const int radius = m_round ? qMin(width(), height()) / 2 : 8;
+        painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), radius, radius);
+    }
 }

@@ -49,6 +49,29 @@ int main() {
     return 1;
   }
 
+  // Account lockout after repeated failures.
+  // Threshold is internal (currently 12 failures -> 5 min ban), so only assert
+  // the externally visible behavior.
+  Session tmp;
+  std::string lock_err;
+  for (int i = 0; i < 11; ++i) {
+    const bool ok_fail = mgr.Login("bob", "wrong", tmp, lock_err);
+    if (ok_fail) {
+      return 1;
+    }
+    if (lock_err == "rate limited") {
+      return 1;
+    }
+  }
+  const bool ok_banned = mgr.Login("bob", "wrong", tmp, lock_err);
+  if (ok_banned || lock_err != "rate limited") {
+    return 1;
+  }
+  const bool ok_banned_good = mgr.Login("bob", "pwd123", tmp, lock_err);
+  if (ok_banned_good || lock_err != "rate limited") {
+    return 1;
+  }
+
   // TTL expire path: very short TTL, then force cleanup
   DemoUserTable t2;
   DemoUser u2;

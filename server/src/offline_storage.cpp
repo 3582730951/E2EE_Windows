@@ -6,24 +6,53 @@
 #include <random>
 
 #include "crypto.h"
+#include "monocypher.h"
 
 namespace mi::server {
 
 namespace {
 
-std::array<std::uint8_t, 16> RandomNonce() {
-  std::array<std::uint8_t, 16> nonce{};
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<int> dist(0, 255);
-  for (auto& b : nonce) {
-    b = static_cast<std::uint8_t>(dist(gen));
+constexpr std::uint64_t kMaxBlobBytes = 320u * 1024u * 1024u;
+constexpr std::uint32_t kMaxBlobChunkBytes = 4u * 1024u * 1024u;
+constexpr std::size_t kOfflineFileAeadNonceBytes = 24;
+constexpr std::size_t kOfflineFileAeadTagBytes = 16;
+constexpr std::size_t kOfflineFileLegacyNonceBytes = 16;
+constexpr std::size_t kOfflineFileLegacyTagBytes = 32;
+constexpr std::array<std::uint8_t, 8> kOfflineFileMagic = {
+    'M', 'I', 'O', 'F', 'A', 'E', 'A', 'D'};
+constexpr std::uint8_t kOfflineFileMagicVersion = 1;
+constexpr std::size_t kOfflineFileHeaderBytes =
+    kOfflineFileMagic.size() + 1;
+
+bool FillRandom(std::uint8_t* out, std::size_t len) {
+  if (!out || len == 0) {
+    return false;
   }
+  if (crypto::RandomBytes(out, len)) {
+    return true;
+  }
+  std::random_device rd;
+  for (std::size_t i = 0; i < len; ++i) {
+    out[i] = static_cast<std::uint8_t>(rd());
+  }
+  return true;
+}
+
+std::array<std::uint8_t, kOfflineFileAeadNonceBytes> RandomAeadNonce() {
+  std::array<std::uint8_t, kOfflineFileAeadNonceBytes> nonce{};
+  (void)FillRandom(nonce.data(), nonce.size());
+  return nonce;
+}
+
+std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> RandomLegacyNonce() {
+  std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> nonce{};
+  (void)FillRandom(nonce.data(), nonce.size());
   return nonce;
 }
 
 void DeriveBlock(const std::array<std::uint8_t, 32>& key,
-                 const std::array<std::uint8_t, 16>& nonce, std::uint64_t counter,
+                 const std::array<std::uint8_t, kOfflineFileLegacyNonceBytes>& nonce,
+                 std::uint64_t counter,
                  std::array<std::uint8_t, 32>& out) {
   std::array<std::uint8_t, 24> buf{};
   std::memcpy(buf.data(), nonce.data(), nonce.size());
@@ -55,11 +84,15 @@ PutResult OfflineStorage::Put(const std::string& owner,
 
   const std::string id = GenerateId();
   const std::array<std::uint8_t, 32> key = GenerateKey();
-  const std::array<std::uint8_t, 16> nonce = RandomNonce();
+  const auto nonce = RandomAeadNonce();
+
+  std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
+  std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
+  ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersion;
 
   std::vector<std::uint8_t> cipher;
-  std::array<std::uint8_t, 32> tag{};
-  if (!Encrypt(plaintext, key, nonce, cipher, tag)) {
+  std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
+  if (!EncryptAead(plaintext, key, nonce, ad.data(), ad.size(), cipher, tag)) {
     result.error = "encrypt failed";
     return result;
   }
@@ -70,6 +103,10 @@ PutResult OfflineStorage::Put(const std::string& owner,
     result.error = "open file failed";
     return result;
   }
+  ofs.write(reinterpret_cast<const char*>(kOfflineFileMagic.data()),
+            static_cast<std::streamsize>(kOfflineFileMagic.size()));
+  const char ver = static_cast<char>(kOfflineFileMagicVersion);
+  ofs.write(&ver, 1);
   ofs.write(reinterpret_cast<const char*>(nonce.data()),
             static_cast<std::streamsize>(nonce.size()));
   ofs.write(reinterpret_cast<const char*>(cipher.data()),
@@ -96,6 +133,394 @@ PutResult OfflineStorage::Put(const std::string& owner,
   return result;
 }
 
+PutBlobResult OfflineStorage::PutBlob(const std::string& owner,
+                                      const std::vector<std::uint8_t>& blob) {
+  PutBlobResult result;
+  if (blob.empty()) {
+    result.error = "empty payload";
+    return result;
+  }
+
+  const std::string id = GenerateId();
+  const auto path = ResolvePath(id);
+  std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    result.error = "open file failed";
+    return result;
+  }
+  ofs.write(reinterpret_cast<const char*>(blob.data()),
+            static_cast<std::streamsize>(blob.size()));
+  ofs.close();
+
+  StoredFileMeta meta;
+  meta.id = id;
+  meta.owner = owner;
+  meta.size = static_cast<std::uint64_t>(blob.size());
+  meta.created_at = std::chrono::steady_clock::now();
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    metadata_[id] = meta;
+  }
+
+  result.success = true;
+  result.file_id = id;
+  result.meta = meta;
+  return result;
+}
+
+BlobUploadStartResult OfflineStorage::BeginBlobUpload(const std::string& owner,
+                                                      std::uint64_t expected_size) {
+  BlobUploadStartResult result;
+  if (owner.empty()) {
+    result.error = "owner empty";
+    return result;
+  }
+  if (expected_size > 0 && expected_size > kMaxBlobBytes) {
+    result.error = "payload too large";
+    return result;
+  }
+
+  const std::string file_id = GenerateId();
+  const std::string upload_id = GenerateSessionId();
+  const auto temp_path = ResolveUploadTempPath(file_id);
+
+  std::ofstream ofs(temp_path, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    result.error = "open file failed";
+    return result;
+  }
+  ofs.close();
+
+  BlobUploadSession sess;
+  sess.upload_id = upload_id;
+  sess.owner = owner;
+  sess.expected_size = expected_size;
+  sess.bytes_received = 0;
+  sess.temp_path = temp_path;
+  sess.created_at = std::chrono::steady_clock::now();
+  sess.last_activity = sess.created_at;
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (metadata_.find(file_id) != metadata_.end() ||
+        blob_uploads_.find(file_id) != blob_uploads_.end()) {
+      result.error = "id collision";
+      return result;
+    }
+    blob_uploads_[file_id] = std::move(sess);
+  }
+
+  result.success = true;
+  result.file_id = file_id;
+  result.upload_id = upload_id;
+  return result;
+}
+
+BlobUploadChunkResult OfflineStorage::AppendBlobUploadChunk(
+    const std::string& owner, const std::string& file_id,
+    const std::string& upload_id, std::uint64_t offset,
+    const std::vector<std::uint8_t>& chunk) {
+  BlobUploadChunkResult result;
+  if (owner.empty()) {
+    result.error = "owner empty";
+    return result;
+  }
+  if (file_id.empty() || upload_id.empty()) {
+    result.error = "invalid session";
+    return result;
+  }
+  if (chunk.empty()) {
+    result.error = "empty payload";
+    return result;
+  }
+  if (chunk.size() > kMaxBlobChunkBytes) {
+    result.error = "chunk too large";
+    return result;
+  }
+
+  std::filesystem::path temp_path;
+  std::uint64_t expected = 0;
+  std::uint64_t received = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = blob_uploads_.find(file_id);
+    if (it == blob_uploads_.end()) {
+      result.error = "upload session not found";
+      return result;
+    }
+    if (it->second.upload_id != upload_id || it->second.owner != owner) {
+      result.error = "unauthorized";
+      return result;
+    }
+    if (offset != it->second.bytes_received) {
+      result.error = "invalid offset";
+      return result;
+    }
+    if (it->second.expected_size > 0) {
+      expected = it->second.expected_size;
+    }
+    if (it->second.bytes_received + chunk.size() > kMaxBlobBytes) {
+      result.error = "payload too large";
+      return result;
+    }
+    if (expected > 0 &&
+        it->second.bytes_received + chunk.size() > expected) {
+      result.error = "payload too large";
+      return result;
+    }
+    temp_path = it->second.temp_path;
+    received = it->second.bytes_received;
+  }
+
+  std::ofstream ofs(temp_path, std::ios::binary | std::ios::app);
+  if (!ofs) {
+    result.error = "open file failed";
+    return result;
+  }
+  ofs.write(reinterpret_cast<const char*>(chunk.data()),
+            static_cast<std::streamsize>(chunk.size()));
+  ofs.close();
+  if (!ofs.good()) {
+    result.error = "write failed";
+    return result;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = blob_uploads_.find(file_id);
+    if (it == blob_uploads_.end()) {
+      result.error = "upload session not found";
+      return result;
+    }
+    if (it->second.upload_id != upload_id || it->second.owner != owner) {
+      result.error = "unauthorized";
+      return result;
+    }
+    it->second.bytes_received += static_cast<std::uint64_t>(chunk.size());
+    it->second.last_activity = std::chrono::steady_clock::now();
+    received = it->second.bytes_received;
+  }
+
+  result.success = true;
+  result.bytes_received = received;
+  return result;
+}
+
+BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
+    const std::string& owner, const std::string& file_id,
+    const std::string& upload_id, std::uint64_t total_size) {
+  BlobUploadFinishResult result;
+  if (owner.empty()) {
+    result.error = "owner empty";
+    return result;
+  }
+  if (file_id.empty() || upload_id.empty()) {
+    result.error = "invalid session";
+    return result;
+  }
+  if (total_size == 0 || total_size > kMaxBlobBytes) {
+    result.error = "payload too large";
+    return result;
+  }
+
+  BlobUploadSession sess;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = blob_uploads_.find(file_id);
+    if (it == blob_uploads_.end()) {
+      result.error = "upload session not found";
+      return result;
+    }
+    if (it->second.upload_id != upload_id || it->second.owner != owner) {
+      result.error = "unauthorized";
+      return result;
+    }
+    if (it->second.bytes_received != total_size) {
+      result.error = "size mismatch";
+      return result;
+    }
+    sess = it->second;
+    blob_uploads_.erase(it);
+  }
+
+  const auto final_path = ResolvePath(file_id);
+  std::error_code ec;
+  std::filesystem::rename(sess.temp_path, final_path, ec);
+  if (ec) {
+    result.error = "finalize failed";
+    return result;
+  }
+
+  StoredFileMeta meta;
+  meta.id = file_id;
+  meta.owner = owner;
+  meta.size = total_size;
+  meta.created_at = sess.created_at;
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    metadata_[file_id] = meta;
+  }
+
+  result.success = true;
+  result.meta = meta;
+  return result;
+}
+
+BlobDownloadStartResult OfflineStorage::BeginBlobDownload(
+    const std::string& owner, const std::string& file_id, bool wipe_after_read) {
+  BlobDownloadStartResult result;
+  if (owner.empty()) {
+    result.error = "owner empty";
+    return result;
+  }
+  if (file_id.empty()) {
+    result.error = "file id empty";
+    return result;
+  }
+  const auto path = ResolvePath(file_id);
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) || ec) {
+    result.error = "file not found";
+    return result;
+  }
+  const std::uint64_t size = std::filesystem::file_size(path, ec);
+  if (ec || size == 0) {
+    result.error = "file not found";
+    return result;
+  }
+
+  const std::string download_id = GenerateSessionId();
+  BlobDownloadSession sess;
+  sess.download_id = download_id;
+  sess.file_id = file_id;
+  sess.owner = owner;
+  sess.total_size = size;
+  sess.next_offset = 0;
+  sess.wipe_after_read = wipe_after_read;
+  sess.created_at = std::chrono::steady_clock::now();
+  sess.last_activity = sess.created_at;
+
+  StoredFileMeta meta;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = metadata_.find(file_id);
+    if (it != metadata_.end()) {
+      meta = it->second;
+    } else {
+      meta.id = file_id;
+      meta.size = size;
+      meta.owner.clear();
+      meta.created_at = std::chrono::steady_clock::now();
+    }
+    blob_downloads_[download_id] = std::move(sess);
+  }
+
+  result.success = true;
+  result.download_id = download_id;
+  result.meta = meta;
+  return result;
+}
+
+BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
+    const std::string& owner, const std::string& file_id,
+    const std::string& download_id, std::uint64_t offset,
+    std::uint32_t max_len) {
+  BlobDownloadChunkResult result;
+  if (owner.empty()) {
+    result.error = "owner empty";
+    return result;
+  }
+  if (file_id.empty() || download_id.empty()) {
+    result.error = "invalid session";
+    return result;
+  }
+  if (max_len == 0 || max_len > kMaxBlobChunkBytes) {
+    max_len = kMaxBlobChunkBytes;
+  }
+
+  BlobDownloadSession sess;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = blob_downloads_.find(download_id);
+    if (it == blob_downloads_.end()) {
+      result.error = "download session not found";
+      return result;
+    }
+    if (it->second.owner != owner || it->second.file_id != file_id) {
+      result.error = "unauthorized";
+      return result;
+    }
+    if (offset != it->second.next_offset) {
+      result.error = "invalid offset";
+      return result;
+    }
+    sess = it->second;
+  }
+
+  if (sess.total_size == 0 || offset >= sess.total_size) {
+    result.error = "invalid offset";
+    return result;
+  }
+
+  const auto path = ResolvePath(file_id);
+  std::vector<std::uint8_t> buf;
+  {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) {
+      result.error = "file not found";
+      return result;
+    }
+    ifs.seekg(static_cast<std::streamoff>(offset));
+    const std::uint64_t remaining64 = sess.total_size - offset;
+    const std::size_t to_read =
+        static_cast<std::size_t>(std::min<std::uint64_t>(remaining64, max_len));
+    buf.resize(to_read);
+    ifs.read(reinterpret_cast<char*>(buf.data()),
+             static_cast<std::streamsize>(buf.size()));
+    if (!ifs) {
+      result.error = "read failed";
+      return result;
+    }
+  }
+
+  const std::uint64_t next_off = offset + static_cast<std::uint64_t>(buf.size());
+  const bool eof = (next_off >= sess.total_size);
+
+  bool wipe = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = blob_downloads_.find(download_id);
+    if (it == blob_downloads_.end()) {
+      result.error = "download session not found";
+      return result;
+    }
+    if (it->second.owner != owner || it->second.file_id != file_id) {
+      result.error = "unauthorized";
+      return result;
+    }
+    it->second.next_offset = next_off;
+    it->second.last_activity = std::chrono::steady_clock::now();
+    if (eof) {
+      wipe = it->second.wipe_after_read;
+      blob_downloads_.erase(it);
+      if (wipe) {
+        metadata_.erase(file_id);
+      }
+    }
+  }
+  if (wipe) {
+    WipeFile(path);
+  }
+
+  result.success = true;
+  result.offset = offset;
+  result.eof = eof;
+  result.chunk = std::move(buf);
+  return result;
+}
+
 std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     const std::string& file_id, const std::array<std::uint8_t, 32>& file_key,
     bool wipe_after_read, std::string& error) {
@@ -109,37 +534,91 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
                                     std::istreambuf_iterator<char>());
   ifs.close();
 
-  if (content.size() < (16 + 32)) {
-    error = "file truncated";
-    return std::nullopt;
-  }
-
-  const std::array<std::uint8_t, 16> nonce = [&]() {
-    std::array<std::uint8_t, 16> n{};
-    std::memcpy(n.data(), content.data(), n.size());
-    return n;
-  }();
-
-  const std::size_t cipher_len = content.size() - nonce.size() - 32;
-  if (cipher_len == 0) {
-    error = "cipher empty";
-    return std::nullopt;
-  }
-
-  const std::array<std::uint8_t, 32> tag = [&]() {
-    std::array<std::uint8_t, 32> t{};
-    std::memcpy(t.data(), content.data() + nonce.size() + cipher_len,
-                t.size());
-    return t;
-  }();
-
-  std::vector<std::uint8_t> cipher(cipher_len);
-  std::memcpy(cipher.data(), content.data() + nonce.size(), cipher_len);
-
   std::vector<std::uint8_t> plaintext;
-  if (!Decrypt(cipher, file_key, nonce, tag, plaintext)) {
-    error = "auth failed";
-    return std::nullopt;
+  if (content.size() >= kOfflineFileHeaderBytes &&
+      std::equal(kOfflineFileMagic.begin(), kOfflineFileMagic.end(),
+                 content.begin())) {
+    if (content[kOfflineFileMagic.size()] != kOfflineFileMagicVersion) {
+      error = "unsupported format";
+      return std::nullopt;
+    }
+    if (content.size() <
+        (kOfflineFileHeaderBytes + kOfflineFileAeadNonceBytes +
+         kOfflineFileAeadTagBytes)) {
+      error = "file truncated";
+      return std::nullopt;
+    }
+
+    const auto nonce = [&]() {
+      std::array<std::uint8_t, kOfflineFileAeadNonceBytes> n{};
+      std::memcpy(n.data(), content.data() + kOfflineFileHeaderBytes, n.size());
+      return n;
+    }();
+
+    const std::size_t cipher_len =
+        content.size() - kOfflineFileHeaderBytes - nonce.size() -
+        kOfflineFileAeadTagBytes;
+    if (cipher_len == 0) {
+      error = "cipher empty";
+      return std::nullopt;
+    }
+
+    const auto tag = [&]() {
+      std::array<std::uint8_t, kOfflineFileAeadTagBytes> t{};
+      std::memcpy(t.data(),
+                  content.data() + kOfflineFileHeaderBytes + nonce.size() +
+                      cipher_len,
+                  t.size());
+      return t;
+    }();
+
+    std::vector<std::uint8_t> cipher(cipher_len);
+    std::memcpy(cipher.data(),
+                content.data() + kOfflineFileHeaderBytes + nonce.size(),
+                cipher_len);
+
+    std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
+    std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
+    ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersion;
+
+    if (!DecryptAead(cipher, file_key, nonce, ad.data(), ad.size(), tag,
+                     plaintext)) {
+      error = "auth failed";
+      return std::nullopt;
+    }
+  } else {
+    if (content.size() < (kOfflineFileLegacyNonceBytes + kOfflineFileLegacyTagBytes)) {
+      error = "file truncated";
+      return std::nullopt;
+    }
+
+    const auto nonce = [&]() {
+      std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> n{};
+      std::memcpy(n.data(), content.data(), n.size());
+      return n;
+    }();
+
+    const std::size_t cipher_len =
+        content.size() - nonce.size() - kOfflineFileLegacyTagBytes;
+    if (cipher_len == 0) {
+      error = "cipher empty";
+      return std::nullopt;
+    }
+
+    const auto tag = [&]() {
+      std::array<std::uint8_t, kOfflineFileLegacyTagBytes> t{};
+      std::memcpy(t.data(), content.data() + nonce.size() + cipher_len,
+                  t.size());
+      return t;
+    }();
+
+    std::vector<std::uint8_t> cipher(cipher_len);
+    std::memcpy(cipher.data(), content.data() + nonce.size(), cipher_len);
+
+    if (!DecryptLegacy(cipher, file_key, nonce, tag, plaintext)) {
+      error = "auth failed";
+      return std::nullopt;
+    }
   }
 
   if (wipe_after_read) {
@@ -152,6 +631,32 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
   return plaintext;
 }
 
+std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
+    const std::string& file_id, bool wipe_after_read, std::string& error) {
+  const auto path = ResolvePath(file_id);
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    error = "file not found";
+    return std::nullopt;
+  }
+  std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
+                                    std::istreambuf_iterator<char>());
+  ifs.close();
+  if (content.empty()) {
+    error = "empty file";
+    return std::nullopt;
+  }
+
+  if (wipe_after_read) {
+    WipeFile(path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    metadata_.erase(file_id);
+  }
+
+  error.clear();
+  return content;
+}
+
 std::optional<StoredFileMeta> OfflineStorage::Meta(
     const std::string& file_id) const {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -160,6 +665,16 @@ std::optional<StoredFileMeta> OfflineStorage::Meta(
     return std::nullopt;
   }
   return it->second;
+}
+
+OfflineStorageStats OfflineStorage::GetStats() const {
+  OfflineStorageStats stats;
+  std::lock_guard<std::mutex> lock(mutex_);
+  stats.files = static_cast<std::uint64_t>(metadata_.size());
+  for (const auto& kv : metadata_) {
+    stats.bytes += kv.second.size;
+  }
+  return stats;
 }
 
 void OfflineStorage::CleanupExpired() {
@@ -174,6 +689,23 @@ void OfflineStorage::CleanupExpired() {
       ++it;
     }
   }
+
+  const auto sess_ttl = std::chrono::minutes(15);
+  for (auto it = blob_uploads_.begin(); it != blob_uploads_.end();) {
+    if (now - it->second.last_activity > sess_ttl) {
+      WipeFile(it->second.temp_path);
+      it = blob_uploads_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = blob_downloads_.begin(); it != blob_downloads_.end();) {
+    if (now - it->second.last_activity > sess_ttl) {
+      it = blob_downloads_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 std::filesystem::path OfflineStorage::ResolvePath(
@@ -181,15 +713,19 @@ std::filesystem::path OfflineStorage::ResolvePath(
   return base_dir_ / (file_id + ".bin");
 }
 
+std::filesystem::path OfflineStorage::ResolveUploadTempPath(
+    const std::string& file_id) const {
+  return base_dir_ / (file_id + ".part");
+}
+
 std::string OfflineStorage::GenerateId() const {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<int> dist(0, 255);
+  std::array<std::uint8_t, 16> rnd{};
+  (void)FillRandom(rnd.data(), rnd.size());
   const char* hex = "0123456789abcdef";
   std::string out;
   out.resize(32);
   for (int i = 0; i < 16; ++i) {
-    const std::uint8_t v = static_cast<std::uint8_t>(dist(gen));
+    const std::uint8_t v = rnd[static_cast<std::size_t>(i)];
     out[i * 2] = hex[v >> 4];
     out[i * 2 + 1] = hex[v & 0x0F];
   }
@@ -198,20 +734,48 @@ std::string OfflineStorage::GenerateId() const {
 
 std::array<std::uint8_t, 32> OfflineStorage::GenerateKey() const {
   std::array<std::uint8_t, 32> key{};
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<int> dist(0, 255);
-  for (auto& b : key) {
-    b = static_cast<std::uint8_t>(dist(gen));
-  }
+  (void)FillRandom(key.data(), key.size());
   return key;
 }
 
-bool OfflineStorage::Encrypt(const std::vector<std::uint8_t>& plaintext,
-                             const std::array<std::uint8_t, 32>& key,
-                             const std::array<std::uint8_t, 16>& nonce,
-                             std::vector<std::uint8_t>& cipher,
-                             std::array<std::uint8_t, 32>& tag) const {
+std::string OfflineStorage::GenerateSessionId() const { return GenerateId(); }
+
+bool OfflineStorage::EncryptAead(
+    const std::vector<std::uint8_t>& plaintext,
+    const std::array<std::uint8_t, 32>& key,
+    const std::array<std::uint8_t, kOfflineFileAeadNonceBytes>& nonce,
+    const std::uint8_t* ad, std::size_t ad_len,
+    std::vector<std::uint8_t>& cipher,
+    std::array<std::uint8_t, kOfflineFileAeadTagBytes>& mac) const {
+  cipher.resize(plaintext.size());
+  crypto_aead_lock(cipher.data(), mac.data(), key.data(), nonce.data(), ad, ad_len,
+                   plaintext.data(), plaintext.size());
+  return true;
+}
+
+bool OfflineStorage::DecryptAead(
+    const std::vector<std::uint8_t>& cipher,
+    const std::array<std::uint8_t, 32>& key,
+    const std::array<std::uint8_t, kOfflineFileAeadNonceBytes>& nonce,
+    const std::uint8_t* ad, std::size_t ad_len,
+    const std::array<std::uint8_t, kOfflineFileAeadTagBytes>& mac,
+    std::vector<std::uint8_t>& plaintext) const {
+  plaintext.resize(cipher.size());
+  const int ok =
+      crypto_aead_unlock(plaintext.data(), mac.data(), key.data(), nonce.data(),
+                         ad, ad_len, cipher.data(), cipher.size());
+  if (ok != 0) {
+    plaintext.clear();
+    return false;
+  }
+  return true;
+}
+
+bool OfflineStorage::EncryptLegacy(const std::vector<std::uint8_t>& plaintext,
+                                  const std::array<std::uint8_t, 32>& key,
+                                  const std::array<std::uint8_t, 16>& nonce,
+                                  std::vector<std::uint8_t>& cipher,
+                                  std::array<std::uint8_t, 32>& tag) const {
   cipher.resize(plaintext.size());
   std::array<std::uint8_t, 32> block{};
   std::uint64_t counter = 0;
@@ -240,11 +804,11 @@ bool OfflineStorage::Encrypt(const std::vector<std::uint8_t>& plaintext,
   return true;
 }
 
-bool OfflineStorage::Decrypt(const std::vector<std::uint8_t>& cipher,
-                             const std::array<std::uint8_t, 32>& key,
-                             const std::array<std::uint8_t, 16>& nonce,
-                             const std::array<std::uint8_t, 32>& tag,
-                             std::vector<std::uint8_t>& plaintext) const {
+bool OfflineStorage::DecryptLegacy(const std::vector<std::uint8_t>& cipher,
+                                  const std::array<std::uint8_t, 32>& key,
+                                  const std::array<std::uint8_t, 16>& nonce,
+                                  const std::array<std::uint8_t, 32>& tag,
+                                  std::vector<std::uint8_t>& plaintext) const {
   std::vector<std::uint8_t> mac_buf;
   mac_buf.reserve(nonce.size() + cipher.size());
   mac_buf.insert(mac_buf.end(), nonce.begin(), nonce.end());
@@ -253,7 +817,11 @@ bool OfflineStorage::Decrypt(const std::vector<std::uint8_t>& cipher,
   crypto::Sha256Digest digest;
   crypto::HmacSha256(key.data(), key.size(), mac_buf.data(),
                      mac_buf.size(), digest);
-  if (std::memcmp(tag.data(), digest.bytes.data(), tag.size()) != 0) {
+  std::uint8_t diff = 0;
+  for (std::size_t i = 0; i < tag.size(); ++i) {
+    diff |= static_cast<std::uint8_t>(tag[i] ^ digest.bytes[i]);
+  }
+  if (diff != 0) {
     return false;
   }
 
@@ -314,60 +882,378 @@ void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
 }
 
 OfflineQueue::OfflineQueue(std::chrono::seconds default_ttl)
-    : default_ttl_(default_ttl) {}
+    : default_ttl_(default_ttl == std::chrono::seconds::zero()
+                       ? std::chrono::hours(24)
+                       : default_ttl) {}
+
+std::size_t OfflineQueue::ShardIndexFor(const std::string& recipient) const {
+  if (recipient.empty()) {
+    return 0;
+  }
+  return std::hash<std::string>{}(recipient) % kShardCount;
+}
+
+void OfflineQueue::CleanupExpiredLocked(Shard& shard,
+                                       std::chrono::steady_clock::time_point now) {
+  while (!shard.expiries.empty()) {
+    const auto& top = shard.expiries.top();
+    if (top.expires_at > now) {
+      break;
+    }
+    const std::string recipient = top.recipient;
+    const std::uint64_t message_id = top.message_id;
+    shard.expiries.pop();
+
+    auto rit = shard.recipients.find(recipient);
+    if (rit == shard.recipients.end()) {
+      continue;
+    }
+    auto& queue = rit->second;
+    auto mit = queue.by_id.find(message_id);
+    if (mit == queue.by_id.end()) {
+      continue;
+    }
+    const auto list_it = mit->second;
+    if (list_it == queue.messages.end() || list_it->expires_at > now) {
+      continue;
+    }
+
+    queue.messages.erase(list_it);
+    queue.by_id.erase(mit);
+    if (queue.messages.empty()) {
+      shard.recipients.erase(rit);
+    }
+  }
+}
 
 void OfflineQueue::Enqueue(const std::string& recipient,
                            std::vector<std::uint8_t> payload,
                            std::chrono::seconds ttl) {
-  OfflineMessage msg;
-  msg.recipient = recipient;
-  msg.payload = std::move(payload);
-  msg.created_at = std::chrono::steady_clock::now();
-  msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  const auto now = std::chrono::steady_clock::now();
+  StoredMessage stored;
+  stored.msg.kind = QueueMessageKind::kGeneric;
+  stored.msg.recipient = recipient;
+  stored.msg.payload = std::move(payload);
+  stored.msg.created_at = now;
+  stored.msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
-  std::lock_guard<std::mutex> lock(mutex_);
-  messages_[recipient].push_back(std::move(msg));
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+  stored.message_id = shard.next_id++;
+  auto& queue = shard.recipients[recipient];
+  queue.messages.push_back(std::move(stored));
+  const auto it = std::prev(queue.messages.end());
+  queue.by_id.emplace(it->message_id, it);
+  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+}
+
+void OfflineQueue::EnqueuePrivate(const std::string& recipient,
+                                  const std::string& sender,
+                                  std::vector<std::uint8_t> payload,
+                                  std::chrono::seconds ttl) {
+  const auto now = std::chrono::steady_clock::now();
+  StoredMessage stored;
+  stored.msg.kind = QueueMessageKind::kPrivate;
+  stored.msg.sender = sender;
+  stored.msg.recipient = recipient;
+  stored.msg.payload = std::move(payload);
+  stored.msg.created_at = now;
+  stored.msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+  stored.message_id = shard.next_id++;
+  auto& queue = shard.recipients[recipient];
+  queue.messages.push_back(std::move(stored));
+  const auto it = std::prev(queue.messages.end());
+  queue.by_id.emplace(it->message_id, it);
+  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+}
+
+void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
+                                      const std::string& group_id,
+                                      const std::string& sender,
+                                      std::vector<std::uint8_t> payload,
+                                      std::chrono::seconds ttl) {
+  const auto now = std::chrono::steady_clock::now();
+  StoredMessage stored;
+  stored.msg.kind = QueueMessageKind::kGroupCipher;
+  stored.msg.sender = sender;
+  stored.msg.recipient = recipient;
+  stored.msg.group_id = group_id;
+  stored.msg.payload = std::move(payload);
+  stored.msg.created_at = now;
+  stored.msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+  stored.message_id = shard.next_id++;
+  auto& queue = shard.recipients[recipient];
+  queue.messages.push_back(std::move(stored));
+  const auto it = std::prev(queue.messages.end());
+  queue.by_id.emplace(it->message_id, it);
+  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+}
+
+void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
+                                      const std::string& group_id,
+                                      const std::string& sender,
+                                      std::vector<std::uint8_t> payload,
+                                      std::chrono::seconds ttl) {
+  const auto now = std::chrono::steady_clock::now();
+  StoredMessage stored;
+  stored.msg.kind = QueueMessageKind::kGroupNotice;
+  stored.msg.sender = sender;
+  stored.msg.recipient = recipient;
+  stored.msg.group_id = group_id;
+  stored.msg.payload = std::move(payload);
+  stored.msg.created_at = now;
+  stored.msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+  stored.message_id = shard.next_id++;
+  auto& queue = shard.recipients[recipient];
+  queue.messages.push_back(std::move(stored));
+  const auto it = std::prev(queue.messages.end());
+  queue.by_id.emplace(it->message_id, it);
+  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+}
+
+void OfflineQueue::EnqueueDeviceSync(const std::string& recipient,
+                                     std::vector<std::uint8_t> payload,
+                                     std::chrono::seconds ttl) {
+  const auto now = std::chrono::steady_clock::now();
+  StoredMessage stored;
+  stored.msg.kind = QueueMessageKind::kDeviceSync;
+  stored.msg.recipient = recipient;
+  stored.msg.payload = std::move(payload);
+  stored.msg.created_at = now;
+  stored.msg.ttl = (ttl == std::chrono::seconds::zero()) ? default_ttl_ : ttl;
+  stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+  stored.message_id = shard.next_id++;
+  auto& queue = shard.recipients[recipient];
+  queue.messages.push_back(std::move(stored));
+  const auto it = std::prev(queue.messages.end());
+  queue.by_id.emplace(it->message_id, it);
+  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
 }
 
 std::vector<std::vector<std::uint8_t>> OfflineQueue::Drain(
     const std::string& recipient) {
   std::vector<std::vector<std::uint8_t>> out;
   const auto now = std::chrono::steady_clock::now();
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = messages_.find(recipient);
-  if (it == messages_.end()) {
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+
+  auto it = shard.recipients.find(recipient);
+  if (it == shard.recipients.end()) {
     return out;
   }
-  auto& vec = it->second;
-  for (auto msg_it = vec.begin(); msg_it != vec.end();) {
-    if (now - msg_it->created_at > msg_it->ttl) {
-      msg_it = vec.erase(msg_it);
+  auto& queue = it->second;
+  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
+    if (msg_it->expires_at <= now) {
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
       continue;
     }
-    out.push_back(msg_it->payload);
-    msg_it = vec.erase(msg_it);
+    if (msg_it->msg.kind == QueueMessageKind::kGeneric) {
+      out.push_back(std::move(msg_it->msg.payload));
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    ++msg_it;
   }
-  if (vec.empty()) {
-    messages_.erase(it);
+  if (queue.messages.empty()) {
+    shard.recipients.erase(it);
   }
   return out;
 }
 
+std::vector<OfflineMessage> OfflineQueue::DrainPrivate(
+    const std::string& recipient) {
+  std::vector<OfflineMessage> out;
+  const auto now = std::chrono::steady_clock::now();
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+
+  auto it = shard.recipients.find(recipient);
+  if (it == shard.recipients.end()) {
+    return out;
+  }
+  auto& queue = it->second;
+  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
+    if (msg_it->expires_at <= now) {
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    if (msg_it->msg.kind == QueueMessageKind::kPrivate) {
+      out.push_back(std::move(msg_it->msg));
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    ++msg_it;
+  }
+  if (queue.messages.empty()) {
+    shard.recipients.erase(it);
+  }
+  return out;
+}
+
+std::vector<OfflineMessage> OfflineQueue::DrainGroupCipher(
+    const std::string& recipient) {
+  std::vector<OfflineMessage> out;
+  const auto now = std::chrono::steady_clock::now();
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+
+  auto it = shard.recipients.find(recipient);
+  if (it == shard.recipients.end()) {
+    return out;
+  }
+  auto& queue = it->second;
+  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
+    if (msg_it->expires_at <= now) {
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    if (msg_it->msg.kind == QueueMessageKind::kGroupCipher) {
+      out.push_back(std::move(msg_it->msg));
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    ++msg_it;
+  }
+  if (queue.messages.empty()) {
+    shard.recipients.erase(it);
+  }
+  return out;
+}
+
+std::vector<OfflineMessage> OfflineQueue::DrainGroupNotice(
+    const std::string& recipient) {
+  std::vector<OfflineMessage> out;
+  const auto now = std::chrono::steady_clock::now();
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+
+  auto it = shard.recipients.find(recipient);
+  if (it == shard.recipients.end()) {
+    return out;
+  }
+  auto& queue = it->second;
+  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
+    if (msg_it->expires_at <= now) {
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    if (msg_it->msg.kind == QueueMessageKind::kGroupNotice) {
+      out.push_back(std::move(msg_it->msg));
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    ++msg_it;
+  }
+  if (queue.messages.empty()) {
+    shard.recipients.erase(it);
+  }
+  return out;
+}
+
+std::vector<std::vector<std::uint8_t>> OfflineQueue::DrainDeviceSync(
+    const std::string& recipient) {
+  std::vector<std::vector<std::uint8_t>> out;
+  const auto now = std::chrono::steady_clock::now();
+  auto& shard = shards_[ShardIndexFor(recipient)];
+  std::lock_guard<std::mutex> lock(shard.mutex);
+  CleanupExpiredLocked(shard, now);
+
+  auto it = shard.recipients.find(recipient);
+  if (it == shard.recipients.end()) {
+    return out;
+  }
+  auto& queue = it->second;
+  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
+    if (msg_it->expires_at <= now) {
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    if (msg_it->msg.kind == QueueMessageKind::kDeviceSync) {
+      out.push_back(std::move(msg_it->msg.payload));
+      queue.by_id.erase(msg_it->message_id);
+      msg_it = queue.messages.erase(msg_it);
+      continue;
+    }
+    ++msg_it;
+  }
+  if (queue.messages.empty()) {
+    shard.recipients.erase(it);
+  }
+  return out;
+}
+
+OfflineQueueStats OfflineQueue::GetStats() const {
+  OfflineQueueStats stats;
+  for (const auto& shard : shards_) {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    stats.recipients += static_cast<std::uint64_t>(shard.recipients.size());
+    for (const auto& entry : shard.recipients) {
+      for (const auto& stored : entry.second.messages) {
+        stats.messages++;
+        stats.bytes +=
+            static_cast<std::uint64_t>(stored.msg.payload.size());
+        switch (stored.msg.kind) {
+          case QueueMessageKind::kGeneric:
+            stats.generic_messages++;
+            break;
+          case QueueMessageKind::kPrivate:
+            stats.private_messages++;
+            break;
+          case QueueMessageKind::kGroupCipher:
+            stats.group_cipher_messages++;
+            break;
+          case QueueMessageKind::kDeviceSync:
+            stats.device_sync_messages++;
+            break;
+          case QueueMessageKind::kGroupNotice:
+            stats.group_notice_messages++;
+            break;
+        }
+      }
+    }
+  }
+  return stats;
+}
+
 void OfflineQueue::CleanupExpired() {
   const auto now = std::chrono::steady_clock::now();
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (auto it = messages_.begin(); it != messages_.end();) {
-    auto& vec = it->second;
-    vec.erase(std::remove_if(vec.begin(), vec.end(),
-                             [&](const OfflineMessage& msg) {
-                               return now - msg.created_at > msg.ttl;
-                             }),
-              vec.end());
-    if (vec.empty()) {
-      it = messages_.erase(it);
-    } else {
-      ++it;
-    }
+  for (auto& shard : shards_) {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
   }
 }
 

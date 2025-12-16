@@ -7,7 +7,8 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg)
+find_package(Qt6 QUIET COMPONENTS Multimedia MultimediaWidgets)
 
 set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -15,12 +16,18 @@ set(UI_COMMON_SOURCES
     common/FramelessWindowBase.cpp
     common/IconButton.cpp
     common/OverlayWidget.cpp
+    common/Toast.cpp
     common/Theme.cpp
+    common/UiIcons.cpp
+    common/UiSettings.cpp
+    common/UiStyle.cpp
+    common/SettingsDialog.cpp
+    common/ui_resources.qrc
 )
 
 add_library(mi_ui_common STATIC ${UI_COMMON_SOURCES})
 target_include_directories(mi_ui_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common)
-target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets)
+target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets Qt6::Svg)
 target_compile_definitions(mi_ui_common PUBLIC
     UI_REF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/ref"
 )

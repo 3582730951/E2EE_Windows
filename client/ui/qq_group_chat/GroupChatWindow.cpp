@@ -13,8 +13,14 @@
 
 namespace {
 
-IconButton *titleIcon(const QString &glyph, QWidget *parent) {
-    auto *btn = new IconButton(glyph, parent);
+IconButton *titleIcon(const QString &glyphOrSvg, QWidget *parent, int svgSize = 16) {
+    auto *btn = new IconButton(QString(), parent);
+    const QString v = glyphOrSvg.trimmed();
+    if (v.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive) || v.startsWith(QStringLiteral(":/"))) {
+        btn->setSvgIcon(v, svgSize);
+    } else {
+        btn->setGlyph(v, 10);
+    }
     btn->setFixedSize(32, 32);
     btn->setColors(QColor("#D3D3D3"), QColor("#FFFFFF"), QColor("#D8D8D8"),
                    QColor("#1F1F1F"), QColor("#2B2B2B"), QColor("#222222"));
@@ -157,12 +163,19 @@ QWidget *toolbarRow(QWidget *parent) {
     auto *layout = new QHBoxLayout(bar);
     layout->setContentsMargins(10, 6, 10, 6);
     layout->setSpacing(10);
-    QStringList icons = {QStringLiteral(":-)"), QStringLiteral("✂"),
-                         QStringLiteral("F"), QStringLiteral("P"),
-                         QStringLiteral("T"), QStringLiteral("✉"),
-                         QStringLiteral("M"), QStringLiteral("!")};
-    for (const auto &g : icons) {
-        auto *btn = new IconButton(g, bar);
+    QStringList icons = {
+        QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/image.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/file.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/image.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/chat.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/send.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/mic.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"),
+    };
+    for (const auto &path : icons) {
+        auto *btn = new IconButton(QString(), bar);
+        btn->setSvgIcon(path, 16);
         btn->setFixedSize(28, 28);
         btn->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
                        QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
@@ -170,7 +183,8 @@ QWidget *toolbarRow(QWidget *parent) {
         layout->addWidget(btn);
     }
     layout->addStretch();
-    auto *clock = new IconButton(QStringLiteral("\u23F0"), bar);
+    auto *clock = new IconButton(QString(), bar);
+    clock->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), 16);
     clock->setFixedSize(28, 28);
     clock->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
                      QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
@@ -243,17 +257,22 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
 
-    QStringList funcGlyphs = {QStringLiteral("\u260E"), QStringLiteral("\u25B6"),
-                              QStringLiteral("\u2B1A"), QStringLiteral("\u25A3"),
-                              QStringLiteral("+"), QStringLiteral("\u22EE")};
-    for (const auto &g : funcGlyphs) {
-        titleLayout->addWidget(titleIcon(g, titleBar));
+    QStringList funcIcons = {
+        QStringLiteral(":/mi/e2ee/ui/icons/phone.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/video.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/image.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/plus.svg"),
+        QStringLiteral(":/mi/e2ee/ui/icons/more.svg"),
+    };
+    for (const auto &iconPath : funcIcons) {
+        titleLayout->addWidget(titleIcon(iconPath, titleBar));
     }
 
-    auto *downBtn = titleIcon(QStringLiteral("\u25BE"), titleBar);
-    auto *minBtn = titleIcon(QStringLiteral("\u2212"), titleBar);
-    auto *maxBtn = titleIcon(QStringLiteral("\u25A1"), titleBar);
-    auto *closeBtn = titleIcon(QStringLiteral("\u2715"), titleBar);
+    auto *downBtn = titleIcon(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), titleBar, 14);
+    auto *minBtn = titleIcon(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar, 14);
+    auto *maxBtn = titleIcon(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, 14);
+    auto *closeBtn = titleIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), titleBar, 14);
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
     connect(maxBtn, &QPushButton::clicked, this, [this]() {
@@ -320,7 +339,8 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     headerLayout->setSpacing(6);
     auto *memberTitle = new QLabel(QStringLiteral("群聊成员 1036"), memberHeader);
     memberTitle->setStyleSheet("color: #E6E6E6; font-size: 12px; font-weight: 600;");
-    auto *searchIcon = new IconButton(QStringLiteral("S"), memberHeader);
+    auto *searchIcon = new IconButton(QString(), memberHeader);
+    searchIcon->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"), 14);
     searchIcon->setFixedSize(24, 24);
     searchIcon->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
                           QColor(0, 0, 0, 0), QColor(255, 255, 255, 30),

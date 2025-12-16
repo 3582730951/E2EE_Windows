@@ -1,6 +1,5 @@
 #include "group_manager.h"
 
-#include <random>
 #include <utility>
 
 namespace mi::server {
@@ -12,11 +11,6 @@ GroupKey GroupManager::MakeKey(std::uint32_t next_version,
   GroupKey key;
   key.version = next_version;
   key.reason = reason;
-  static thread_local std::mt19937 gen(std::random_device{}());
-  std::uniform_int_distribution<int> dist(0, 255);
-  for (auto& b : key.sender_key) {
-    b = static_cast<std::uint8_t>(dist(gen));
-  }
   return key;
 }
 

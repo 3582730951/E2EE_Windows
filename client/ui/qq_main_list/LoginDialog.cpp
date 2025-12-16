@@ -14,10 +14,13 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
-#include <QMessageBox>
 
 #include "../common/IconButton.h"
+#include "../common/SettingsDialog.h"
 #include "../common/Theme.h"
+#include "../common/UiSettings.h"
+#include "../common/UiStyle.h"
+#include "../common/Toast.h"
 #include "BackendAdapter.h"
 
 LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
@@ -61,18 +64,31 @@ void LoginDialog::buildUi() {
     titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->setDirection(QBoxLayout::LeftToRight);
     titleLayout->addStretch();
-    auto *settingBtnSimple = new IconButton(QStringLiteral("\u2699"), titleBar);
+    auto *settingBtnSimple = new IconButton(QString(), titleBar);
+    settingBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnSimple->setFixedSize(28, 28);
     settingBtnSimple->setColors(QColor("#C8C8D0"), QColor("#FFFFFF"), QColor("#D0D0D0"),
                                 QColor(0, 0, 0, 0), QColor(255, 255, 255, 15),
                                 QColor(255, 255, 255, 28));
     auto *settingsMenuSimple = new QMenu(settingBtnSimple);
-    settingsMenuSimple->addAction(QStringLiteral("设置"));
-    settingsMenuSimple->addAction(QStringLiteral("帮助"));
-    settingsMenuSimple->addAction(QStringLiteral("关于"));
+    UiStyle::ApplyMenuStyle(*settingsMenuSimple);
+    auto *settingsActionSimple = settingsMenuSimple->addAction(
+        UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
+    settingsMenuSimple->addAction(
+        UiSettings::Tr(QStringLiteral("帮助"), QStringLiteral("Help")));
+    settingsMenuSimple->addAction(
+        UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
     settingBtnSimple->setMenu(settingsMenuSimple);
     settingBtnSimple->setStyleSheet("QToolButton { border-radius: 6px; }");
-    auto *closeBtnSimple = new IconButton(QStringLiteral("\u2715"), titleBar);
+    connect(settingsActionSimple, &QAction::triggered, this, [this]() {
+        SettingsDialog dlg(this);
+        if (backend_) {
+            dlg.setClientConfigPath(backend_->configPath());
+        }
+        dlg.exec();
+    });
+    auto *closeBtnSimple = new IconButton(QString(), titleBar);
+    closeBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtnSimple->setFixedSize(24, 24);
     closeBtnSimple->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
                               QColor(0, 0, 0, 0), QColor(255, 255, 255, 20), QColor(255, 255, 255, 30));
@@ -187,20 +203,33 @@ void LoginDialog::buildUi() {
     accTopLayout->setContentsMargins(0, 0, 0, 0);
     accTopLayout->setDirection(QBoxLayout::LeftToRight);
     accTopLayout->addStretch();
-    auto *settingBtnAcc = new IconButton(QStringLiteral("\u2699"), accTopBar);
+    auto *settingBtnAcc = new IconButton(QString(), accTopBar);
+    settingBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnAcc->setFixedSize(28, 28);
     settingBtnAcc->setColors(QColor("#C8C8D0"), QColor("#FFFFFF"), QColor("#D0D0D0"),
                              QColor(0, 0, 0, 0), QColor(255, 255, 255, 15),
                              QColor(255, 255, 255, 28));
     auto *settingsMenuAcc = new QMenu(settingBtnAcc);
-    settingsMenuAcc->addAction(QStringLiteral("设置"));
-    settingsMenuAcc->addAction(QStringLiteral("帮助"));
-    settingsMenuAcc->addAction(QStringLiteral("关于"));
+    UiStyle::ApplyMenuStyle(*settingsMenuAcc);
+    auto *settingsActionAcc = settingsMenuAcc->addAction(
+        UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
+    settingsMenuAcc->addAction(
+        UiSettings::Tr(QStringLiteral("帮助"), QStringLiteral("Help")));
+    settingsMenuAcc->addAction(
+        UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
     settingBtnAcc->setMenu(settingsMenuAcc);
     settingBtnAcc->setStyleSheet("QToolButton { border-radius: 6px; }");
+    connect(settingsActionAcc, &QAction::triggered, this, [this]() {
+        SettingsDialog dlg(this);
+        if (backend_) {
+            dlg.setClientConfigPath(backend_->configPath());
+        }
+        dlg.exec();
+    });
     accTopLayout->addWidget(settingBtnAcc);
     accTopLayout->addSpacing(6);
-    auto *closeBtnAcc = new IconButton(QStringLiteral("\u2715"), accTopBar);
+    auto *closeBtnAcc = new IconButton(QString(), accTopBar);
+    closeBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtnAcc->setFixedSize(24, 24);
     closeBtnAcc->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
                            QColor(0, 0, 0, 0), QColor(255, 255, 255, 20), QColor(255, 255, 255, 30));
@@ -318,9 +347,14 @@ void LoginDialog::handleLogin() {
             if (!backend_->login(acc, pwd, err)) {
                 errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
                 errorLabel_->setVisible(true);
-                QMessageBox::warning(this, QStringLiteral("登录失败"),
-                                     err.isEmpty() ? QStringLiteral("登录失败：请检查账号或网络")
-                                                   : err);
+                Toast::Show(this,
+                            err.isEmpty()
+                                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
+                                                 QStringLiteral("Login failed. Please check your account or network."))
+                                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
+                                                 QStringLiteral("Login failed: %1").arg(err)),
+                            Toast::Level::Error,
+                            3200);
                 return;
             }
         }
@@ -334,9 +368,14 @@ void LoginDialog::handleLogin() {
             if (!backend_->login(acc, pwd, err)) {
                 errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
                 errorLabel_->setVisible(true);
-                QMessageBox::warning(this, QStringLiteral("登录失败"),
-                                     err.isEmpty() ? QStringLiteral("登录失败：请检查账号或网络")
-                                                   : err);
+                Toast::Show(this,
+                            err.isEmpty()
+                                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
+                                                 QStringLiteral("Login failed. Please check your account or network."))
+                                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
+                                                 QStringLiteral("Login failed: %1").arg(err)),
+                            Toast::Level::Error,
+                            3200);
                 return;
             }
         }

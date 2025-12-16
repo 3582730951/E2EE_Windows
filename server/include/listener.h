@@ -20,6 +20,10 @@ class Listener {
   bool Process(const std::vector<std::uint8_t>& frame_bytes,
                std::vector<std::uint8_t>& out_bytes);
 
+  bool Process(const std::vector<std::uint8_t>& frame_bytes,
+               std::vector<std::uint8_t>& out_bytes,
+               const std::string& remote_ip);
+
  private:
   ConnectionHandler handler_;
 };

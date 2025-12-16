@@ -58,7 +58,7 @@ std::string ScrambledString::decrypt() const {
   for (std::size_t i = 0; i < len_; ++i) {
     const std::size_t original = (permIndex == 0) ? i : (len_ - 1 - i);
     const std::uint8_t enc = buffer_[i];
-    plain[original] = static_cast<char>(enc ^ keyBytes[i & 3]);
+    plain[original] = static_cast<char>(enc ^ keyBytes[original & 3]);
   }
   return plain;
 }

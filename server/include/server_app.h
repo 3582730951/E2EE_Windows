@@ -34,6 +34,8 @@ class ServerApp {
   const ServerConfig& config() const { return config_; }
   SessionManager* sessions() { return sessions_.get(); }
   const SessionManager* sessions() const { return sessions_.get(); }
+  OfflineStorage* offline_storage() { return offline_storage_.get(); }
+  OfflineQueue* offline_queue() { return offline_queue_.get(); }
 
  private:
   ServerConfig config_;

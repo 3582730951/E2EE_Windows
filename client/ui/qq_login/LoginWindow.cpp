@@ -76,16 +76,21 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     auto *titleLayout = new QHBoxLayout(titleBar);
     titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->addStretch();
-    auto *cubeBtn = new IconButton(QStringLiteral("\u25A1"), titleBar);
+    auto *cubeBtn = new IconButton(QString(), titleBar);
+    cubeBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), 14);
     cubeBtn->setFixedSize(26, 26);
     cubeBtn->setColors(QColor("#A0B3E8"), QColor("#C2D4FF"), QColor("#88A0D8"),
                        QColor(0, 0, 0, 0), QColor(255, 255, 255, 30),
                        QColor(255, 255, 255, 60));
-    auto *closeBtn = new IconButton(QStringLiteral("\u2715"), titleBar);
+    auto *closeBtn = new IconButton(QString(), titleBar);
+    closeBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtn->setFixedSize(26, 26);
     closeBtn->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
                         QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
                         QColor(255, 255, 255, 30));
+    connect(cubeBtn, &QPushButton::clicked, this, [this]() {
+        isMaximized() ? showNormal() : showMaximized();
+    });
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
     titleLayout->addWidget(cubeBtn);
     titleLayout->addSpacing(4);

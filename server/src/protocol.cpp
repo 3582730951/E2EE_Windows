@@ -50,4 +50,25 @@ bool ReadUint32(const std::vector<std::uint8_t>& data, std::size_t& offset,
   return true;
 }
 
+bool WriteUint64(std::uint64_t v, std::vector<std::uint8_t>& out) {
+  for (int i = 0; i < 8; ++i) {
+    out.push_back(static_cast<std::uint8_t>((v >> (i * 8)) & 0xFF));
+  }
+  return true;
+}
+
+bool ReadUint64(const std::vector<std::uint8_t>& data, std::size_t& offset,
+                std::uint64_t& out) {
+  if (offset + 8 > data.size()) {
+    return false;
+  }
+  out = 0;
+  for (int i = 0; i < 8; ++i) {
+    out |= (static_cast<std::uint64_t>(data[offset + static_cast<std::size_t>(i)])
+            << (i * 8));
+  }
+  offset += 8;
+  return true;
+}
+
 }  // namespace mi::server::proto
