@@ -2,14 +2,23 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <iostream>
 
 #include "server_app.h"
 #include "network_server.h"
 
 namespace {
 
-void LogError(const std::string&) {}
-void LogInfo(const std::string&) {}
+void LogError(const std::string& msg) {
+  std::cerr << "[mi_e2ee_server] " << msg << "\n";
+}
+
+void LogInfo(bool enabled, const std::string& msg) {
+  if (!enabled) {
+    return;
+  }
+  std::cout << "[mi_e2ee_server] " << msg << "\n";
+}
 
 }  // namespace
 
@@ -24,9 +33,12 @@ int main(int argc, char** argv) {
   }
 
   const auto& cfg = app.config();
-  LogInfo(std::string("server config loaded. mode=") +
-          (cfg.mode == mi::server::AuthMode::kDemo ? "demo" : "mysql") +
-          " listen_port=" + std::to_string(cfg.server.listen_port));
+  const bool verbose = cfg.server.debug_log;
+  LogInfo(verbose, std::string("server config loaded. mode=") +
+                        (cfg.mode == mi::server::AuthMode::kDemo ? "demo"
+                                                                : "mysql") +
+                        " listen_port=" +
+                        std::to_string(cfg.server.listen_port));
 
   mi::server::Listener listener(&app);
   mi::server::NetworkServerLimits limits;
@@ -36,11 +48,12 @@ int main(int argc, char** argv) {
   mi::server::NetworkServer net(&listener, cfg.server.listen_port,
                                 cfg.server.tls_enable, cfg.server.tls_cert,
                                 limits);
-  if (!net.Start()) {
-    LogError("network server start failed (placeholder)");
+  std::string net_error;
+  if (!net.Start(net_error)) {
+    LogError(net_error.empty() ? "network server start failed" : net_error);
     return 1;
   }
-  LogInfo("server initialized (network placeholder running)");
+  LogInfo(verbose, "server initialized");
   // 占位运行，保持主线程。
   while (true) {
     std::this_thread::sleep_for(std::chrono::seconds(5));

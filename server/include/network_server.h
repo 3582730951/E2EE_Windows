@@ -28,7 +28,7 @@ class NetworkServer {
                 NetworkServerLimits limits = NetworkServerLimits{});
   ~NetworkServer();
 
-  bool Start();
+  bool Start(std::string& error);
   void Stop();
 
  private:

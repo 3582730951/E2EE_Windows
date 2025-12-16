@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <sstream>
 #include <thread>
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
 #ifdef _WIN32
@@ -124,6 +125,26 @@ struct ScopedCtxtHandle {
   ScopedCtxtHandle& operator=(const ScopedCtxtHandle&) = delete;
 };
 
+std::string Win32ErrorMessage(DWORD code) {
+  LPSTR msg = nullptr;
+  const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+                      FORMAT_MESSAGE_IGNORE_INSERTS;
+  const DWORD n = FormatMessageA(
+      flags, nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      reinterpret_cast<LPSTR>(&msg), 0, nullptr);
+  std::string out;
+  if (n && msg) {
+    out.assign(msg, msg + n);
+  }
+  if (msg) {
+    LocalFree(msg);
+  }
+  while (!out.empty() && (out.back() == '\r' || out.back() == '\n')) {
+    out.pop_back();
+  }
+  return out;
+}
+
 bool SendAll(SOCKET sock, const std::uint8_t* data, std::size_t len) {
   if (!data || len == 0) {
     return true;
@@ -181,11 +202,14 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
     if (last == NTE_EXISTS) {
       if (!CryptAcquireContextW(&prov.prov, kContainerName, nullptr,
                                 PROV_RSA_AES, 0)) {
-        error = "CryptAcquireContext failed";
+        const DWORD ec2 = GetLastError();
+        error = "CryptAcquireContext failed: " + std::to_string(ec2) + " " +
+                Win32ErrorMessage(ec2);
         return false;
       }
     } else {
-      error = "CryptAcquireContext failed";
+      error = "CryptAcquireContext failed: " + std::to_string(last) + " " +
+              Win32ErrorMessage(last);
       return false;
     }
   }
@@ -194,7 +218,9 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
   const DWORD key_flags =
       (2048u << 16u) | CRYPT_EXPORTABLE;  // 2048-bit RSA
   if (!CryptGenKey(prov.prov, AT_KEYEXCHANGE, key_flags, &key.key)) {
-    error = "CryptGenKey failed";
+    const DWORD last = GetLastError();
+    error = "CryptGenKey failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
 
@@ -203,14 +229,18 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
                       CERT_X500_NAME_STR, nullptr, nullptr, &name_len,
                       nullptr) ||
       name_len == 0) {
-    error = "CertStrToName failed";
+    const DWORD last = GetLastError();
+    error = "CertStrToName sizing failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
   std::vector<std::uint8_t> name_buf(name_len);
   if (!CertStrToNameW(X509_ASN_ENCODING, L"CN=MI_E2EE_Server",
                       CERT_X500_NAME_STR, nullptr, name_buf.data(), &name_len,
                       nullptr)) {
-    error = "CertStrToName failed";
+    const DWORD last = GetLastError();
+    error = "CertStrToName failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
 
@@ -237,7 +267,9 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
   cert.cert = CertCreateSelfSignCertificate(
       prov.prov, &subject, 0, &key_prov, nullptr, &start, &end, nullptr);
   if (!cert.cert) {
-    error = "CertCreateSelfSignCertificate failed";
+    const DWORD last = GetLastError();
+    error = "CertCreateSelfSignCertificate failed: " + std::to_string(last) +
+            " " + Win32ErrorMessage(last);
     return false;
   }
 
@@ -245,13 +277,17 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
   mem_store.store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0,
                                   CERT_STORE_CREATE_NEW_FLAG, nullptr);
   if (!mem_store.store) {
-    error = "CertOpenStore failed";
+    const DWORD last = GetLastError();
+    error = "CertOpenStore failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
   if (!CertAddCertificateContextToStore(mem_store.store, cert.cert,
                                         CERT_STORE_ADD_REPLACE_EXISTING,
                                         nullptr)) {
-    error = "CertAddCertificateContextToStore failed";
+    const DWORD last = GetLastError();
+    error = "CertAddCertificateContextToStore failed: " + std::to_string(last) +
+            " " + Win32ErrorMessage(last);
     return false;
   }
 
@@ -261,18 +297,22 @@ bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
       EXPORT_PRIVATE_KEYS | REPORT_NOT_ABLE_TO_EXPORT_PRIVATE_KEY |
       REPORT_NO_PRIVATE_KEY;
   if (!PFXExportCertStoreEx(mem_store.store, &pfx_blob, pfx_pass, nullptr,
-                            export_flags) ||
+                             export_flags) ||
       pfx_blob.cbData == 0) {
-    error = "PFXExportCertStoreEx sizing failed";
+    const DWORD last = GetLastError();
+    error = "PFXExportCertStoreEx sizing failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
 
   std::vector<std::uint8_t> pfx_bytes(pfx_blob.cbData);
   pfx_blob.pbData = pfx_bytes.data();
   if (!PFXExportCertStoreEx(mem_store.store, &pfx_blob, pfx_pass, nullptr,
-                            export_flags) ||
+                             export_flags) ||
       pfx_blob.cbData == 0) {
-    error = "PFXExportCertStoreEx failed";
+    const DWORD last = GetLastError();
+    error = "PFXExportCertStoreEx failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
 
@@ -304,9 +344,13 @@ bool LoadPfxCert(const std::filesystem::path& pfx_path, ScopedCertStore& store,
   CRYPT_DATA_BLOB blob{};
   blob.pbData = bytes.data();
   blob.cbData = static_cast<DWORD>(bytes.size());
-  store.store = PFXImportCertStore(&blob, L"", PKCS12_NO_PERSIST_KEY);
+  store.store = PFXImportCertStore(&blob, L"",
+                                   CRYPT_EXPORTABLE | CRYPT_USER_KEYSET |
+                                       PKCS12_ALLOW_OVERWRITE_KEY);
   if (!store.store) {
-    error = "PFXImportCertStore failed";
+    const DWORD last = GetLastError();
+    error = "PFXImportCertStore failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
     return false;
   }
 
@@ -354,7 +398,10 @@ bool InitSchannelServerCred(const std::filesystem::path& pfx_path,
                                 SECPKG_CRED_INBOUND, nullptr, &sch, nullptr,
                                 nullptr, &out_cred.cred, &expiry);
   if (st != SEC_E_OK) {
-    error = "AcquireCredentialsHandle failed";
+    std::ostringstream oss;
+    oss << "AcquireCredentialsHandle failed: 0x" << std::hex
+        << static_cast<unsigned long>(st);
+    error = oss.str();
     return false;
   }
   out_cred.has = true;
@@ -657,15 +704,18 @@ NetworkServer::NetworkServer(Listener* listener, std::uint16_t port,
 
 NetworkServer::~NetworkServer() { Stop(); }
 
-bool NetworkServer::Start() {
+bool NetworkServer::Start(std::string& error) {
+  error.clear();
   if (running_.load()) {
     return true;
   }
   if (!listener_ || port_ == 0) {
+    error = "invalid listener/port";
     return false;
   }
 #if defined(MI_E2EE_ENABLE_TCP_SERVER) && !defined(_WIN32)
   if (tls_enable_) {
+    error = "tls not supported on this platform";
     return false;
   }
 #endif
@@ -675,6 +725,7 @@ bool NetworkServer::Start() {
     std::string tls_err;
     if (!InitSchannelServerCred(tls_cert_, tls->cred, tls->store, tls->cert,
                                 tls_err)) {
+      error = tls_err.empty() ? "tls init failed" : tls_err;
       return false;
     }
     tls_ = std::move(tls);
@@ -682,6 +733,7 @@ bool NetworkServer::Start() {
 #endif
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
   if (!StartSocket()) {
+    error = "start socket failed";
     return false;
   }
 #endif
