@@ -2,7 +2,18 @@
 
 #include <QHash>
 #include <QPainter>
+#include <QResource>
 #include <QSvgRenderer>
+
+namespace {
+
+struct UiResourcesInit {
+    UiResourcesInit() { Q_INIT_RESOURCE(ui_resources); }
+};
+
+const UiResourcesInit kUiResourcesInit;
+
+}  // namespace
 
 namespace UiIcons {
 
@@ -31,4 +42,3 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
 }
 
 }  // namespace UiIcons
-

@@ -107,8 +107,7 @@ void LoginDialog::buildUi() {
     auto *title = new QLabel(QStringLiteral("QQ"), simplePage_);
     title->setAlignment(Qt::AlignHCenter);
     title->setStyleSheet(
-        "color: #6FC1FF; font-size: 30px; font-weight: 700; letter-spacing: 2px;"
-        "text-shadow: 0px 0px 12px rgba(111,193,255,0.65);");
+        "color: #6FC1FF; font-size: 30px; font-weight: 700; letter-spacing: 2px;");
     auto *titleGlow = new QGraphicsDropShadowEffect(title);
     titleGlow->setBlurRadius(24);
     titleGlow->setOffset(0, 0);

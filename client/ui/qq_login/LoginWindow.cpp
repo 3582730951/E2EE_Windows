@@ -104,8 +104,7 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     auto *title = new QLabel(QStringLiteral("QQ"), central);
     title->setAlignment(Qt::AlignHCenter);
     title->setStyleSheet(
-        "color: #6FC1FF; font-size: 34px; font-weight: 600; "
-        "text-shadow: 0px 0px 12px rgba(111,193,255,0.65);");
+        "color: #6FC1FF; font-size: 34px; font-weight: 600;");
     auto *titleGlow = new QGraphicsDropShadowEffect(title);
     titleGlow->setBlurRadius(24);
     titleGlow->setOffset(0, 0);
