@@ -17,6 +17,8 @@
 
 # Local artifacts (禁止推送)
 *.txt
+!CMakeLists.txt
+!**/CMakeLists.txt
 *.log
 *.log.*
 *.bak

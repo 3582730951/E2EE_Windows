@@ -16,53 +16,53 @@ add_subdirectory(../server ${CMAKE_CURRENT_BINARY_DIR}/server_build EXCLUDE_FROM
 
 if(NOT TARGET monocypher)
   add_library(monocypher STATIC
-      ../../third_party/monocypher/monocypher.c
+      ../third_party/monocypher/monocypher.c
   )
-  target_include_directories(monocypher PUBLIC ../../third_party/monocypher)
+  target_include_directories(monocypher PUBLIC ../third_party/monocypher)
 endif()
 
 if(NOT TARGET miniz)
   add_library(miniz STATIC
-      ../../third_party/miniz/miniz.c
-      ../../third_party/miniz/miniz_tdef.c
-      ../../third_party/miniz/miniz_tinfl.c
-      ../../third_party/miniz/miniz_zip.c
+      ../third_party/miniz/miniz.c
+      ../third_party/miniz/miniz_tdef.c
+      ../third_party/miniz/miniz_tinfl.c
+      ../third_party/miniz/miniz_zip.c
   )
-  target_include_directories(miniz PUBLIC ../../third_party/miniz)
+  target_include_directories(miniz PUBLIC ../third_party/miniz)
 endif()
 
 if(NOT TARGET pqclean_mlkem768_clean)
   add_library(pqclean_mlkem768_clean STATIC
-      ../../third_party/pqclean_mlkem768_clean/cbd.c
-      ../../third_party/pqclean_mlkem768_clean/fips202.c
-      ../../third_party/pqclean_mlkem768_clean/indcpa.c
-      ../../third_party/pqclean_mlkem768_clean/kem.c
-      ../../third_party/pqclean_mlkem768_clean/ntt.c
-      ../../third_party/pqclean_mlkem768_clean/poly.c
-      ../../third_party/pqclean_mlkem768_clean/polyvec.c
-      ../../third_party/pqclean_mlkem768_clean/randombytes.c
-      ../../third_party/pqclean_mlkem768_clean/reduce.c
-      ../../third_party/pqclean_mlkem768_clean/symmetric-shake.c
-      ../../third_party/pqclean_mlkem768_clean/verify.c
+      ../third_party/pqclean_mlkem768_clean/cbd.c
+      ../third_party/pqclean_mlkem768_clean/fips202.c
+      ../third_party/pqclean_mlkem768_clean/indcpa.c
+      ../third_party/pqclean_mlkem768_clean/kem.c
+      ../third_party/pqclean_mlkem768_clean/ntt.c
+      ../third_party/pqclean_mlkem768_clean/poly.c
+      ../third_party/pqclean_mlkem768_clean/polyvec.c
+      ../third_party/pqclean_mlkem768_clean/randombytes.c
+      ../third_party/pqclean_mlkem768_clean/reduce.c
+      ../third_party/pqclean_mlkem768_clean/symmetric-shake.c
+      ../third_party/pqclean_mlkem768_clean/verify.c
   )
   target_include_directories(pqclean_mlkem768_clean PRIVATE
-      ../../third_party/pqclean_mlkem768_clean
+      ../third_party/pqclean_mlkem768_clean
   )
 endif()
 
 if(NOT TARGET pqclean_mldsa65_clean)
   add_library(pqclean_mldsa65_clean STATIC
-      ../../third_party/pqclean_mldsa65_clean/ntt.c
-      ../../third_party/pqclean_mldsa65_clean/packing.c
-      ../../third_party/pqclean_mldsa65_clean/poly.c
-      ../../third_party/pqclean_mldsa65_clean/polyvec.c
-      ../../third_party/pqclean_mldsa65_clean/reduce.c
-      ../../third_party/pqclean_mldsa65_clean/rounding.c
-      ../../third_party/pqclean_mldsa65_clean/sign.c
-      ../../third_party/pqclean_mldsa65_clean/symmetric-shake.c
+      ../third_party/pqclean_mldsa65_clean/ntt.c
+      ../third_party/pqclean_mldsa65_clean/packing.c
+      ../third_party/pqclean_mldsa65_clean/poly.c
+      ../third_party/pqclean_mldsa65_clean/polyvec.c
+      ../third_party/pqclean_mldsa65_clean/reduce.c
+      ../third_party/pqclean_mldsa65_clean/rounding.c
+      ../third_party/pqclean_mldsa65_clean/sign.c
+      ../third_party/pqclean_mldsa65_clean/symmetric-shake.c
   )
   target_include_directories(pqclean_mldsa65_clean PRIVATE
-      ../../third_party/pqclean_mldsa65_clean
+      ../third_party/pqclean_mldsa65_clean
   )
   target_link_libraries(pqclean_mldsa65_clean PRIVATE pqclean_mlkem768_clean)
 endif()

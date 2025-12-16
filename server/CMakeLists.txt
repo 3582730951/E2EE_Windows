@@ -12,9 +12,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/../cmake/mi_e2ee_build_options.cmake)
 
 if(NOT TARGET monocypher)
   add_library(monocypher STATIC
-      ../../third_party/monocypher/monocypher.c
+      ../third_party/monocypher/monocypher.c
   )
-  target_include_directories(monocypher PUBLIC ../../third_party/monocypher)
+  target_include_directories(monocypher PUBLIC ../third_party/monocypher)
 endif()
 
 set(MI_OPAQUE_PAKE_MANIFEST ${CMAKE_CURRENT_LIST_DIR}/../shard/opaque_pake/Cargo.toml)
@@ -93,20 +93,20 @@ endif()
 
 if(NOT TARGET pqclean_mlkem768_clean)
   add_library(pqclean_mlkem768_clean STATIC
-      ../../third_party/pqclean_mlkem768_clean/cbd.c
-      ../../third_party/pqclean_mlkem768_clean/fips202.c
-      ../../third_party/pqclean_mlkem768_clean/indcpa.c
-      ../../third_party/pqclean_mlkem768_clean/kem.c
-      ../../third_party/pqclean_mlkem768_clean/ntt.c
-      ../../third_party/pqclean_mlkem768_clean/poly.c
-      ../../third_party/pqclean_mlkem768_clean/polyvec.c
-      ../../third_party/pqclean_mlkem768_clean/randombytes.c
-      ../../third_party/pqclean_mlkem768_clean/reduce.c
-      ../../third_party/pqclean_mlkem768_clean/symmetric-shake.c
-      ../../third_party/pqclean_mlkem768_clean/verify.c
+      ../third_party/pqclean_mlkem768_clean/cbd.c
+      ../third_party/pqclean_mlkem768_clean/fips202.c
+      ../third_party/pqclean_mlkem768_clean/indcpa.c
+      ../third_party/pqclean_mlkem768_clean/kem.c
+      ../third_party/pqclean_mlkem768_clean/ntt.c
+      ../third_party/pqclean_mlkem768_clean/poly.c
+      ../third_party/pqclean_mlkem768_clean/polyvec.c
+      ../third_party/pqclean_mlkem768_clean/randombytes.c
+      ../third_party/pqclean_mlkem768_clean/reduce.c
+      ../third_party/pqclean_mlkem768_clean/symmetric-shake.c
+      ../third_party/pqclean_mlkem768_clean/verify.c
   )
   target_include_directories(pqclean_mlkem768_clean PRIVATE
-      ../../third_party/pqclean_mlkem768_clean
+      ../third_party/pqclean_mlkem768_clean
   )
   if(WIN32)
     target_link_libraries(pqclean_mlkem768_clean PUBLIC advapi32)
