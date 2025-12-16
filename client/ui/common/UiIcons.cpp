@@ -5,19 +5,21 @@
 #include <QResource>
 #include <QSvgRenderer>
 
-namespace {
+#include <mutex>
 
-struct UiResourcesInit {
-    UiResourcesInit() { Q_INIT_RESOURCE(ui_resources); }
-};
+static void InitUiResources() {
+    Q_INIT_RESOURCE(ui_resources);
+}
 
-const UiResourcesInit kUiResourcesInit;
-
-}  // namespace
+static void EnsureUiResources() {
+    static std::once_flag once;
+    std::call_once(once, InitUiResources);
+}
 
 namespace UiIcons {
 
 QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
+    EnsureUiResources();
     static QHash<QString, QPixmap> cache;
     const QString key =
         resourcePath + QStringLiteral(":") + QString::number(size) + QStringLiteral(":") +

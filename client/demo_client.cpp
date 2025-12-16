@@ -1,17 +1,9 @@
 #include "include/client_core.h"
 #include "include/endpoint_hardening.h"
 
-namespace {
-struct EarlyEndpointHardening {
-    EarlyEndpointHardening() noexcept {
-        mi::client::security::StartEndpointHardening();
-    }
-};
-
-EarlyEndpointHardening gEarlyEndpointHardening;
-}  // namespace
-
 int main() {
+    mi::client::security::StartEndpointHardening();
+
     mi::client::ClientCore client;
     if (!client.Init("config.ini")) {
         return 1;

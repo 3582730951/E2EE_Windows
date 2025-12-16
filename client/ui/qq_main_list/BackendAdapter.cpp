@@ -88,8 +88,16 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
         return false;
     }
     if (!core_.Login(account.trimmed().toStdString(), password.toStdString())) {
-        err = QStringLiteral("登录失败：请检查账号/密码或服务器状态");
+        const QString coreErr = QString::fromStdString(core_.last_error()).trimmed();
+        if (core_.HasPendingServerTrust()) {
+            err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
+        } else if (!coreErr.isEmpty()) {
+            err = coreErr;
+        } else {
+            err = QStringLiteral("登录失败：请检查账号/密码或服务器状态");
+        }
         loggedIn_ = false;
+        online_ = false;
         return false;
     }
     loggedIn_ = true;
@@ -1393,10 +1401,6 @@ bool BackendAdapter::trustPendingPeer(const QString &pin, QString &err) {
 }
 
 bool BackendAdapter::trustPendingServer(const QString &pin, QString &err) {
-    if (!loggedIn_) {
-        err = QStringLiteral("尚未登录");
-        return false;
-    }
     if (!ensureInited(err)) {
         return false;
     }

@@ -34,6 +34,12 @@ public:
 
     bool init(const QString &configPath = QString());
     bool login(const QString &account, const QString &password, QString &err);
+
+    bool hasPendingServerTrust() const { return core_.HasPendingServerTrust(); }
+    QString pendingServerFingerprint() const { return QString::fromStdString(core_.pending_server_fingerprint()); }
+    QString pendingServerPin() const { return QString::fromStdString(core_.pending_server_pin()); }
+    QString lastCoreError() const { return QString::fromStdString(core_.last_error()); }
+
     QVector<FriendEntry> listFriends(QString &err);
     bool addFriend(const QString &account, const QString &remark, QString &err);
     bool sendFriendRequest(const QString &account, const QString &remark, QString &err);

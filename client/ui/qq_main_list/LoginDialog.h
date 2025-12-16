@@ -26,6 +26,7 @@ private slots:
 
 private:
     void buildUi();
+    bool handlePendingServerTrust(const QString &account, const QString &password);
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;

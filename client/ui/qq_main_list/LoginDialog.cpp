@@ -10,8 +10,10 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QInputDialog>
 #include <QPainter>
 #include <QPushButton>
+#include <QMessageBox>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -344,6 +346,9 @@ void LoginDialog::handleLogin() {
         if (backend_) {
             QString err;
             if (!backend_->login(acc, pwd, err)) {
+                if (handlePendingServerTrust(acc, pwd)) {
+                    return;
+                }
                 errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
                 errorLabel_->setVisible(true);
                 Toast::Show(this,
@@ -365,6 +370,9 @@ void LoginDialog::handleLogin() {
         if (backend_) {
             QString err;
             if (!backend_->login(acc, pwd, err)) {
+                if (handlePendingServerTrust(acc, pwd)) {
+                    return;
+                }
                 errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
                 errorLabel_->setVisible(true);
                 Toast::Show(this,
@@ -381,6 +389,99 @@ void LoginDialog::handleLogin() {
         errorLabel_->setVisible(false);
         accept();
     }
+}
+
+bool LoginDialog::handlePendingServerTrust(const QString &account, const QString &password) {
+    if (!backend_ || !backend_->hasPendingServerTrust()) {
+        return false;
+    }
+
+    const QString fingerprintHex = backend_->pendingServerFingerprint();
+    const QString pin = backend_->pendingServerPin();
+
+    const QString detail = UiSettings::Tr(
+        QStringLiteral(
+            "检测到需要验证服务器身份（首次连接或证书指纹变更）。\n\n"
+            "指纹：%1\n"
+            "安全码（SAS）：%2\n\n"
+            "请通过线下可信渠道核对安全码/指纹后再继续。")
+            .arg(fingerprintHex, pin),
+        QStringLiteral(
+            "Server identity verification required (first connection or certificate pin changed).\n\n"
+            "Fingerprint: %1\n"
+            "SAS: %2\n\n"
+            "Verify via an out-of-band channel before trusting.")
+            .arg(fingerprintHex, pin));
+
+    QMessageBox box(QMessageBox::Warning,
+                    UiSettings::Tr(QStringLiteral("验证服务器身份"),
+                                   QStringLiteral("Verify server identity")),
+                    detail,
+                    QMessageBox::NoButton, this);
+    auto *trustBtn =
+        box.addButton(UiSettings::Tr(QStringLiteral("我已核对，信任"),
+                                     QStringLiteral("I verified it, trust")),
+                      QMessageBox::AcceptRole);
+    box.addButton(UiSettings::Tr(QStringLiteral("稍后"), QStringLiteral("Later")),
+                  QMessageBox::RejectRole);
+    box.setDefaultButton(trustBtn);
+    box.exec();
+
+    if (box.clickedButton() != trustBtn) {
+        errorLabel_->setText(QStringLiteral("需要先信任服务器（TLS）"));
+        errorLabel_->setVisible(true);
+        return true;
+    }
+
+    bool ok = false;
+    const QString input = QInputDialog::getText(
+        this,
+        UiSettings::Tr(QStringLiteral("输入安全码"),
+                       QStringLiteral("Enter SAS")),
+        UiSettings::Tr(QStringLiteral("请输入上面显示的安全码（可包含 '-'，忽略大小写）："),
+                       QStringLiteral("Enter the SAS shown above (ignore '-' and case):")),
+        QLineEdit::Normal, pin, &ok);
+    if (!ok) {
+        errorLabel_->setText(QStringLiteral("需要先信任服务器（TLS）"));
+        errorLabel_->setVisible(true);
+        return true;
+    }
+
+    QString trustErr;
+    if (!backend_->trustPendingServer(input, trustErr)) {
+        QMessageBox::warning(
+            this,
+            UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed")),
+            trustErr.isEmpty()
+                ? UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed"))
+                : trustErr);
+        errorLabel_->setText(trustErr.isEmpty() ? QStringLiteral("信任失败") : trustErr);
+        errorLabel_->setVisible(true);
+        return true;
+    }
+
+    QString err;
+    if (!backend_->login(account, password, err)) {
+        errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
+        errorLabel_->setVisible(true);
+        Toast::Show(
+            this,
+            err.isEmpty()
+                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
+                                 QStringLiteral("Login failed. Please check your account or network."))
+                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
+                                 QStringLiteral("Login failed: %1").arg(err)),
+            Toast::Level::Error,
+            3200);
+        return true;
+    }
+
+    errorLabel_->setVisible(false);
+    if (stack_ && stack_->currentWidget() == accountPage_) {
+        emit addAccountRequested();
+    }
+    accept();
+    return true;
 }
 
 void LoginDialog::mousePressEvent(QMouseEvent *event) {

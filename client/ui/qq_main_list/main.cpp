@@ -8,15 +8,9 @@
 
 #include "endpoint_hardening.h"
 
-namespace {
-struct EarlyEndpointHardening {
-    EarlyEndpointHardening() noexcept { mi::client::security::StartEndpointHardening(); }
-};
-
-EarlyEndpointHardening gEarlyEndpointHardening;
-}  // namespace
-
 int main(int argc, char *argv[]) {
+    mi::client::security::StartEndpointHardening();
+
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
 
