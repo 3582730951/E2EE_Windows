@@ -131,11 +131,17 @@ if(MSVC)
   if(_redist_dirs)
     list(GET _redist_dirs 0 MI_MSVC_REDIST_DIR)
     file(GLOB MI_MSVC_REDIST_DLLS "${MI_MSVC_REDIST_DIR}/*.dll")
+    # Expose to parent projects (e.g. client UI) via cache so mi_copy_msvc_runtime
+    # works across add_subdirectory scopes.
+    set(MI_MSVC_REDIST_DIR "${MI_MSVC_REDIST_DIR}" CACHE INTERNAL "MSVC CRT redist directory")
+    set(MI_MSVC_REDIST_DLLS "${MI_MSVC_REDIST_DLLS}" CACHE INTERNAL "MSVC CRT redist DLLs")
     message(STATUS "Using MSVC redist from ${MI_MSVC_REDIST_DIR}")
   else()
+    set(MI_MSVC_REDIST_DIR "" CACHE INTERNAL "MSVC CRT redist directory")
+    set(MI_MSVC_REDIST_DLLS "" CACHE INTERNAL "MSVC CRT redist DLLs")
     message(WARNING "MSVC redist not found; runtime DLLs will not be copied")
   endif()
-endif()
+ endif()
 
 function(mi_copy_msvc_runtime target_name)
   if(MSVC AND MI_MSVC_REDIST_DLLS)
