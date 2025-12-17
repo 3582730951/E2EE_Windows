@@ -8,6 +8,11 @@ namespace mi::client {
 
 enum class ProxyType : std::uint8_t { kNone = 0, kSocks5 = 1 };
 
+// Login/authentication handshake selection.
+// - kLegacy: FrameType::kLogin (password verified by server; derive channel keys from credentials)
+// - kOpaque: OPAQUE (PAKE) register/login (server stores opaque password file; derive keys from session key)
+enum class AuthMode : std::uint8_t { kLegacy = 0, kOpaque = 1 };
+
 enum class DeviceSyncRole : std::uint8_t { kPrimary = 0, kLinked = 1 };
 
 struct ProxyConfig {
@@ -31,8 +36,9 @@ struct DeviceSyncConfig {
 struct ClientConfig {
   std::string server_ip{"127.0.0.1"};
   std::uint16_t server_port{9000};
-  bool use_tls{true};
+  bool use_tls{false};
   std::string trust_store{"server_trust.ini"};
+  AuthMode auth_mode{AuthMode::kLegacy};
   ProxyConfig proxy;
   DeviceSyncConfig device_sync;
 };

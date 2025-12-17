@@ -510,6 +510,7 @@ class ClientCore {
   std::string server_ip_;
   std::uint16_t server_port_{0};
   bool use_tls_{false};
+  AuthMode auth_mode_{AuthMode::kLegacy};
   ProxyConfig proxy_;
   std::mutex remote_stream_mutex_;
   std::unique_ptr<RemoteStream> remote_stream_;

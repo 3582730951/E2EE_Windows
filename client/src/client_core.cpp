@@ -64,6 +64,9 @@ namespace mi::client {
 
 namespace {
 
+constexpr std::size_t kMaxOpaqueMessageBytes = 16 * 1024;
+constexpr std::size_t kMaxOpaqueSessionKeyBytes = 1024;
+
 std::string Trim(const std::string& input) {
   const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
   auto begin = std::find_if_not(input.begin(), input.end(), is_space);
@@ -4508,6 +4511,7 @@ bool ClientCore::Init(const std::string& config_path) {
     server_ip_ = cfg.server_ip;
     server_port_ = cfg.server_port;
     use_tls_ = cfg.use_tls;
+    auth_mode_ = cfg.auth_mode;
     proxy_ = cfg.proxy;
     device_sync_enabled_ = cfg.device_sync.enabled;
     device_sync_is_primary_ =
@@ -4570,6 +4574,7 @@ bool ClientCore::Init(const std::string& config_path) {
   server_ip_.clear();
   server_port_ = 0;
   use_tls_ = false;
+  auth_mode_ = AuthMode::kLegacy;
   proxy_ = ProxyConfig{};
   device_sync_enabled_ = false;
   device_sync_is_primary_ = true;
@@ -4617,11 +4622,19 @@ bool ClientCore::Register(const std::string& username,
     return false;
   }
 
+  if (auth_mode_ != AuthMode::kOpaque) {
+    last_error_ = "register requires auth_mode=opaque";
+    return false;
+  }
+
   struct RustBuf {
     std::uint8_t* ptr{nullptr};
     std::size_t len{0};
     ~RustBuf() {
       if (ptr && len) {
+        if (len > kMaxOpaqueMessageBytes) {
+          return;  // avoid passing suspicious length to the Rust allocator
+        }
         mi_opaque_free(ptr, len);
       }
     }
@@ -4629,7 +4642,7 @@ bool ClientCore::Register(const std::string& username,
 
   auto RustError = [&](const RustBuf& err,
                        const char* fallback) -> std::string {
-    if (err.ptr && err.len) {
+    if (err.ptr && err.len && err.len <= kMaxOpaqueMessageBytes) {
       return std::string(reinterpret_cast<const char*>(err.ptr), err.len);
     }
     return fallback ? std::string(fallback) : std::string();
@@ -5040,18 +5053,85 @@ bool ClientCore::Login(const std::string& username,
     return false;
   }
 
+  if (auth_mode_ == AuthMode::kLegacy) {
+    mi::server::Frame login;
+    login.type = mi::server::FrameType::kLogin;
+    mi::server::proto::WriteString(username, login.payload);
+    mi::server::proto::WriteString(password, login.payload);
+
+    std::vector<std::uint8_t> resp_vec;
+    if (!ProcessRaw(mi::server::EncodeFrame(login), resp_vec)) {
+      if (last_error_.empty()) {
+        last_error_ = "login failed";
+      }
+      return false;
+    }
+
+    mi::server::Frame resp;
+    if (!mi::server::DecodeFrame(resp_vec.data(), resp_vec.size(), resp) ||
+        resp.type != mi::server::FrameType::kLogin || resp.payload.empty()) {
+      last_error_ = "login response invalid";
+      return false;
+    }
+
+    std::size_t off = 1;
+    std::string token_or_error;
+    if (!mi::server::proto::ReadString(resp.payload, off, token_or_error) ||
+        off != resp.payload.size()) {
+      last_error_ = "login response invalid";
+      return false;
+    }
+    if (resp.payload[0] == 0) {
+      last_error_ = token_or_error.empty() ? "login failed" : token_or_error;
+      return false;
+    }
+    token_ = std::move(token_or_error);
+
+    std::string key_err;
+    if (!mi::server::DeriveKeysFromCredentials(username, password, keys_,
+                                               key_err)) {
+      token_.clear();
+      last_error_ = key_err.empty() ? "key derivation failed" : key_err;
+      return false;
+    }
+
+    channel_ = mi::server::SecureChannel(
+        keys_, mi::server::SecureChannelRole::kClient);
+    send_seq_ = 0;
+    prekey_published_ = false;
+    if (e2ee_inited_) {
+      e2ee_.SetLocalUsername(username_);
+    }
+    if (!e2ee_state_dir_.empty()) {
+      auto store = std::make_unique<ChatHistoryStore>();
+      std::string hist_err;
+      if (store->Init(e2ee_state_dir_, username_, hist_err)) {
+        history_store_ = std::move(store);
+      } else {
+        history_store_.reset();
+      }
+    } else {
+      history_store_.reset();
+    }
+    last_error_.clear();
+    return true;
+  }
+
   struct RustBuf {
     std::uint8_t* ptr{nullptr};
     std::size_t len{0};
     ~RustBuf() {
       if (ptr && len) {
+        if (len > kMaxOpaqueMessageBytes) {
+          return;  // avoid passing suspicious length to the Rust allocator
+        }
         mi_opaque_free(ptr, len);
       }
     }
   };
 
   auto RustError = [&](const RustBuf& err, const char* fallback) -> std::string {
-    if (err.ptr && err.len) {
+    if (err.ptr && err.len && err.len <= kMaxOpaqueMessageBytes) {
       return std::string(reinterpret_cast<const char*>(err.ptr), err.len);
     }
     return fallback ? std::string(fallback) : std::string();
@@ -5065,6 +5145,10 @@ bool ClientCore::Login(const std::string& username,
       &req.ptr, &req.len, &state.ptr, &state.len, &err.ptr, &err.len);
   if (start_rc != 0 || !req.ptr || req.len == 0 || !state.ptr || state.len == 0) {
     last_error_ = RustError(err, "opaque login start failed");
+    return false;
+  }
+  if (req.len > kMaxOpaqueMessageBytes || state.len > kMaxOpaqueMessageBytes) {
+    last_error_ = "opaque message too large";
     return false;
   }
 
@@ -5108,6 +5192,10 @@ bool ClientCore::Login(const std::string& username,
     last_error_ = "opaque login start response invalid";
     return false;
   }
+  if (cred_resp.size() > kMaxOpaqueMessageBytes) {
+    last_error_ = "opaque message too large";
+    return false;
+  }
 
   RustBuf finalization;
   RustBuf session_key;
@@ -5121,6 +5209,11 @@ bool ClientCore::Login(const std::string& username,
   if (finish_rc != 0 || !finalization.ptr || finalization.len == 0 ||
       !session_key.ptr || session_key.len == 0) {
     last_error_ = RustError(err2, "opaque login finish failed");
+    return false;
+  }
+  if (finalization.len > kMaxOpaqueMessageBytes ||
+      session_key.len > kMaxOpaqueSessionKeyBytes) {
+    last_error_ = "opaque message too large";
     return false;
   }
   const std::vector<std::uint8_t> final_vec(finalization.ptr,

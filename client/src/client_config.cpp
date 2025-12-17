@@ -84,6 +84,19 @@ bool ParseDeviceSyncRole(const std::string& text, DeviceSyncRole& out) {
   return false;
 }
 
+bool ParseAuthMode(const std::string& text, AuthMode& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "legacy" || t == "plain" || t == "password" || t == "0") {
+    out = AuthMode::kLegacy;
+    return true;
+  }
+  if (t == "opaque" || t == "pake" || t == "1") {
+    out = AuthMode::kOpaque;
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
@@ -125,6 +138,11 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         ParseBool(val, out_cfg.use_tls);
       } else if (key == "trust_store") {
         out_cfg.trust_store = val;
+      } else if (key == "auth_mode") {
+        if (!ParseAuthMode(val, out_cfg.auth_mode)) {
+          error = "invalid auth_mode at line " + std::to_string(line_no);
+          return false;
+        }
       }
     } else if (section == "proxy") {
       if (key == "type") {
