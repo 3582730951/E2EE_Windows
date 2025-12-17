@@ -4,6 +4,7 @@
 #include <QString>
 #include <QVector>
 #include <QByteArray>
+#include <QMetaType>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -41,6 +42,7 @@ public:
     QString lastCoreError() const { return QString::fromStdString(core_.last_error()); }
 
     QVector<FriendEntry> listFriends(QString &err);
+    void requestFriendList();
     bool addFriend(const QString &account, const QString &remark, QString &err);
     bool sendFriendRequest(const QString &account, const QString &remark, QString &err);
     QVector<FriendRequestEntry> listFriendRequests(QString &err);
@@ -167,6 +169,7 @@ signals:
     void groupNoticeReceived(const QString &groupId, const QString &text);
     void messageResent(const QString &convId, const QString &messageId);
     void connectionStateChanged(bool online, const QString &detail);
+    void friendListLoaded(const QVector<FriendEntry> &friends, const QString &error);
     void fileSendFinished(const QString &convId, const QString &messageId,
                           bool success, const QString &error);
     void fileSaveFinished(const QString &convId, const QString &messageId,
@@ -197,6 +200,8 @@ private:
 
     bool ensureInited(QString &err);
     void pollMessages();
+    void handlePollResult(mi::client::ClientCore::ChatPollResult events,
+                          std::vector<mi::client::ClientCore::FriendRequestEntry> friendRequests);
     void maybeEmitPeerTrustRequired(bool force);
     void maybeEmitServerTrustRequired(bool force);
     void maybeRetryPendingOutgoing();
@@ -213,7 +218,9 @@ private:
     bool inited_{false};
     bool loggedIn_{false};
     bool online_{true};
+    std::atomic_bool coreWorkActive_{false};
     std::atomic_bool fileTransferActive_{false};
+    bool pollingSuspended_{false};
     QString currentUser_;
     QString configPath_{"client_config.ini"};
     std::unique_ptr<QTimer> pollTimer_;
@@ -230,3 +237,6 @@ private:
     std::unordered_map<std::string, std::string> groupPendingDeliveries_;
     std::vector<std::string> groupPendingOrder_;
 };
+
+Q_DECLARE_METATYPE(BackendAdapter::FriendEntry)
+Q_DECLARE_METATYPE(QVector<BackendAdapter::FriendEntry>)

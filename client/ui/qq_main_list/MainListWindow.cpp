@@ -501,8 +501,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     setTabOrder(searchEdit_, listView_);
 
     model_ = new QStandardItemModel(listView_);
-    auto addRow = [&](const QString &id, const QString &title, const QString &preview, const QString &time, int unread,
-                      bool greyBadge, bool hasTag, bool isGroup) {
+    auto addRow = [this](const QString &id, const QString &title, const QString &preview, const QString &time, int unread,
+                         bool greyBadge, bool hasTag, bool isGroup) {
+        if (!model_) {
+            return;
+        }
         auto *item = new QStandardItem();
         item->setData(id, IdRole);
         item->setData(title, TitleRole);
@@ -516,24 +519,46 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     };
 
     if (backend_) {
-        QString err;
-        const auto friends = backend_->listFriends(err);
-        if (!friends.isEmpty()) {
-            for (const auto &f : friends) {
-                addRow(f.username, f.displayName(),
-                       UiSettings::Tr(QStringLiteral("点击开始聊天"),
-                                     QStringLiteral("Click to chat")),
-                       QString(), 0, true, false, false);
-            }
-        } else {
-            addRow(QStringLiteral("__placeholder__"),
-                   UiSettings::Tr(QStringLiteral("暂无好友"), QStringLiteral("No friends yet")),
-                   err.isEmpty()
-                       ? UiSettings::Tr(QStringLiteral("点击右上角 + 添加好友"),
-                                       QStringLiteral("Use + to add friends"))
-                       : err,
-                   QString(), 0, true, false, false);
-        }
+        connect(backend_, &BackendAdapter::friendListLoaded, this,
+                [this, addRow](const QVector<BackendAdapter::FriendEntry> &friends, const QString &loadErr) mutable {
+                    if (!model_) {
+                        return;
+                    }
+
+                    for (int i = model_->rowCount() - 1; i >= 0; --i) {
+                        const QString id = model_->item(i)->data(IdRole).toString();
+                        if (id.startsWith(QStringLiteral("__"))) {
+                            model_->removeRow(i);
+                        }
+                    }
+
+                    if (!friends.isEmpty()) {
+                        for (const auto &f : friends) {
+                            addRow(f.username, f.displayName(),
+                                   UiSettings::Tr(QStringLiteral("点击开始聊天"),
+                                                 QStringLiteral("Click to chat")),
+                                   QString(), 0, true, false, false);
+                        }
+                    } else {
+                        const QString tip = loadErr.trimmed().isEmpty()
+                                                ? UiSettings::Tr(QStringLiteral("点击右上角 + 添加好友"),
+                                                                QStringLiteral("Use + to add friends"))
+                                                : loadErr.trimmed();
+                        addRow(QStringLiteral("__placeholder__"),
+                               UiSettings::Tr(QStringLiteral("暂无好友"), QStringLiteral("No friends yet")),
+                               tip,
+                               QString(), 0, true, false, false);
+                    }
+
+                    if (model_->rowCount() > 0 && !listView_->currentIndex().isValid()) {
+                        listView_->setCurrentIndex(model_->index(0, 0));
+                    }
+                });
+        addRow(QStringLiteral("__loading__"),
+               UiSettings::Tr(QStringLiteral("加载中"), QStringLiteral("Loading")),
+               UiSettings::Tr(QStringLiteral("正在获取好友列表…"), QStringLiteral("Fetching friend list…")),
+               QString(), 0, true, false, false);
+        backend_->requestFriendList();
     } else {
         addRow(QStringLiteral("__placeholder__"),
                UiSettings::Tr(QStringLiteral("暂无好友"), QStringLiteral("No friends yet")),

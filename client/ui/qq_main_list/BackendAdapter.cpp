@@ -65,6 +65,10 @@ bool BackendAdapter::init(const QString &configPath) {
 }
 
 bool BackendAdapter::ensureInited(QString &err) {
+    if (coreWorkActive_.load()) {
+        err = QStringLiteral("同步中，请稍后");
+        return false;
+    }
     if (fileTransferActive_.load()) {
         err = QStringLiteral("文件传输中，请稍后");
         return false;
@@ -127,6 +131,52 @@ QVector<BackendAdapter::FriendEntry> BackendAdapter::listFriends(QString &err) {
     }
     err.clear();
     return out;
+}
+
+void BackendAdapter::requestFriendList() {
+    if (!loggedIn_) {
+        emit friendListLoaded({}, QStringLiteral("尚未登录"));
+        return;
+    }
+    QString err;
+    if (!ensureInited(err)) {
+        emit friendListLoaded({}, err);
+        return;
+    }
+
+    bool expected = false;
+    if (!coreWorkActive_.compare_exchange_strong(expected, true)) {
+        emit friendListLoaded({}, QStringLiteral("同步中，请稍后"));
+        return;
+    }
+
+    QPointer<BackendAdapter> self(this);
+    std::thread([self]() {
+        if (!self) {
+            return;
+        }
+        const auto friends = self->core_.ListFriends();
+        const std::string coreErr = self->core_.last_error();
+        QMetaObject::invokeMethod(self, [self, friends, coreErr]() {
+            if (!self) {
+                return;
+            }
+
+            QVector<BackendAdapter::FriendEntry> out;
+            out.reserve(static_cast<int>(friends.size()));
+            for (const auto &f : friends) {
+                BackendAdapter::FriendEntry e;
+                e.username = QString::fromStdString(f.username);
+                e.remark = QString::fromStdString(f.remark);
+                out.push_back(std::move(e));
+            }
+
+            const QString err =
+                coreErr.empty() ? QString() : QString::fromStdString(coreErr).trimmed();
+            self->coreWorkActive_.store(false);
+            emit self->friendListLoaded(out, err);
+        }, Qt::QueuedConnection);
+    }).detach();
 }
 
 bool BackendAdapter::addFriend(const QString &account, const QString &remark, QString &err) {
@@ -1777,16 +1827,46 @@ void BackendAdapter::pollMessages() {
     if (!loggedIn_) {
         return;
     }
+    if (pollingSuspended_) {
+        return;
+    }
     QString err;
     if (!ensureInited(err)) {
         return;
     }
 
-    if (core_.token().empty() && !core_.HasPendingServerTrust()) {
-        core_.Relogin();
+    bool expected = false;
+    if (!coreWorkActive_.compare_exchange_strong(expected, true)) {
+        return;
     }
 
-    const auto events = core_.PollChat();
+    QPointer<BackendAdapter> self(this);
+    std::thread([self]() {
+        if (!self) {
+            return;
+        }
+
+        if (self->core_.token().empty() && !self->core_.HasPendingServerTrust()) {
+            self->core_.Relogin();
+        }
+        auto events = self->core_.PollChat();
+        auto reqs = self->core_.ListFriendRequests();
+
+        QMetaObject::invokeMethod(self, [self, events = std::move(events), reqs = std::move(reqs)]() mutable {
+            if (!self) {
+                return;
+            }
+            self->handlePollResult(std::move(events), std::move(reqs));
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult events,
+                                      std::vector<mi::client::ClientCore::FriendRequestEntry> friendRequests) {
+    coreWorkActive_.store(false);
+    const bool prevSuspend = pollingSuspended_;
+    pollingSuspended_ = true;
+
     updateConnectionState();
     for (const auto &t : events.outgoing_texts) {
         emit syncedOutgoingMessage(QString::fromStdString(t.peer_username),
@@ -1812,8 +1892,8 @@ void BackendAdapter::pollMessages() {
                                    QString(),
                                    QString::fromStdString(f.message_id_hex),
                                    QString::fromUtf8(f.file_name.data(), static_cast<int>(f.file_name.size())),
-                                    true,
-                                    static_cast<qint64>(f.file_size));
+                                   true,
+                                   static_cast<qint64>(f.file_size));
     }
     for (const auto &s : events.outgoing_stickers) {
         emit syncedOutgoingSticker(QString::fromStdString(s.peer_username),
@@ -1969,23 +2049,20 @@ void BackendAdapter::pollMessages() {
         emit groupNoticeReceived(groupId, text);
     }
 
-    {
-        const auto reqs = core_.ListFriendRequests();
-        std::unordered_set<std::string> current;
-        current.reserve(reqs.size());
-        for (const auto &r : reqs) {
-            current.insert(r.requester_username);
-            if (seenFriendRequests_.insert(r.requester_username).second) {
-                emit friendRequestReceived(QString::fromStdString(r.requester_username),
-                                           QString::fromStdString(r.requester_remark));
-            }
+    std::unordered_set<std::string> current;
+    current.reserve(friendRequests.size());
+    for (const auto &r : friendRequests) {
+        current.insert(r.requester_username);
+        if (seenFriendRequests_.insert(r.requester_username).second) {
+            emit friendRequestReceived(QString::fromStdString(r.requester_username),
+                                       QString::fromStdString(r.requester_remark));
         }
-        for (auto it = seenFriendRequests_.begin(); it != seenFriendRequests_.end(); ) {
-            if (current.count(*it) == 0) {
-                it = seenFriendRequests_.erase(it);
-            } else {
-                ++it;
-            }
+    }
+    for (auto it = seenFriendRequests_.begin(); it != seenFriendRequests_.end(); ) {
+        if (current.count(*it) == 0) {
+            it = seenFriendRequests_.erase(it);
+        } else {
+            ++it;
         }
     }
 
@@ -1994,4 +2071,6 @@ void BackendAdapter::pollMessages() {
     if (online_) {
         maybeRetryPendingOutgoing();
     }
+
+    pollingSuspended_ = prevSuspend;
 }

@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QIODevice>
 #include <QPainter>
 #include <QResource>
 #include <QSvgRenderer>
@@ -62,7 +63,13 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
         return it.value();
     }
 
-    QSvgRenderer renderer(resolvedPath);
+    QFile svgFile(resolvedPath);
+    if (!svgFile.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QByteArray svgData = svgFile.readAll();
+
+    QSvgRenderer renderer(svgData);
     if (!renderer.isValid()) {
         return {};
     }
