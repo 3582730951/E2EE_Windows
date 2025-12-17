@@ -156,6 +156,7 @@ jobs:
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
           $exe = "build/client/ui/qq_main_list/qq_main_list.exe"
+          $exeDir = Split-Path -Parent $exe
           $dist = "build/client/ui/dist"
           if (!(Test-Path $exe)) {
             Write-Error "main ui exe not found at $exe"
@@ -163,6 +164,10 @@ jobs:
           }
           New-Item -ItemType Directory -Force $dist | Out-Null
           Copy-Item $exe (Join-Path $dist "mi_e2ee.exe") -Force
+          # Bundle MSVC runtime next to the executable to avoid loading an older system CRT.
+          if (Test-Path $exeDir) {
+            Copy-Item "$exeDir/*.dll" $dist -Force -ErrorAction SilentlyContinue
+          }
           & "$qtbin/windeployqt.exe" "--dir" $dist (Join-Path $dist "mi_e2ee.exe")
           $iconSrc = "client/ui/icons"
           if (Test-Path $iconSrc) {
