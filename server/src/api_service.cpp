@@ -9,7 +9,20 @@
 #include "protocol.h"
 
 #ifdef MI_E2EE_ENABLE_MYSQL
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#endif
 #include <mysql.h>
+#ifdef _WIN32
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#endif
 #endif
 
 namespace {
