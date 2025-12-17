@@ -230,6 +230,7 @@ private:
     QString lastPeerTrustUser_;
     QString lastPeerTrustFingerprint_;
     QString lastServerTrustFingerprint_;
+    bool attemptedAutoStartServer_{false};
 
     std::unordered_map<std::string, mi::client::ClientCore::ChatFileMessage> receivedFiles_;
     std::unordered_map<std::string, PendingOutgoing> pendingOutgoing_;

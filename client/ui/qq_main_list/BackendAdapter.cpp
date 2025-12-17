@@ -8,7 +8,9 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QByteArray>
+#include <QProcess>
 #include <thread>
+#include <chrono>
 #include <filesystem>
 
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
@@ -39,6 +41,79 @@ QString GenerateMessageIdHex() {
         bytes[i] = static_cast<char>(QRandomGenerator::global()->generate() & 0xFF);
     }
     return QString::fromLatin1(bytes.toHex());
+}
+
+struct ServerEndpoint {
+    QString host;
+    quint16 port{0};
+};
+
+ServerEndpoint ReadClientEndpoint(const QString &configPath) {
+    ServerEndpoint out;
+    const QString path = configPath.trimmed();
+    if (path.isEmpty()) {
+        return out;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return out;
+    }
+
+    while (!file.atEnd()) {
+        QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith('#') || line.startsWith(';')) {
+            continue;
+        }
+        if (line.startsWith('[')) {
+            continue;
+        }
+        int comment = line.indexOf('#');
+        if (comment >= 0) {
+            line = line.left(comment).trimmed();
+        }
+        comment = line.indexOf(';');
+        if (comment >= 0) {
+            line = line.left(comment).trimmed();
+        }
+        const int eq = line.indexOf('=');
+        if (eq <= 0) {
+            continue;
+        }
+        const QString key = line.left(eq).trimmed();
+        const QString val = line.mid(eq + 1).trimmed();
+        if (key == QStringLiteral("server_ip")) {
+            out.host = val;
+        } else if (key == QStringLiteral("server_port")) {
+            bool ok = false;
+            const uint p = val.toUInt(&ok);
+            if (ok && p <= 65535) {
+                out.port = static_cast<quint16>(p);
+            }
+        }
+    }
+    return out;
+}
+
+bool IsLoopbackHost(const QString &host) {
+    const QString h = host.trimmed().toLower();
+    return h == QStringLiteral("127.0.0.1") || h == QStringLiteral("localhost") || h == QStringLiteral("::1");
+}
+
+QString FindBundledServerExe() {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        appDir + QStringLiteral("/mi_e2ee_server.exe"),
+        appDir + QStringLiteral("/../s/mi_e2ee_server.exe"),
+        appDir + QStringLiteral("/../server/mi_e2ee_server.exe"),
+        appDir + QStringLiteral("/../mi_e2ee_server.exe"),
+    };
+    for (const auto &p : candidates) {
+        const QString cleaned = QFileInfo(p).absoluteFilePath();
+        if (QFile::exists(cleaned)) {
+            return cleaned;
+        }
+    }
+    return {};
 }
 }  // namespace
 
@@ -92,11 +167,42 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
         return false;
     }
     if (!core_.Login(account.trimmed().toStdString(), password.toStdString())) {
-        const QString coreErr = QString::fromStdString(core_.last_error()).trimmed();
+        QString coreErr = QString::fromStdString(core_.last_error()).trimmed();
+
+        if (!attemptedAutoStartServer_ &&
+            (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
+            core_.is_remote_mode()) {
+            const ServerEndpoint ep = ReadClientEndpoint(configPath_);
+            if (IsLoopbackHost(ep.host) && ep.port != 0) {
+                const QString serverExe = FindBundledServerExe();
+                if (!serverExe.isEmpty()) {
+                    const QString serverDir = QFileInfo(serverExe).absolutePath();
+                    if (QProcess::startDetached(serverExe, {}, serverDir)) {
+                        attemptedAutoStartServer_ = true;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                        if (core_.Login(account.trimmed().toStdString(), password.toStdString())) {
+                            loggedIn_ = true;
+                            currentUser_ = account.trimmed();
+                            err.clear();
+                            online_ = true;
+                            startPolling(basePollIntervalMs_);
+                            return true;
+                        }
+                        coreErr = QString::fromStdString(core_.last_error()).trimmed();
+                    }
+                }
+            }
+        }
+
         if (core_.HasPendingServerTrust()) {
             err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
         } else if (!coreErr.isEmpty()) {
-            err = coreErr;
+            const ServerEndpoint ep = ReadClientEndpoint(configPath_);
+            if (!ep.host.isEmpty() && ep.port != 0) {
+                err = QStringLiteral("%1（%2:%3）").arg(coreErr, ep.host).arg(ep.port);
+            } else {
+                err = coreErr;
+            }
         } else {
             err = QStringLiteral("登录失败：请检查账号/密码或服务器状态");
         }
