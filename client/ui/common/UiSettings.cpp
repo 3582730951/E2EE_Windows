@@ -27,6 +27,8 @@ Language ParseLanguage(int v) {
 
 Theme::Scheme ParseScheme(int v) {
     switch (v) {
+        case static_cast<int>(Theme::Scheme::Auto):
+            return Theme::Scheme::Auto;
         case static_cast<int>(Theme::Scheme::Light):
             return Theme::Scheme::Light;
         case static_cast<int>(Theme::Scheme::HighContrast):
@@ -57,7 +59,7 @@ Settings Load() {
     QSettings s;
     Settings out;
     out.language = ParseLanguage(s.value(Key("ui/language"), 0).toInt());
-    out.scheme = ParseScheme(s.value(Key("ui/scheme"), static_cast<int>(Theme::Scheme::Dark)).toInt());
+    out.scheme = ParseScheme(s.value(Key("ui/scheme"), static_cast<int>(Theme::Scheme::Auto)).toInt());
     out.fontScalePercent = ClampInt(s.value(Key("ui/font_scale_percent"), 100).toInt(), 50, 200);
     out.trayNotifications = s.value(Key("ui/tray_notifications"), true).toBool();
     out.trayPreview = s.value(Key("ui/tray_preview"), false).toBool();
@@ -116,6 +118,8 @@ QString LanguageLabel(Language lang) {
 
 QString SchemeLabel(Theme::Scheme scheme) {
     switch (scheme) {
+        case Theme::Scheme::Auto:
+            return Tr(QStringLiteral("跟随系统"), QStringLiteral("Auto"));
         case Theme::Scheme::Light:
             return Tr(QStringLiteral("浅色"), QStringLiteral("Light"));
         case Theme::Scheme::HighContrast:
@@ -127,4 +131,3 @@ QString SchemeLabel(Theme::Scheme scheme) {
 }
 
 }  // namespace UiSettings
-

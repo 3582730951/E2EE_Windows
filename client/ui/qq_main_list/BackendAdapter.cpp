@@ -13,6 +13,8 @@
 #include <chrono>
 #include <filesystem>
 
+#include "../common/UiSettings.h"
+
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
 
 namespace {
@@ -121,15 +123,27 @@ QString AugmentTransportErrorHint(const QString &coreErr) {
     if (e == QStringLiteral("tcp recv failed") ||
         e == QStringLiteral("tcp request failed") ||
         e == QStringLiteral("tcp send failed")) {
-        return e + QStringLiteral(
-                        "（可能 TLS 配置不一致：服务端启用 TLS 时，请在 client_config.ini 设置 use_tls=1）");
+        return e + UiSettings::Tr(
+                       QStringLiteral("（可能 TLS 配置不一致：服务端启用 TLS 时，请在 client_config.ini 设置 use_tls=1）"),
+                       QStringLiteral(" (possible TLS mismatch: if the server uses TLS, set use_tls=1 in client_config.ini)"));
     }
     if (e == QStringLiteral("tls recv failed") ||
         e == QStringLiteral("tls request failed") ||
         e == QStringLiteral("tls handshake failed") ||
         e == QStringLiteral("tls connect failed")) {
-        return e + QStringLiteral(
-                        "（可能 TLS 配置不一致：若服务端未启用 TLS，可在 client_config.ini 设置 use_tls=0）");
+        return e + UiSettings::Tr(
+                       QStringLiteral("（可能 TLS 配置不一致：若服务端未启用 TLS，可在 client_config.ini 设置 use_tls=0）"),
+                       QStringLiteral(" (possible TLS mismatch: if the server does not use TLS, set use_tls=0 in client_config.ini)"));
+    }
+    if (e.contains(QStringLiteral("mysql provider not built"), Qt::CaseInsensitive)) {
+        if (e.contains(QStringLiteral("-DMI_E2EE_ENABLE_MYSQL"), Qt::CaseInsensitive) ||
+            e.contains(QStringLiteral("set [mode] mode=1"), Qt::CaseInsensitive) ||
+            e.contains(QStringLiteral("mode=1"), Qt::CaseInsensitive)) {
+            return e;
+        }
+        return e + UiSettings::Tr(
+                       QStringLiteral("（服务端未编译 MySQL：请用 -DMI_E2EE_ENABLE_MYSQL=ON 重新构建服务端，或将服务端 config.ini 的 [mode] mode=1 使用 test_user.txt）"),
+                       QStringLiteral(" (MySQL not enabled on the server: rebuild with -DMI_E2EE_ENABLE_MYSQL=ON, or set [mode] mode=1 to use test_user.txt)"));
     }
     return e;
 }

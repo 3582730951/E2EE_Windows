@@ -854,7 +854,12 @@ std::unique_ptr<AuthProvider> MakeAuthProvider(
     return std::make_unique<DemoAuthProvider>(std::move(table));
   }
 
+#ifndef MI_E2EE_ENABLE_MYSQL
+  error = "mysql mode requested but mysql provider not built; rebuild with -DMI_E2EE_ENABLE_MYSQL=ON or set [mode] mode=1";
+  return nullptr;
+#else
   return std::make_unique<MySqlAuthProvider>(cfg.mysql);
+#endif
 }
 
 }  // namespace mi::server

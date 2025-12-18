@@ -1,7 +1,9 @@
 #include "Theme.h"
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QPalette>
+#include <QStyleHints>
 #include <QStringList>
 
 #include <algorithm>
@@ -23,13 +25,34 @@ int ScalePoints(int pt) {
     return std::max(6, scaled);
 }
 
+Scheme ResolveScheme(Scheme schemeValue) {
+    if (schemeValue != Scheme::Auto) {
+        return schemeValue;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    if (auto *hints = QGuiApplication::styleHints()) {
+        const Qt::ColorScheme cs = hints->colorScheme();
+        if (cs == Qt::ColorScheme::Dark) {
+            return Scheme::Dark;
+        }
+        if (cs == Qt::ColorScheme::Light) {
+            return Scheme::Light;
+        }
+    }
+#endif
+    // Fallback: treat unknown as light (safer for readability).
+    return Scheme::Light;
+}
+
 QColor Pick(Scheme schemeValue, QColor dark, QColor light, QColor highContrast) {
+    schemeValue = ResolveScheme(schemeValue);
     switch (schemeValue) {
         case Scheme::Light:
             return light;
         case Scheme::HighContrast:
             return highContrast;
         case Scheme::Dark:
+        case Scheme::Auto:
         default:
             return dark;
     }
@@ -47,7 +70,7 @@ QFont defaultFont(int pointSize, QFont::Weight weight) {
     return font;
 }
 
-Scheme scheme() { return gScheme; }
+Scheme scheme() { return ResolveScheme(gScheme); }
 
 void setScheme(Scheme newScheme) { gScheme = newScheme; }
 
@@ -58,12 +81,13 @@ void setFontScalePercent(int percent) {
 }
 
 void ApplyTo(QApplication &app) {
-    if (gScheme == Scheme::HighContrast) {
+    const Scheme effective = ResolveScheme(gScheme);
+    if (effective == Scheme::Dark || effective == Scheme::HighContrast) {
         app.setStyle(QStringLiteral("Fusion"));
     }
 
     QPalette palette = app.palette();
-    if (gScheme == Scheme::Light) {
+    if (effective == Scheme::Light) {
         palette.setColor(QPalette::Window, uiWindowBg());
         palette.setColor(QPalette::Base, uiPanelBg());
         palette.setColor(QPalette::AlternateBase, uiSearchBg());
@@ -74,7 +98,7 @@ void ApplyTo(QApplication &app) {
         palette.setColor(QPalette::Highlight, uiAccentBlue());
         palette.setColor(QPalette::HighlightedText, QColor(Qt::white));
         palette.setColor(QPalette::Link, uiAccentBlue());
-    } else if (gScheme == Scheme::HighContrast) {
+    } else if (effective == Scheme::HighContrast) {
         palette.setColor(QPalette::Window, QColor(Qt::black));
         palette.setColor(QPalette::Base, QColor(Qt::black));
         palette.setColor(QPalette::AlternateBase, QColor(0x10, 0x10, 0x10));
@@ -121,7 +145,7 @@ QColor outline() {
 }
 
 QColor accentBlue() {
-    return Pick(gScheme, QColor(0x3A, 0x8D, 0xFF), QColor(0x2F, 0x81, 0xE8),
+    return Pick(gScheme, QColor(0x0A, 0x84, 0xFF), QColor(0x00, 0x7A, 0xFF),
                 QColor(0x00, 0xAE, 0xFF));
 }
 
@@ -237,7 +261,7 @@ QColor uiBadgeRed() { return Pick(gScheme, QColor(QStringLiteral("#D74D4D")), QC
 
 QColor uiBadgeGrey() { return Pick(gScheme, QColor(QStringLiteral("#464A50")), QColor(QStringLiteral("#7C8592")), QColor(Qt::white)); }
 
-QColor uiAccentBlue() { return Pick(gScheme, QColor(QStringLiteral("#5D8CFF")), QColor(QStringLiteral("#2F81E8")), QColor(0x00, 0xAE, 0xFF)); }
+QColor uiAccentBlue() { return Pick(gScheme, QColor(QStringLiteral("#0A84FF")), QColor(QStringLiteral("#007AFF")), QColor(0x00, 0xAE, 0xFF)); }
 
 QColor uiMessageOutgoingBg() { return Pick(gScheme, QColor(QStringLiteral("#3A3D40")), QColor(QStringLiteral("#DDE7F7")), QColor(QStringLiteral("#101010"))); }
 

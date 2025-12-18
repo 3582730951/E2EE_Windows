@@ -7,8 +7,21 @@
 
 #include "../common/IconButton.h"
 #include "../common/Theme.h"
+#include "../common/UiSettings.h"
 
 namespace {
+
+struct Tokens {
+    static QColor windowBg() { return Theme::uiWindowBg(); }
+    static QColor panelBg() { return Theme::uiPanelBg(); }
+    static QColor border() { return Theme::uiBorder(); }
+    static QColor textMain() { return Theme::uiTextMain(); }
+    static QColor textSub() { return Theme::uiTextSub(); }
+    static QColor textMuted() { return Theme::uiTextMuted(); }
+    static QColor hoverBg() { return Theme::uiHoverBg(); }
+    static QColor selectedBg() { return Theme::uiSelectedBg(); }
+    static QColor accent() { return Theme::uiAccentBlue(); }
+};
 
 IconButton *titleIcon(const QString &glyphOrSvg, QWidget *parent, int svgSize = 16) {
     auto *btn = new IconButton(QString(), parent);
@@ -19,8 +32,8 @@ IconButton *titleIcon(const QString &glyphOrSvg, QWidget *parent, int svgSize = 
         btn->setGlyph(v, 10);
     }
     btn->setFixedSize(32, 32);
-    btn->setColors(QColor("#D3D3D3"), QColor("#FFFFFF"), QColor("#D8D8D8"),
-                   QColor("#1F1F1F"), QColor("#2B2B2B"), QColor("#222222"));
+    btn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                   QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     return btn;
 }
 
@@ -42,20 +55,60 @@ QWidget *toolbarRow(QWidget *parent) {
         auto *btn = new IconButton(QString(), bar);
         btn->setSvgIcon(path, 16);
         btn->setFixedSize(28, 28);
-        btn->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
-                       QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
-                       QColor(255, 255, 255, 35));
+        btn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                       QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
         layout->addWidget(btn);
     }
     layout->addStretch();
     auto *clock = new IconButton(QString(), bar);
     clock->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), 16);
     clock->setFixedSize(28, 28);
-    clock->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
-                     QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
-                     QColor(255, 255, 255, 35));
+    clock->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                     QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     layout->addWidget(clock);
     return bar;
+}
+
+QPushButton *outlineButton(const QString &text, QWidget *parent) {
+    auto *btn = new QPushButton(text, parent);
+    btn->setFixedHeight(32);
+    btn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { color: %1; background: %2; border: 1px solid %3; "
+            "border-radius: 8px; padding: 0 14px; font-size: 12px; }"
+            "QPushButton:disabled { color: %4; background: %5; border-color: %3; }"
+            "QPushButton:hover:enabled { background: %6; }"
+            "QPushButton:pressed:enabled { background: %7; }")
+            .arg(Tokens::textMain().name(),
+                 Tokens::panelBg().name(),
+                 Tokens::border().name(),
+                 Tokens::textMuted().name(),
+                 Tokens::hoverBg().name(),
+                 Tokens::hoverBg().name(),
+                 Tokens::selectedBg().name()));
+    return btn;
+}
+
+QPushButton *primaryButton(const QString &text, QWidget *parent, bool enabled) {
+    auto *btn = new QPushButton(text, parent);
+    btn->setEnabled(enabled);
+    btn->setFixedHeight(32);
+    const QColor base = Tokens::accent();
+    const QColor hover = base.lighter(112);
+    const QColor pressed = base.darker(110);
+    btn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { color: white; background: %1; border: 1px solid %1; "
+            "border-radius: 8px; padding: 0 14px; font-size: 12px; }"
+            "QPushButton:disabled { background: %2; border-color: %2; color: %3; }"
+            "QPushButton:hover:enabled { background: %4; }"
+            "QPushButton:pressed:enabled { background: %5; }")
+            .arg(base.name(),
+                 Tokens::hoverBg().name(),
+                 Tokens::textMuted().name(),
+                 hover.name(),
+                 pressed.name()));
+    return btn;
 }
 
 QWidget *inputFooter(QWidget *parent) {
@@ -64,35 +117,17 @@ QWidget *inputFooter(QWidget *parent) {
     layout->setContentsMargins(10, 8, 10, 8);
     layout->setSpacing(10);
 
-    auto *placeholder = new QLabel(QStringLiteral("DDDDDDDDDDDDDDDD"), footer);
-    placeholder->setStyleSheet("color: #6E6E6E; font-size: 13px;");
+    auto *placeholder = new QLabel(UiSettings::Tr(QStringLiteral("输入消息…"),
+                                                  QStringLiteral("Type a message…")),
+                                   footer);
+    placeholder->setStyleSheet(
+        QStringLiteral("color: %1; font-size: 13px;").arg(Tokens::textMuted().name()));
     layout->addWidget(placeholder, 1);
 
-    auto makeBtn = [&](const QString &text, const QColor &fg, const QColor &border,
-                       const QColor &bg, bool enabled) {
-        auto *btn = new QPushButton(text, footer);
-        btn->setEnabled(enabled);
-        btn->setFixedHeight(32);
-        btn->setStyleSheet(QStringLiteral(
-            "QPushButton { color: %1; background: %2; border: 1px solid %3; "
-            "border-radius: 6px; padding: 0 14px; font-size: 12px; }"
-            "QPushButton:disabled { color: #7A7A7A; border-color: #3A3A3A; "
-            "background: #2A2A2A; }"
-            "QPushButton:hover:!disabled { background: %4; }"
-            "QPushButton:pressed:!disabled { background: %5; }")
-                                 .arg(fg.name())
-                                 .arg(bg.name())
-                                 .arg(border.name())
-                                 .arg(bg.lighter(110).name())
-                                 .arg(bg.darker(115).name()));
-        return btn;
-    };
-
-    auto *closeBtn =
-        makeBtn(QStringLiteral("关闭"), QColor("#E6E6E6"), QColor("#4A4A4A"),
-                QColor("#242424"), true);
-    auto *sendBtn = makeBtn(QStringLiteral("发送"), QColor("white"), QColor("#3A3A3A"),
-                            QColor("#2A2A2A"), false);
+    auto *closeBtn = outlineButton(UiSettings::Tr(QStringLiteral("关闭"), QStringLiteral("Close")),
+                                   footer);
+    auto *sendBtn = primaryButton(UiSettings::Tr(QStringLiteral("发送"), QStringLiteral("Send")),
+                                  footer, false);
 
     layout->addWidget(closeBtn, 0);
     layout->addWidget(sendBtn, 0);
@@ -103,7 +138,7 @@ QWidget *inputFooter(QWidget *parent) {
 
 ChatEmptyWindow::ChatEmptyWindow(QWidget *parent) : FramelessWindowBase(parent) {
     resize(906, 902);
-    setMinimumSize(906, 902);
+    setMinimumSize(640, 540);
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -117,8 +152,11 @@ ChatEmptyWindow::ChatEmptyWindow(QWidget *parent) : FramelessWindowBase(parent) 
     titleLayout->setContentsMargins(14, 10, 14, 10);
     titleLayout->setSpacing(10);
 
-    auto *titleLabel = new QLabel(QStringLiteral("飞子"), titleBar);
-    titleLabel->setStyleSheet("color: #EDEDED; font-size: 14px; font-weight: 600;");
+    auto *titleLabel = new QLabel(UiSettings::Tr(QStringLiteral("会话"),
+                                                 QStringLiteral("Chat")),
+                                  titleBar);
+    titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
+                                  .arg(Tokens::textMain().name()));
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
 
@@ -159,7 +197,7 @@ ChatEmptyWindow::ChatEmptyWindow(QWidget *parent) : FramelessWindowBase(parent) 
     bodyLayout->setSpacing(0);
 
     auto *chatArea = new QWidget(body);
-    chatArea->setStyleSheet("background: #151515;");
+    chatArea->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::windowBg().name()));
     auto *chatLayout = new QVBoxLayout(chatArea);
     chatLayout->setContentsMargins(12, 10, 12, 12);
     chatLayout->setSpacing(0);
@@ -167,20 +205,21 @@ ChatEmptyWindow::ChatEmptyWindow(QWidget *parent) : FramelessWindowBase(parent) 
 
     auto *separator = new QWidget(chatArea);
     separator->setFixedHeight(1);
-    separator->setStyleSheet("background: #1E1E1E;");
+    separator->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::border().name()));
     chatLayout->addWidget(separator);
     chatLayout->addWidget(toolbarRow(chatArea));
     chatLayout->addWidget(inputFooter(chatArea));
 
     auto *statusBar = new QWidget(body);
     statusBar->setFixedHeight(24);
-    statusBar->setStyleSheet("background: #0F0F0F;");
+    statusBar->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::panelBg().name()));
     auto *statusLayout = new QHBoxLayout(statusBar);
     statusLayout->setContentsMargins(12, 0, 12, 0);
     statusLayout->setSpacing(6);
     auto *statusText =
         new QLabel(QStringLiteral("2 个项目 | 选中 1 个项目 | 291 KB |"), statusBar);
-    statusText->setStyleSheet("color: #7A7A7A; font-size: 11px;");
+    statusText->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
+                                  .arg(Tokens::textMuted().name()));
     statusLayout->addWidget(statusText, 0, Qt::AlignLeft | Qt::AlignVCenter);
     statusLayout->addStretch();
 

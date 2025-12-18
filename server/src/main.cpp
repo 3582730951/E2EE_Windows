@@ -54,9 +54,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   LogInfo(verbose, "server initialized");
-  // 占位运行，保持主线程。
   while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::string tick_error;
+    if (!app.RunOnce(tick_error) && !tick_error.empty()) {
+      LogError(tick_error);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   return 0;
 }

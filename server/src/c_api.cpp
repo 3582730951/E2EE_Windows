@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <vector>
 
 #include "listener.h"
@@ -12,35 +14,37 @@
 
 struct mi_server_handle {
   mi::server::ServerApp app;
-  mi::server::Listener* listener{nullptr};
+  std::unique_ptr<mi::server::Listener> listener;
 };
 
 extern "C" {
 
 mi_server_handle* mi_server_create(const char* config_path) {
-  auto handle = static_cast<mi_server_handle*>(std::malloc(sizeof(mi_server_handle)));
-  if (!handle) {
+  try {
+    auto* handle = new (std::nothrow) mi_server_handle();
+    if (!handle) {
+      return nullptr;
+    }
+    std::string err;
+    const std::string path =
+        config_path ? std::string(config_path) : std::string("config.ini");
+    if (!handle->app.Init(path, err)) {
+      delete handle;
+      return nullptr;
+    }
+    handle->listener = std::make_unique<mi::server::Listener>(&handle->app);
+    return handle;
+  } catch (...) {
     return nullptr;
   }
-  new (&handle->app) mi::server::ServerApp();
-  std::string err;
-  const std::string path = config_path ? std::string(config_path) : "config.ini";
-  if (!handle->app.Init(path, err)) {
-    handle->app.~ServerApp();
-    std::free(handle);
-    return nullptr;
-  }
-  handle->listener = new mi::server::Listener(&handle->app);
-  return handle;
 }
 
 void mi_server_destroy(mi_server_handle* handle) {
-  if (!handle) {
-    return;
+  try {
+    delete handle;
+  } catch (...) {
+    // never throw across C boundary
   }
-  delete handle->listener;
-  handle->app.~ServerApp();
-  std::free(handle);
 }
 
 int mi_server_process(mi_server_handle* handle,
@@ -48,26 +52,36 @@ int mi_server_process(mi_server_handle* handle,
                       std::size_t len,
                       std::uint8_t** out_buf,
                       std::size_t* out_len) {
+  if (out_buf) {
+    *out_buf = nullptr;
+  }
+  if (out_len) {
+    *out_len = 0;
+  }
   if (!handle || !handle->listener || !data || len == 0 || !out_buf || !out_len) {
     return 0;
   }
-  std::vector<std::uint8_t> out;
-  std::vector<std::uint8_t> in_bytes(data, data + len);
-  if (!handle->listener->Process(in_bytes, out)) {
-    return 0;
-  }
-  *out_len = out.size();
-  if (out.empty()) {
-    *out_buf = nullptr;
+  try {
+    std::vector<std::uint8_t> out;
+    std::vector<std::uint8_t> in_bytes(data, data + len);
+    if (!handle->listener->Process(in_bytes, out)) {
+      return 0;
+    }
+    *out_len = out.size();
+    if (out.empty()) {
+      *out_buf = nullptr;
+      return 1;
+    }
+    auto* buf = static_cast<std::uint8_t*>(std::malloc(out.size()));
+    if (!buf) {
+      return 0;
+    }
+    std::memcpy(buf, out.data(), out.size());
+    *out_buf = buf;
     return 1;
-  }
-  auto* buf = static_cast<std::uint8_t*>(std::malloc(out.size()));
-  if (!buf) {
+  } catch (...) {
     return 0;
   }
-  std::memcpy(buf, out.data(), out.size());
-  *out_buf = buf;
-  return 1;
 }
 
 void mi_server_free(std::uint8_t* buf) {
@@ -78,38 +92,49 @@ int mi_server_login(mi_server_handle* handle,
                     const char* username,
                     const char* password,
                     char** out_token) {
+  if (out_token) {
+    *out_token = nullptr;
+  }
   if (!handle || !username || !password || !out_token) {
     return 0;
   }
-  mi::server::Session session;
-  std::string error;
-  auto* sessions = handle->app.sessions();
-  if (!sessions) {
+  try {
+    mi::server::Session session;
+    std::string error;
+    auto* sessions = handle->app.sessions();
+    if (!sessions) {
+      return 0;
+    }
+    if (!sessions->Login(username, password, session, error)) {
+      return 0;
+    }
+    char* buf = static_cast<char*>(std::malloc(session.token.size() + 1));
+    if (!buf) {
+      return 0;
+    }
+    std::memcpy(buf, session.token.data(), session.token.size());
+    buf[session.token.size()] = '\0';
+    *out_token = buf;
+    return 1;
+  } catch (...) {
     return 0;
   }
-  if (!sessions->Login(username, password, session, error)) {
-    return 0;
-  }
-  char* buf = static_cast<char*>(std::malloc(session.token.size() + 1));
-  if (!buf) {
-    return 0;
-  }
-  std::memcpy(buf, session.token.data(), session.token.size());
-  buf[session.token.size()] = '\0';
-  *out_token = buf;
-  return 1;
 }
 
 int mi_server_logout(mi_server_handle* handle, const char* token) {
   if (!handle || !token) {
     return 0;
   }
-  auto* sessions = handle->app.sessions();
-  if (!sessions) {
+  try {
+    auto* sessions = handle->app.sessions();
+    if (!sessions) {
+      return 0;
+    }
+    sessions->Logout(token);
+    return 1;
+  } catch (...) {
     return 0;
   }
-  sessions->Logout(token);
-  return 1;
 }
 
 }  // extern "C"

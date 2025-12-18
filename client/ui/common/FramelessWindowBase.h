@@ -15,6 +15,8 @@ class FramelessWindowBase : public QWidget {
 public:
     explicit FramelessWindowBase(QWidget *parent = nullptr);
 
+    bool isEmbedded() const;
+
     void setCentralWidget(QWidget *widget);
     QWidget *centralWidget() const;
     QWidget *frameWidget() const;
@@ -43,6 +45,7 @@ private:
     QPointer<QWidget> m_titleBar;
     OverlayWidget *m_overlay;
 
+    bool m_embedded;
     bool m_dragging;
     bool m_resizing;
     QPoint m_dragOffset;

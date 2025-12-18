@@ -93,6 +93,9 @@ add_executable(mi_e2ee_client
 
 target_include_directories(mi_e2ee_client PRIVATE include)
 target_link_libraries(mi_e2ee_client PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_client)
+endif()
 
 if(MI_E2EE_BUILD_UI)
   add_subdirectory(ui)

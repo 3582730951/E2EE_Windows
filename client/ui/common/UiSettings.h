@@ -16,7 +16,7 @@ enum class Language : int {
 
 struct Settings {
     Language language{Language::Auto};
-    Theme::Scheme scheme{Theme::Scheme::Dark};
+    Theme::Scheme scheme{Theme::Scheme::Auto};
     int fontScalePercent{100};  // 50~200
     bool trayNotifications{true};
     bool trayPreview{false};  // privacy: default off

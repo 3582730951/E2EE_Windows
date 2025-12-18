@@ -12,6 +12,12 @@ set(UI_MAIN_LIST_SOURCES
     LoginDialog.h
     BackendAdapter.cpp
     BackendAdapter.h
+    TrustPromptDialog.cpp
+    TrustPromptDialog.h
+    NotificationCenterDialog.cpp
+    NotificationCenterDialog.h
+    ConversationDetailsDialog.cpp
+    ConversationDetailsDialog.h
 )
 
 add_ui_executable(qq_main_list ${UI_MAIN_LIST_SOURCES})

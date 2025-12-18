@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -33,7 +34,7 @@ class NetworkServer {
 
  private:
   void Run();
-  bool StartSocket();
+  bool StartSocket(std::string& error);
   void StopSocket();
   bool TryAcquireConnectionSlot(const std::string& remote_ip);
   void ReleaseConnectionSlot(const std::string& remote_ip);
@@ -41,7 +42,7 @@ class NetworkServer {
   Listener* listener_;
   std::uint16_t port_{0};
   bool tls_enable_{false};
- std::string tls_cert_;
+  std::string tls_cert_;
   NetworkServerLimits limits_;
   std::atomic<bool> running_{false};
   std::thread worker_;
@@ -50,7 +51,7 @@ class NetworkServer {
   std::unordered_map<std::string, std::uint32_t> connections_by_ip_;
 
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
-  int listen_fd_{-1};
+  std::intptr_t listen_fd_{-1};
 #endif
 
 #ifdef _WIN32

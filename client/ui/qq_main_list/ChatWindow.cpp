@@ -60,10 +60,12 @@
 
 #include "../common/IconButton.h"
 #include "../common/Theme.h"
+#include "../common/UiIcons.h"
 #include "../common/UiSettings.h"
 #include "../common/UiStyle.h"
 #include "../common/Toast.h"
 #include "BackendAdapter.h"
+#include "ConversationDetailsDialog.h"
 #include "MessageDelegate.h"
 #include "MessageModel.h"
 
@@ -768,10 +770,40 @@ QPushButton *primaryButton(const QString &text, QWidget *parent) {
 
 ChatWindow::ChatWindow(BackendAdapter *backend, QWidget *parent)
     : FramelessWindowBase(parent), backend_(backend) {
-    resize(906, 902);
-    setMinimumSize(640, 540);
+    embeddedMode_ = isEmbedded();
+    if (!embeddedMode_) {
+        resize(906, 902);
+        setMinimumSize(640, 540);
+    } else {
+        setMinimumSize(320, 360);
+    }
     buildUi();
     setOverlayImage(QStringLiteral(UI_REF_DIR "/ref_chat_empty.png"));
+}
+
+QString ChatWindow::conversationId() const { return conversationId_; }
+
+void ChatWindow::setEmbeddedMode(bool embedded) {
+    embeddedMode_ = embedded;
+    if (windowDownBtn_) {
+        windowDownBtn_->setVisible(!embeddedMode_);
+    }
+    if (windowMinBtn_) {
+        windowMinBtn_->setVisible(!embeddedMode_);
+    }
+    if (windowCloseBtn_) {
+        windowCloseBtn_->setVisible(!embeddedMode_);
+    }
+}
+
+void ChatWindow::focusMessageInput() {
+    if (!inputEdit_ || !inputEdit_->isEnabled() || !inputEdit_->isVisible()) {
+        return;
+    }
+    inputEdit_->setFocus(Qt::OtherFocusReason);
+    QTextCursor cursor = inputEdit_->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    inputEdit_->setTextCursor(cursor);
 }
 
 void ChatWindow::buildUi() {
@@ -832,31 +864,38 @@ void ChatWindow::buildUi() {
                                    Toast::Level::Info);
                    });
     addTitleAction(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
-                   UiSettings::Tr(QStringLiteral("搜索（未实现）"),
-                                  QStringLiteral("Search (TODO)")),
-                   [this]() {
-                       Toast::Show(this,
-                                   UiSettings::Tr(QStringLiteral("暂未实现会话内搜索"),
-                                                  QStringLiteral("In-chat search is not implemented yet.")),
-                                   Toast::Level::Info);
-                   });
+                   UiSettings::Tr(QStringLiteral("会话内搜索"),
+                                  QStringLiteral("Search in chat")),
+                   [this]() { toggleSearchBar(); });
     addTitleAction(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"),
                    UiSettings::Tr(QStringLiteral("更多"),
                                   QStringLiteral("More")),
                    [this]() {
-                       if (sendMenu_) {
-                           sendMenu_->exec(QCursor::pos());
+                       if (conversationId_.trimmed().isEmpty()) {
+                           Toast::Show(this,
+                                       UiSettings::Tr(QStringLiteral("请先选择会话"),
+                                                      QStringLiteral("Select a chat first")),
+                                       Toast::Level::Info);
+                           return;
                        }
+                       ConversationDetailsDialog dlg(backend_,
+                                                     conversationId_,
+                                                     titleLabel_ ? titleLabel_->text() : conversationId_,
+                                                     isGroup_,
+                                                     this);
+                       dlg.setStartPage(ConversationDetailsDialog::StartPage::Info);
+                       dlg.exec();
                    });
 
-    auto *downBtn = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), titleBar);
-    auto *minBtn = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar);
-    auto *closeBtn = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), titleBar);
-    connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
-    connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
-    titleLayout->addWidget(downBtn);
-    titleLayout->addWidget(minBtn);
-    titleLayout->addWidget(closeBtn);
+    windowDownBtn_ = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), titleBar);
+    windowMinBtn_ = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar);
+    windowCloseBtn_ = titleIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), titleBar);
+    connect(windowMinBtn_, &QPushButton::clicked, this, &QWidget::showMinimized);
+    connect(windowCloseBtn_, &QPushButton::clicked, this, &QWidget::close);
+    titleLayout->addWidget(windowDownBtn_);
+    titleLayout->addWidget(windowMinBtn_);
+    titleLayout->addWidget(windowCloseBtn_);
+    setEmbeddedMode(embeddedMode_);
 
     root->addWidget(titleBar);
     setTitleBar(titleBar);
@@ -885,27 +924,106 @@ void ChatWindow::buildUi() {
     emptyIcon->setPixmap(EmptyChatIcon(96));
     emptyIcon->setAlignment(Qt::AlignHCenter);
     emptyLayout->addWidget(emptyIcon, 0, Qt::AlignHCenter);
-    auto *emptyTitle =
-        new QLabel(UiSettings::Tr(QStringLiteral("暂无消息"), QStringLiteral("No messages yet")),
-                   emptyState);
-    emptyTitle->setAlignment(Qt::AlignHCenter);
-    emptyTitle->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
-                                  .arg(ChatTokens::textMain().name()));
-    emptyLayout->addWidget(emptyTitle);
-    auto *emptySub = new QLabel(
-        UiSettings::Tr(QStringLiteral("发送一条消息开始对话"),
-                       QStringLiteral("Send a message to start the conversation.")),
-        emptyState);
-    emptySub->setAlignment(Qt::AlignHCenter);
-    emptySub->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
-                                .arg(ChatTokens::textMuted().name()));
-    emptyLayout->addWidget(emptySub);
+    emptyTitleLabel_ = new QLabel(QString(), emptyState);
+    emptyTitleLabel_->setAlignment(Qt::AlignHCenter);
+    emptyTitleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
+                                        .arg(ChatTokens::textMain().name()));
+    emptyLayout->addWidget(emptyTitleLabel_);
+    emptySubLabel_ = new QLabel(QString(), emptyState);
+    emptySubLabel_->setAlignment(Qt::AlignHCenter);
+    emptySubLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                                      .arg(ChatTokens::textMuted().name()));
+    emptyLayout->addWidget(emptySubLabel_);
     emptyLayout->addStretch();
     messageStack_->addWidget(emptyState);
 
+    searchBar_ = new QWidget(messageArea);
+    searchBar_->setVisible(false);
+    auto *searchBarLayout = new QHBoxLayout(searchBar_);
+    searchBarLayout->setContentsMargins(12, 0, 12, 10);
+    searchBarLayout->setSpacing(0);
+
+    auto *searchBox = new QFrame(searchBar_);
+    searchBox->setFixedHeight(38);
+    searchBox->setStyleSheet(
+        QStringLiteral(
+            "QFrame { background: %1; border-radius: 19px; border: 1px solid %2; }"
+            "QLineEdit { background: transparent; border: none; color: %3; font-size: 13px; }"
+            "QLabel { color: %4; font-size: 12px; }")
+            .arg(Theme::uiSearchBg().name(),
+                 ChatTokens::border().name(),
+                 ChatTokens::textMain().name(),
+                 ChatTokens::textMuted().name()));
+    auto *searchBoxLayout = new QHBoxLayout(searchBox);
+    searchBoxLayout->setContentsMargins(12, 6, 8, 6);
+    searchBoxLayout->setSpacing(6);
+
+    auto *searchIcon = new QLabel(searchBox);
+    searchIcon->setFixedSize(16, 16);
+    searchIcon->setPixmap(
+        UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
+                           16,
+                           ChatTokens::textMuted()));
+    searchIcon->setAlignment(Qt::AlignCenter);
+
+    searchEdit_ = new QLineEdit(searchBox);
+    searchEdit_->setPlaceholderText(
+        UiSettings::Tr(QStringLiteral("搜索消息"), QStringLiteral("Search messages")));
+    searchEdit_->setClearButtonEnabled(true);
+    searchEdit_->installEventFilter(this);
+
+    searchCountLabel_ = new QLabel(searchBox);
+    searchCountLabel_->setText(QString());
+    searchCountLabel_->setMinimumWidth(46);
+    searchCountLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    auto configureNavBtn = [&](IconButton *btn) {
+        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setFixedSize(28, 28);
+        btn->setPadding(8);
+        btn->setColors(ChatTokens::textSub(), ChatTokens::textMain(), ChatTokens::textMain(),
+                       QColor(0, 0, 0, 0), ChatTokens::hoverBg(), ChatTokens::selectedBg());
+    };
+
+    searchPrevBtn_ = new IconButton(QStringLiteral("↑"), searchBox);
+    searchPrevBtn_->setGlyph(QStringLiteral("↑"), 12);
+    configureNavBtn(searchPrevBtn_);
+    searchPrevBtn_->setToolTip(UiSettings::Tr(QStringLiteral("上一个"), QStringLiteral("Previous")));
+
+    searchNextBtn_ = new IconButton(QStringLiteral("↓"), searchBox);
+    searchNextBtn_->setGlyph(QStringLiteral("↓"), 12);
+    configureNavBtn(searchNextBtn_);
+    searchNextBtn_->setToolTip(UiSettings::Tr(QStringLiteral("下一个"), QStringLiteral("Next")));
+
+    searchCloseBtn_ = new IconButton(QString(), searchBox);
+    searchCloseBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
+    searchCloseBtn_->setFocusPolicy(Qt::NoFocus);
+    searchCloseBtn_->setFixedSize(28, 28);
+    searchCloseBtn_->setPadding(7);
+    searchCloseBtn_->setToolTip(UiSettings::Tr(QStringLiteral("关闭搜索"), QStringLiteral("Close search")));
+    searchCloseBtn_->setColors(ChatTokens::textSub(), ChatTokens::textMain(), Theme::uiDangerRed(),
+                               QColor(0, 0, 0, 0), ChatTokens::hoverBg(), ChatTokens::selectedBg());
+
+    searchBoxLayout->addWidget(searchIcon);
+    searchBoxLayout->addWidget(searchEdit_, 1);
+    searchBoxLayout->addWidget(searchCountLabel_);
+    searchBoxLayout->addWidget(searchPrevBtn_);
+    searchBoxLayout->addWidget(searchNextBtn_);
+    searchBoxLayout->addWidget(searchCloseBtn_);
+    searchBarLayout->addWidget(searchBox, 1);
+
+    connect(searchEdit_, &QLineEdit::textChanged, this, [this]() { updateSearchResults(); });
+    connect(searchPrevBtn_, &QAbstractButton::clicked, this, [this]() { stepSearchResult(-1); });
+    connect(searchNextBtn_, &QAbstractButton::clicked, this, [this]() { stepSearchResult(1); });
+    connect(searchCloseBtn_, &QAbstractButton::clicked, this, [this]() { setSearchActive(false); });
+
+    searchPrevBtn_->setEnabled(false);
+    searchNextBtn_->setEnabled(false);
+
     messageView_ = new QListView(messageStack_);
     messageView_->setFrameShape(QFrame::NoFrame);
-    messageView_->setItemDelegate(new MessageDelegate(messageView_));
+    messageDelegate_ = new MessageDelegate(messageView_);
+    messageView_->setItemDelegate(messageDelegate_);
     messageView_->setModel(messageModel_);
     messageView_->setSelectionMode(QAbstractItemView::NoSelection);
     messageView_->setFocusPolicy(Qt::StrongFocus);
@@ -1003,6 +1121,7 @@ void ChatWindow::buildUi() {
         refreshFileTransferAnimation();
     });
     messageStack_->addWidget(messageView_);
+    msgLayout->addWidget(searchBar_);
     msgLayout->addWidget(messageStack_);
     bodyLayout->addWidget(messageArea, 1);
 
@@ -1013,45 +1132,45 @@ void ChatWindow::buildUi() {
     bodyLayout->addWidget(divider);
 
     // Composer
-    auto *composer = new QWidget(body);
-    composer->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::panelBg().name()));
-    auto *composerLayout = new QVBoxLayout(composer);
+    composer_ = new QWidget(body);
+    composer_->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::panelBg().name()));
+    auto *composerLayout = new QVBoxLayout(composer_);
     composerLayout->setContentsMargins(10, 6, 10, 8);
     composerLayout->setSpacing(6);
 
     auto *toolsRow = new QHBoxLayout();
     toolsRow->setSpacing(8);
-    auto *stickerBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer);
+    auto *stickerBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
     stickerBtn->setFocusPolicy(Qt::NoFocus);
     stickerBtn->setToolTip(UiSettings::Tr(QStringLiteral("贴纸"), QStringLiteral("Sticker")));
     connect(stickerBtn, &QAbstractButton::clicked, this, &ChatWindow::sendStickerPlaceholder);
     toolsRow->addWidget(stickerBtn);
 
-    auto *fileBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/file.svg"), composer);
+    auto *fileBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/file.svg"), composer_);
     fileBtn->setFocusPolicy(Qt::NoFocus);
     fileBtn->setToolTip(UiSettings::Tr(QStringLiteral("文件"), QStringLiteral("File")));
     connect(fileBtn, &QAbstractButton::clicked, this, &ChatWindow::sendFilePlaceholder);
     toolsRow->addWidget(fileBtn);
 
-    auto *imageBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/image.svg"), composer);
+    auto *imageBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/image.svg"), composer_);
     imageBtn->setFocusPolicy(Qt::NoFocus);
     imageBtn->setToolTip(UiSettings::Tr(QStringLiteral("图片"), QStringLiteral("Image")));
     connect(imageBtn, &QAbstractButton::clicked, this, &ChatWindow::sendImagePlaceholder);
     toolsRow->addWidget(imageBtn);
 
-    auto *voiceBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/mic.svg"), composer);
+    auto *voiceBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/mic.svg"), composer_);
     voiceBtn->setFocusPolicy(Qt::NoFocus);
     voiceBtn->setToolTip(UiSettings::Tr(QStringLiteral("语音"), QStringLiteral("Audio")));
     connect(voiceBtn, &QAbstractButton::clicked, this, &ChatWindow::sendVoicePlaceholder);
     toolsRow->addWidget(voiceBtn);
 
-    auto *videoBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/video.svg"), composer);
+    auto *videoBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/video.svg"), composer_);
     videoBtn->setFocusPolicy(Qt::NoFocus);
     videoBtn->setToolTip(UiSettings::Tr(QStringLiteral("视频"), QStringLiteral("Video")));
     connect(videoBtn, &QAbstractButton::clicked, this, &ChatWindow::sendVideoPlaceholder);
     toolsRow->addWidget(videoBtn);
 
-    auto *moreBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), composer);
+    auto *moreBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), composer_);
     moreBtn->setFocusPolicy(Qt::NoFocus);
     moreBtn->setToolTip(UiSettings::Tr(QStringLiteral("更多"), QStringLiteral("More")));
     connect(moreBtn, &QAbstractButton::clicked, this, [this, moreBtn]() {
@@ -1061,7 +1180,7 @@ void ChatWindow::buildUi() {
     });
     toolsRow->addWidget(moreBtn);
     toolsRow->addStretch();
-    auto *clock = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), composer);
+    auto *clock = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), composer_);
     clock->setFocusPolicy(Qt::NoFocus);
     clock->setToolTip(UiSettings::Tr(QStringLiteral("导出证据包"),
                                      QStringLiteral("Export evidence")));
@@ -1069,7 +1188,7 @@ void ChatWindow::buildUi() {
     toolsRow->addWidget(clock);
     composerLayout->addLayout(toolsRow);
 
-    replyBar_ = new QWidget(composer);
+    replyBar_ = new QWidget(composer_);
     replyBar_->setVisible(false);
     replyBar_->setStyleSheet(
         QStringLiteral(
@@ -1095,7 +1214,7 @@ void ChatWindow::buildUi() {
     replyLayout->addWidget(replyCancel, 0, Qt::AlignRight);
     composerLayout->addWidget(replyBar_);
 
-    typingLabel_ = new QLabel(composer);
+    typingLabel_ = new QLabel(composer_);
     typingLabel_->setVisible(false);
     typingLabel_->setTextFormat(Qt::PlainText);
     typingLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
@@ -1104,7 +1223,7 @@ void ChatWindow::buildUi() {
         UiSettings::Tr(QStringLiteral("对方正在输入..."), QStringLiteral("Typing...")));
     composerLayout->addWidget(typingLabel_);
 
-    inputEdit_ = new QPlainTextEdit(composer);
+    inputEdit_ = new QPlainTextEdit(composer_);
     inputEdit_->setPlaceholderText(
         UiSettings::Tr(QStringLiteral("输入消息..."), QStringLiteral("Type a message...")));
     inputEdit_->setTabChangesFocus(true);
@@ -1194,18 +1313,19 @@ void ChatWindow::buildUi() {
 
     auto *sendRow = new QHBoxLayout();
     sendRow->setSpacing(8);
-    auto *placeholder = new QLabel(QStringLiteral(""), composer);
+    auto *placeholder = new QLabel(QStringLiteral(""), composer_);
     placeholder->setMinimumWidth(120);
     sendRow->addWidget(placeholder, 1);
 
     auto *closeBtnAction =
         outlineButton(UiSettings::Tr(QStringLiteral("关闭"), QStringLiteral("Close")),
-                      composer);
+                      composer_);
     connect(closeBtnAction, &QPushButton::clicked, this, &QWidget::close);
+    closeBtnAction->setVisible(!embeddedMode_);
     auto *sendBtn = primaryButton(UiSettings::Tr(QStringLiteral("发送"), QStringLiteral("Send")),
-                                  composer);
+                                  composer_);
     connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMessage);
-    auto *sendMore = new IconButton(QString(), composer);
+    auto *sendMore = new IconButton(QString(), composer_);
     sendMore->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), 14);
     sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多发送选项"),
                                         QStringLiteral("More actions")));
@@ -1328,9 +1448,11 @@ void ChatWindow::buildUi() {
     setTabOrder(messageView_, inputEdit_);
     setTabOrder(inputEdit_, sendBtn);
 
-    bodyLayout->addWidget(composer);
+    bodyLayout->addWidget(composer_);
     root->addWidget(body);
 
+    updateEmptyPrompt();
+    updateConversationUiState();
     updateEmptyState();
     setCentralWidget(central);
 }
@@ -1361,6 +1483,254 @@ void ChatWindow::updateEmptyState() {
         clearNewMessagePill();
     }
     refreshFileTransferAnimation();
+}
+
+void ChatWindow::updateEmptyPrompt() {
+    if (!emptyTitleLabel_ || !emptySubLabel_) {
+        return;
+    }
+
+    const bool hasConversation = !conversationId_.trimmed().isEmpty();
+    if (hasConversation) {
+        emptyTitleLabel_->setText(UiSettings::Tr(QStringLiteral("暂无消息"),
+                                                 QStringLiteral("No messages yet")));
+        emptySubLabel_->setText(
+            UiSettings::Tr(QStringLiteral("发送一条消息开始对话"),
+                           QStringLiteral("Send a message to start the conversation.")));
+        return;
+    }
+
+    emptyTitleLabel_->setText(
+        UiSettings::Tr(QStringLiteral("请选择会话"), QStringLiteral("Select a chat")));
+    emptySubLabel_->setText(
+        UiSettings::Tr(QStringLiteral("选择一个联系人或群聊开始聊天"),
+                       QStringLiteral("Select a contact or group to start chatting.")));
+}
+
+void ChatWindow::updateConversationUiState() {
+    const bool hasConversation = !conversationId_.trimmed().isEmpty();
+
+    if (composer_) {
+        composer_->setVisible(hasConversation);
+        composer_->setEnabled(hasConversation);
+    }
+
+    if (exportEvidenceAction_) {
+        exportEvidenceAction_->setEnabled(hasConversation);
+    }
+
+    if (membersAction_) {
+        membersAction_->setEnabled(hasConversation && isGroup_);
+    }
+    if (inviteAction_) {
+        inviteAction_->setEnabled(hasConversation && isGroup_);
+    }
+    if (leaveAction_) {
+        leaveAction_->setEnabled(hasConversation && isGroup_);
+    }
+
+    if (sendLocationAction_) {
+        sendLocationAction_->setEnabled(hasConversation && !isGroup_);
+    }
+    if (sendCardAction_) {
+        sendCardAction_->setEnabled(hasConversation && !isGroup_);
+    }
+    if (sendStickerAction_) {
+        sendStickerAction_->setEnabled(hasConversation && !isGroup_);
+    }
+    if (readReceiptAction_) {
+        readReceiptAction_->setEnabled(hasConversation && !isGroup_);
+    }
+    if (typingAction_) {
+        typingAction_->setEnabled(hasConversation && !isGroup_);
+    }
+    if (presenceAction_) {
+        presenceAction_->setEnabled(hasConversation && !isGroup_);
+    }
+
+    if (!hasConversation) {
+        setSearchActive(false);
+    }
+}
+
+bool ChatWindow::ensureConversationSelected() {
+    if (!conversationId_.trimmed().isEmpty()) {
+        return true;
+    }
+
+    Toast::Show(this,
+                UiSettings::Tr(QStringLiteral("请先选择一个会话"),
+                               QStringLiteral("Please select a chat first.")),
+                Toast::Level::Info);
+    return false;
+}
+
+void ChatWindow::toggleSearchBar() {
+    if (!searchBar_ || !searchEdit_) {
+        return;
+    }
+    setSearchActive(!searchBar_->isVisible());
+}
+
+void ChatWindow::setSearchActive(bool active) {
+    if (!searchBar_ || !searchEdit_) {
+        return;
+    }
+
+    if (!active) {
+        searchBar_->setVisible(false);
+        searchEdit_->blockSignals(true);
+        searchEdit_->clear();
+        searchEdit_->blockSignals(false);
+        clearSearchState();
+        return;
+    }
+
+    if (!ensureConversationSelected()) {
+        return;
+    }
+
+    searchBar_->setVisible(true);
+    searchEdit_->setFocus();
+    searchEdit_->selectAll();
+    updateSearchResults();
+}
+
+void ChatWindow::clearSearchState() {
+    searchMatchRows_.clear();
+    searchMatchIndex_ = -1;
+    if (searchCountLabel_) {
+        searchCountLabel_->setText(QString());
+    }
+    if (searchPrevBtn_) {
+        searchPrevBtn_->setEnabled(false);
+    }
+    if (searchNextBtn_) {
+        searchNextBtn_->setEnabled(false);
+    }
+    if (messageDelegate_) {
+        messageDelegate_->setHighlightedRow(-1);
+    }
+    if (messageView_) {
+        messageView_->viewport()->update();
+    }
+}
+
+void ChatWindow::updateSearchResults() {
+    if (!searchEdit_ || !searchCountLabel_ || !messageModel_) {
+        return;
+    }
+
+    const QString query = searchEdit_->text().trimmed();
+    searchMatchRows_.clear();
+    searchMatchIndex_ = -1;
+
+    if (query.isEmpty()) {
+        searchCountLabel_->setText(QString());
+        if (searchPrevBtn_) {
+            searchPrevBtn_->setEnabled(false);
+        }
+        if (searchNextBtn_) {
+            searchNextBtn_->setEnabled(false);
+        }
+        if (messageDelegate_) {
+            messageDelegate_->setHighlightedRow(-1);
+        }
+        if (messageView_) {
+            messageView_->viewport()->update();
+        }
+        return;
+    }
+
+    const int rows = messageModel_->rowCount();
+    for (int row = 0; row < rows; ++row) {
+        const QModelIndex idx = messageModel_->index(row, 0);
+        if (!idx.isValid()) {
+            continue;
+        }
+        const auto type =
+            static_cast<MessageItem::Type>(idx.data(MessageModel::TypeRole).toInt());
+        if (type == MessageItem::Type::TimeDivider) {
+            continue;
+        }
+
+        QString haystack;
+        if (type == MessageItem::Type::System) {
+            haystack = idx.data(MessageModel::SystemTextRole).toString();
+        } else {
+            haystack = idx.data(MessageModel::TextRole).toString();
+            if (idx.data(MessageModel::IsStickerRole).toBool()) {
+                const QString stickerId = idx.data(MessageModel::StickerIdRole).toString().trimmed();
+                if (!stickerId.isEmpty()) {
+                    haystack += QStringLiteral(" ") + stickerId;
+                }
+            }
+        }
+
+        if (haystack.contains(query, Qt::CaseInsensitive)) {
+            searchMatchRows_.append(row);
+        }
+    }
+
+    if (searchMatchRows_.isEmpty()) {
+        searchCountLabel_->setText(UiSettings::Tr(QStringLiteral("无匹配"), QStringLiteral("No results")));
+        if (searchPrevBtn_) {
+            searchPrevBtn_->setEnabled(false);
+        }
+        if (searchNextBtn_) {
+            searchNextBtn_->setEnabled(false);
+        }
+        if (messageDelegate_) {
+            messageDelegate_->setHighlightedRow(-1);
+        }
+        if (messageView_) {
+            messageView_->viewport()->update();
+        }
+        return;
+    }
+
+    if (searchPrevBtn_) {
+        searchPrevBtn_->setEnabled(true);
+    }
+    if (searchNextBtn_) {
+        searchNextBtn_->setEnabled(true);
+    }
+
+    goToSearchResult(0);
+}
+
+void ChatWindow::goToSearchResult(int index) {
+    if (!messageModel_ || !messageView_ || searchMatchRows_.isEmpty()) {
+        return;
+    }
+
+    const int total = searchMatchRows_.size();
+    const int wrapped = ((index % total) + total) % total;
+    searchMatchIndex_ = wrapped;
+
+    const int row = searchMatchRows_.at(searchMatchIndex_);
+    if (messageDelegate_) {
+        messageDelegate_->setHighlightedRow(row);
+    }
+    const QModelIndex idx = messageModel_->index(row, 0);
+    if (idx.isValid()) {
+        messageView_->scrollTo(idx, QAbstractItemView::PositionAtCenter);
+    }
+    if (searchCountLabel_) {
+        searchCountLabel_->setText(QStringLiteral("%1/%2").arg(searchMatchIndex_ + 1).arg(total));
+    }
+    messageView_->viewport()->update();
+}
+
+void ChatWindow::stepSearchResult(int delta) {
+    if (searchMatchRows_.isEmpty()) {
+        return;
+    }
+    if (searchMatchIndex_ < 0) {
+        goToSearchResult(0);
+        return;
+    }
+    goToSearchResult(searchMatchIndex_ + delta);
 }
 
 bool ChatWindow::isNearBottom() const {
@@ -1434,12 +1804,17 @@ void ChatWindow::refreshFileTransferAnimation() {
 }
 
 void ChatWindow::setConversation(const QString &id, const QString &title, bool isGroup) {
+    const QString previousConvId = conversationId_;
     conversationId_ = id;
     isGroup_ = isGroup;
     titleLabel_->setText(title);
     updateOverlayForTitle(title);
+    setSearchActive(false);
     clearReplyContext();
     clearNewMessagePill();
+    if (inputEdit_ && previousConvId != conversationId_) {
+        inputEdit_->clear();
+    }
     lastMessageInsertMs_ = 0;
     refreshFileTransferAnimation();
     readReceiptSent_.clear();
@@ -1463,36 +1838,9 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
     if (presenceLabel_) {
         presenceLabel_->setVisible(false);
     }
-    if (membersAction_) {
-        membersAction_->setEnabled(isGroup_);
-    }
-    if (inviteAction_) {
-        inviteAction_->setEnabled(isGroup_);
-    }
-    if (leaveAction_) {
-        leaveAction_->setEnabled(isGroup_);
-    }
-    if (sendLocationAction_) {
-        sendLocationAction_->setEnabled(!isGroup_);
-    }
-    if (sendCardAction_) {
-        sendCardAction_->setEnabled(!isGroup_);
-    }
-    if (sendStickerAction_) {
-        sendStickerAction_->setEnabled(!isGroup_);
-    }
-    if (readReceiptAction_) {
-        readReceiptAction_->setEnabled(!isGroup_);
-    }
-    if (typingAction_) {
-        typingAction_->setEnabled(!isGroup_);
-    }
-    if (presenceAction_) {
-        presenceAction_->setEnabled(!isGroup_);
-    }
-    if (exportEvidenceAction_) {
-        exportEvidenceAction_->setEnabled(!conversationId_.trimmed().isEmpty());
-    }
+
+    updateEmptyPrompt();
+    updateConversationUiState();
     messageModel_->setConversation(id);
     if (backend_ && !conversationId_.trimmed().isEmpty()) {
         QVector<BackendAdapter::HistoryMessageEntry> entries;
@@ -1877,8 +2225,35 @@ bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {
     if (messageView_ && obj == messageView_->viewport() && event->type() == QEvent::Resize) {
         updateNewMessagePillGeometry();
     }
+    if (obj == searchEdit_ && event->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Escape) {
+            setSearchActive(false);
+            return true;
+        }
+        if (ke->key() == Qt::Key_Up) {
+            stepSearchResult(-1);
+            return true;
+        }
+        if (ke->key() == Qt::Key_Down) {
+            stepSearchResult(1);
+            return true;
+        }
+        if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
+            if (ke->modifiers().testFlag(Qt::ShiftModifier)) {
+                stepSearchResult(-1);
+            } else {
+                stepSearchResult(1);
+            }
+            return true;
+        }
+    }
     if (obj == inputEdit_ && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->modifiers().testFlag(Qt::ControlModifier) && ke->key() == Qt::Key_F) {
+            setSearchActive(true);
+            return true;
+        }
         if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
             if (ke->modifiers().testFlag(Qt::ShiftModifier)) {
                 // New line with Shift+Enter
@@ -1892,6 +2267,12 @@ bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {
 }
 
 void ChatWindow::sendMessage() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
+    if (!inputEdit_) {
+        return;
+    }
     const QString text = inputEdit_->toPlainText().trimmed();
     if (text.isEmpty()) {
         return;
@@ -1934,6 +2315,9 @@ void ChatWindow::sendMessage() {
 }
 
 void ChatWindow::sendStickerPlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     if (isGroup_) {
         messageModel_->appendSystemMessage(
             conversationId_,
@@ -2029,6 +2413,9 @@ void ChatWindow::sendStickerPlaceholder() {
 }
 
 void ChatWindow::sendLocationPlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     if (isGroup_) {
         messageModel_->appendSystemMessage(conversationId_, QStringLiteral("群聊暂不支持位置消息"), QDateTime::currentDateTime());
         messageView_->scrollToBottom();
@@ -2122,6 +2509,9 @@ void ChatWindow::sendLocationPlaceholder() {
 }
 
 void ChatWindow::sendContactCardPlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     if (isGroup_) {
         messageModel_->appendSystemMessage(conversationId_, QStringLiteral("群聊暂不支持名片消息"), QDateTime::currentDateTime());
         messageView_->scrollToBottom();
@@ -2373,6 +2763,9 @@ void ChatWindow::exportEvidencePackage() {
 }
 
 void ChatWindow::sendFilePlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this, UiSettings::Tr(QStringLiteral("选择要发送的文件"),
                              QStringLiteral("Select a file to send")));
@@ -2412,6 +2805,9 @@ void ChatWindow::sendFilePlaceholder() {
 }
 
 void ChatWindow::sendImagePlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this,
         UiSettings::Tr(QStringLiteral("选择要发送的图片"),
@@ -2454,6 +2850,9 @@ void ChatWindow::sendImagePlaceholder() {
 }
 
 void ChatWindow::sendVoicePlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this, UiSettings::Tr(QStringLiteral("选择要发送的语音文件"),
                              QStringLiteral("Select an audio file")),
@@ -2494,6 +2893,9 @@ void ChatWindow::sendVoicePlaceholder() {
 }
 
 void ChatWindow::sendVideoPlaceholder() {
+    if (!ensureConversationSelected()) {
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this, UiSettings::Tr(QStringLiteral("选择要发送的视频文件"),
                              QStringLiteral("Select a video file")),

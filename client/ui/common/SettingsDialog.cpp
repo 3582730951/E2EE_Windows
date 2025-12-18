@@ -40,6 +40,8 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
     form->addRow(UiSettings::Tr(QStringLiteral("语言"), QStringLiteral("Language")), languageBox_);
 
     schemeBox_ = new QComboBox(this);
+    schemeBox_->addItem(UiSettings::SchemeLabel(Theme::Scheme::Auto),
+                        static_cast<int>(Theme::Scheme::Auto));
     schemeBox_->addItem(UiSettings::SchemeLabel(Theme::Scheme::Dark),
                         static_cast<int>(Theme::Scheme::Dark));
     schemeBox_->addItem(UiSettings::SchemeLabel(Theme::Scheme::Light),

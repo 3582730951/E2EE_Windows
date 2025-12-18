@@ -1,6 +1,7 @@
 #include "network_server.h"
 
 #include <chrono>
+#include <cerrno>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
@@ -713,6 +714,10 @@ bool NetworkServer::Start(std::string& error) {
     error = "invalid listener/port";
     return false;
   }
+#ifndef MI_E2EE_ENABLE_TCP_SERVER
+  error = "tcp server not built (enable MI_E2EE_ENABLE_TCP_SERVER)";
+  return false;
+#endif
 #if defined(MI_E2EE_ENABLE_TCP_SERVER) && !defined(_WIN32)
   if (tls_enable_) {
     error = "tls not supported on this platform";
@@ -732,8 +737,9 @@ bool NetworkServer::Start(std::string& error) {
   }
 #endif
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
-  if (!StartSocket()) {
-    error = "start socket failed";
+  std::string sock_err;
+  if (!StartSocket(sock_err)) {
+    error = sock_err.empty() ? "start socket failed" : sock_err;
     return false;
   }
 #endif
@@ -744,12 +750,17 @@ bool NetworkServer::Start(std::string& error) {
 
 void NetworkServer::Stop() {
   running_.store(false);
-  if (worker_.joinable()) {
-    worker_.join();
-  }
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
   StopSocket();
 #endif
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+  // Run() spawns detached per-connection threads. Wait until they drain to
+  // avoid use-after-free when NetworkServer is destroyed.
+  while (active_connections_.load(std::memory_order_relaxed) != 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
 }
 
 bool NetworkServer::TryAcquireConnectionSlot(const std::string& remote_ip) {
@@ -807,7 +818,7 @@ void NetworkServer::Run() {
     sockaddr_in cli{};
     socklen_t len = sizeof(cli);
 #ifdef _WIN32
-    SOCKET client = accept(listen_fd_, reinterpret_cast<sockaddr*>(&cli), &len);
+    SOCKET client = accept(static_cast<SOCKET>(listen_fd_), reinterpret_cast<sockaddr*>(&cli), &len);
     if (client == INVALID_SOCKET) {
       continue;
     }
@@ -838,77 +849,119 @@ void NetworkServer::Run() {
           ~SlotGuard() { server->ReleaseConnectionSlot(ip); }
         } slot{this, std::move(remote_ip)};
 
-        std::uint64_t bytes_total = 0;
+        try {
+          std::uint64_t bytes_total = 0;
 
-        const auto recv_exact = [&](std::uint8_t* data,
+          const auto recv_exact = [&](std::uint8_t* data,
+                                      std::size_t len) -> bool {
+            if (len == 0) {
+              return true;
+            }
+            std::size_t got = 0;
+            while (got < len) {
+              const std::size_t remaining = len - got;
+              const int want =
+                  remaining >
+                          static_cast<std::size_t>(
+                              (std::numeric_limits<int>::max)())
+                      ? (std::numeric_limits<int>::max)()
+                      : static_cast<int>(remaining);
+              const int n =
+                  recv(client, reinterpret_cast<char*>(data + got), want, 0);
+              if (n <= 0) {
+                return false;
+              }
+              got += static_cast<std::size_t>(n);
+            }
+            return true;
+          };
+
+          const auto send_all = [&](const std::uint8_t* data,
                                     std::size_t len) -> bool {
-          if (len == 0) {
-            return true;
-          }
-          std::size_t got = 0;
-          while (got < len) {
-            const std::size_t remaining = len - got;
-            const int want =
-                remaining >
-                        static_cast<std::size_t>(
-                            (std::numeric_limits<int>::max)())
-                    ? (std::numeric_limits<int>::max)()
-                    : static_cast<int>(remaining);
-            const int n =
-                recv(client, reinterpret_cast<char*>(data + got), want, 0);
-            if (n <= 0) {
-              return false;
+            if (!data || len == 0) {
+              return true;
             }
-            got += static_cast<std::size_t>(n);
-          }
-          return true;
-        };
-
-        const auto send_all = [&](const std::uint8_t* data,
-                                  std::size_t len) -> bool {
-          if (!data || len == 0) {
-            return true;
-          }
-          std::size_t sent = 0;
-          while (sent < len) {
-            const std::size_t remaining = len - sent;
-            const int chunk =
-                remaining >
-                        static_cast<std::size_t>(
-                            (std::numeric_limits<int>::max)())
-                    ? (std::numeric_limits<int>::max)()
-                    : static_cast<int>(remaining);
-            const int n = send(client,
-                               reinterpret_cast<const char*>(data + sent),
-                               chunk, 0);
-            if (n <= 0) {
-              return false;
+            std::size_t sent = 0;
+            while (sent < len) {
+              const std::size_t remaining = len - sent;
+              const int chunk =
+                  remaining >
+                          static_cast<std::size_t>(
+                              (std::numeric_limits<int>::max)())
+                      ? (std::numeric_limits<int>::max)()
+                      : static_cast<int>(remaining);
+              const int n = send(client,
+                                 reinterpret_cast<const char*>(data + sent),
+                                 chunk, 0);
+              if (n <= 0) {
+                return false;
+              }
+              sent += static_cast<std::size_t>(n);
             }
-            sent += static_cast<std::size_t>(n);
-          }
-          return true;
-        };
+            return true;
+          };
 
-        if (tls_enable_ && tls_) {
-          ScopedCtxtHandle ctx;
-          SecPkgContext_StreamSizes sizes{};
-          std::vector<std::uint8_t> enc_buf;
-          if (!SchannelAccept(client, tls_->cred, ctx, sizes, enc_buf)) {
+          if (tls_enable_ && tls_) {
+            ScopedCtxtHandle ctx;
+            SecPkgContext_StreamSizes sizes{};
+            std::vector<std::uint8_t> enc_buf;
+            if (!SchannelAccept(client, tls_->cred, ctx, sizes, enc_buf)) {
+              closesocket(client);
+              return;
+            }
+            std::vector<std::uint8_t> plain_buf;
+            std::size_t plain_off = 0;
+            while (running_.load()) {
+              std::vector<std::uint8_t> request;
+              if (!SchannelReadFrameBuffered(client, ctx, enc_buf, plain_buf,
+                                             plain_off, request)) {
+                break;
+              }
+              bytes_total += request.size();
+              if (bytes_total > limits_.max_connection_bytes) {
+                break;
+              }
+              std::vector<std::uint8_t> response;
+              if (!listener_->Process(request, response, slot.ip)) {
+                break;
+              }
+              bytes_total += response.size();
+              if (bytes_total > limits_.max_connection_bytes) {
+                break;
+              }
+              if (!response.empty() &&
+                  !SchannelEncryptSend(client, ctx, sizes, response)) {
+                break;
+              }
+            }
             closesocket(client);
             return;
           }
-          std::vector<std::uint8_t> plain_buf;
-          std::size_t plain_off = 0;
+
           while (running_.load()) {
-            std::vector<std::uint8_t> request;
-            if (!SchannelReadFrameBuffered(client, ctx, enc_buf, plain_buf,
-                                           plain_off, request)) {
+            std::uint8_t header[kFrameHeaderSize] = {};
+            if (!recv_exact(header, sizeof(header))) {
               break;
             }
-            bytes_total += request.size();
+            FrameType type;
+            std::uint32_t payload_len = 0;
+            if (!DecodeFrameHeader(header, sizeof(header), type, payload_len)) {
+              break;
+            }
+            (void)type;
+            const std::size_t total = kFrameHeaderSize + payload_len;
+            bytes_total += total;
             if (bytes_total > limits_.max_connection_bytes) {
               break;
             }
+            std::vector<std::uint8_t> request;
+            request.resize(total);
+            std::memcpy(request.data(), header, sizeof(header));
+            if (payload_len > 0 &&
+                !recv_exact(request.data() + kFrameHeaderSize, payload_len)) {
+              break;
+            }
+
             std::vector<std::uint8_t> response;
             if (!listener_->Process(request, response, slot.ip)) {
               break;
@@ -918,59 +971,21 @@ void NetworkServer::Run() {
               break;
             }
             if (!response.empty() &&
-                !SchannelEncryptSend(client, ctx, sizes, response)) {
+                !send_all(response.data(), response.size())) {
               break;
             }
           }
           closesocket(client);
-          return;
+        } catch (...) {
+          closesocket(client);
         }
-
-        while (running_.load()) {
-          std::uint8_t header[kFrameHeaderSize] = {};
-          if (!recv_exact(header, sizeof(header))) {
-            break;
-          }
-          FrameType type;
-          std::uint32_t payload_len = 0;
-          if (!DecodeFrameHeader(header, sizeof(header), type, payload_len)) {
-            break;
-          }
-          (void)type;
-          const std::size_t total = kFrameHeaderSize + payload_len;
-          bytes_total += total;
-          if (bytes_total > limits_.max_connection_bytes) {
-            break;
-          }
-          std::vector<std::uint8_t> request;
-          request.resize(total);
-          std::memcpy(request.data(), header, sizeof(header));
-          if (payload_len > 0 &&
-              !recv_exact(request.data() + kFrameHeaderSize, payload_len)) {
-            break;
-          }
-
-          std::vector<std::uint8_t> response;
-          if (!listener_->Process(request, response, slot.ip)) {
-            break;
-          }
-          bytes_total += response.size();
-          if (bytes_total > limits_.max_connection_bytes) {
-            break;
-          }
-          if (!response.empty() &&
-              !send_all(response.data(), response.size())) {
-            break;
-          }
-        }
-        closesocket(client);
       }).detach();
     } catch (...) {
       ReleaseConnectionSlot(remote_ip);
       closesocket(client);
     }
 #else
-    int client = ::accept(listen_fd_, reinterpret_cast<sockaddr*>(&cli), &len);
+    int client = ::accept(static_cast<int>(listen_fd_), reinterpret_cast<sockaddr*>(&cli), &len);
     if (client < 0) {
       continue;
     }
@@ -1000,94 +1015,98 @@ void NetworkServer::Run() {
           ~SlotGuard() { server->ReleaseConnectionSlot(ip); }
         } slot{this, std::move(remote_ip)};
 
-        std::uint64_t bytes_total = 0;
+        try {
+          std::uint64_t bytes_total = 0;
 
-        const auto recv_exact = [&](std::uint8_t* data,
+          const auto recv_exact = [&](std::uint8_t* data,
+                                      std::size_t len) -> bool {
+            if (len == 0) {
+              return true;
+            }
+            std::size_t got = 0;
+            while (got < len) {
+              const std::size_t remaining = len - got;
+              const int want =
+                  remaining >
+                          static_cast<std::size_t>(
+                              (std::numeric_limits<int>::max)())
+                      ? (std::numeric_limits<int>::max)()
+                      : static_cast<int>(remaining);
+              const ssize_t n =
+                  ::recv(client, data + got, static_cast<std::size_t>(want), 0);
+              if (n <= 0) {
+                return false;
+              }
+              got += static_cast<std::size_t>(n);
+            }
+            return true;
+          };
+
+          const auto send_all = [&](const std::uint8_t* data,
                                     std::size_t len) -> bool {
-          if (len == 0) {
-            return true;
-          }
-          std::size_t got = 0;
-          while (got < len) {
-            const std::size_t remaining = len - got;
-            const int want =
-                remaining >
-                        static_cast<std::size_t>(
-                            (std::numeric_limits<int>::max)())
-                    ? (std::numeric_limits<int>::max)()
-                    : static_cast<int>(remaining);
-            const ssize_t n =
-                ::recv(client, data + got, static_cast<std::size_t>(want), 0);
-            if (n <= 0) {
-              return false;
+            if (!data || len == 0) {
+              return true;
             }
-            got += static_cast<std::size_t>(n);
-          }
-          return true;
-        };
-
-        const auto send_all = [&](const std::uint8_t* data,
-                                  std::size_t len) -> bool {
-          if (!data || len == 0) {
-            return true;
-          }
-          std::size_t sent = 0;
-          while (sent < len) {
-            const std::size_t remaining = len - sent;
-            const int chunk =
-                remaining >
-                        static_cast<std::size_t>(
-                            (std::numeric_limits<int>::max)())
-                    ? (std::numeric_limits<int>::max)()
-                    : static_cast<int>(remaining);
-            const ssize_t n = ::send(
-                client, data + sent, static_cast<std::size_t>(chunk), 0);
-            if (n <= 0) {
-              return false;
+            std::size_t sent = 0;
+            while (sent < len) {
+              const std::size_t remaining = len - sent;
+              const int chunk =
+                  remaining >
+                          static_cast<std::size_t>(
+                              (std::numeric_limits<int>::max)())
+                      ? (std::numeric_limits<int>::max)()
+                      : static_cast<int>(remaining);
+              const ssize_t n = ::send(
+                  client, data + sent, static_cast<std::size_t>(chunk), 0);
+              if (n <= 0) {
+                return false;
+              }
+              sent += static_cast<std::size_t>(n);
             }
-            sent += static_cast<std::size_t>(n);
-          }
-          return true;
-        };
+            return true;
+          };
 
-        while (running_.load()) {
-          std::uint8_t header[kFrameHeaderSize] = {};
-          if (!recv_exact(header, sizeof(header))) {
-            break;
-          }
-          FrameType type;
-          std::uint32_t payload_len = 0;
-          if (!DecodeFrameHeader(header, sizeof(header), type, payload_len)) {
-            break;
-          }
-          (void)type;
-          const std::size_t total = kFrameHeaderSize + payload_len;
-          bytes_total += total;
-          if (bytes_total > limits_.max_connection_bytes) {
-            break;
-          }
-          std::vector<std::uint8_t> request;
-          request.resize(total);
-          std::memcpy(request.data(), header, sizeof(header));
-          if (payload_len > 0 &&
-              !recv_exact(request.data() + kFrameHeaderSize, payload_len)) {
-            break;
-          }
+          while (running_.load()) {
+            std::uint8_t header[kFrameHeaderSize] = {};
+            if (!recv_exact(header, sizeof(header))) {
+              break;
+            }
+            FrameType type;
+            std::uint32_t payload_len = 0;
+            if (!DecodeFrameHeader(header, sizeof(header), type, payload_len)) {
+              break;
+            }
+            (void)type;
+            const std::size_t total = kFrameHeaderSize + payload_len;
+            bytes_total += total;
+            if (bytes_total > limits_.max_connection_bytes) {
+              break;
+            }
+            std::vector<std::uint8_t> request;
+            request.resize(total);
+            std::memcpy(request.data(), header, sizeof(header));
+            if (payload_len > 0 &&
+                !recv_exact(request.data() + kFrameHeaderSize, payload_len)) {
+              break;
+            }
 
-          std::vector<std::uint8_t> response;
-          if (!listener_->Process(request, response, slot.ip)) {
-            break;
+            std::vector<std::uint8_t> response;
+            if (!listener_->Process(request, response, slot.ip)) {
+              break;
+            }
+            bytes_total += response.size();
+            if (bytes_total > limits_.max_connection_bytes) {
+              break;
+            }
+            if (!response.empty() &&
+                !send_all(response.data(), response.size())) {
+              break;
+            }
           }
-          bytes_total += response.size();
-          if (bytes_total > limits_.max_connection_bytes) {
-            break;
-          }
-          if (!response.empty() &&
-              !send_all(response.data(), response.size())) {
-            break;
-          }
+          ::close(client);
+        } catch (...) {
+          ::close(client);
         }
-        ::close(client);
       }).detach();
     } catch (...) {
       ReleaseConnectionSlot(remote_ip);
@@ -1099,46 +1118,82 @@ void NetworkServer::Run() {
 }
 
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
-bool NetworkServer::StartSocket() {
+bool NetworkServer::StartSocket(std::string& error) {
+  error.clear();
 #ifdef _WIN32
   WSADATA wsa;
-  if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+  const int wsa_rc = WSAStartup(MAKEWORD(2, 2), &wsa);
+  if (wsa_rc != 0) {
+    error = "WSAStartup failed: " + std::to_string(wsa_rc) + " " + Win32ErrorMessage(static_cast<DWORD>(wsa_rc));
     return false;
   }
 #endif
-  listen_fd_ = static_cast<int>(::socket(AF_INET, SOCK_STREAM, 0));
-  if (listen_fd_ < 0) {
+#ifdef _WIN32
+  const SOCKET sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock == INVALID_SOCKET) {
+    const DWORD last = WSAGetLastError();
+    error = "socket(AF_INET,SOCK_STREAM) failed: " + std::to_string(last) + " " + Win32ErrorMessage(last);
+    WSACleanup();
     return false;
   }
+  listen_fd_ = static_cast<std::intptr_t>(sock);
+#else
+  const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    const int last = errno;
+    error = "socket(AF_INET,SOCK_STREAM) failed: " + std::to_string(last) + " " + std::strerror(last);
+    return false;
+  }
+  listen_fd_ = static_cast<std::intptr_t>(sock);
+#endif
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port_);
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   int yes = 1;
 #ifdef _WIN32
-  setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR,
+  setsockopt(static_cast<SOCKET>(listen_fd_), SOL_SOCKET, SO_REUSEADDR,
              reinterpret_cast<const char*>(&yes), sizeof(yes));
 #else
-  ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+  ::setsockopt(static_cast<int>(listen_fd_), SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #endif
-  if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+#ifdef _WIN32
+  if (::bind(static_cast<SOCKET>(listen_fd_), reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+    const DWORD last = WSAGetLastError();
+    error = "bind(0.0.0.0:" + std::to_string(port_) + ") failed: " + std::to_string(last) + " " + Win32ErrorMessage(last);
     StopSocket();
     return false;
   }
-  if (::listen(listen_fd_, 8) < 0) {
+  if (::listen(static_cast<SOCKET>(listen_fd_), 8) == SOCKET_ERROR) {
+    const DWORD last = WSAGetLastError();
+    error = "listen(0.0.0.0:" + std::to_string(port_) + ") failed: " + std::to_string(last) + " " + Win32ErrorMessage(last);
     StopSocket();
     return false;
   }
+#else
+  if (::bind(static_cast<int>(listen_fd_), reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    const int last = errno;
+    error = "bind(0.0.0.0:" + std::to_string(port_) + ") failed: " + std::to_string(last) + " " + std::strerror(last);
+    StopSocket();
+    return false;
+  }
+  if (::listen(static_cast<int>(listen_fd_), 8) < 0) {
+    const int last = errno;
+    error = "listen(0.0.0.0:" + std::to_string(port_) + ") failed: " + std::to_string(last) + " " + std::strerror(last);
+    StopSocket();
+    return false;
+  }
+#endif
   return true;
 }
 
 void NetworkServer::StopSocket() {
-  if (listen_fd_ >= 0) {
+  if (listen_fd_ != -1) {
 #ifdef _WIN32
-    closesocket(listen_fd_);
+    closesocket(static_cast<SOCKET>(listen_fd_));
     WSACleanup();
 #else
-    ::close(listen_fd_);
+    ::close(static_cast<int>(listen_fd_));
 #endif
     listen_fd_ = -1;
   }

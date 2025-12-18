@@ -7,21 +7,30 @@
 #include <QListView>
 #include <QMenu>
 #include <QSet>
+#include <QVector>
 
 #include "../common/FramelessWindowBase.h"
 
 class MessageModel;
+class MessageDelegate;
 class BackendAdapter;
 class QTimer;
 class QStackedWidget;
 class QPushButton;
 class QModelIndex;
+class QLabel;
+class QLineEdit;
+class IconButton;
 
 class ChatWindow : public FramelessWindowBase {
     Q_OBJECT
 
 public:
     explicit ChatWindow(BackendAdapter *backend = nullptr, QWidget *parent = nullptr);
+
+    QString conversationId() const;
+    void setEmbeddedMode(bool embedded);
+    void focusMessageInput();
 
     enum class FileTransferState : int {
         None = 0,
@@ -65,10 +74,19 @@ private slots:
 private:
     void buildUi();
     void updateEmptyState();
+    void updateEmptyPrompt();
+    void updateConversationUiState();
+    bool ensureConversationSelected();
     void updateOverlayForTitle(const QString &title);
     void setReplyContext(const QString &messageId, const QString &preview);
     void clearReplyContext();
     void activateMessage(const QModelIndex &index);
+    void toggleSearchBar();
+    void setSearchActive(bool active);
+    void updateSearchResults();
+    void goToSearchResult(int index);
+    void stepSearchResult(int delta);
+    void clearSearchState();
     void sendFilePlaceholder();
     void sendImagePlaceholder();
     void sendVoicePlaceholder();
@@ -81,13 +99,29 @@ private:
 
     QString conversationId_;
     bool isGroup_{false};
+    bool embeddedMode_{false};
     QLabel *titleLabel_{nullptr};
     QLabel *presenceLabel_{nullptr};
+    IconButton *windowDownBtn_{nullptr};
+    IconButton *windowMinBtn_{nullptr};
+    IconButton *windowCloseBtn_{nullptr};
     QStackedWidget *messageStack_{nullptr};
+    QLabel *emptyTitleLabel_{nullptr};
+    QLabel *emptySubLabel_{nullptr};
     QListView *messageView_{nullptr};
     MessageModel *messageModel_{nullptr};
+    MessageDelegate *messageDelegate_{nullptr};
     QPushButton *newMessagePill_{nullptr};
     int pendingNewMessages_{0};
+    QWidget *searchBar_{nullptr};
+    QLineEdit *searchEdit_{nullptr};
+    QLabel *searchCountLabel_{nullptr};
+    IconButton *searchPrevBtn_{nullptr};
+    IconButton *searchNextBtn_{nullptr};
+    IconButton *searchCloseBtn_{nullptr};
+    QVector<int> searchMatchRows_;
+    int searchMatchIndex_{-1};
+    QWidget *composer_{nullptr};
     QPlainTextEdit *inputEdit_{nullptr};
     QWidget *replyBar_{nullptr};
     QLabel *replyLabel_{nullptr};

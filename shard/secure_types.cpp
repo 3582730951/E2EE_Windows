@@ -113,14 +113,21 @@ void shard_secure_i32_set(shard_secure_i32 *handle, int32_t value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 int32_t shard_secure_i32_get(shard_secure_i32 *handle) {
   if (!handle) {
     return 0;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0;
+  }
 }
 
 shard_secure_u32 *shard_secure_u32_create(uint32_t value) {
@@ -137,14 +144,21 @@ void shard_secure_u32_set(shard_secure_u32 *handle, uint32_t value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 uint32_t shard_secure_u32_get(shard_secure_u32 *handle) {
   if (!handle) {
     return 0;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0;
+  }
 }
 
 shard_secure_i64 *shard_secure_i64_create(int64_t value) {
@@ -161,14 +175,21 @@ void shard_secure_i64_set(shard_secure_i64 *handle, int64_t value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 int64_t shard_secure_i64_get(shard_secure_i64 *handle) {
   if (!handle) {
     return 0;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0;
+  }
 }
 
 shard_secure_u64 *shard_secure_u64_create(uint64_t value) {
@@ -185,14 +206,21 @@ void shard_secure_u64_set(shard_secure_u64 *handle, uint64_t value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 uint64_t shard_secure_u64_get(shard_secure_u64 *handle) {
   if (!handle) {
     return 0;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0;
+  }
 }
 
 shard_secure_f32 *shard_secure_f32_create(float value) {
@@ -209,14 +237,21 @@ void shard_secure_f32_set(shard_secure_f32 *handle, float value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 float shard_secure_f32_get(shard_secure_f32 *handle) {
   if (!handle) {
     return 0.0f;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0.0f;
+  }
 }
 
 shard_secure_f64 *shard_secure_f64_create(double value) {
@@ -233,14 +268,21 @@ void shard_secure_f64_set(shard_secure_f64 *handle, double value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value);
+  try {
+    handle->impl.value.set(value);
+  } catch (...) {
+  }
 }
 
 double shard_secure_f64_get(shard_secure_f64 *handle) {
   if (!handle) {
     return 0.0;
   }
-  return handle->impl.value.get();
+  try {
+    return handle->impl.value.get();
+  } catch (...) {
+    return 0.0;
+  }
 }
 
 shard_secure_bool *shard_secure_bool_create(int value) {
@@ -258,14 +300,21 @@ void shard_secure_bool_set(shard_secure_bool *handle, int value) {
   if (!handle) {
     return;
   }
-  handle->impl.value.set(value != 0);
+  try {
+    handle->impl.value.set(value != 0);
+  } catch (...) {
+  }
 }
 
 int shard_secure_bool_get(shard_secure_bool *handle) {
   if (!handle) {
     return 0;
   }
-  return handle->impl.value.get() ? 1 : 0;
+  try {
+    return handle->impl.value.get() ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
 }
 
 shard_secure_string *shard_secure_string_create(const char *utf8) {
@@ -291,7 +340,14 @@ shard_secure_string *shard_secure_string_create_len(const char *utf8,
 void shard_secure_string_destroy(shard_secure_string *handle) { delete handle; }
 
 size_t shard_secure_string_length(const shard_secure_string *handle) {
-  return handle ? handle->impl.size() : 0;
+  if (!handle) {
+    return 0;
+  }
+  try {
+    return handle->impl.size();
+  } catch (...) {
+    return 0;
+  }
 }
 
 int shard_secure_string_set(shard_secure_string *handle, const char *utf8,
@@ -299,8 +355,12 @@ int shard_secure_string_set(shard_secure_string *handle, const char *utf8,
   if (!handle || !utf8) {
     return -1;
   }
-  handle->impl.set(std::string(utf8, len));
-  return 0;
+  try {
+    handle->impl.set(std::string(utf8, len));
+    return 0;
+  } catch (...) {
+    return -1;
+  }
 }
 
 size_t shard_secure_string_get(shard_secure_string *handle, char *out,
@@ -308,16 +368,23 @@ size_t shard_secure_string_get(shard_secure_string *handle, char *out,
   if (!handle) {
     return 0;
   }
-  const std::string plain = handle->impl.get();
-  const size_t need = plain.size();
-  if (out && buffer_len > 0) {
-    const size_t copy_len = (buffer_len - 1 < need) ? (buffer_len - 1) : need;
-    if (copy_len > 0) {
-      std::memcpy(out, plain.data(), copy_len);
+  try {
+    const std::string plain = handle->impl.get();
+    const size_t need = plain.size();
+    if (out && buffer_len > 0) {
+      const size_t copy_len = (buffer_len - 1 < need) ? (buffer_len - 1) : need;
+      if (copy_len > 0) {
+        std::memcpy(out, plain.data(), copy_len);
+      }
+      out[copy_len] = '\0';
     }
-    out[copy_len] = '\0';
+    return need;
+  } catch (...) {
+    if (out && buffer_len > 0) {
+      out[0] = '\0';
+    }
+    return 0;
   }
-  return need;
 }
 
 char *shard_secure_string_clone(shard_secure_string *handle,
@@ -325,19 +392,26 @@ char *shard_secure_string_clone(shard_secure_string *handle,
   if (!handle) {
     return nullptr;
   }
-  const std::string plain = handle->impl.get();
-  char *buf = static_cast<char *>(std::malloc(plain.size() + 1));
-  if (!buf) {
+  if (out_len) {
+    *out_len = 0;
+  }
+  try {
+    const std::string plain = handle->impl.get();
+    char *buf = static_cast<char *>(std::malloc(plain.size() + 1));
+    if (!buf) {
+      return nullptr;
+    }
+    if (!plain.empty()) {
+      std::memcpy(buf, plain.data(), plain.size());
+    }
+    buf[plain.size()] = '\0';
+    if (out_len) {
+      *out_len = plain.size();
+    }
+    return buf;
+  } catch (...) {
     return nullptr;
   }
-  if (!plain.empty()) {
-    std::memcpy(buf, plain.data(), plain.size());
-  }
-  buf[plain.size()] = '\0';
-  if (out_len) {
-    *out_len = plain.size();
-  }
-  return buf;
 }
 
 void shard_secure_string_free(char *buffer) {

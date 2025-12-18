@@ -237,6 +237,10 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
 
 MessageDelegate::MessageDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
 
+void MessageDelegate::setHighlightedRow(int row) {
+    highlightedRow_ = row;
+}
+
 QSize MessageDelegate::bubbleSize(const QString &text, const QFont &font, int maxWidth) const {
     QSize t = layoutText(text, font, maxWidth);
     return QSize(t.width() + BubbleTokens::paddingH() * 2,
@@ -322,7 +326,17 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         QFont f = Theme::defaultFont(12);
         painter->setFont(f);
         painter->setPen(BubbleTokens::systemText());
-        painter->drawText(r, Qt::AlignCenter, index.data(MessageModel::SystemTextRole).toString());
+        const QString msg = index.data(MessageModel::SystemTextRole).toString();
+        painter->drawText(r, Qt::AlignCenter, msg);
+        if (highlightedRow_ >= 0 && index.row() == highlightedRow_) {
+            const int pad = qMax(18, static_cast<int>(viewWidth * 0.15));
+            QRect highlightRect = r.adjusted(pad, 2, -pad, -2);
+            QPen pen(Theme::uiAccentBlue());
+            pen.setWidthF(2.0);
+            painter->setPen(pen);
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRoundedRect(highlightRect, 10, 10);
+        }
         painter->restore();
         return;
     }
@@ -568,6 +582,16 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                       : StatusText(status);
         QRect statusRect = QRect(bubbleRect.left(), bubbleRect.bottom() + 2, bubbleRect.width(), 14);
         painter->drawText(statusRect, Qt::AlignRight | Qt::AlignVCenter, st);
+    }
+
+    if (highlightedRow_ >= 0 && index.row() == highlightedRow_) {
+        QPen pen(Theme::uiAccentBlue());
+        pen.setWidthF(2.0);
+        painter->setPen(pen);
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRoundedRect(bubbleRect.adjusted(-2, -2, 2, 2),
+                                 BubbleTokens::radius() + 2,
+                                 BubbleTokens::radius() + 2);
     }
 
     painter->restore();

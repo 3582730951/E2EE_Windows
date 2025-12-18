@@ -24,16 +24,36 @@
 #include "../common/UiStyle.h"
 #include "../common/Toast.h"
 #include "BackendAdapter.h"
+#include "TrustPromptDialog.h"
 
 LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
     : QDialog(parent), backend_(backend) {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Dialog);
     setAttribute(Qt::WA_TranslucentBackground);
-    setFixedSize(320, 448);
+    resize(360, 520);
+    setMinimumSize(320, 448);
     buildUi();
 }
 
 void LoginDialog::buildUi() {
+    const QColor frameTop =
+        (Theme::scheme() == Theme::Scheme::Light) ? Theme::uiPanelBg() : Theme::uiPanelBg().lighter(106);
+    const QColor frameBottom =
+        (Theme::scheme() == Theme::Scheme::Light) ? Theme::uiPanelBg() : Theme::uiPanelBg().darker(110);
+    const QColor border = Theme::uiBorder();
+    const QColor accent = Theme::uiAccentBlue();
+    const QColor accentHover = accent.lighter(110);
+    const QColor accentPressed = accent.darker(110);
+    const QColor danger = Theme::uiDangerRed();
+    const QColor textMain = Theme::uiTextMain();
+    const QColor textSub = Theme::uiTextSub();
+    const QColor textMuted = Theme::uiTextMuted();
+    const QColor disabledBg = Theme::uiBadgeGrey();
+    const QColor hoverBg = Theme::uiHoverBg();
+    const QColor selectedBg = Theme::uiSelectedBg();
+    const QColor inputBg = Theme::uiInputBg();
+    const QColor inputBorder = Theme::uiInputBorder();
+
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(10, 10, 10, 10);
     outer->setSpacing(0);
@@ -41,10 +61,13 @@ void LoginDialog::buildUi() {
     auto *frame = new QFrame(this);
     frame->setObjectName("loginFrame");
     frame->setStyleSheet(
-        "#loginFrame {"
-        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1A1733, stop:1 #2B1630);"
-        "border-radius: 16px;"
-        "}");
+        QStringLiteral(
+            "#loginFrame {"
+            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2);"
+            "border: 1px solid %3;"
+            "border-radius: 16px;"
+            "}")
+            .arg(frameTop.name(), frameBottom.name(), border.name()));
     auto *shadow = new QGraphicsDropShadowEffect(frame);
     shadow->setBlurRadius(36);
     shadow->setOffset(0, 12);
@@ -59,6 +82,16 @@ void LoginDialog::buildUi() {
     stack_ = new QStackedWidget(frame);
     layout->addWidget(stack_);
 
+    errorLabel_ = new QLabel(frame);
+    errorLabel_->setTextFormat(Qt::PlainText);
+    errorLabel_->setWordWrap(true);
+    errorLabel_->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+    errorLabel_->setStyleSheet(
+        QStringLiteral("color: %1; font-size: 11px; padding: 0 20px 12px 20px;")
+            .arg(danger.name()));
+    errorLabel_->setVisible(false);
+    layout->addWidget(errorLabel_);
+
     // Top bar
     auto *titleBar = new QWidget(frame);
     titleBar->setFixedHeight(30);
@@ -69,9 +102,7 @@ void LoginDialog::buildUi() {
     auto *settingBtnSimple = new IconButton(QString(), titleBar);
     settingBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnSimple->setFixedSize(28, 28);
-    settingBtnSimple->setColors(QColor("#C8C8D0"), QColor("#FFFFFF"), QColor("#D0D0D0"),
-                                QColor(0, 0, 0, 0), QColor(255, 255, 255, 15),
-                                QColor(255, 255, 255, 28));
+    settingBtnSimple->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuSimple = new QMenu(settingBtnSimple);
     UiStyle::ApplyMenuStyle(*settingsMenuSimple);
     auto *settingsActionSimple = settingsMenuSimple->addAction(
@@ -92,8 +123,7 @@ void LoginDialog::buildUi() {
     auto *closeBtnSimple = new IconButton(QString(), titleBar);
     closeBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtnSimple->setFixedSize(24, 24);
-    closeBtnSimple->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
-                              QColor(0, 0, 0, 0), QColor(255, 255, 255, 20), QColor(255, 255, 255, 30));
+    closeBtnSimple->setColors(textSub, textMain, danger, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     connect(closeBtnSimple, &QPushButton::clicked, this, &LoginDialog::reject);
     titleLayout->addWidget(settingBtnSimple);
     titleLayout->addSpacing(6);
@@ -108,20 +138,20 @@ void LoginDialog::buildUi() {
 
     auto *title = new QLabel(QStringLiteral("QQ"), simplePage_);
     title->setAlignment(Qt::AlignHCenter);
-    title->setStyleSheet(
-        "color: #6FC1FF; font-size: 30px; font-weight: 700; letter-spacing: 2px;");
-    auto *titleGlow = new QGraphicsDropShadowEffect(title);
-    titleGlow->setBlurRadius(24);
-    titleGlow->setOffset(0, 0);
-    titleGlow->setColor(QColor(111, 193, 255, 180));
-    title->setGraphicsEffect(titleGlow);
+    title->setFont(Theme::defaultFont(30, QFont::Bold));
+    title->setStyleSheet(QStringLiteral("color: %1; letter-spacing: 2px;")
+                             .arg(accent.name()));
 
     auto *avatar = new QLabel(simplePage_);
     avatar->setFixedSize(120, 120);
     avatar->setStyleSheet(
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #5FA0FF, stop:1 #7BB9FF);"
-        "border: 3px solid rgba(255,255,255,0.9);"
-        "border-radius: 60px;");
+        QStringLiteral(
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2);"
+            "border: 2px solid %3;"
+            "border-radius: 60px;")
+            .arg(accent.lighter(118).name(),
+                 accent.darker(105).name(),
+                 border.name()));
     auto *avatarShadow = new QGraphicsDropShadowEffect(avatar);
     avatarShadow->setBlurRadius(24);
     avatarShadow->setOffset(0, 6);
@@ -131,9 +161,10 @@ void LoginDialog::buildUi() {
     auto *nameLayout = new QHBoxLayout();
     nameLayout->setAlignment(Qt::AlignHCenter);
     auto *name = new QLabel(QStringLiteral("eds"), simplePage_);
-    name->setStyleSheet("color: white; font-size: 16px; font-weight: 600;");
+    name->setFont(Theme::defaultFont(16, QFont::DemiBold));
+    name->setStyleSheet(QStringLiteral("color: %1;").arg(textMain.name()));
     auto *arrow = new QLabel(QStringLiteral("\u25BE"), simplePage_);
-    arrow->setStyleSheet("color: #B7B9C5; font-size: 12px;");
+    arrow->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(textMuted.name()));
     nameClick_ = new QWidget(simplePage_);
     auto *nameInner = new QHBoxLayout(nameClick_);
     nameInner->setContentsMargins(0, 0, 0, 0);
@@ -148,28 +179,30 @@ void LoginDialog::buildUi() {
     loginBtn->setFixedSize(260, 46);
     loginBtn->setCursor(Qt::PointingHandCursor);
     loginBtn->setStyleSheet(
-        "QPushButton {"
-        "  color: white;"
-        "  background: #0B5ED7;"
-        "  border: none;"
-        "  border-radius: 9px;"
-        "  font-size: 15px;"
-        "}"
-        "QPushButton:hover { background: #1D6FFF; }"
-        "QPushButton:pressed { background: #094DB3; }");
+        QStringLiteral(
+            "QPushButton {"
+            "  color: white;"
+            "  background: %1;"
+            "  border: none;"
+            "  border-radius: 10px;"
+            "  font-size: 15px;"
+            "}"
+            "QPushButton:hover { background: %2; }"
+            "QPushButton:pressed { background: %3; }")
+            .arg(accent.name(), accentHover.name(), accentPressed.name()));
     connect(loginBtn, &QPushButton::clicked, this, &LoginDialog::handleLogin);
 
     auto *linksLayout = new QHBoxLayout();
     linksLayout->setAlignment(Qt::AlignHCenter);
     linksLayout->setSpacing(10);
     addLabel_ = new QLabel(QStringLiteral("添加账号"), simplePage_);
-    addLabel_->setStyleSheet("color: #3B82F6; font-size: 12px;");
+    addLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(accent.name()));
     addLabel_->setCursor(Qt::PointingHandCursor);
     addLabel_->installEventFilter(this);
     auto *divider = new QLabel(QStringLiteral("|"), simplePage_);
-    divider->setStyleSheet("color: #4D78B3; font-size: 12px;");
+    divider->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(textMuted.name()));
     auto *removeLabel = new QLabel(QStringLiteral("移除账号"), simplePage_);
-    removeLabel->setStyleSheet("color: #3B82F6; font-size: 12px;");
+    removeLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(accent.name()));
     removeLabel->setCursor(Qt::PointingHandCursor);
     linksLayout->addWidget(addLabel_);
     linksLayout->addWidget(divider);
@@ -189,10 +222,6 @@ void LoginDialog::buildUi() {
 
     simpleLayout->addLayout(contentLayout);
     simpleLayout->addStretch();
-    errorLabel_ = new QLabel(simplePage_);
-    errorLabel_->setStyleSheet("color: #E96A6A; font-size: 11px;");
-    errorLabel_->setVisible(false);
-    simpleLayout->addWidget(errorLabel_);
 
     // Account page
     accountPage_ = new QWidget(frame);
@@ -207,9 +236,7 @@ void LoginDialog::buildUi() {
     auto *settingBtnAcc = new IconButton(QString(), accTopBar);
     settingBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnAcc->setFixedSize(28, 28);
-    settingBtnAcc->setColors(QColor("#C8C8D0"), QColor("#FFFFFF"), QColor("#D0D0D0"),
-                             QColor(0, 0, 0, 0), QColor(255, 255, 255, 15),
-                             QColor(255, 255, 255, 28));
+    settingBtnAcc->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuAcc = new QMenu(settingBtnAcc);
     UiStyle::ApplyMenuStyle(*settingsMenuAcc);
     auto *settingsActionAcc = settingsMenuAcc->addAction(
@@ -232,8 +259,7 @@ void LoginDialog::buildUi() {
     auto *closeBtnAcc = new IconButton(QString(), accTopBar);
     closeBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtnAcc->setFixedSize(24, 24);
-    closeBtnAcc->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
-                           QColor(0, 0, 0, 0), QColor(255, 255, 255, 20), QColor(255, 255, 255, 30));
+    closeBtnAcc->setColors(textSub, textMain, danger, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     connect(closeBtnAcc, &QPushButton::clicked, this, &LoginDialog::reject);
     accTopLayout->addWidget(closeBtnAcc);
     accLayout->addWidget(accTopBar);
@@ -241,30 +267,47 @@ void LoginDialog::buildUi() {
     auto *accAvatar = new QLabel(accountPage_);
     accAvatar->setFixedSize(90, 90);
     accAvatar->setStyleSheet(
-        "background: #f0f0f0;"
-        "border: 2px solid rgba(255,255,255,0.9);"
-        "border-radius: 45px;");
+        QStringLiteral(
+            "background: %1;"
+            "border: 1px solid %2;"
+            "border-radius: 45px;")
+            .arg(Theme::uiSearchBg().name(),
+                 border.name()));
     accLayout->addWidget(accAvatar, 0, Qt::AlignHCenter);
 
     accountBox_ = new QComboBox(accountPage_);
     accountBox_->setEditable(true);
     accountBox_->addItem(QStringLiteral("3960562879"));
     accountBox_->setStyleSheet(
-        "QComboBox { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.10); "
-        "border-radius: 10px; padding: 10px 36px 10px 12px; color: #FFFFFF; font-size: 14px; }"
-        "QComboBox::drop-down { width: 28px; border: none; }"
-        "QComboBox::down-arrow { image: none; }"
-        "QComboBox QAbstractItemView { background: #1E1E1E; color: #FFFFFF; selection-background-color: #2A2D33; }");
+        QStringLiteral(
+            "QComboBox { background: %1; border: 1px solid %2; "
+            "border-radius: 10px; padding: 10px 36px 10px 12px; color: %3; font-size: 14px; }"
+            "QComboBox:focus { border-color: %4; }"
+            "QComboBox::drop-down { width: 28px; border: none; }"
+            "QComboBox::down-arrow { image: none; }"
+            "QComboBox QAbstractItemView { background: %5; color: %3; selection-background-color: %6; }")
+            .arg(inputBg.name(),
+                 inputBorder.name(),
+                 textMain.name(),
+                 accent.name(),
+                 Theme::uiMenuBg().name(),
+                 selectedBg.name()));
     accLayout->addWidget(accountBox_);
 
     passwordAccount_ = new QLineEdit(accountPage_);
     passwordAccount_->setPlaceholderText(QStringLiteral("输入QQ密码"));
     passwordAccount_->setEchoMode(QLineEdit::Password);
     passwordAccount_->setStyleSheet(
-        "QLineEdit { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.10); "
-        "border-radius: 10px; padding: 10px 12px; color: #FFFFFF; font-size: 14px; }"
-        "QLineEdit:placeholder { color: #8B8FA0; }"
-        "QLineEdit:focus { border-color: #3B82F6; }");
+        QStringLiteral(
+            "QLineEdit { background: %1; border: 1px solid %2; "
+            "border-radius: 10px; padding: 10px 12px; color: %3; font-size: 14px; }"
+            "QLineEdit:placeholder { color: %4; }"
+            "QLineEdit:focus { border-color: %5; }")
+            .arg(inputBg.name(),
+                 inputBorder.name(),
+                 textMain.name(),
+                 textMuted.name(),
+                 accent.name()));
     accLayout->addWidget(passwordAccount_);
 
     auto *agreeRow = new QHBoxLayout();
@@ -273,10 +316,13 @@ void LoginDialog::buildUi() {
     agreeRow->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
     agreeCheck_ = new QCheckBox(accountPage_);
     agreeCheck_->setStyleSheet(
-        "QCheckBox { color: #FFFFFF; }"
+        QStringLiteral("QCheckBox { color: %1; }").arg(textSub.name()) +
         "QCheckBox::indicator { width: 16px; height: 16px; }"
-        "QCheckBox::indicator:checked { image: none; border: 1px solid #3B82F6; background: #3B82F6; }"
-        "QCheckBox::indicator:unchecked { image: none; border: 1px solid rgba(255,255,255,0.3); background: transparent; }");
+        +
+        QStringLiteral("QCheckBox::indicator:checked { image: none; border: 1px solid %1; background: %1; }")
+            .arg(accent.name()) +
+        QStringLiteral("QCheckBox::indicator:unchecked { image: none; border: 1px solid %1; background: transparent; }")
+            .arg(inputBorder.name()));
     agreeRow->addWidget(agreeCheck_, 0, Qt::AlignTop);
     auto *agreeLabel =
         new QLabel(QStringLiteral("已阅读并同意 <a href=\"#\">服务协议</a> 和 <a href=\"#\">QQ隐私保护指引</a>"),
@@ -285,10 +331,13 @@ void LoginDialog::buildUi() {
     agreeLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     agreeLabel->setOpenExternalLinks(false);
     agreeLabel->setStyleSheet(
-        "QLabel { color: #FFFFFF; font-size: 12px; } "
-        "QLabel:hover { color: #FFFFFF; } "
-        "QLabel a { color: #3B82F6; text-decoration: none; } "
-        "QLabel a:hover { color: #5A9BFF; }");
+        QStringLiteral(
+            "QLabel { color: %1; font-size: 12px; } "
+            "QLabel a { color: %2; text-decoration: none; } "
+            "QLabel a:hover { color: %3; }")
+            .arg(textSub.name(),
+                 accent.name(),
+                 accentHover.name()));
     agreeLabel->setWordWrap(false);
     agreeRow->addWidget(agreeLabel, 1);
     accLayout->addLayout(agreeRow);
@@ -297,19 +346,25 @@ void LoginDialog::buildUi() {
     accountLoginBtn_->setFixedHeight(46);
     accountLoginBtn_->setEnabled(false);
     accountLoginBtn_->setStyleSheet(
-        "QPushButton { color: white; background: #0B5ED7; border: none; border-radius: 10px; font-size: 15px; }"
-        "QPushButton:disabled { background: #22324A; color: #9FA5B2; }"
-        "QPushButton:hover:enabled { background: #1D6FFF; }"
-        "QPushButton:pressed:enabled { background: #094DB3; }");
+        QStringLiteral(
+            "QPushButton { color: white; background: %1; border: none; border-radius: 10px; font-size: 15px; }"
+            "QPushButton:disabled { background: %2; color: %3; }"
+            "QPushButton:hover:enabled { background: %4; }"
+            "QPushButton:pressed:enabled { background: %5; }")
+            .arg(accent.name(),
+                 disabledBg.name(),
+                 textMuted.name(),
+                 accentHover.name(),
+                 accentPressed.name()));
     accLayout->addWidget(accountLoginBtn_);
 
     auto *bottomRow = new QHBoxLayout();
     bottomRow->setContentsMargins(0, 4, 0, 0);
     bottomRow->setSpacing(12);
     auto *scan = new QLabel(QStringLiteral("扫码登录"), accountPage_);
-    scan->setStyleSheet("color: #3B82F6; font-size: 12px;");
+    scan->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(accent.name()));
     auto *more = new QLabel(QStringLiteral("更多选项"), accountPage_);
-    more->setStyleSheet("color: #3B82F6; font-size: 12px;");
+    more->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(accent.name()));
     bottomRow->addStretch();
     bottomRow->addWidget(scan);
     bottomRow->addSpacing(8);
@@ -399,49 +454,20 @@ bool LoginDialog::handlePendingServerTrust(const QString &account, const QString
     const QString fingerprintHex = backend_->pendingServerFingerprint();
     const QString pin = backend_->pendingServerPin();
 
-    const QString detail = UiSettings::Tr(
-        QStringLiteral(
-            "检测到需要验证服务器身份（首次连接或证书指纹变更）。\n\n"
-            "指纹：%1\n"
-            "安全码（SAS）：%2\n\n"
-            "请通过线下可信渠道核对安全码/指纹后再继续。")
-            .arg(fingerprintHex, pin),
-        QStringLiteral(
-            "Server identity verification required (first connection or certificate pin changed).\n\n"
-            "Fingerprint: %1\n"
-            "SAS: %2\n\n"
-            "Verify via an out-of-band channel before trusting.")
-            .arg(fingerprintHex, pin));
+    const QString description = UiSettings::Tr(
+        QStringLiteral("检测到需要验证服务器身份（首次连接或证书指纹变更）。\n"
+                       "请通过线下可信渠道核对安全码/指纹后再继续。"),
+        QStringLiteral("Server identity verification required (first connection or certificate pin changed).\n"
+                       "Verify via an out-of-band channel before trusting."));
 
-    QMessageBox box(QMessageBox::Warning,
-                    UiSettings::Tr(QStringLiteral("验证服务器身份"),
-                                   QStringLiteral("Verify server identity")),
-                    detail,
-                    QMessageBox::NoButton, this);
-    auto *trustBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("我已核对，信任"),
-                                     QStringLiteral("I verified it, trust")),
-                      QMessageBox::AcceptRole);
-    box.addButton(UiSettings::Tr(QStringLiteral("稍后"), QStringLiteral("Later")),
-                  QMessageBox::RejectRole);
-    box.setDefaultButton(trustBtn);
-    box.exec();
-
-    if (box.clickedButton() != trustBtn) {
-        errorLabel_->setText(QStringLiteral("需要先信任服务器（TLS）"));
-        errorLabel_->setVisible(true);
-        return true;
-    }
-
-    bool ok = false;
-    const QString input = QInputDialog::getText(
-        this,
-        UiSettings::Tr(QStringLiteral("输入安全码"),
-                       QStringLiteral("Enter SAS")),
-        UiSettings::Tr(QStringLiteral("请输入上面显示的安全码（可包含 '-'，忽略大小写）："),
-                       QStringLiteral("Enter the SAS shown above (ignore '-' and case):")),
-        QLineEdit::Normal, pin, &ok);
-    if (!ok) {
+    QString input;
+    if (!PromptTrustWithSas(this,
+                            UiSettings::Tr(QStringLiteral("验证服务器身份"),
+                                           QStringLiteral("Verify server identity")),
+                            description,
+                            fingerprintHex,
+                            pin,
+                            input)) {
         errorLabel_->setText(QStringLiteral("需要先信任服务器（TLS）"));
         errorLabel_->setVisible(true);
         return true;

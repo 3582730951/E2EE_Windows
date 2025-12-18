@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(MI_E2EE_ENABLE_MYSQL "Enable MySQL auth provider" OFF)
-option(MI_E2EE_ENABLE_TCP_SERVER "Enable simple TCP server listener" OFF)
+option(MI_E2EE_ENABLE_TCP_SERVER "Enable simple TCP server listener" ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/mi_e2ee_build_options.cmake)
 
@@ -141,6 +141,29 @@ if(MSVC)
     set(MI_MSVC_REDIST_DLLS "" CACHE INTERNAL "MSVC CRT redist DLLs")
     message(WARNING "MSVC redist not found; runtime DLLs will not be copied")
   endif()
+
+  if(MI_E2EE_ENABLE_ASAN)
+    # The ASAN runtime DLL is not shipped in the normal MSVC redist, so copy it
+    # from the installed toolset when building ASAN binaries.
+    set(_asan_dll_dirs)
+    file(GLOB _asan_dll_dirs LIST_DIRECTORIES true
+         "${_msvc_root}/*/bin/Hostx64/x64")
+    list(SORT _asan_dll_dirs)
+    list(REVERSE _asan_dll_dirs)
+    set(MI_MSVC_ASAN_DLLS "" CACHE INTERNAL "MSVC ASAN runtime DLLs")
+    foreach(_asan_dir IN LISTS _asan_dll_dirs)
+      file(GLOB _asan_dlls
+           "${_asan_dir}/clang_rt.asan_dynamic-x86_64.dll"
+           "${_asan_dir}/clang_rt.asan_dbg_dynamic-x86_64.dll")
+      if(_asan_dlls)
+        set(MI_MSVC_ASAN_DLLS "${_asan_dlls}" CACHE INTERNAL "MSVC ASAN runtime DLLs")
+        message(STATUS "Using MSVC ASAN runtime from ${_asan_dir}")
+        break()
+      endif()
+    endforeach()
+  else()
+    set(MI_MSVC_ASAN_DLLS "" CACHE INTERNAL "MSVC ASAN runtime DLLs")
+  endif()
  endif()
 
 function(mi_copy_msvc_runtime target_name)
@@ -148,6 +171,12 @@ function(mi_copy_msvc_runtime target_name)
     add_custom_command(TARGET ${target_name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
               ${MI_MSVC_REDIST_DLLS}
+              $<TARGET_FILE_DIR:${target_name}>)
+  endif()
+  if(MSVC AND MI_E2EE_ENABLE_ASAN AND MI_MSVC_ASAN_DLLS)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              ${MI_MSVC_ASAN_DLLS}
               $<TARGET_FILE_DIR:${target_name}>)
   endif()
 endfunction()
@@ -222,12 +251,29 @@ add_custom_command(TARGET mi_e2ee_server POST_BUILD
           $<TARGET_FILE_DIR:mi_e2ee_server>)
 
 if(MI_E2EE_ENABLE_MYSQL)
-  find_path(MYSQL_INCLUDE_DIR mysql.h
+  set(MYSQL_ROOT_DIR "" CACHE PATH "Optional MySQL/MariaDB client root directory")
+  set(_mysql_hints)
+  if(MYSQL_ROOT_DIR)
+    list(APPEND _mysql_hints "${MYSQL_ROOT_DIR}")
+  endif()
+  if(DEFINED ENV{MYSQL_ROOT_DIR})
+    list(APPEND _mysql_hints "$ENV{MYSQL_ROOT_DIR}")
+  endif()
+  if(DEFINED ENV{MYSQL_DIR})
+    list(APPEND _mysql_hints "$ENV{MYSQL_DIR}")
+  endif()
+  if(DEFINED ENV{MYSQL_HOME})
+    list(APPEND _mysql_hints "$ENV{MYSQL_HOME}")
+  endif()
+
+  find_path(MYSQL_INCLUDE_DIR NAMES mysql.h
+    HINTS ${_mysql_hints}
     PATHS /usr/include /usr/local/include
-    PATH_SUFFIXES mysql)
-  find_library(MYSQL_CLIENT_LIB mysqlclient
+    PATH_SUFFIXES include include/mysql include/mariadb mysql mariadb)
+  find_library(MYSQL_CLIENT_LIB NAMES mysqlclient libmysql mariadb libmariadb mysqlclient_r
+    HINTS ${_mysql_hints}
     PATHS /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64
-    PATH_SUFFIXES mysql)
+    PATH_SUFFIXES lib lib64 mysql mariadb)
   if(NOT MYSQL_INCLUDE_DIR OR NOT MYSQL_CLIENT_LIB)
     message(FATAL_ERROR "MySQL client headers or library not found; install libmysqlclient-dev or set MYSQL_INCLUDE_DIR/MYSQL_CLIENT_LIB")
   endif()
@@ -236,6 +282,25 @@ if(MI_E2EE_ENABLE_MYSQL)
   target_include_directories(mi_e2ee_core PRIVATE ${MYSQL_INCLUDE_DIR})
   target_link_libraries(mi_e2ee_core PRIVATE ${MYSQL_CLIENT_LIB})
   target_link_libraries(mi_e2ee_server PRIVATE ${MYSQL_CLIENT_LIB})
+
+  if(WIN32)
+    get_filename_component(_mysql_lib_dir "${MYSQL_CLIENT_LIB}" DIRECTORY)
+    set(_mysql_runtime_candidates
+      "${_mysql_lib_dir}/libmysql.dll"
+      "${_mysql_lib_dir}/libmariadb.dll"
+      "${_mysql_lib_dir}/../bin/libmysql.dll"
+      "${_mysql_lib_dir}/../bin/libmariadb.dll"
+    )
+    foreach(_mysql_dll IN LISTS _mysql_runtime_candidates)
+      if(EXISTS "${_mysql_dll}")
+        add_custom_command(TARGET mi_e2ee_server POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                  "${_mysql_dll}"
+                  $<TARGET_FILE_DIR:mi_e2ee_server>)
+        break()
+      endif()
+    endforeach()
+  endif()
   message(STATUS "MySQL auth enabled (ensure include/lib paths are provided)")
 endif()
 

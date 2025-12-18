@@ -10,8 +10,24 @@
 
 #include "../common/IconButton.h"
 #include "../common/Theme.h"
+#include "../common/UiSettings.h"
 
 namespace {
+
+struct Tokens {
+    static QColor windowBg() { return Theme::uiWindowBg(); }
+    static QColor panelBg() { return Theme::uiPanelBg(); }
+    static QColor sidebarBg() { return Theme::uiSidebarBg(); }
+    static QColor border() { return Theme::uiBorder(); }
+    static QColor textMain() { return Theme::uiTextMain(); }
+    static QColor textSub() { return Theme::uiTextSub(); }
+    static QColor textMuted() { return Theme::uiTextMuted(); }
+    static QColor hoverBg() { return Theme::uiHoverBg(); }
+    static QColor selectedBg() { return Theme::uiSelectedBg(); }
+    static QColor bubbleIn() { return Theme::uiMessageIncomingBg(); }
+    static QColor bubbleText() { return Theme::uiMessageText(); }
+    static QColor accent() { return Theme::uiAccentBlue(); }
+};
 
 IconButton *titleIcon(const QString &glyphOrSvg, QWidget *parent, int svgSize = 16) {
     auto *btn = new IconButton(QString(), parent);
@@ -22,8 +38,8 @@ IconButton *titleIcon(const QString &glyphOrSvg, QWidget *parent, int svgSize = 
         btn->setGlyph(v, 10);
     }
     btn->setFixedSize(32, 32);
-    btn->setColors(QColor("#D3D3D3"), QColor("#FFFFFF"), QColor("#D8D8D8"),
-                   QColor("#1F1F1F"), QColor("#2B2B2B"), QColor("#222222"));
+    btn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                   QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     return btn;
 }
 
@@ -47,11 +63,13 @@ QFrame *memberRow(const QString &name, const QString &role, const QColor &roleCo
 
     auto *avatar = new QLabel(row);
     avatar->setFixedSize(32, 32);
-    avatar->setStyleSheet("background: #4E7BFF; border-radius: 16px;");
+    avatar->setStyleSheet(QStringLiteral("background: %1; border-radius: 16px;")
+                              .arg(Tokens::accent().name()));
     layout->addWidget(avatar);
 
     auto *nameLabel = new QLabel(name, row);
-    nameLabel->setStyleSheet("color: #EAEAEA; font-size: 12px;");
+    nameLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                                 .arg(Tokens::textMain().name()));
     layout->addWidget(nameLabel, 1);
 
     if (!role.isEmpty()) {
@@ -70,7 +88,8 @@ QFrame *robotMessage(QWidget *parent) {
 
     auto *avatar = new QLabel(box);
     avatar->setFixedSize(38, 38);
-    avatar->setStyleSheet("background: #3A7AFE; border-radius: 19px;");
+    avatar->setStyleSheet(QStringLiteral("background: %1; border-radius: 19px;")
+                              .arg(Tokens::accent().name()));
     layout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *contentLayout = new QVBoxLayout();
@@ -79,26 +98,32 @@ QFrame *robotMessage(QWidget *parent) {
     auto *headerLayout = new QHBoxLayout();
     headerLayout->setSpacing(6);
     auto *name = new QLabel(QStringLiteral("Q群管家"), box);
-    name->setStyleSheet("color: #E9E9E9; font-size: 13px; font-weight: 600;");
+    name->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 600;")
+                            .arg(Tokens::textMain().name()));
     auto *dot = new QLabel(box);
     dot->setFixedSize(8, 8);
-    dot->setStyleSheet("background: #3A8CFF; border-radius: 4px;");
+    dot->setStyleSheet(QStringLiteral("background: %1; border-radius: 4px;")
+                           .arg(Tokens::accent().name()));
     headerLayout->addWidget(name);
     headerLayout->addWidget(dot);
     headerLayout->addStretch();
 
     auto *bubble = new QFrame(box);
     bubble->setStyleSheet(
-        "QFrame { background: #262626; border-radius: 10px; color: #CFCFCF; }");
+        QStringLiteral("QFrame { background: %1; border-radius: 10px; color: %2; }")
+            .arg(Tokens::bubbleIn().name(),
+                 Tokens::bubbleText().name()));
     auto *bubbleLayout = new QVBoxLayout(bubble);
     bubbleLayout->setContentsMargins(12, 10, 12, 10);
     bubbleLayout->setSpacing(8);
 
     auto *mention = new QLabel(QStringLiteral("@天 涩啥"), bubble);
-    mention->setStyleSheet("color: #D5D5D5; font-size: 12px;");
+    mention->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                               .arg(Tokens::textSub().name()));
     auto *image = new QLabel(bubble);
     image->setFixedSize(320, 160);
-    image->setStyleSheet("background: #3A3A3A; border-radius: 8px;");
+    image->setStyleSheet(QStringLiteral("background: %1; border-radius: 8px;")
+                             .arg(Tokens::hoverBg().name()));
 
     bubbleLayout->addWidget(mention);
     bubbleLayout->addWidget(image);
@@ -120,7 +145,8 @@ QFrame *textMessage(QWidget *parent) {
 
     auto *avatar = new QLabel(box);
     avatar->setFixedSize(32, 32);
-    avatar->setStyleSheet("background: #888; border-radius: 16px;");
+    avatar->setStyleSheet(QStringLiteral("background: %1; border-radius: 16px;")
+                              .arg(Tokens::textMuted().name()));
     layout->addWidget(avatar, 0, Qt::AlignTop);
 
     auto *contentLayout = new QVBoxLayout();
@@ -128,24 +154,29 @@ QFrame *textMessage(QWidget *parent) {
     auto *nameRow = new QHBoxLayout();
     nameRow->setSpacing(6);
     auto *name = new QLabel(QStringLiteral("天"), box);
-    name->setStyleSheet("color: #E6E6E6; font-size: 12px; font-weight: 600;");
+    name->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; font-weight: 600;")
+                            .arg(Tokens::textMain().name()));
     auto *level = new QLabel(QStringLiteral("LV1凡人"), box);
-    level->setStyleSheet("color: #A0A0A0; font-size: 11px;");
+    level->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
+                             .arg(Tokens::textMuted().name()));
     nameRow->addWidget(name);
     nameRow->addWidget(level);
     nameRow->addStretch();
 
     auto *bubble = new QFrame(box);
-    bubble->setStyleSheet("QFrame { background: #2A2A2A; border-radius: 12px; }");
+    bubble->setStyleSheet(QStringLiteral("QFrame { background: %1; border-radius: 12px; }")
+                              .arg(Tokens::bubbleIn().name()));
     auto *bubbleLayout = new QVBoxLayout(bubble);
     bubbleLayout->setContentsMargins(14, 12, 14, 12);
     bubbleLayout->setSpacing(6);
 
     auto *text = new QLabel(QStringLiteral("游戏逆向的半壁江山"), bubble);
     text->setWordWrap(true);
-    text->setStyleSheet("color: #E6E6E6; font-size: 13px;");
+    text->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;")
+                            .arg(Tokens::bubbleText().name()));
     auto *footer = new QLabel(QStringLiteral("推荐群聊"), bubble);
-    footer->setStyleSheet("color: #A0A0A0; font-size: 11px;");
+    footer->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
+                              .arg(Tokens::textMuted().name()));
 
     bubbleLayout->addWidget(text);
     bubbleLayout->addWidget(footer, 0, Qt::AlignLeft);
@@ -177,20 +208,57 @@ QWidget *toolbarRow(QWidget *parent) {
         auto *btn = new IconButton(QString(), bar);
         btn->setSvgIcon(path, 16);
         btn->setFixedSize(28, 28);
-        btn->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
-                       QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
-                       QColor(255, 255, 255, 35));
+        btn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                       QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
         layout->addWidget(btn);
     }
     layout->addStretch();
     auto *clock = new IconButton(QString(), bar);
     clock->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), 16);
     clock->setFixedSize(28, 28);
-    clock->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
-                     QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
-                     QColor(255, 255, 255, 35));
+    clock->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                     QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     layout->addWidget(clock);
     return bar;
+}
+
+QPushButton *outlineButton(const QString &text, QWidget *parent) {
+    auto *btn = new QPushButton(text, parent);
+    btn->setFixedHeight(32);
+    btn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { color: %1; background: %2; border: 1px solid %3; "
+            "border-radius: 8px; padding: 0 14px; font-size: 12px; }"
+            "QPushButton:hover:enabled { background: %4; }"
+            "QPushButton:pressed:enabled { background: %5; }")
+            .arg(Tokens::textMain().name(),
+                 Tokens::panelBg().name(),
+                 Tokens::border().name(),
+                 Tokens::hoverBg().name(),
+                 Tokens::selectedBg().name()));
+    return btn;
+}
+
+QPushButton *primaryButton(const QString &text, QWidget *parent, bool enabled) {
+    auto *btn = new QPushButton(text, parent);
+    btn->setEnabled(enabled);
+    btn->setFixedHeight(32);
+    const QColor base = Tokens::accent();
+    const QColor hover = base.lighter(112);
+    const QColor pressed = base.darker(110);
+    btn->setStyleSheet(
+        QStringLiteral(
+            "QPushButton { color: white; background: %1; border: 1px solid %1; "
+            "border-radius: 8px; padding: 0 14px; font-size: 12px; }"
+            "QPushButton:disabled { background: %2; border-color: %2; color: %3; }"
+            "QPushButton:hover:enabled { background: %4; }"
+            "QPushButton:pressed:enabled { background: %5; }")
+            .arg(base.name(),
+                 Tokens::hoverBg().name(),
+                 Tokens::textMuted().name(),
+                 hover.name(),
+                 pressed.name()));
+    return btn;
 }
 
 QWidget *inputFooter(QWidget *parent, bool sendEnabled = true) {
@@ -199,35 +267,20 @@ QWidget *inputFooter(QWidget *parent, bool sendEnabled = true) {
     layout->setContentsMargins(10, 8, 10, 8);
     layout->setSpacing(10);
 
-    auto *placeholder = new QLabel(QStringLiteral("DDDDDDDDDDDDDDDD"), footer);
-    placeholder->setStyleSheet("color: #6E6E6E; font-size: 13px;");
+    auto *placeholder = new QLabel(UiSettings::Tr(QStringLiteral("输入消息…"),
+                                                  QStringLiteral("Type a message…")),
+                                   footer);
+    placeholder->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;")
+                                   .arg(Tokens::textMuted().name()));
     layout->addWidget(placeholder, 1);
 
-    auto makeBtn = [&](const QString &text, const QColor &fg, const QColor &border,
-                       const QColor &bg, bool enabled) {
-        auto *btn = new QPushButton(text, footer);
-        btn->setEnabled(enabled);
-        btn->setFixedHeight(32);
-        btn->setStyleSheet(QStringLiteral(
-            "QPushButton { color: %1; background: %2; border: 1px solid %3; "
-            "border-radius: 6px; padding: 0 14px; font-size: 12px; }"
-            "QPushButton:disabled { color: #7A7A7A; border-color: #3A3A3A; "
-            "background: #2A2A2A; }"
-            "QPushButton:hover:!disabled { background: %4; }"
-            "QPushButton:pressed:!disabled { background: %5; }")
-                                 .arg(fg.name())
-                                 .arg(bg.name())
-                                 .arg(border.name())
-                                 .arg(bg.lighter(110).name())
-                                 .arg(bg.darker(115).name()));
-        return btn;
-    };
-
-    auto *closeBtn =
-        makeBtn(QStringLiteral("关闭"), QColor("#E6E6E6"), QColor("#4A4A4A"),
-                QColor("#242424"), true);
-    auto *sendBtn = makeBtn(QStringLiteral("发送"), QColor("white"), QColor("#2F81E8"),
-                            QColor("#2F81E8"), sendEnabled);
+    auto *closeBtn = outlineButton(UiSettings::Tr(QStringLiteral("关闭"),
+                                                  QStringLiteral("Close")),
+                                   footer);
+    auto *sendBtn = primaryButton(UiSettings::Tr(QStringLiteral("发送"),
+                                                 QStringLiteral("Send")),
+                                  footer,
+                                  sendEnabled);
 
     layout->addWidget(closeBtn, 0);
     layout->addWidget(sendBtn, 0);
@@ -238,7 +291,7 @@ QWidget *inputFooter(QWidget *parent, bool sendEnabled = true) {
 
 GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) {
     resize(720, 800);
-    setMinimumSize(720, 800);
+    setMinimumSize(640, 540);
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -253,7 +306,8 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     titleLayout->setSpacing(10);
 
     auto *titleLabel = new QLabel(QStringLiteral("逆向思维导图 (1036)"), titleBar);
-    titleLabel->setStyleSheet("color: #EDEDED; font-size: 14px; font-weight: 600;");
+    titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
+                                  .arg(Tokens::textMain().name()));
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
 
@@ -295,7 +349,7 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
 
     // Left chat area
     auto *chatArea = new QWidget(body);
-    chatArea->setStyleSheet("background: #141414;");
+    chatArea->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::windowBg().name()));
     auto *chatLayout = new QVBoxLayout(chatArea);
     chatLayout->setContentsMargins(12, 10, 12, 12);
     chatLayout->setSpacing(10);
@@ -318,7 +372,7 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
 
     auto *separator = new QWidget(chatArea);
     separator->setFixedHeight(1);
-    separator->setStyleSheet("background: #1E1E1E;");
+    separator->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::border().name()));
     chatLayout->addWidget(separator);
 
     chatLayout->addWidget(toolbarRow(chatArea));
@@ -327,7 +381,7 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     // Right member list
     auto *memberPanel = new QWidget(body);
     memberPanel->setFixedWidth(220);
-    memberPanel->setStyleSheet("background: #121212;");
+    memberPanel->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::sidebarBg().name()));
     auto *memberLayout = new QVBoxLayout(memberPanel);
     memberLayout->setContentsMargins(10, 10, 10, 10);
     memberLayout->setSpacing(8);
@@ -338,13 +392,13 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     headerLayout->setContentsMargins(4, 4, 4, 4);
     headerLayout->setSpacing(6);
     auto *memberTitle = new QLabel(QStringLiteral("群聊成员 1036"), memberHeader);
-    memberTitle->setStyleSheet("color: #E6E6E6; font-size: 12px; font-weight: 600;");
+    memberTitle->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; font-weight: 600;")
+                                   .arg(Tokens::textMain().name()));
     auto *searchIcon = new IconButton(QString(), memberHeader);
     searchIcon->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"), 14);
     searchIcon->setFixedSize(24, 24);
-    searchIcon->setColors(QColor("#C8C8C8"), QColor("#FFFFFF"), QColor("#E0E0E0"),
-                          QColor(0, 0, 0, 0), QColor(255, 255, 255, 30),
-                          QColor(255, 255, 255, 50));
+    searchIcon->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                          QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     headerLayout->addWidget(memberTitle);
     headerLayout->addStretch();
     headerLayout->addWidget(searchIcon);
@@ -373,7 +427,7 @@ GroupChatWindow::GroupChatWindow(QWidget *parent) : FramelessWindowBase(parent) 
     // Divider between chat and member list
     auto *divider = new QWidget(body);
     divider->setFixedWidth(1);
-    divider->setStyleSheet("background: #1E1E1E;");
+    divider->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::border().name()));
 
     bodyLayout->addWidget(chatArea, 1);
     bodyLayout->addWidget(divider);

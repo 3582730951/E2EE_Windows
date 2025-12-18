@@ -8,10 +8,14 @@ class MessageDelegate : public QStyledItemDelegate {
 public:
     explicit MessageDelegate(QObject *parent = nullptr);
 
+    void setHighlightedRow(int row);
+
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override;
 
 private:
     QSize bubbleSize(const QString &text, const QFont &font, int maxWidth) const;
+
+    int highlightedRow_{-1};
 };

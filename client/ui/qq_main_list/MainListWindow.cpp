@@ -23,11 +23,17 @@
 #include <QTime>
 #include <QMenu>
 #include <QSystemTrayIcon>
+#include <QSet>
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QRegularExpression>
 #include <QSettings>
+#include <QSortFilterProxyModel>
+#include <QSplitter>
 
 #include <memory>
 
@@ -40,8 +46,14 @@
 #include "../common/Toast.h"
 #include "ChatWindow.h"
 #include "BackendAdapter.h"
+#include "ConversationDetailsDialog.h"
+#include "NotificationCenterDialog.h"
+#include "TrustPromptDialog.h"
 
 namespace {
+
+QString PinnedSettingsKey() { return QStringLiteral("ui/pinned_conversations"); }
+QString ModePlaceholderId() { return QStringLiteral("__mode_placeholder__"); }
 
 enum Roles {
     IdRole = Qt::UserRole + 1,
@@ -51,7 +63,9 @@ enum Roles {
     UnreadRole,
     GreyBadgeRole,
     HasTagRole,
-    IsGroupRole
+    IsGroupRole,
+    LastActiveRole,
+    PinnedRole
 };
 
 struct Tokens {
@@ -153,6 +167,75 @@ bool SetAutoStartEnabled(bool enabled) {
 }
 #endif
 
+class ConversationProxyModel : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+
+    enum class Mode {
+        All = 0,
+        PinnedOnly = 1,
+        GroupsOnly = 2,
+    };
+
+    void setMode(Mode mode) {
+        if (mode_ == mode) {
+            return;
+        }
+        mode_ = mode;
+        invalidateFilter();
+        invalidate();
+    }
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override {
+        const QModelIndex idx = sourceModel()->index(sourceRow, 0, sourceParent);
+        if (!idx.isValid()) {
+            return false;
+        }
+        const QString id = idx.data(IdRole).toString();
+        if (id.startsWith(QStringLiteral("__"))) {
+            return true;
+        }
+
+        if (mode_ == Mode::PinnedOnly && !idx.data(PinnedRole).toBool()) {
+            return false;
+        }
+        if (mode_ == Mode::GroupsOnly && !idx.data(IsGroupRole).toBool()) {
+            return false;
+        }
+
+        const QRegularExpression re = filterRegularExpression();
+        if (!re.isValid() || re.pattern().trimmed().isEmpty()) {
+            return true;
+        }
+
+        const QString title = idx.data(TitleRole).toString();
+        const QString preview = idx.data(PreviewRole).toString();
+        return title.contains(re) || id.contains(re) || preview.contains(re);
+    }
+
+    bool lessThan(const QModelIndex &left, const QModelIndex &right) const override {
+        const bool leftPinned = left.data(PinnedRole).toBool();
+        const bool rightPinned = right.data(PinnedRole).toBool();
+        if (leftPinned != rightPinned) {
+            return leftPinned < rightPinned;
+        }
+
+        const qint64 leftActive = left.data(LastActiveRole).toLongLong();
+        const qint64 rightActive = right.data(LastActiveRole).toLongLong();
+        if (leftActive != rightActive) {
+            return leftActive < rightActive;
+        }
+
+        const QString leftTitle = left.data(TitleRole).toString();
+        const QString rightTitle = right.data(TitleRole).toString();
+        return QString::localeAwareCompare(leftTitle, rightTitle) < 0;
+    }
+
+private:
+    Mode mode_{Mode::All};
+};
+
 class ConversationDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -184,6 +267,7 @@ public:
         const int unread = index.data(UnreadRole).toInt();
         const bool greyBadge = index.data(GreyBadgeRole).toBool();
         const bool hasTag = index.data(HasTagRole).toBool();
+        const bool pinned = index.data(PinnedRole).toBool();
 
         // Avatar
         QRect avatarRect = QRect(r.left() + 12, r.top() + 10, 46, 46);
@@ -236,6 +320,14 @@ public:
         painter->setPen(Tokens::textMuted());
         QRect timeRect(r.right() - 64, r.top() + 12, 60, 16);
         painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, time);
+
+        // Pin indicator
+        if (pinned) {
+            const QColor iconColor = selected ? Tokens::textMain() : Tokens::textMuted();
+            const QPixmap star = UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"),
+                                                    12, iconColor);
+            painter->drawPixmap(QRect(r.right() - 80, r.top() + 13, 12, 12), star);
+        }
 
         // Badge
         if (unread > 0) {
@@ -321,8 +413,10 @@ void addBadgeDot(QWidget *anchor, const QString &text = QString()) {
 
 MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     : FramelessWindowBase(parent), backend_(backend) {
-    resize(473, 827);
-    setMinimumSize(473, 827);
+    resize(1180, 820);
+    setMinimumSize(980, 640);
+
+    loadPinned();
 
     auto *central = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(central);
@@ -346,17 +440,17 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     titleLayout->addSpacing(10);
     titleLayout->addWidget(connLabel_);
     titleLayout->addStretch();
-    auto *funcBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, Tokens::textSub());
     auto *minBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar, Tokens::textSub());
+    auto *funcBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, Tokens::textSub());
     auto *closeBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), titleBar, Tokens::textSub());
     connect(minBtn, &QPushButton::clicked, this, &QWidget::showMinimized);
     connect(funcBtn, &QPushButton::clicked, this, [this]() {
         isMaximized() ? showNormal() : showMaximized();
     });
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
+    titleLayout->addWidget(minBtn);
     titleLayout->addWidget(funcBtn);
     titleLayout->addSpacing(6);
-    titleLayout->addWidget(minBtn);
     titleLayout->addWidget(closeBtn);
     rootLayout->addWidget(titleBar);
     setTitleBar(titleBar);
@@ -380,9 +474,12 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                               .arg(Tokens::textMain().name()));
     sideLayout->addWidget(qqMark, 0, Qt::AlignLeft);
 
-    auto *bell = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), sidebar, false);
-    bell->setFixedSize(32, 32);
-    sideLayout->addWidget(bell, 0, Qt::AlignLeft);
+    navBellBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), sidebar, false);
+    navBellBtn_->setFixedSize(32, 32);
+    navBellBtn_->setToolTip(UiSettings::Tr(QStringLiteral("通知中心"), QStringLiteral("Notifications")));
+    navBellBtn_->setAccessibleName(navBellBtn_->toolTip());
+    sideLayout->addWidget(navBellBtn_, 0, Qt::AlignLeft);
+    connect(navBellBtn_, &QPushButton::clicked, this, &MainListWindow::handleNotificationCenter);
 
     auto *avatar = new QLabel(sidebar);
     avatar->setFixedSize(46, 46);
@@ -390,23 +487,79 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                               .arg(Tokens::accentBlue().name()));
     sideLayout->addWidget(avatar, 0, Qt::AlignLeft);
 
-    auto *sessionBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/chat.svg"), sidebar, true);
-    addBadgeDot(sessionBtn, QStringLiteral("99+"));
-    sideLayout->addWidget(sessionBtn, 0, Qt::AlignLeft);
+    navAllBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/chat.svg"), sidebar, true);
+    navAllBtn_->setToolTip(UiSettings::Tr(QStringLiteral("会话"), QStringLiteral("Chats")));
+    navAllBtn_->setAccessibleName(navAllBtn_->toolTip());
+    sideLayout->addWidget(navAllBtn_, 0, Qt::AlignLeft);
+    connect(navAllBtn_, &QPushButton::clicked, this, [this]() {
+        setConversationListMode(ConversationListMode::All);
+    });
 
-    auto *starBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"), sidebar, false);
-    addBadgeDot(starBtn, QString());
-    sideLayout->addWidget(starBtn, 0, Qt::AlignLeft);
+    navPinnedBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"), sidebar, false);
+    navPinnedBtn_->setToolTip(UiSettings::Tr(QStringLiteral("置顶"), QStringLiteral("Pinned")));
+    navPinnedBtn_->setAccessibleName(navPinnedBtn_->toolTip());
+    sideLayout->addWidget(navPinnedBtn_, 0, Qt::AlignLeft);
+    connect(navPinnedBtn_, &QPushButton::clicked, this, [this]() {
+        setConversationListMode(ConversationListMode::PinnedOnly);
+    });
 
-    sideLayout->addWidget(navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), sidebar), 0, Qt::AlignLeft);
-    sideLayout->addWidget(navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/file-upload.svg"), sidebar), 0, Qt::AlignLeft);
-    auto *settingsBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), sidebar);
-    sideLayout->addWidget(settingsBtn, 0, Qt::AlignLeft);
-    connect(settingsBtn, &QPushButton::clicked, this, &MainListWindow::handleDeviceManager);
+    navGroupsBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), sidebar, false);
+    navGroupsBtn_->setToolTip(UiSettings::Tr(QStringLiteral("群聊"), QStringLiteral("Groups")));
+    navGroupsBtn_->setAccessibleName(navGroupsBtn_->toolTip());
+    sideLayout->addWidget(navGroupsBtn_, 0, Qt::AlignLeft);
+    connect(navGroupsBtn_, &QPushButton::clicked, this, [this]() {
+        setConversationListMode(ConversationListMode::GroupsOnly);
+    });
+
+    navFilesBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/file-upload.svg"), sidebar, false);
+    navFilesBtn_->setToolTip(UiSettings::Tr(QStringLiteral("共享文件"), QStringLiteral("Shared files")));
+    navFilesBtn_->setAccessibleName(navFilesBtn_->toolTip());
+    sideLayout->addWidget(navFilesBtn_, 0, Qt::AlignLeft);
+    connect(navFilesBtn_, &QPushButton::clicked, this, [this]() {
+        if (!backend_ || !model_) {
+            Toast::Show(this,
+                        UiSettings::Tr(QStringLiteral("未连接后端"),
+                                       QStringLiteral("Backend is offline")),
+                        Toast::Level::Warning);
+            return;
+        }
+        const QString id = embeddedConvId_.trimmed();
+        if (id.isEmpty() || id.startsWith(QStringLiteral("__"))) {
+            Toast::Show(this,
+                        UiSettings::Tr(QStringLiteral("请先选择一个会话"),
+                                       QStringLiteral("Select a chat first")),
+                        Toast::Level::Info);
+            return;
+        }
+        auto *item = findItemById(id);
+        if (!item) {
+            Toast::Show(this,
+                        UiSettings::Tr(QStringLiteral("会话不存在"),
+                                       QStringLiteral("Chat not found")),
+                        Toast::Level::Warning);
+            return;
+        }
+        ConversationDetailsDialog dlg(backend_,
+                                      id,
+                                      item->data(TitleRole).toString(),
+                                      item->data(IsGroupRole).toBool(),
+                                      this);
+        dlg.setStartPage(ConversationDetailsDialog::StartPage::Files);
+        dlg.exec();
+    });
+
+    navSettingsBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), sidebar, false);
+    navSettingsBtn_->setToolTip(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
+    navSettingsBtn_->setAccessibleName(navSettingsBtn_->toolTip());
+    sideLayout->addWidget(navSettingsBtn_, 0, Qt::AlignLeft);
+    connect(navSettingsBtn_, &QPushButton::clicked, this, &MainListWindow::handleSettings);
     sideLayout->addStretch();
 
-    auto *menuBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), sidebar);
-    sideLayout->addWidget(menuBtn, 0, Qt::AlignLeft | Qt::AlignBottom);
+    navMenuBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), sidebar, false);
+    navMenuBtn_->setToolTip(UiSettings::Tr(QStringLiteral("菜单"), QStringLiteral("Menu")));
+    navMenuBtn_->setAccessibleName(navMenuBtn_->toolTip());
+    sideLayout->addWidget(navMenuBtn_, 0, Qt::AlignLeft | Qt::AlignBottom);
+    connect(navMenuBtn_, &QPushButton::clicked, this, [this]() { showAppMenu(); });
 
     // Right main area
     auto *mainArea = new QWidget(body);
@@ -439,7 +592,25 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     searchIcon->setAlignment(Qt::AlignCenter);
     searchEdit_ = new QLineEdit(searchBox);
     searchEdit_->setPlaceholderText(UiSettings::Tr(QStringLiteral("搜索"), QStringLiteral("Search")));
+    searchEdit_->setClearButtonEnabled(true);
     connect(searchEdit_, &QLineEdit::textChanged, this, &MainListWindow::handleSearchTextChanged);
+    connect(searchEdit_, &QLineEdit::returnPressed, this, [this]() {
+        if (!listView_ || !listView_->model()) {
+            return;
+        }
+        QModelIndex idx = listView_->currentIndex();
+        if (!idx.isValid() && listView_->model()->rowCount() > 0) {
+            idx = listView_->model()->index(0, 0);
+        }
+        if (!idx.isValid()) {
+            return;
+        }
+        listView_->setCurrentIndex(idx);
+        previewChatForIndex(idx);
+        if (embeddedChat_) {
+            embeddedChat_->focusMessageInput();
+        }
+    });
     sLayout->addWidget(searchIcon);
     sLayout->addWidget(searchEdit_, 1);
 
@@ -478,7 +649,6 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
 
     searchRow->addWidget(searchBox, 1);
     searchRow->addWidget(plusBtn);
-    mainLayout2->addLayout(searchRow);
 
     // Conversation list
     listView_ = new QListView(mainArea);
@@ -515,8 +685,19 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         item->setData(greyBadge, GreyBadgeRole);
         item->setData(hasTag, HasTagRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(!id.startsWith(QStringLiteral("__")) && pinnedIds_.contains(id), PinnedRole);
+        item->setData(id.startsWith(QStringLiteral("__")) ? static_cast<qint64>(-1) : static_cast<qint64>(0),
+                      LastActiveRole);
         model_->appendRow(item);
     };
+
+    proxyModel_ = new ConversationProxyModel(listView_);
+    proxyModel_->setSourceModel(model_);
+    proxyModel_->setDynamicSortFilter(true);
+    proxyModel_->setSortRole(LastActiveRole);
+    proxyModel_->setSortCaseSensitivity(Qt::CaseInsensitive);
+    proxyModel_->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    proxyModel_->sort(0, Qt::DescendingOrder);
 
     if (backend_) {
         connect(backend_, &BackendAdapter::friendListLoaded, this,
@@ -550,10 +731,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                QString(), 0, true, false, false);
                     }
 
-                    if (model_->rowCount() > 0 && !listView_->currentIndex().isValid()) {
-                        listView_->setCurrentIndex(model_->index(0, 0));
-                    }
-                });
+                     if (model_->rowCount() > 0 && !listView_->currentIndex().isValid()) {
+                         listView_->setCurrentIndex(proxyModel_->index(0, 0));
+                     }
+                     updateModePlaceholder();
+                 });
         addRow(QStringLiteral("__loading__"),
                UiSettings::Tr(QStringLiteral("加载中"), QStringLiteral("Loading")),
                UiSettings::Tr(QStringLiteral("正在获取好友列表…"), QStringLiteral("Fetching friend list…")),
@@ -567,14 +749,17 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                QString(), 0, true, false, false);
     }
 
-    listView_->setModel(model_);
+    listView_->setModel(proxyModel_);
     listView_->setItemDelegate(new ConversationDelegate(listView_));
-    if (model_->rowCount() > 0) {
-        listView_->setCurrentIndex(model_->index(0, 0));
+    if (proxyModel_->rowCount() > 0) {
+        listView_->setCurrentIndex(proxyModel_->index(0, 0));
     }
-    connect(listView_, &QListView::clicked, this, &MainListWindow::openChatForIndex);
-    connect(listView_, &QListView::doubleClicked, this, &MainListWindow::openChatForIndex);
-    connect(listView_, &QListView::activated, this, &MainListWindow::openChatForIndex);
+    connect(listView_, &QListView::clicked, this, &MainListWindow::previewChatForIndex);
+    connect(listView_, &QListView::activated, this, &MainListWindow::previewChatForIndex);
+    if (auto *selection = listView_->selectionModel()) {
+        connect(selection, &QItemSelectionModel::currentChanged, this,
+                [this](const QModelIndex &current, const QModelIndex &) { previewChatForIndex(current); });
+    }
 
     listView_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(listView_, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -590,9 +775,17 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
             return;
         }
         const bool isGroup = idx.data(IsGroupRole).toBool();
+        const bool pinned = idx.data(PinnedRole).toBool();
         if (isGroup) {
             QMenu menu(this);
             UiStyle::ApplyMenuStyle(menu);
+            QAction *openInWindow =
+                menu.addAction(UiSettings::Tr(QStringLiteral("在新窗口打开"),
+                                              QStringLiteral("Open in new window")));
+            QAction *pinAction = menu.addAction(
+                pinned ? UiSettings::Tr(QStringLiteral("取消置顶"), QStringLiteral("Unpin"))
+                       : UiSettings::Tr(QStringLiteral("置顶"), QStringLiteral("Pin")));
+            menu.addSeparator();
             QAction *copyId = menu.addAction(QStringLiteral("复制群 ID"));
             QAction *invite = menu.addAction(QStringLiteral("邀请成员..."));
             QAction *members = menu.addAction(QStringLiteral("查看成员"));
@@ -600,6 +793,14 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
             QAction *leave = menu.addAction(QStringLiteral("退出群聊"));
             QAction *picked = menu.exec(listView_->viewport()->mapToGlobal(pos));
             if (!picked) {
+                return;
+            }
+            if (picked == openInWindow) {
+                openChatForIndex(idx);
+                return;
+            }
+            if (picked == pinAction) {
+                togglePinnedForId(id);
                 return;
             }
             if (picked == copyId) {
@@ -663,13 +864,32 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                 if (chatWindows_.contains(id) && chatWindows_[id]) {
                     chatWindows_[id]->close();
                 }
-                model_->removeRow(idx.row());
+                for (int i = model_->rowCount() - 1; i >= 0; --i) {
+                    if (model_->item(i)->data(IdRole).toString() == id) {
+                        model_->removeRow(i);
+                        break;
+                    }
+                }
+                if (embeddedChat_ && embeddedConvId_ == id) {
+                    embeddedConvId_.clear();
+                    embeddedChat_->setConversation(QString(),
+                                                   UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                                  QStringLiteral("Select a chat")),
+                                                   false);
+                }
                 return;
             }
             return;
         }
         QMenu menu(this);
         UiStyle::ApplyMenuStyle(menu);
+        QAction *openInWindow =
+            menu.addAction(UiSettings::Tr(QStringLiteral("在新窗口打开"),
+                                          QStringLiteral("Open in new window")));
+        QAction *pinAction = menu.addAction(
+            pinned ? UiSettings::Tr(QStringLiteral("取消置顶"), QStringLiteral("Unpin"))
+                   : UiSettings::Tr(QStringLiteral("置顶"), QStringLiteral("Pin")));
+        menu.addSeparator();
         QAction *edit = menu.addAction(QStringLiteral("修改备注"));
         QAction *del = menu.addAction(QStringLiteral("删除好友"));
         menu.addSeparator();
@@ -677,6 +897,15 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         QAction *unblock = menu.addAction(QStringLiteral("取消拉黑"));
         QAction *picked = menu.exec(listView_->viewport()->mapToGlobal(pos));
         if (!picked) {
+            return;
+        }
+
+        if (picked == openInWindow) {
+            openChatForIndex(idx);
+            return;
+        }
+        if (picked == pinAction) {
+            togglePinnedForId(id);
             return;
         }
 
@@ -697,10 +926,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                 return;
             }
             const QString display = newRemark.trimmed().isEmpty() ? id : newRemark.trimmed();
-            if (auto *item = model_->itemFromIndex(idx)) {
+            if (auto *item = findItemById(id)) {
                 item->setData(display, TitleRole);
                 item->setData(QStringLiteral("备注已更新"), PreviewRole);
                 item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
+                item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
             }
             return;
         }
@@ -716,7 +946,19 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                      err.isEmpty() ? QStringLiteral("删除失败") : err);
                 return;
             }
-            model_->removeRow(idx.row());
+            for (int i = model_->rowCount() - 1; i >= 0; --i) {
+                if (model_->item(i)->data(IdRole).toString() == id) {
+                    model_->removeRow(i);
+                    break;
+                }
+            }
+            if (embeddedChat_ && embeddedConvId_ == id) {
+                embeddedConvId_.clear();
+                embeddedChat_->setConversation(QString(),
+                                               UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                              QStringLiteral("Select a chat")),
+                                               false);
+            }
             return;
         }
 
@@ -735,13 +977,53 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                 return;
             }
             if (doBlock) {
-                model_->removeRow(idx.row());
+                for (int i = model_->rowCount() - 1; i >= 0; --i) {
+                    if (model_->item(i)->data(IdRole).toString() == id) {
+                        model_->removeRow(i);
+                        break;
+                    }
+                }
+                if (embeddedChat_ && embeddedConvId_ == id) {
+                    embeddedConvId_.clear();
+                    embeddedChat_->setConversation(QString(),
+                                                   UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                                  QStringLiteral("Select a chat")),
+                                                   false);
+                }
             }
             return;
         }
     });
 
-    mainLayout2->addWidget(listView_);
+    auto *splitter = new QSplitter(Qt::Horizontal, mainArea);
+    splitter->setHandleWidth(1);
+    splitter->setStyleSheet(
+        QStringLiteral("QSplitter::handle { background: %1; }")
+            .arg(Theme::uiBorder().name()));
+
+    auto *listPanel = new QWidget(splitter);
+    auto *listPanelLayout = new QVBoxLayout(listPanel);
+    listPanelLayout->setContentsMargins(0, 0, 0, 0);
+    listPanelLayout->setSpacing(10);
+    listPanelLayout->addLayout(searchRow);
+    listView_->setMinimumWidth(320);
+    listPanelLayout->addWidget(listView_, 1);
+    splitter->addWidget(listPanel);
+
+    embeddedChat_ = new ChatWindow(backend_, splitter);
+    embeddedChat_->setEmbeddedMode(true);
+    embeddedChat_->setConversation(QString(),
+                                   UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                  QStringLiteral("Select a chat")),
+                                   false);
+    setTabOrder(listView_, embeddedChat_);
+    splitter->addWidget(embeddedChat_);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setSizes(QList<int>{360, 800});
+
+    mainLayout2->addWidget(splitter, 1);
+    previewChatForIndex(listView_->currentIndex());
 
     bodyLayout->addWidget(sidebar);
     bodyLayout->addWidget(mainArea, 1);
@@ -773,6 +1055,483 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         connect(backend_, &BackendAdapter::connectionStateChanged, this, &MainListWindow::handleConnectionStateChanged);
         handleConnectionStateChanged(backend_->isOnline(), backend_->isOnline() ? QStringLiteral("在线") : QStringLiteral("离线"));
     }
+}
+
+void MainListWindow::handleSettings() {
+    SettingsDialog dlg(this);
+    if (backend_) {
+        dlg.setClientConfigPath(backend_->configPath());
+    }
+    dlg.exec();
+}
+
+void MainListWindow::handleNotificationCenter() {
+    if (!backend_) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("未连接后端"),
+                                   QStringLiteral("Backend is offline")),
+                    Toast::Level::Warning);
+        return;
+    }
+
+    auto refreshFromBackend = [&](NotificationCenterDialog &dlg) {
+        QString err;
+        const auto list = backend_->listFriendRequests(err);
+        pendingFriendRequests_.clear();
+        QVector<NotificationCenterDialog::FriendRequest> reqs;
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        for (const auto &r : list) {
+            NotificationCenterDialog::FriendRequest fr;
+            fr.requester = r.requesterUsername.trimmed();
+            fr.remark = r.requesterRemark.trimmed();
+            fr.receivedMs = nowMs;
+            if (!fr.requester.isEmpty()) {
+                pendingFriendRequests_.insert(fr.requester, fr.remark);
+                reqs.push_back(fr);
+            }
+        }
+        updateNotificationBadge();
+        dlg.setFriendRequests(reqs);
+
+        if (!err.trimmed().isEmpty()) {
+            Toast::Show(&dlg, err.trimmed(), Toast::Level::Warning);
+        }
+    };
+
+    QVector<NotificationCenterDialog::GroupInvite> invites;
+    invites.reserve(pendingGroupInvites_.size());
+    for (const auto &inv : pendingGroupInvites_) {
+        NotificationCenterDialog::GroupInvite v;
+        v.groupId = inv.groupId;
+        v.fromUser = inv.fromUser;
+        v.messageId = inv.messageId;
+        v.receivedMs = inv.receivedMs;
+        invites.push_back(v);
+    }
+
+    NotificationCenterDialog dlg(this);
+    dlg.setGroupInvites(invites);
+    refreshFromBackend(dlg);
+
+    connect(&dlg, &NotificationCenterDialog::refreshRequested, this, [this, &dlg, refreshFromBackend]() mutable {
+        refreshFromBackend(dlg);
+    });
+
+    connect(&dlg, &NotificationCenterDialog::friendRequestActionRequested, this,
+            [this, &dlg](const QString &requester,
+                         NotificationCenterDialog::FriendRequestAction action) {
+                const QString who = requester.trimmed();
+                if (who.isEmpty() || !backend_) {
+                    return;
+                }
+
+                QString err;
+                const auto fail = [&](const QString &fallback) {
+                    Toast::Show(&dlg, err.isEmpty() ? fallback : err, Toast::Level::Error);
+                };
+
+                if (action == NotificationCenterDialog::FriendRequestAction::Accept) {
+                    if (!backend_->respondFriendRequest(who, true, err)) {
+                        fail(UiSettings::Tr(QStringLiteral("同意失败"),
+                                            QStringLiteral("Accept failed")));
+                        return;
+                    }
+                    pendingFriendRequests_.remove(who);
+                    updateNotificationBadge();
+                    dlg.removeFriendRequest(who);
+                    backend_->requestFriendList();
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("已添加好友：%1").arg(who),
+                                               QStringLiteral("Friend added: %1").arg(who)),
+                                Toast::Level::Success);
+                    return;
+                }
+
+                if (action == NotificationCenterDialog::FriendRequestAction::Reject) {
+                    if (!backend_->respondFriendRequest(who, false, err)) {
+                        fail(UiSettings::Tr(QStringLiteral("拒绝失败"),
+                                            QStringLiteral("Reject failed")));
+                        return;
+                    }
+                    pendingFriendRequests_.remove(who);
+                    updateNotificationBadge();
+                    dlg.removeFriendRequest(who);
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("已拒绝：%1").arg(who),
+                                               QStringLiteral("Rejected: %1").arg(who)),
+                                Toast::Level::Info);
+                    return;
+                }
+
+                if (action == NotificationCenterDialog::FriendRequestAction::Block) {
+                    if (!backend_->setUserBlocked(who, true, err)) {
+                        fail(UiSettings::Tr(QStringLiteral("拉黑失败"),
+                                            QStringLiteral("Block failed")));
+                        return;
+                    }
+                    QString rejectErr;
+                    backend_->respondFriendRequest(who, false, rejectErr);  // best-effort cleanup
+                    pendingFriendRequests_.remove(who);
+                    updateNotificationBadge();
+                    dlg.removeFriendRequest(who);
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("已拉黑：%1").arg(who),
+                                               QStringLiteral("Blocked: %1").arg(who)),
+                                Toast::Level::Success);
+                }
+            });
+
+    connect(&dlg, &NotificationCenterDialog::groupInviteActionRequested, this,
+            [this, &dlg](const QString &groupId,
+                         const QString &fromUser,
+                         const QString &messageId,
+                         NotificationCenterDialog::GroupInviteAction action) {
+                const QString gid = groupId.trimmed();
+                if (gid.isEmpty()) {
+                    return;
+                }
+
+                if (action == NotificationCenterDialog::GroupInviteAction::CopyId) {
+                    if (auto *cb = QGuiApplication::clipboard()) {
+                        cb->setText(gid);
+                    }
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("群 ID 已复制"),
+                                               QStringLiteral("Group ID copied")),
+                                Toast::Level::Info);
+                    return;
+                }
+
+                auto removeInvite = [&]() {
+                    const QString mid = messageId.trimmed();
+                    for (int i = pendingGroupInvites_.size() - 1; i >= 0; --i) {
+                        const bool matchId = pendingGroupInvites_[i].groupId == gid;
+                        const bool matchMsg = mid.isEmpty() || pendingGroupInvites_[i].messageId == mid;
+                        if (matchId && matchMsg) {
+                            pendingGroupInvites_.removeAt(i);
+                        }
+                    }
+                    updateNotificationBadge();
+                    dlg.removeGroupInvite(gid, mid);
+                };
+
+                if (action == NotificationCenterDialog::GroupInviteAction::Ignore) {
+                    removeInvite();
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("已忽略群邀请"),
+                                               QStringLiteral("Invite ignored")),
+                                Toast::Level::Info);
+                    return;
+                }
+
+                if (!backend_) {
+                    Toast::Show(&dlg,
+                                UiSettings::Tr(QStringLiteral("未连接后端"),
+                                               QStringLiteral("Backend is offline")),
+                                Toast::Level::Warning);
+                    return;
+                }
+
+                QString err;
+                if (!backend_->joinGroup(gid, err)) {
+                    Toast::Show(&dlg,
+                                err.isEmpty()
+                                    ? UiSettings::Tr(QStringLiteral("加入失败"),
+                                                     QStringLiteral("Join failed"))
+                                    : err,
+                                Toast::Level::Error);
+                    return;
+                }
+
+                removeInvite();
+
+                int rowIndex = -1;
+                for (int i = 0; i < model_->rowCount(); ++i) {
+                    if (model_->item(i)->data(IdRole).toString() == gid) {
+                        rowIndex = i;
+                        break;
+                    }
+                }
+                if (rowIndex == -1) {
+                    auto *item = new QStandardItem();
+                    item->setData(gid, IdRole);
+                    item->setData(UiSettings::Tr(QStringLiteral("群聊 %1").arg(gid),
+                                                 QStringLiteral("Group %1").arg(gid)),
+                                  TitleRole);
+                    item->setData(UiSettings::Tr(QStringLiteral("点击开始聊天"),
+                                                 QStringLiteral("Click to chat")),
+                                  PreviewRole);
+                    item->setData(QString(), TimeRole);
+                    item->setData(0, UnreadRole);
+                    item->setData(true, GreyBadgeRole);
+                    item->setData(false, HasTagRole);
+                    item->setData(true, IsGroupRole);
+                    item->setData(pinnedIds_.contains(gid), PinnedRole);
+                    item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
+                    model_->insertRow(0, item);
+                } else {
+                    if (auto *item = model_->item(rowIndex)) {
+                        item->setData(true, IsGroupRole);
+                    }
+                }
+
+                updateModePlaceholder();
+                selectConversation(gid);
+                const QModelIndex viewIndex = viewIndexForId(gid);
+                if (viewIndex.isValid()) {
+                    previewChatForIndex(viewIndex);
+                }
+
+                const QString hint = fromUser.trimmed().isEmpty()
+                                         ? UiSettings::Tr(QStringLiteral("已加入群聊：%1").arg(gid),
+                                                          QStringLiteral("Joined group: %1").arg(gid))
+                                         : UiSettings::Tr(QStringLiteral("已加入群聊：%1（来自 %2）").arg(gid, fromUser.trimmed()),
+                                                          QStringLiteral("Joined group: %1 (from %2)").arg(gid, fromUser.trimmed()));
+                Toast::Show(this, hint, Toast::Level::Success);
+                dlg.accept();
+            });
+
+    dlg.exec();
+}
+
+void MainListWindow::loadPinned() {
+    pinnedIds_.clear();
+    QSettings s;
+    const QStringList list = s.value(PinnedSettingsKey()).toStringList();
+    for (const auto &id : list) {
+        const QString trimmed = id.trimmed();
+        if (!trimmed.isEmpty()) {
+            pinnedIds_.insert(trimmed);
+        }
+    }
+}
+
+void MainListWindow::savePinned() const {
+    QSettings s;
+    QStringList list = pinnedIds_.values();
+    std::sort(list.begin(), list.end(), [](const QString &a, const QString &b) {
+        return QString::compare(a, b, Qt::CaseInsensitive) < 0;
+    });
+    s.setValue(PinnedSettingsKey(), list);
+    s.sync();
+}
+
+void MainListWindow::togglePinnedForId(const QString &id) {
+    const QString trimmed = id.trimmed();
+    if (trimmed.isEmpty() || trimmed.startsWith(QStringLiteral("__"))) {
+        return;
+    }
+
+    const bool pinned = pinnedIds_.contains(trimmed);
+    if (pinned) {
+        pinnedIds_.remove(trimmed);
+    } else {
+        pinnedIds_.insert(trimmed);
+    }
+    savePinned();
+
+    if (auto *item = findItemById(trimmed)) {
+        item->setData(!pinned, PinnedRole);
+    }
+
+    if (proxyModel_) {
+        proxyModel_->invalidate();
+        proxyModel_->sort(0, Qt::DescendingOrder);
+    }
+    updateModePlaceholder();
+
+    Toast::Show(this,
+                pinned
+                    ? UiSettings::Tr(QStringLiteral("已取消置顶"), QStringLiteral("Unpinned"))
+                    : UiSettings::Tr(QStringLiteral("已置顶"), QStringLiteral("Pinned")),
+                Toast::Level::Success);
+}
+
+void MainListWindow::setConversationListMode(ConversationListMode mode) {
+    listMode_ = mode;
+    updateNavSelection();
+    if (proxyModel_) {
+        auto *proxy = static_cast<ConversationProxyModel *>(proxyModel_);
+        ConversationProxyModel::Mode proxyMode = ConversationProxyModel::Mode::All;
+        switch (mode) {
+            case ConversationListMode::PinnedOnly:
+                proxyMode = ConversationProxyModel::Mode::PinnedOnly;
+                break;
+            case ConversationListMode::GroupsOnly:
+                proxyMode = ConversationProxyModel::Mode::GroupsOnly;
+                break;
+            case ConversationListMode::All:
+            default:
+                proxyMode = ConversationProxyModel::Mode::All;
+                break;
+        }
+        proxy->setMode(proxyMode);
+        proxy->sort(0, Qt::DescendingOrder);
+    }
+    updateModePlaceholder();
+}
+
+void MainListWindow::updateModePlaceholder() {
+    if (!model_ || !proxyModel_) {
+        return;
+    }
+
+    const QString pid = ModePlaceholderId();
+    auto findRow = [&]() -> int {
+        for (int i = 0; i < model_->rowCount(); ++i) {
+            if (auto *it = model_->item(i)) {
+                if (it->data(IdRole).toString() == pid) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    };
+
+    const bool isPinnedOnly = (listMode_ == ConversationListMode::PinnedOnly);
+    const bool isGroupsOnly = (listMode_ == ConversationListMode::GroupsOnly);
+
+    int realCount = 0;
+    if (isPinnedOnly || isGroupsOnly) {
+        for (int i = 0; i < model_->rowCount(); ++i) {
+            auto *it = model_->item(i);
+            if (!it) {
+                continue;
+            }
+            const QString id = it->data(IdRole).toString();
+            if (id.startsWith(QStringLiteral("__"))) {
+                continue;
+            }
+            if (isPinnedOnly && it->data(PinnedRole).toBool()) {
+                ++realCount;
+            } else if (isGroupsOnly && it->data(IsGroupRole).toBool()) {
+                ++realCount;
+            }
+        }
+    }
+
+    const bool needPlaceholder = (isPinnedOnly || isGroupsOnly) && (realCount == 0);
+    const int existingRow = findRow();
+
+    if (!needPlaceholder) {
+        if (existingRow >= 0) {
+            model_->removeRow(existingRow);
+        }
+        return;
+    }
+
+    const QString title =
+        isPinnedOnly
+            ? UiSettings::Tr(QStringLiteral("暂无置顶"), QStringLiteral("No pinned chats"))
+            : UiSettings::Tr(QStringLiteral("暂无群聊"), QStringLiteral("No groups"));
+    const QString preview =
+        isPinnedOnly
+            ? UiSettings::Tr(QStringLiteral("右键会话 -> 置顶"), QStringLiteral("Right-click a chat to pin"))
+            : UiSettings::Tr(QStringLiteral("使用 + 创建/加入群聊"), QStringLiteral("Use + to create/join a group"));
+
+    QStandardItem *item = nullptr;
+    if (existingRow >= 0) {
+        item = model_->item(existingRow);
+    } else {
+        item = new QStandardItem();
+        model_->insertRow(0, item);
+    }
+    if (!item) {
+        return;
+    }
+    item->setData(pid, IdRole);
+    item->setData(title, TitleRole);
+    item->setData(preview, PreviewRole);
+    item->setData(QString(), TimeRole);
+    item->setData(0, UnreadRole);
+    item->setData(true, GreyBadgeRole);
+    item->setData(false, HasTagRole);
+    item->setData(false, IsGroupRole);
+    item->setData(false, PinnedRole);
+    item->setData(static_cast<qint64>(-1), LastActiveRole);
+
+    if (proxyModel_) {
+        proxyModel_->invalidate();
+        proxyModel_->sort(0, Qt::DescendingOrder);
+    }
+}
+
+void MainListWindow::updateNavSelection() {
+    auto apply = [&](IconButton *btn, bool selected) {
+        if (!btn) {
+            return;
+        }
+        QColor baseBg = selected ? Tokens::hoverBg() : QColor(0, 0, 0, 0);
+        btn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(), baseBg,
+                       Tokens::hoverBg(), Tokens::selectedBg());
+    };
+
+    apply(navAllBtn_, listMode_ == ConversationListMode::All);
+    apply(navPinnedBtn_, listMode_ == ConversationListMode::PinnedOnly);
+    apply(navGroupsBtn_, listMode_ == ConversationListMode::GroupsOnly);
+}
+
+void MainListWindow::updateNotificationBadge() {
+    if (!navBellBtn_) {
+        return;
+    }
+    const int count = pendingFriendRequests_.size() + pendingGroupInvites_.size();
+    if (count <= 0) {
+        if (bellBadge_) {
+            bellBadge_->hide();
+        }
+        return;
+    }
+
+    if (!bellBadge_) {
+        bellBadge_ = new QLabel(navBellBtn_);
+        bellBadge_->setFixedSize(8, 8);
+        bellBadge_->setAttribute(Qt::WA_TransparentForMouseEvents);
+        bellBadge_->setStyleSheet(
+            QStringLiteral("background: %1; border-radius: 4px;")
+                .arg(Theme::uiBadgeRed().name()));
+        bellBadge_->move(navBellBtn_->width() - 12, 6);
+    }
+    bellBadge_->raise();
+    bellBadge_->show();
+}
+
+void MainListWindow::showAppMenu() {
+    if (!appMenu_) {
+        appMenu_ = new QMenu(this);
+        UiStyle::ApplyMenuStyle(*appMenu_);
+
+        QAction *notify =
+            appMenu_->addAction(UiSettings::Tr(QStringLiteral("通知中心"),
+                                              QStringLiteral("Notifications")));
+        QAction *settings =
+            appMenu_->addAction(UiSettings::Tr(QStringLiteral("设置"),
+                                              QStringLiteral("Settings")));
+        QAction *deviceMgr = appMenu_->addAction(QStringLiteral("设备管理"));
+        appMenu_->addSeparator();
+        QAction *about =
+            appMenu_->addAction(UiSettings::Tr(QStringLiteral("关于"),
+                                              QStringLiteral("About")));
+        QAction *exit =
+            appMenu_->addAction(UiSettings::Tr(QStringLiteral("退出"),
+                                              QStringLiteral("Exit")));
+
+        connect(notify, &QAction::triggered, this, &MainListWindow::handleNotificationCenter);
+        connect(settings, &QAction::triggered, this, &MainListWindow::handleSettings);
+        connect(deviceMgr, &QAction::triggered, this, &MainListWindow::handleDeviceManager);
+        connect(about, &QAction::triggered, this, [this]() {
+            QMessageBox::information(this,
+                                     UiSettings::Tr(QStringLiteral("关于"),
+                                                    QStringLiteral("About")),
+                                     UiSettings::Tr(QStringLiteral("MI E2EE 客户端（Qt UI）"),
+                                                    QStringLiteral("MI E2EE Client (Qt UI)")));
+        });
+        connect(exit, &QAction::triggered, this, [this]() { close(); });
+    }
+
+    const QPoint anchor = navMenuBtn_ ? navMenuBtn_->mapToGlobal(QPoint(0, navMenuBtn_->height()))
+                                      : QCursor::pos();
+    appMenu_->exec(anchor);
 }
 
 void MainListWindow::initTray() {
@@ -948,6 +1707,89 @@ void MainListWindow::closeEvent(QCloseEvent *event) {
     }
 }
 
+QStandardItem *MainListWindow::findItemById(const QString &id) const {
+    if (!model_) {
+        return nullptr;
+    }
+    for (int i = 0; i < model_->rowCount(); ++i) {
+        auto *item = model_->item(i);
+        if (!item) {
+            continue;
+        }
+        if (item->data(IdRole).toString() == id) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
+QModelIndex MainListWindow::viewIndexForId(const QString &id) const {
+    if (!listView_ || !listView_->model()) {
+        return QModelIndex();
+    }
+    auto *viewModel = listView_->model();
+    for (int i = 0; i < viewModel->rowCount(); ++i) {
+        const QModelIndex idx = viewModel->index(i, 0);
+        if (idx.data(IdRole).toString() == id) {
+            return idx;
+        }
+    }
+    return QModelIndex();
+}
+
+void MainListWindow::selectConversation(const QString &id) {
+    const QModelIndex idx = viewIndexForId(id);
+    if (!idx.isValid()) {
+        return;
+    }
+    listView_->setCurrentIndex(idx);
+    listView_->scrollTo(idx);
+}
+
+void MainListWindow::previewChatForIndex(const QModelIndex &index) {
+    if (!index.isValid()) {
+        return;
+    }
+    if (!embeddedChat_) {
+        return;
+    }
+
+    const QString id = index.data(IdRole).toString();
+    if (id.startsWith(QStringLiteral("__"))) {
+        embeddedConvId_.clear();
+        embeddedChat_->setConversation(QString(),
+                                       UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                      QStringLiteral("Select a chat")),
+                                       false);
+        return;
+    }
+
+    const QString title = index.data(TitleRole).toString();
+    const bool isGroup = index.data(IsGroupRole).toBool();
+
+    const bool changing = (embeddedConvId_ != id);
+    embeddedConvId_ = id;
+    embeddedChat_->setConversation(id, title, isGroup);
+    if (auto *item = findItemById(id)) {
+        item->setData(0, UnreadRole);
+    }
+
+    if (changing) {
+        auto *effect = qobject_cast<QGraphicsOpacityEffect *>(embeddedChat_->graphicsEffect());
+        if (!effect) {
+            effect = new QGraphicsOpacityEffect(embeddedChat_);
+            embeddedChat_->setGraphicsEffect(effect);
+        }
+        effect->setOpacity(0.0);
+        auto *anim = new QPropertyAnimation(effect, "opacity", embeddedChat_);
+        anim->setDuration(160);
+        anim->setStartValue(0.0);
+        anim->setEndValue(1.0);
+        anim->setEasingCurve(QEasingCurve::OutCubic);
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+}
+
 void MainListWindow::openChatForIndex(const QModelIndex &index) {
     if (!index.isValid()) {
         return;
@@ -958,6 +1800,10 @@ void MainListWindow::openChatForIndex(const QModelIndex &index) {
     }
     const QString title = index.data(TitleRole).toString();
     const bool isGroup = index.data(IsGroupRole).toBool();
+
+    if (auto *item = findItemById(id)) {
+        item->setData(0, UnreadRole);
+    }
 
     if (chatWindows_.contains(id) && chatWindows_[id]) {
         chatWindows_[id]->setConversation(id, title, isGroup);
@@ -1046,12 +1892,17 @@ void MainListWindow::handleCreateGroup() {
         item->setData(true, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(true, IsGroupRole);
+        item->setData(pinnedIds_.contains(groupId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->insertRow(0, item);
         rowIndex = 0;
     }
 
-    listView_->setCurrentIndex(model_->index(rowIndex, 0));
-    openChatForIndex(model_->index(rowIndex, 0));
+    selectConversation(groupId);
+    const QModelIndex viewIndex = viewIndexForId(groupId);
+    if (viewIndex.isValid()) {
+        previewChatForIndex(viewIndex);
+    }
     QMessageBox::information(this, QStringLiteral("创建群聊"),
                              QStringLiteral("群聊已创建，群 ID 已复制到剪贴板。\n\n%1").arg(groupId));
 }
@@ -1096,6 +1947,8 @@ void MainListWindow::handleJoinGroup() {
         item->setData(true, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(true, IsGroupRole);
+        item->setData(pinnedIds_.contains(groupId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->insertRow(0, item);
         rowIndex = 0;
     } else {
@@ -1104,8 +1957,11 @@ void MainListWindow::handleJoinGroup() {
         }
     }
 
-    listView_->setCurrentIndex(model_->index(rowIndex, 0));
-    openChatForIndex(model_->index(rowIndex, 0));
+    selectConversation(groupId);
+    const QModelIndex viewIndex = viewIndexForId(groupId);
+    if (viewIndex.isValid()) {
+        previewChatForIndex(viewIndex);
+    }
     QMessageBox::information(this, QStringLiteral("加入群聊"),
                              QStringLiteral("已加入群聊：%1").arg(groupId));
 }
@@ -1522,14 +2378,22 @@ void MainListWindow::handleDeviceManager() {
 }
 
 void MainListWindow::handleSearchTextChanged(const QString &text) {
-    // Placeholder: future backend filtering; currently no-op.
-    Q_UNUSED(text);
+    if (!proxyModel_) {
+        return;
+    }
+
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty()) {
+        proxyModel_->setFilterRegularExpression(QRegularExpression());
+    } else {
+        proxyModel_->setFilterRegularExpression(QRegularExpression(
+            QRegularExpression::escape(trimmed),
+            QRegularExpression::CaseInsensitiveOption));
+    }
 }
 
 void MainListWindow::handleIncomingMessage(const QString &convId, bool isGroup, const QString &sender,
                                            const QString &messageId, const QString &text, bool isFile, qint64 fileSize) {
-    Q_UNUSED(messageId);
-    Q_UNUSED(fileSize);
     QString preview;
     if (isFile) {
         const QString tag = FilePreviewTag(text);
@@ -1558,6 +2422,8 @@ void MainListWindow::handleIncomingMessage(const QString &convId, bool isGroup, 
         item->setData(false, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(pinnedIds_.contains(convId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->appendRow(item);
         rowIndex = model_->rowCount() - 1;
     } else {
@@ -1567,12 +2433,20 @@ void MainListWindow::handleIncomingMessage(const QString &convId, bool isGroup, 
         int unread = item->data(UnreadRole).toInt();
         item->setData(unread + 1, UnreadRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    bool hasActiveView = false;
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
+        hasActiveView = true;
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
-        // 已打开窗口则视为已读
+        hasActiveView = true;
+    }
+    if (hasActiveView) {
         if (rowIndex >= 0) {
             model_->item(rowIndex)->setData(0, UnreadRole);
         }
@@ -1636,6 +2510,8 @@ void MainListWindow::handleIncomingSticker(const QString &convId, const QString 
         item->setData(false, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(pinnedIds_.contains(convId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->appendRow(item);
         rowIndex = model_->rowCount() - 1;
     } else {
@@ -1645,11 +2521,20 @@ void MainListWindow::handleIncomingSticker(const QString &convId, const QString 
         int unread = item->data(UnreadRole).toInt();
         item->setData(unread + 1, UnreadRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    bool hasActiveView = false;
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->appendIncomingSticker(sender, messageId, stickerId, now);
+        hasActiveView = true;
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->appendIncomingSticker(sender, messageId, stickerId, now);
+        hasActiveView = true;
+    }
+    if (hasActiveView) {
         if (rowIndex >= 0) {
             model_->item(rowIndex)->setData(0, UnreadRole);
         }
@@ -1719,6 +2604,8 @@ void MainListWindow::handleSyncedOutgoingMessage(const QString &convId, bool isG
         item->setData(true, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(pinnedIds_.contains(convId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->appendRow(item);
         rowIndex = model_->rowCount() - 1;
     } else {
@@ -1726,9 +2613,13 @@ void MainListWindow::handleSyncedOutgoingMessage(const QString &convId, bool isG
         item->setData(preview, PreviewRole);
         item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
     }
@@ -1756,6 +2647,8 @@ void MainListWindow::handleSyncedOutgoingSticker(const QString &convId, const QS
         item->setData(true, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(pinnedIds_.contains(convId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->appendRow(item);
         rowIndex = model_->rowCount() - 1;
     } else {
@@ -1763,39 +2656,58 @@ void MainListWindow::handleSyncedOutgoingSticker(const QString &convId, const QS
         item->setData(preview, PreviewRole);
         item->setData(QTime::currentTime().toString("HH:mm"), TimeRole);
         item->setData(isGroup, IsGroupRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->appendSyncedOutgoingSticker(messageId, stickerId, now);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->appendSyncedOutgoingSticker(messageId, stickerId, now);
     }
 }
 
 void MainListWindow::handleDelivered(const QString &convId, const QString &messageId) {
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->markDelivered(messageId);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->markDelivered(messageId);
     }
 }
 
 void MainListWindow::handleRead(const QString &convId, const QString &messageId) {
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->markRead(messageId);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->markRead(messageId);
     }
 }
 
 void MainListWindow::handleTypingChanged(const QString &convId, bool typing) {
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->setTypingIndicator(typing);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->setTypingIndicator(typing);
     }
 }
 
 void MainListWindow::handlePresenceChanged(const QString &convId, bool online) {
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->setPresenceIndicator(online);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->setPresenceIndicator(online);
     }
 }
 
 void MainListWindow::handleMessageResent(const QString &convId, const QString &messageId) {
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->markSent(messageId);
+    }
     if (chatWindows_.contains(convId) && chatWindows_[convId]) {
         chatWindows_[convId]->markSent(messageId);
     }
@@ -1803,12 +2715,29 @@ void MainListWindow::handleMessageResent(const QString &convId, const QString &m
 
 void MainListWindow::handleFileSendFinished(const QString &convId, const QString &messageId,
                                             bool success, const QString &error) {
-    if (!chatWindows_.contains(convId) || !chatWindows_[convId]) {
+    bool updated = false;
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
+        if (success) {
+            embeddedChat_->markSent(messageId);
+        } else {
+            embeddedChat_->markFailed(messageId);
+        }
+        updated = true;
+    }
+    if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+        chatWindows_[convId]->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
+        if (success) {
+            chatWindows_[convId]->markSent(messageId);
+        } else {
+            chatWindows_[convId]->markFailed(messageId);
+        }
+        updated = true;
+    }
+    if (!updated) {
         return;
     }
-    chatWindows_[convId]->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
     if (success) {
-        chatWindows_[convId]->markSent(messageId);
         const QString msg = error.trimmed().isEmpty()
                                 ? UiSettings::Tr(QStringLiteral("文件已发送"),
                                                  QStringLiteral("File sent"))
@@ -1817,7 +2746,6 @@ void MainListWindow::handleFileSendFinished(const QString &convId, const QString
         Toast::Show(this, msg, Toast::Level::Info);
         return;
     }
-    chatWindows_[convId]->markFailed(messageId);
     const QString msg = error.trimmed().isEmpty()
                             ? UiSettings::Tr(QStringLiteral("发送失败"),
                                              QStringLiteral("Send failed"))
@@ -1828,12 +2756,25 @@ void MainListWindow::handleFileSendFinished(const QString &convId, const QString
 
 void MainListWindow::handleFileSaveFinished(const QString &convId, const QString &messageId,
                                             bool success, const QString &error, const QString &outPath) {
-    if (!chatWindows_.contains(convId) || !chatWindows_[convId]) {
+    bool updated = false;
+    if (embeddedChat_ && embeddedConvId_ == convId) {
+        embeddedChat_->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
+        if (success) {
+            embeddedChat_->setFileLocalPath(messageId, outPath);
+        }
+        updated = true;
+    }
+    if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+        chatWindows_[convId]->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
+        if (success) {
+            chatWindows_[convId]->setFileLocalPath(messageId, outPath);
+        }
+        updated = true;
+    }
+    if (!updated) {
         return;
     }
-    chatWindows_[convId]->setFileTransferState(messageId, ChatWindow::FileTransferState::None);
     if (success) {
-        chatWindows_[convId]->setFileLocalPath(messageId, outPath);
         Toast::Show(this,
                     UiSettings::Tr(QStringLiteral("文件已保存：%1").arg(outPath),
                                    QStringLiteral("File saved: %1").arg(outPath)),
@@ -1856,38 +2797,27 @@ void MainListWindow::handlePeerTrustRequired(const QString &peer,
         return;
     }
 
-    const QString detail = QStringLiteral(
-        "检测到需要验证对端身份（首次通信或对端密钥指纹变更）。\n\n"
-        "对端：%1\n"
-        "指纹：%2\n"
-        "安全码（SAS）：%3\n\n"
-        "请通过线下可信渠道核对安全码/指纹后再继续。")
-                               .arg(peer, fingerprintHex, pin);
+    const QString title = UiSettings::Tr(QStringLiteral("验证对端身份"),
+                                         QStringLiteral("Verify peer identity"));
+    const QString description = UiSettings::Tr(
+        QStringLiteral("检测到需要验证对端身份（首次通信或对端密钥指纹变更）。\n"
+                       "请通过线下可信渠道核对安全码/指纹后再继续。"),
+        QStringLiteral("Peer identity verification required (first contact or peer key changed).\n"
+                       "Verify via an out-of-band channel before trusting."));
 
-    QMessageBox box(QMessageBox::Warning, QStringLiteral("验证对端身份"), detail,
-                    QMessageBox::NoButton, this);
-    auto *trustBtn = box.addButton(QStringLiteral("我已核对，信任"), QMessageBox::AcceptRole);
-    box.addButton(QStringLiteral("稍后"), QMessageBox::RejectRole);
-    box.setDefaultButton(trustBtn);
-    box.exec();
-
-    if (box.clickedButton() != trustBtn) {
-        return;
-    }
-
-    bool ok = false;
-    const QString input = QInputDialog::getText(
-        this, QStringLiteral("输入安全码"),
-        QStringLiteral("请输入上面显示的安全码（可包含 '-'，忽略大小写）："),
-        QLineEdit::Normal, QString(), &ok);
-    if (!ok) {
+    QString input;
+    if (!PromptTrustWithSas(this, title, description, fingerprintHex, pin, input,
+                            UiSettings::Tr(QStringLiteral("对端"), QStringLiteral("Peer")), peer)) {
         return;
     }
 
     QString err;
     if (!backend_->trustPendingPeer(input, err)) {
-        QMessageBox::warning(this, QStringLiteral("信任失败"),
-                             err.isEmpty() ? QStringLiteral("信任失败") : err);
+        QMessageBox::warning(this,
+                             UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed")),
+                             err.isEmpty()
+                                 ? UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed"))
+                                 : err);
         return;
     }
 
@@ -1903,47 +2833,16 @@ void MainListWindow::handleServerTrustRequired(const QString &fingerprintHex, co
         return;
     }
 
-    const QString detail = UiSettings::Tr(
-        QStringLiteral(
-            "检测到需要验证服务器身份（首次连接或证书指纹变更）。\n\n"
-            "指纹：%1\n"
-            "安全码（SAS）：%2\n\n"
-            "请通过线下可信渠道核对安全码/指纹后再继续。")
-            .arg(fingerprintHex, pin),
-        QStringLiteral(
-            "Server identity verification required (first connection or certificate pin changed).\n\n"
-            "Fingerprint: %1\n"
-            "SAS: %2\n\n"
-            "Verify via an out-of-band channel before trusting.")
-            .arg(fingerprintHex, pin));
+    const QString title = UiSettings::Tr(QStringLiteral("验证服务器身份"),
+                                         QStringLiteral("Verify server identity"));
+    const QString description = UiSettings::Tr(
+        QStringLiteral("检测到需要验证服务器身份（首次连接或证书指纹变更）。\n"
+                       "请通过线下可信渠道核对安全码/指纹后再继续。"),
+        QStringLiteral("Server identity verification required (first connection or certificate pin changed).\n"
+                       "Verify via an out-of-band channel before trusting."));
 
-    QMessageBox box(QMessageBox::Warning,
-                    UiSettings::Tr(QStringLiteral("验证服务器身份"),
-                                   QStringLiteral("Verify server identity")),
-                    detail,
-                    QMessageBox::NoButton, this);
-    auto *trustBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("我已核对，信任"),
-                                     QStringLiteral("I verified it, trust")),
-                      QMessageBox::AcceptRole);
-    box.addButton(UiSettings::Tr(QStringLiteral("稍后"), QStringLiteral("Later")),
-                  QMessageBox::RejectRole);
-    box.setDefaultButton(trustBtn);
-    box.exec();
-
-    if (box.clickedButton() != trustBtn) {
-        return;
-    }
-
-    bool ok = false;
-    const QString input = QInputDialog::getText(
-        this,
-        UiSettings::Tr(QStringLiteral("输入安全码"),
-                       QStringLiteral("Enter SAS")),
-        UiSettings::Tr(QStringLiteral("请输入上面显示的安全码（可包含 '-'，忽略大小写）："),
-                       QStringLiteral("Enter the SAS shown above (ignore '-' and case):")),
-        QLineEdit::Normal, pin, &ok);
-    if (!ok) {
+    QString input;
+    if (!PromptTrustWithSas(this, title, description, fingerprintHex, pin, input)) {
         return;
     }
 
@@ -1966,17 +2865,22 @@ void MainListWindow::handleServerTrustRequired(const QString &fingerprintHex, co
 }
 
 void MainListWindow::handleFriendRequestReceived(const QString &requester, const QString &remark) {
-    if (!backend_ || !model_) {
+    const QString who = requester.trimmed();
+    if (who.isEmpty()) {
         return;
     }
+
+    pendingFriendRequests_.insert(who, remark.trimmed());
+    updateNotificationBadge();
+
     if (tray_) {
         const bool allowPreview = trayPreviewAction_ && trayPreviewAction_->isChecked();
         const QString msg = allowPreview
                                 ? (remark.trimmed().isEmpty()
-                                       ? UiSettings::Tr(QStringLiteral("收到好友申请：%1").arg(requester),
-                                                       QStringLiteral("Friend request: %1").arg(requester))
-                                       : UiSettings::Tr(QStringLiteral("收到好友申请：%1（%2）").arg(requester, remark.trimmed()),
-                                                       QStringLiteral("Friend request: %1 (%2)").arg(requester, remark.trimmed())))
+                                       ? UiSettings::Tr(QStringLiteral("收到好友申请：%1").arg(who),
+                                                       QStringLiteral("Friend request: %1").arg(who))
+                                       : UiSettings::Tr(QStringLiteral("收到好友申请：%1（%2）").arg(who, remark.trimmed()),
+                                                       QStringLiteral("Friend request: %1 (%2)").arg(who, remark.trimmed())))
                                 : UiSettings::Tr(QStringLiteral("你收到新的好友申请"),
                                                  QStringLiteral("You received a new friend request"));
         showTrayMessage(UiSettings::Tr(QStringLiteral("好友申请"),
@@ -1984,212 +2888,82 @@ void MainListWindow::handleFriendRequestReceived(const QString &requester, const
                         msg);
     }
 
-    QString detail = UiSettings::Tr(QStringLiteral("收到好友申请：%1").arg(requester),
-                                    QStringLiteral("Friend request from: %1").arg(requester));
-    if (!remark.trimmed().isEmpty()) {
-        detail += UiSettings::Tr(QStringLiteral("\n备注：%1").arg(remark.trimmed()),
-                                 QStringLiteral("\nRemark: %1").arg(remark.trimmed()));
-    }
-
-    QMessageBox box(QMessageBox::Question,
-                    UiSettings::Tr(QStringLiteral("新的好友申请"),
-                                   QStringLiteral("New friend request")),
-                    detail,
-                    QMessageBox::NoButton, this);
-    auto *acceptBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("同意"), QStringLiteral("Accept")),
-                      QMessageBox::AcceptRole);
-    auto *rejectBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("拒绝"), QStringLiteral("Reject")),
-                      QMessageBox::RejectRole);
-    auto *blockBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("拉黑"), QStringLiteral("Block")),
-                      QMessageBox::DestructiveRole);
-    box.setDefaultButton(acceptBtn);
-    box.exec();
-
-    QString err;
-    if (box.clickedButton() == acceptBtn) {
-        if (!backend_->respondFriendRequest(requester, true, err)) {
-            QMessageBox::warning(
-                this,
-                UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Friend request")),
-                err.isEmpty()
-                    ? UiSettings::Tr(QStringLiteral("同意失败"), QStringLiteral("Accept failed"))
-                    : err);
-            return;
-        }
-
-        for (int i = model_->rowCount() - 1; i >= 0; --i) {
-            if (model_->item(i)->data(IdRole).toString().startsWith(QStringLiteral("__"))) {
-                model_->removeRow(i);
-            }
-        }
-        bool exists = false;
-        for (int i = 0; i < model_->rowCount(); ++i) {
-            if (model_->item(i)->data(IdRole).toString() == requester) {
-                exists = true;
-                break;
-            }
-        }
-        if (!exists) {
-            auto *item = new QStandardItem();
-            item->setData(requester, IdRole);
-            item->setData(requester, TitleRole);
-            item->setData(UiSettings::Tr(QStringLiteral("点击开始聊天"),
-                                         QStringLiteral("Click to chat")),
-                          PreviewRole);
-            item->setData(QString(), TimeRole);
-            item->setData(0, UnreadRole);
-            item->setData(true, GreyBadgeRole);
-            item->setData(false, HasTagRole);
-            item->setData(false, IsGroupRole);
-            model_->insertRow(0, item);
-            listView_->setCurrentIndex(model_->index(0, 0));
-        }
-
-        QMessageBox::information(
-            this,
-            UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Friend request")),
-            UiSettings::Tr(QStringLiteral("已添加好友：%1").arg(requester),
-                           QStringLiteral("Friend added: %1").arg(requester)));
+    const bool mainActive = isVisible() && !isMinimized() && isActiveWindow();
+    if (!mainActive) {
         return;
     }
 
-    if (box.clickedButton() == rejectBtn) {
-        if (!backend_->respondFriendRequest(requester, false, err)) {
-            QMessageBox::warning(
-                this,
-                UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Friend request")),
-                err.isEmpty()
-                    ? UiSettings::Tr(QStringLiteral("拒绝失败"), QStringLiteral("Reject failed"))
-                    : err);
-            return;
-        }
-        QMessageBox::information(
-            this,
-            UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Friend request")),
-            UiSettings::Tr(QStringLiteral("已拒绝：%1").arg(requester),
-                           QStringLiteral("Rejected: %1").arg(requester)));
-        return;
-    }
-
-    if (box.clickedButton() == blockBtn) {
-        if (!backend_->setUserBlocked(requester, true, err)) {
-            QMessageBox::warning(
-                this,
-                UiSettings::Tr(QStringLiteral("拉黑"), QStringLiteral("Block")),
-                err.isEmpty()
-                    ? UiSettings::Tr(QStringLiteral("拉黑失败"), QStringLiteral("Block failed"))
-                    : err);
-            return;
-        }
-        for (int i = model_->rowCount() - 1; i >= 0; --i) {
-            if (model_->item(i)->data(IdRole).toString() == requester) {
-                model_->removeRow(i);
-            }
-        }
-        QMessageBox::information(
-            this,
-            UiSettings::Tr(QStringLiteral("拉黑"), QStringLiteral("Block")),
-            UiSettings::Tr(QStringLiteral("已拉黑：%1").arg(requester),
-                           QStringLiteral("Blocked: %1").arg(requester)));
-        return;
-    }
+    Toast::Show(this,
+                remark.trimmed().isEmpty()
+                    ? UiSettings::Tr(QStringLiteral("收到好友申请：%1").arg(who),
+                                     QStringLiteral("Friend request: %1").arg(who))
+                    : UiSettings::Tr(QStringLiteral("收到好友申请：%1（%2）").arg(who, remark.trimmed()),
+                                     QStringLiteral("Friend request: %1 (%2)").arg(who, remark.trimmed())),
+                Toast::Level::Info);
 }
 
 void MainListWindow::handleGroupInviteReceived(const QString &groupId, const QString &fromUser, const QString &messageId) {
-    Q_UNUSED(messageId);
-    if (!backend_ || !model_) {
+    const QString gid = groupId.trimmed();
+    if (gid.isEmpty()) {
         return;
     }
+
+    const QString from = fromUser.trimmed();
+    const QString mid = messageId.trimmed();
+    for (const auto &inv : pendingGroupInvites_) {
+        if (inv.groupId != gid) {
+            continue;
+        }
+        if (!mid.isEmpty()) {
+            if (inv.messageId == mid) {
+                updateNotificationBadge();
+                return;
+            }
+            continue;
+        }
+        if (inv.messageId.trimmed().isEmpty() && inv.fromUser.trimmed() == from) {
+            updateNotificationBadge();
+            return;
+        }
+    }
+
+    PendingGroupInvite inv;
+    inv.groupId = gid;
+    inv.fromUser = from;
+    inv.messageId = mid;
+    inv.receivedMs = QDateTime::currentMSecsSinceEpoch();
+    pendingGroupInvites_.push_back(inv);
+    updateNotificationBadge();
+
     if (tray_) {
         const bool allowPreview = trayPreviewAction_ && trayPreviewAction_->isChecked();
-        const QString msg =
-            allowPreview
-                ? UiSettings::Tr(QStringLiteral("来自：%1\n群 ID：%2").arg(fromUser, groupId),
-                                 QStringLiteral("From: %1\nGroup ID: %2").arg(fromUser, groupId))
-                : UiSettings::Tr(QStringLiteral("你收到新的群邀请"),
+        QString msg;
+        if (!allowPreview) {
+            msg = UiSettings::Tr(QStringLiteral("你收到新的群邀请"),
                                  QStringLiteral("You received a new group invite"));
+        } else if (from.isEmpty()) {
+            msg = UiSettings::Tr(QStringLiteral("群 ID：%1").arg(gid),
+                                 QStringLiteral("Group ID: %1").arg(gid));
+        } else {
+            msg = UiSettings::Tr(QStringLiteral("来自：%1\n群 ID：%2").arg(from, gid),
+                                 QStringLiteral("From: %1\nGroup ID: %2").arg(from, gid));
+        }
         showTrayMessage(UiSettings::Tr(QStringLiteral("群邀请"), QStringLiteral("Group invite")),
                         msg);
     }
 
-    const QString detail = UiSettings::Tr(
-        QStringLiteral("收到群邀请\n\n来自：%1\n群 ID：%2").arg(fromUser, groupId),
-        QStringLiteral("Group invite\n\nFrom: %1\nGroup ID: %2").arg(fromUser, groupId));
-
-    QMessageBox box(QMessageBox::Question,
-                    UiSettings::Tr(QStringLiteral("群邀请"), QStringLiteral("Group invite")),
-                    detail,
-                    QMessageBox::NoButton, this);
-    auto *joinBtn =
-        box.addButton(UiSettings::Tr(QStringLiteral("加入"), QStringLiteral("Join")),
-                      QMessageBox::AcceptRole);
-    auto *copyBtn = box.addButton(
-        UiSettings::Tr(QStringLiteral("复制群 ID"), QStringLiteral("Copy group ID")),
-        QMessageBox::ActionRole);
-    box.addButton(UiSettings::Tr(QStringLiteral("忽略"), QStringLiteral("Ignore")),
-                  QMessageBox::RejectRole);
-    box.setDefaultButton(joinBtn);
-    box.exec();
-
-    if (box.clickedButton() == copyBtn) {
-        if (auto *cb = QGuiApplication::clipboard()) {
-            cb->setText(groupId);
-        }
-        QMessageBox::information(
-            this,
-            UiSettings::Tr(QStringLiteral("群邀请"), QStringLiteral("Group invite")),
-            UiSettings::Tr(QStringLiteral("群 ID 已复制"),
-                           QStringLiteral("Group ID copied")));
+    const bool mainActive = isVisible() && !isMinimized() && isActiveWindow();
+    if (!mainActive) {
         return;
     }
 
-    if (box.clickedButton() != joinBtn) {
-        return;
-    }
-
-    QString err;
-    if (!backend_->joinGroup(groupId, err)) {
-        QMessageBox::warning(
-            this,
-            UiSettings::Tr(QStringLiteral("加入群聊"), QStringLiteral("Join group")),
-            err.isEmpty()
-                ? UiSettings::Tr(QStringLiteral("加入失败"), QStringLiteral("Join failed"))
-                : err);
-        return;
-    }
-
-    int rowIndex = -1;
-    for (int i = 0; i < model_->rowCount(); ++i) {
-        if (model_->item(i)->data(IdRole).toString() == groupId) {
-            rowIndex = i;
-            break;
-        }
-    }
-    if (rowIndex == -1) {
-        auto *item = new QStandardItem();
-        item->setData(groupId, IdRole);
-        item->setData(QStringLiteral("群聊 %1").arg(groupId), TitleRole);
-        item->setData(QStringLiteral("点击开始聊天"), PreviewRole);
-        item->setData(QString(), TimeRole);
-        item->setData(0, UnreadRole);
-        item->setData(true, GreyBadgeRole);
-        item->setData(false, HasTagRole);
-        item->setData(true, IsGroupRole);
-        model_->insertRow(0, item);
-        rowIndex = 0;
-    } else {
-        if (auto *item = model_->item(rowIndex)) {
-            item->setData(true, IsGroupRole);
-        }
-    }
-
-    listView_->setCurrentIndex(model_->index(rowIndex, 0));
-    openChatForIndex(model_->index(rowIndex, 0));
-    QMessageBox::information(this, QStringLiteral("群邀请"),
-                             QStringLiteral("已加入群聊：%1").arg(groupId));
+    Toast::Show(this,
+                from.isEmpty()
+                    ? UiSettings::Tr(QStringLiteral("收到群邀请：%1").arg(gid),
+                                     QStringLiteral("Group invite: %1").arg(gid))
+                    : UiSettings::Tr(QStringLiteral("收到群邀请：%1（来自 %2）").arg(gid, from),
+                                     QStringLiteral("Group invite: %1 (from %2)").arg(gid, from)),
+                Toast::Level::Info);
 }
 
 void MainListWindow::handleGroupNoticeReceived(const QString &groupId, const QString &text) {
@@ -2218,6 +2992,8 @@ void MainListWindow::handleGroupNoticeReceived(const QString &groupId, const QSt
         item->setData(false, GreyBadgeRole);
         item->setData(false, HasTagRole);
         item->setData(true, IsGroupRole);
+        item->setData(pinnedIds_.contains(groupId), PinnedRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
         model_->appendRow(item);
         rowIndex = model_->rowCount() - 1;
     } else {
@@ -2227,11 +3003,20 @@ void MainListWindow::handleGroupNoticeReceived(const QString &groupId, const QSt
         int unread = item->data(UnreadRole).toInt();
         item->setData(unread + 1, UnreadRole);
         item->setData(true, IsGroupRole);
+        item->setData(QDateTime::currentMSecsSinceEpoch(), LastActiveRole);
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    bool hasActiveView = false;
+    if (embeddedChat_ && embeddedConvId_ == groupId) {
+        embeddedChat_->appendSystemMessage(preview, now);
+        hasActiveView = true;
+    }
     if (chatWindows_.contains(groupId) && chatWindows_[groupId]) {
         chatWindows_[groupId]->appendSystemMessage(preview, now);
+        hasActiveView = true;
+    }
+    if (hasActiveView) {
         if (rowIndex >= 0) {
             model_->item(rowIndex)->setData(0, UnreadRole);
         }

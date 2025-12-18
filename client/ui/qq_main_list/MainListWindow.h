@@ -3,7 +3,8 @@
 
 #include <QHash>
 #include <QPointer>
-#include <QHash>
+#include <QSet>
+#include <QVector>
 
 #include <QListView>
 #include <QLineEdit>
@@ -14,6 +15,8 @@
 class ChatWindow;
 class BackendAdapter;
 class QLabel;
+class IconButton;
+class QSortFilterProxyModel;
 class QSystemTrayIcon;
 class QMenu;
 class QAction;
@@ -30,10 +33,13 @@ protected:
 
 private slots:
     void openChatForIndex(const QModelIndex &index);
+    void previewChatForIndex(const QModelIndex &index);
     void handleAddFriend();
     void handleCreateGroup();
     void handleJoinGroup();
     void handleDeviceManager();
+    void handleSettings();
+    void handleNotificationCenter();
     void handleSearchTextChanged(const QString &text);
     void handleIncomingMessage(const QString &convId, bool isGroup, const QString &sender,
                                const QString &messageId, const QString &text, bool isFile, qint64 fileSize);
@@ -59,15 +65,55 @@ private slots:
     void handleConnectionStateChanged(bool online, const QString &detail);
 
 private:
+    enum class ConversationListMode {
+        All = 0,
+        PinnedOnly = 1,
+        GroupsOnly = 2,
+    };
+
+    struct PendingGroupInvite {
+        QString groupId;
+        QString fromUser;
+        QString messageId;
+        qint64 receivedMs{0};
+    };
+
     void initTray();
     void showTrayMessage(const QString &title, const QString &message);
+    QStandardItem *findItemById(const QString &id) const;
+    QModelIndex viewIndexForId(const QString &id) const;
+    void selectConversation(const QString &id);
+    void setConversationListMode(ConversationListMode mode);
+    void updateModePlaceholder();
+    void updateNavSelection();
+    void updateNotificationBadge();
+    void showAppMenu();
+    void togglePinnedForId(const QString &id);
+    void loadPinned();
+    void savePinned() const;
 
     QListView *listView_{nullptr};
     QStandardItemModel *model_{nullptr};
+    QSortFilterProxyModel *proxyModel_{nullptr};
     QHash<QString, QPointer<ChatWindow>> chatWindows_;
+    QPointer<ChatWindow> embeddedChat_;
+    QString embeddedConvId_;
     QLineEdit *searchEdit_{nullptr};
     BackendAdapter *backend_{nullptr};
     QLabel *connLabel_{nullptr};
+    QLabel *bellBadge_{nullptr};
+    IconButton *navBellBtn_{nullptr};
+    IconButton *navAllBtn_{nullptr};
+    IconButton *navPinnedBtn_{nullptr};
+    IconButton *navGroupsBtn_{nullptr};
+    IconButton *navFilesBtn_{nullptr};
+    IconButton *navSettingsBtn_{nullptr};
+    IconButton *navMenuBtn_{nullptr};
+    QMenu *appMenu_{nullptr};
+    ConversationListMode listMode_{ConversationListMode::All};
+    QSet<QString> pinnedIds_;
+    QHash<QString, QString> pendingFriendRequests_;
+    QVector<PendingGroupInvite> pendingGroupInvites_;
     QSystemTrayIcon *tray_{nullptr};
     QMenu *trayMenu_{nullptr};
     QAction *traySettingsAction_{nullptr};

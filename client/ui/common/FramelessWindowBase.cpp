@@ -13,11 +13,16 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
       m_container(new QFrame(this)),
       m_containerLayout(new QVBoxLayout()),
       m_overlay(new OverlayWidget(m_container)),
+      m_embedded(parent != nullptr),
       m_dragging(false),
       m_resizing(false),
       m_resizeEdges(Qt::Edges()) {
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
-    setAttribute(Qt::WA_TranslucentBackground);
+    if (m_embedded) {
+        setAttribute(Qt::WA_TranslucentBackground, false);
+    } else {
+        setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 
@@ -30,20 +35,28 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
     m_containerLayout->setContentsMargins(0, 0, 0, 0);
     m_containerLayout->setSpacing(0);
 
-    auto *shadow = new QGraphicsDropShadowEffect(this);
-    shadow->setBlurRadius(28.0);
-    shadow->setOffset(0, 10);
-    shadow->setColor(QColor(0, 0, 0, 180));
-    m_container->setGraphicsEffect(shadow);
+    if (!m_embedded) {
+        auto *shadow = new QGraphicsDropShadowEffect(this);
+        shadow->setBlurRadius(28.0);
+        shadow->setOffset(0, 10);
+        shadow->setColor(QColor(0, 0, 0, 180));
+        m_container->setGraphicsEffect(shadow);
 
-    setStyleSheet(QStringLiteral(
-        "#frameContainer { background-color: %1; border-radius: %2px; }")
-                      .arg(Theme::background().name())
-                      .arg(Theme::kWindowRadius));
+        setStyleSheet(QStringLiteral(
+            "#frameContainer { background-color: %1; border-radius: %2px; }")
+                          .arg(Theme::background().name())
+                          .arg(Theme::kWindowRadius));
+    } else {
+        m_container->setGraphicsEffect(nullptr);
+        setStyleSheet(QStringLiteral(
+            "#frameContainer { background-color: transparent; border-radius: 0px; }"));
+    }
 
     m_overlay->hide();
     m_overlay->raise();
 }
+
+bool FramelessWindowBase::isEmbedded() const { return m_embedded; }
 
 void FramelessWindowBase::setCentralWidget(QWidget *widget) {
     if (m_centralWidget) {
@@ -68,6 +81,10 @@ void FramelessWindowBase::setOverlayImage(const QString &path) {
 void FramelessWindowBase::toggleOverlay() { m_overlay->toggle(); }
 
 void FramelessWindowBase::mousePressEvent(QMouseEvent *event) {
+    if (m_embedded) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
     if (event->button() != Qt::LeftButton) {
         QWidget::mousePressEvent(event);
         return;
@@ -91,6 +108,10 @@ void FramelessWindowBase::mousePressEvent(QMouseEvent *event) {
 }
 
 void FramelessWindowBase::mouseMoveEvent(QMouseEvent *event) {
+    if (m_embedded) {
+        QWidget::mouseMoveEvent(event);
+        return;
+    }
     if (m_resizing) {
         performResize(event->globalPos());
         return;
@@ -104,6 +125,10 @@ void FramelessWindowBase::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void FramelessWindowBase::mouseReleaseEvent(QMouseEvent *event) {
+    if (m_embedded) {
+        QWidget::mouseReleaseEvent(event);
+        return;
+    }
     if (event->button() == Qt::LeftButton) {
         m_dragging = false;
         m_resizing = false;
@@ -113,10 +138,18 @@ void FramelessWindowBase::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void FramelessWindowBase::mouseDoubleClickEvent(QMouseEvent *event) {
+    if (m_embedded) {
+        QWidget::mouseDoubleClickEvent(event);
+        return;
+    }
     QWidget::mouseDoubleClickEvent(event);
 }
 
 void FramelessWindowBase::keyPressEvent(QKeyEvent *event) {
+    if (m_embedded) {
+        QWidget::keyPressEvent(event);
+        return;
+    }
     if (event->key() == Qt::Key_O && !event->isAutoRepeat()) {
         toggleOverlay();
         return;

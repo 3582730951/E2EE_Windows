@@ -11,17 +11,33 @@
 
 #include "../common/IconButton.h"
 #include "../common/Theme.h"
+#include "../common/UiSettings.h"
 
 namespace {
+
+struct Tokens {
+    static QColor windowBg() { return Theme::uiWindowBg(); }
+    static QColor panelBg() { return Theme::uiPanelBg(); }
+    static QColor border() { return Theme::uiBorder(); }
+    static QColor textMain() { return Theme::uiTextMain(); }
+    static QColor textSub() { return Theme::uiTextSub(); }
+    static QColor textMuted() { return Theme::uiTextMuted(); }
+    static QColor hoverBg() { return Theme::uiHoverBg(); }
+    static QColor selectedBg() { return Theme::uiSelectedBg(); }
+    static QColor accent() { return Theme::uiAccentBlue(); }
+};
 
 QLabel *createAvatar(QWidget *parent) {
     auto *avatar = new QLabel(parent);
     avatar->setFixedSize(108, 108);
     avatar->setStyleSheet(
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #4A89FF, "
-        "stop:1 #7BB1FF);"
-        "border: 4px solid rgba(255,255,255,0.9);"
-        "border-radius: 54px;");
+        QStringLiteral(
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2);"
+            "border: 2px solid %3;"
+            "border-radius: 54px;")
+            .arg(Tokens::accent().lighter(118).name(),
+                 Tokens::accent().darker(105).name(),
+                 Tokens::border().name()));
     auto *shadow = new QGraphicsDropShadowEffect(avatar);
     shadow->setBlurRadius(36);
     shadow->setOffset(0, 10);
@@ -34,35 +50,46 @@ QPushButton *primaryButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
     btn->setFixedSize(260, 44);
     btn->setCursor(Qt::PointingHandCursor);
+    const QColor base = Tokens::accent();
+    const QColor hover = base.lighter(112);
+    const QColor pressed = base.darker(110);
     btn->setStyleSheet(
-        "QPushButton {"
-        "  color: white;"
-        "  background: #2D8DFF;"
-        "  border: none;"
-        "  border-radius: 6px;"
-        "  font-size: 15px;"
-        "}"
-        "QPushButton:hover { background: #3D9DFF; }"
-        "QPushButton:pressed { background: #1C7CE6; }");
+        QStringLiteral(
+            "QPushButton {"
+            "  color: white;"
+            "  background: %1;"
+            "  border: none;"
+            "  border-radius: 10px;"
+            "  font-size: 15px;"
+            "}"
+            "QPushButton:hover { background: %2; }"
+            "QPushButton:pressed { background: %3; }")
+            .arg(base.name(),
+                 hover.name(),
+                 pressed.name()));
     return btn;
 }
 
 QLabel *linkLabel(const QString &text, QWidget *parent) {
     auto *label = new QLabel(text, parent);
-    label->setStyleSheet("color: #3D9DFF; font-size: 11px;");
+    label->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
+                             .arg(Tokens::accent().name()));
     return label;
 }
 
 }  // namespace
 
 LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
-    resize(569, 647);
-    setMinimumSize(569, 647);
+    resize(420, 560);
+    setMinimumSize(360, 480);
     frameWidget()->setStyleSheet(
-        "#frameContainer {"
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1A1B3A, "
-        "stop:1 #16244C);"
-        "border-radius: 10px; }");
+        QStringLiteral(
+            "#frameContainer {"
+            "background: %1;"
+            "border: 1px solid %2;"
+            "border-radius: 10px; }")
+            .arg(Tokens::panelBg().name(),
+                 Tokens::border().name()));
 
     auto *central = new QWidget(this);
     central->setContentsMargins(0, 0, 0, 0);
@@ -79,15 +106,13 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     auto *cubeBtn = new IconButton(QString(), titleBar);
     cubeBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), 14);
     cubeBtn->setFixedSize(26, 26);
-    cubeBtn->setColors(QColor("#A0B3E8"), QColor("#C2D4FF"), QColor("#88A0D8"),
-                       QColor(0, 0, 0, 0), QColor(255, 255, 255, 30),
-                       QColor(255, 255, 255, 60));
+    cubeBtn->setColors(Tokens::textSub(), Tokens::textMain(), Tokens::textMain(),
+                       QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     auto *closeBtn = new IconButton(QString(), titleBar);
     closeBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
     closeBtn->setFixedSize(26, 26);
-    closeBtn->setColors(QColor("#C4C8D2"), QColor("#FFFFFF"), QColor("#FF6666"),
-                        QColor(0, 0, 0, 0), QColor(255, 255, 255, 20),
-                        QColor(255, 255, 255, 30));
+    closeBtn->setColors(Tokens::textSub(), Tokens::textMain(), Theme::uiDangerRed(),
+                        QColor(0, 0, 0, 0), Tokens::hoverBg(), Tokens::selectedBg());
     connect(cubeBtn, &QPushButton::clicked, this, [this]() {
         isMaximized() ? showNormal() : showMaximized();
     });
@@ -103,35 +128,35 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     // Center content
     auto *title = new QLabel(QStringLiteral("QQ"), central);
     title->setAlignment(Qt::AlignHCenter);
-    title->setStyleSheet(
-        "color: #6FC1FF; font-size: 34px; font-weight: 600;");
-    auto *titleGlow = new QGraphicsDropShadowEffect(title);
-    titleGlow->setBlurRadius(24);
-    titleGlow->setOffset(0, 0);
-    titleGlow->setColor(QColor(111, 193, 255, 180));
-    title->setGraphicsEffect(titleGlow);
+    title->setFont(Theme::defaultFont(34, QFont::DemiBold));
+    title->setStyleSheet(QStringLiteral("color: %1;").arg(Tokens::accent().name()));
 
     auto *avatar = createAvatar(central);
     auto *nameLayout = new QHBoxLayout();
     nameLayout->setAlignment(Qt::AlignHCenter);
     auto *name = new QLabel(QStringLiteral("eds"), central);
-    name->setStyleSheet("color: white; font-size: 16px; font-weight: 600;");
+    name->setFont(Theme::defaultFont(16, QFont::DemiBold));
+    name->setStyleSheet(QStringLiteral("color: %1;").arg(Tokens::textMain().name()));
     auto *arrow = new QLabel(QStringLiteral("\u25BE"), central);
-    arrow->setStyleSheet("color: #9BB8E0; font-size: 12px;");
+    arrow->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(Tokens::textMuted().name()));
     nameLayout->addWidget(name);
     nameLayout->addSpacing(6);
     nameLayout->addWidget(arrow);
 
-    auto *loginBtn = primaryButton(QStringLiteral("登录"), central);
+    auto *loginBtn = primaryButton(UiSettings::Tr(QStringLiteral("登录"), QStringLiteral("Login")), central);
 
     auto *linksLayout = new QHBoxLayout();
     linksLayout->setAlignment(Qt::AlignHCenter);
     linksLayout->setSpacing(10);
-    linksLayout->addWidget(linkLabel(QStringLiteral("添加账号"), central));
+    linksLayout->addWidget(linkLabel(UiSettings::Tr(QStringLiteral("添加账号"),
+                                                    QStringLiteral("Add account")),
+                                     central));
     auto *divider = new QLabel(QStringLiteral("|"), central);
-    divider->setStyleSheet("color: #4D78B3; font-size: 11px;");
+    divider->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;").arg(Tokens::textMuted().name()));
     linksLayout->addWidget(divider);
-    linksLayout->addWidget(linkLabel(QStringLiteral("移除账号"), central));
+    linksLayout->addWidget(linkLabel(UiSettings::Tr(QStringLiteral("移除账号"),
+                                                    QStringLiteral("Remove account")),
+                                     central));
 
     auto *contentLayout = new QVBoxLayout();
     contentLayout->setAlignment(Qt::AlignHCenter);

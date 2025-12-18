@@ -12,6 +12,7 @@ enum class Scheme : int {
     Dark = 0,
     Light = 1,
     HighContrast = 2,
+    Auto = 3,
 };
 
 QFont defaultFont(int pointSize = 10, QFont::Weight weight = QFont::Normal);

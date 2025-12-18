@@ -179,13 +179,35 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     out_config.server.group_rotation_threshold = 10000;
   }
   if (out_config.mode == AuthMode::kMySQL) {
-    const bool ok = !out_config.mysql.host.empty() &&
-                    out_config.mysql.port != 0 &&
+    const bool ok = !out_config.mysql.host.empty() && out_config.mysql.port != 0 &&
                     !out_config.mysql.database.empty() &&
                     !out_config.mysql.username.empty() &&
                     out_config.mysql.password.size() > 0;
     if (!ok) {
-      error = "mysql config incomplete";
+      std::ostringstream oss;
+      oss << "mysql config incomplete (missing:";
+      bool first = true;
+      const auto add = [&](const char* key) {
+        oss << (first ? " " : ", ") << key;
+        first = false;
+      };
+      if (out_config.mysql.host.empty()) {
+        add("mysql_ip");
+      }
+      if (out_config.mysql.port == 0) {
+        add("mysql_port");
+      }
+      if (out_config.mysql.database.empty()) {
+        add("mysql_database");
+      }
+      if (out_config.mysql.username.empty()) {
+        add("mysql_username");
+      }
+      if (out_config.mysql.password.size() == 0) {
+        add("mysql_password");
+      }
+      oss << ")";
+      error = oss.str();
       return false;
     }
   }
@@ -204,7 +226,7 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     return false;
   }
   if (out_config.server.require_tls && !out_config.server.tls_enable) {
-    error = "require_tls enabled";
+    error = "require_tls=1 but tls_enable=0";
     return false;
   }
   if (out_config.server.tls_enable && out_config.server.tls_cert.empty()) {
@@ -212,7 +234,7 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     return false;
   }
   if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {
-    error = "ops_token missing";
+    error = "ops_token missing or too short (>=16 chars)";
     return false;
   }
   return true;
