@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(MI_E2EE_ENABLE_MYSQL "Enable MySQL auth provider" OFF)
+option(MI_E2EE_ENABLE_MYSQL "Enable MySQL auth provider" ON)
 option(MI_E2EE_ENABLE_TCP_SERVER "Enable simple TCP server listener" ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/mi_e2ee_build_options.cmake)

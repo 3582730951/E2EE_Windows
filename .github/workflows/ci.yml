@@ -32,7 +32,7 @@ jobs:
           cmake -S server -B build/server-${{ matrix.mode }} \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            $([ "${{ matrix.mode }}" = "mysql" ] && echo "-DMI_E2EE_ENABLE_MYSQL=ON")
+            -DMI_E2EE_ENABLE_MYSQL=$([ "${{ matrix.mode }}" = "mysql" ] && echo "ON" || echo "OFF")
 
       - name: Build server
         run: cmake --build build/server-${{ matrix.mode }}
@@ -66,16 +66,44 @@ jobs:
       - name: Install build tools
         shell: pwsh
         run: |
-          choco install -y ninja cmake
+          choco install -y ninja cmake mariadb
+
+      - name: Locate MySQL client (from MariaDB)
+        shell: pwsh
+        run: |
+          $header = Get-ChildItem "C:\\Program Files" -Recurse -Filter "mysql.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $header) {
+            throw "mysql.h not found after installing mariadb"
+          }
+          $includeDir = $header.Directory.FullName
+
+          $libNames = @(
+            "libmariadb.lib",
+            "mariadb.lib",
+            "libmysql.lib",
+            "mysqlclient.lib",
+            "mysqlclient_r.lib"
+          )
+          $lib = $null
+          foreach ($n in $libNames) {
+            $lib = Get-ChildItem "C:\\Program Files" -Recurse -Filter $n -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($lib) { break }
+          }
+          if (-not $lib) {
+            throw "MySQL/MariaDB client library not found after installing mariadb"
+          }
+
+          "MYSQL_INCLUDE_DIR=$includeDir" | Out-File -FilePath $Env:GITHUB_ENV -Append
+          "MYSQL_CLIENT_LIB=$($lib.FullName)" | Out-File -FilePath $Env:GITHUB_ENV -Append
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: Configure server (Release, TCP on, no MySQL)
+      - name: Configure server (Release, TCP on, MySQL on)
         run: |
-          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=OFF -DMI_E2EE_ENABLE_TCP_SERVER=ON
+          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=ON -DMI_E2EE_ENABLE_TCP_SERVER=ON -DMYSQL_INCLUDE_DIR="$Env:MYSQL_INCLUDE_DIR" -DMYSQL_CLIENT_LIB="$Env:MYSQL_CLIENT_LIB"
 
       - name: Build server
         run: cmake --build build/server-win
@@ -85,6 +113,7 @@ jobs:
           New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
           Copy-Item build/server-win/*.dll artifacts/server-win/ -ErrorAction SilentlyContinue
+          Copy-Item server/config.example.ini artifacts/server-win/config.example.ini -ErrorAction SilentlyContinue
           @"
           [mode]
           mode=1  # 0=mysql, 1=demo
