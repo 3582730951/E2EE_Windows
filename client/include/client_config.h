@@ -36,7 +36,7 @@ struct DeviceSyncConfig {
 struct ClientConfig {
   std::string server_ip{"127.0.0.1"};
   std::uint16_t server_port{9000};
-  bool use_tls{false};
+  bool use_tls{true};
   std::string trust_store{"server_trust.ini"};
   AuthMode auth_mode{AuthMode::kLegacy};
   ProxyConfig proxy;

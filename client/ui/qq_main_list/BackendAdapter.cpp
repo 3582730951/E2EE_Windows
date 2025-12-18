@@ -115,6 +115,24 @@ QString FindBundledServerExe() {
     }
     return {};
 }
+
+QString AugmentTransportErrorHint(const QString &coreErr) {
+    const QString e = coreErr.trimmed();
+    if (e == QStringLiteral("tcp recv failed") ||
+        e == QStringLiteral("tcp request failed") ||
+        e == QStringLiteral("tcp send failed")) {
+        return e + QStringLiteral(
+                        "（可能 TLS 配置不一致：服务端启用 TLS 时，请在 client_config.ini 设置 use_tls=1）");
+    }
+    if (e == QStringLiteral("tls recv failed") ||
+        e == QStringLiteral("tls request failed") ||
+        e == QStringLiteral("tls handshake failed") ||
+        e == QStringLiteral("tls connect failed")) {
+        return e + QStringLiteral(
+                        "（可能 TLS 配置不一致：若服务端未启用 TLS，可在 client_config.ini 设置 use_tls=0）");
+    }
+    return e;
+}
 }  // namespace
 
 bool BackendAdapter::init(const QString &configPath) {
@@ -167,7 +185,7 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
         return false;
     }
     if (!core_.Login(account.trimmed().toStdString(), password.toStdString())) {
-        QString coreErr = QString::fromStdString(core_.last_error()).trimmed();
+        QString coreErr = AugmentTransportErrorHint(QString::fromStdString(core_.last_error()));
 
         if (!attemptedAutoStartServer_ &&
             (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
