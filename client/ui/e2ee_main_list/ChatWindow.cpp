@@ -940,12 +940,14 @@ void ChatWindow::buildUi() {
 
     auto *messageArea = new QWidget(body);
     messageArea->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::windowBg().name()));
+    messageArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     auto *msgLayout = new QVBoxLayout(messageArea);
     msgLayout->setContentsMargins(4, 6, 4, 0);
     msgLayout->setSpacing(0);
     messageModel_ = new MessageModel(this);
     messageStack_ = new QStackedWidget(messageArea);
     messageStack_->setStyleSheet(QStringLiteral("QStackedWidget { background: transparent; }"));
+    messageStack_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     auto *emptyState = new QWidget(messageStack_);
     auto *emptyLayout = new QVBoxLayout(emptyState);
@@ -1151,8 +1153,8 @@ void ChatWindow::buildUi() {
         refreshFileTransferAnimation();
     });
     messageStack_->addWidget(messageView_);
-    msgLayout->addWidget(searchBar_);
-    msgLayout->addWidget(messageStack_);
+    msgLayout->addWidget(searchBar_, 0);
+    msgLayout->addWidget(messageStack_, 1);
     bodyLayout->addWidget(messageArea, 1);
 
     // Divider
@@ -1164,6 +1166,7 @@ void ChatWindow::buildUi() {
     // Composer
     composer_ = new QWidget(body);
     composer_->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::panelBg().name()));
+    composer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *composerLayout = new QVBoxLayout(composer_);
     composerLayout->setContentsMargins(10, 6, 10, 8);
     composerLayout->setSpacing(6);
