@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <atomic>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -427,6 +428,31 @@ MySqlAuthProvider::MySqlAuthProvider(MySqlConfig cfg) : cfg_(std::move(cfg)) {}
 #ifdef MI_E2EE_ENABLE_MYSQL
 namespace {
 
+std::atomic<bool> g_mysql_user_auth_ready{false};
+
+bool EnsureMySqlUserAuthTable(MYSQL* conn, std::string& error) {
+  if (!conn) {
+    error = "mysql connection missing";
+    return false;
+  }
+  if (g_mysql_user_auth_ready.load(std::memory_order_acquire)) {
+    return true;
+  }
+  const char* ddl =
+      "CREATE TABLE IF NOT EXISTS user_auth ("
+      "  username VARCHAR(64) NOT NULL,"
+      "  password MEDIUMTEXT NOT NULL,"
+      "  PRIMARY KEY (username)"
+      ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+  if (mysql_query(conn, ddl) != 0) {
+    error = "mysql create user_auth failed";
+    return false;
+  }
+  g_mysql_user_auth_ready.store(true, std::memory_order_release);
+  error.clear();
+  return true;
+}
+
 bool MySqlFetchPassword(MYSQL* conn, const std::string& username,
                         std::string& out_password, std::string& error) {
   out_password.clear();
@@ -605,6 +631,10 @@ bool MySqlAuthProvider::Validate(const std::string& username,
     mysql_close(conn);
     return false;
   }
+  if (!EnsureMySqlUserAuthTable(conn, error)) {
+    mysql_close(conn);
+    return false;
+  }
 
   std::string stored_pass;
   if (!MySqlFetchPassword(conn, username, stored_pass, error)) {
@@ -642,6 +672,10 @@ bool MySqlAuthProvider::GetStoredPassword(const std::string& username,
                                   cfg_.database.c_str(), cfg_.port, nullptr, 0);
   if (!res) {
     error = "mysql_connect failed";
+    mysql_close(conn);
+    return false;
+  }
+  if (!EnsureMySqlUserAuthTable(conn, error)) {
     mysql_close(conn);
     return false;
   }
@@ -705,6 +739,10 @@ bool MySqlAuthProvider::UpsertOpaqueUserRecord(
     mysql_close(conn);
     return false;
   }
+  if (!EnsureMySqlUserAuthTable(conn, error)) {
+    mysql_close(conn);
+    return false;
+  }
   const std::string opaque_value =
       std::string(kOpaquePasswordPrefix) + Base64Encode(record);
   const bool ok = MySqlStoreOpaqueRecord(conn, username, opaque_value, error);
@@ -731,6 +769,10 @@ bool MySqlAuthProvider::UserExists(const std::string& username,
                                   cfg_.database.c_str(), cfg_.port, nullptr, 0);
   if (!res) {
     error = "mysql_connect failed";
+    mysql_close(conn);
+    return false;
+  }
+  if (!EnsureMySqlUserAuthTable(conn, error)) {
     mysql_close(conn);
     return false;
   }

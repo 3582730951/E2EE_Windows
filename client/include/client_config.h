@@ -38,7 +38,7 @@ struct ClientConfig {
   std::uint16_t server_port{9000};
   bool use_tls{true};
   std::string trust_store{"server_trust.ini"};
-  AuthMode auth_mode{AuthMode::kLegacy};
+  AuthMode auth_mode{AuthMode::kOpaque};
   ProxyConfig proxy;
   DeviceSyncConfig device_sync;
 };

@@ -531,6 +531,16 @@ bool SessionManager::OpaqueRegisterFinish(const OpaqueRegisterFinishRequest& req
     return false;
   }
 
+  std::string exists_error;
+  if (auth_->UserExists(req.username, exists_error)) {
+    error = "user already exists";
+    return false;
+  }
+  if (!exists_error.empty() && exists_error != "user not found") {
+    error = exists_error;
+    return false;
+  }
+
   RustBuf file;
   RustBuf err;
   const int rc = mi_opaque_server_register_finish(
