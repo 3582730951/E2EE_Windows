@@ -1022,7 +1022,6 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     rootLayout->addWidget(body);
 
     setCentralWidget(central);
-    setOverlayImage(QStringLiteral(UI_REF_DIR "/ref_main_list.png"));
 
     initTray();
 

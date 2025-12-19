@@ -1,9 +1,9 @@
 #include "FramelessWindowBase.h"
 
 #include <QApplication>
-#include <QGraphicsDropShadowEffect>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QVBoxLayout>
 
 #include "Theme.h"
@@ -46,16 +46,10 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
     m_containerLayout->setSpacing(0);
 
     if (!m_embedded) {
-        auto *shadow = new QGraphicsDropShadowEffect(this);
-        shadow->setBlurRadius(18);
-        shadow->setOffset(0, 8);
-        shadow->setColor(QColor(0, 0, 0, 170));
-        m_container->setGraphicsEffect(shadow);
-
         setStyleSheet(QStringLiteral(
             "#frameContainer { background-color: %1; border-radius: %2px; }")
-                          .arg(Theme::background().name())
-                          .arg(Theme::kWindowRadius));
+                           .arg(Theme::background().name())
+                           .arg(Theme::kWindowRadius));
     } else {
         m_container->setGraphicsEffect(nullptr);
         setStyleSheet(QStringLiteral(
@@ -160,11 +154,49 @@ void FramelessWindowBase::keyPressEvent(QKeyEvent *event) {
         QWidget::keyPressEvent(event);
         return;
     }
-    if (event->key() == Qt::Key_O && !event->isAutoRepeat()) {
+    const bool allowOverlayToggle =
+        (event->modifiers().testFlag(Qt::ControlModifier) &&
+         event->modifiers().testFlag(Qt::AltModifier) &&
+         event->modifiers().testFlag(Qt::ShiftModifier));
+    if (allowOverlayToggle && event->key() == Qt::Key_O && !event->isAutoRepeat()) {
         toggleOverlay();
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+void FramelessWindowBase::paintEvent(QPaintEvent *event) {
+    QWidget::paintEvent(event);
+    if (m_embedded || !m_container) {
+        return;
+    }
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    const QRectF r = m_container->geometry();
+    if (r.isEmpty()) {
+        return;
+    }
+
+    const int shadowSize = 20;
+    const QPointF offset(0.0, 6.0);
+    const qreal radius = Theme::kWindowRadius;
+    QColor base(0, 0, 0, 150);
+    if (Theme::scheme() == Theme::Scheme::Light) {
+        base.setAlpha(110);
+    }
+
+    for (int i = shadowSize; i >= 1; --i) {
+        const qreal t = static_cast<qreal>(i) / static_cast<qreal>(shadowSize);
+        QColor c = base;
+        c.setAlphaF(base.alphaF() * t * t);
+        QRectF rr = r.adjusted(-i, -i, i, i);
+        rr.translate(offset);
+        p.setPen(Qt::NoPen);
+        p.setBrush(c);
+        p.drawRoundedRect(rr, radius + i, radius + i);
+    }
 }
 
 void FramelessWindowBase::resizeEvent(QResizeEvent *event) {

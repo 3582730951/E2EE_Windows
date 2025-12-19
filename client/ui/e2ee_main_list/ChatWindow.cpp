@@ -1894,7 +1894,10 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
                 const QDateTime t = h.timestampSec > 0
                                         ? QDateTime::fromSecsSinceEpoch(static_cast<qint64>(h.timestampSec))
                                         : QDateTime::currentDateTime();
-                const auto st = toStatus(h.status);
+                auto st = toStatus(h.status);
+                if (h.status == 3 && backend_ && backend_->isPendingOutgoingMessage(h.messageId)) {
+                    st = MessageItem::Status::Pending;
+                }
                 const QString sender = (!h.outgoing && isGroup_) ? h.sender : QString();
                 if (h.kind == 4) {
                     messageModel_->appendSystemMessage(conversationId_, h.text, t);

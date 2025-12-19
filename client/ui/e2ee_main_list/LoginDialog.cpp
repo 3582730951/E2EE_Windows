@@ -4,7 +4,6 @@
 #include <QFrame>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -35,6 +34,7 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
     buildUi();
     if (backend_) {
         connect(backend_, &BackendAdapter::loginFinished, this, &LoginDialog::onLoginFinished);
+        connect(backend_, &BackendAdapter::registerFinished, this, &LoginDialog::onRegisterFinished);
     }
 }
 
@@ -68,6 +68,7 @@ void LoginDialog::buildUi() {
     outer->setSpacing(0);
 
     auto *frame = new QFrame(this);
+    frame_ = frame;
     frame->setObjectName("loginFrame");
     frame->setStyleSheet(
         QStringLiteral(
@@ -77,11 +78,6 @@ void LoginDialog::buildUi() {
             "border-radius: 16px;"
              "}")
              .arg(frameTop.name(), frameBottom.name(), border.name()));
-    auto *shadow = new QGraphicsDropShadowEffect(frame);
-    shadow->setBlurRadius(shadowBlur);
-    shadow->setOffset(0, shadowOffsetY);
-    shadow->setColor(QColor(0, 0, 0, 140));
-    frame->setGraphicsEffect(shadow);
     outer->addWidget(frame);
 
     auto *layout = new QVBoxLayout(frame);
@@ -161,15 +157,9 @@ void LoginDialog::buildUi() {
             .arg(accent.lighter(118).name(),
                  accent.darker(105).name(),
                  border.name()));
-    auto *avatarShadow = new QGraphicsDropShadowEffect(avatar);
-    avatarShadow->setBlurRadius(24);
-    avatarShadow->setOffset(0, 6);
-    avatarShadow->setColor(QColor(0, 0, 0, 120));
-    avatar->setGraphicsEffect(avatarShadow);
-
     auto *nameLayout = new QHBoxLayout();
     nameLayout->setAlignment(Qt::AlignHCenter);
-    auto *name = new QLabel(QStringLiteral("eds"), simplePage_);
+    auto *name = new QLabel(QStringLiteral("E2EE"), simplePage_);
     name->setFont(Theme::defaultFont(16, QFont::DemiBold));
     name->setStyleSheet(QStringLiteral("color: %1;").arg(textMain.name()));
     auto *arrow = new QLabel(QStringLiteral("\u25BE"), simplePage_);
@@ -293,7 +283,10 @@ void LoginDialog::buildUi() {
 
     accountBox_ = new QComboBox(accountPage_);
     accountBox_->setEditable(true);
-    accountBox_->addItem(QStringLiteral("3960562879"));
+    if (auto *edit = accountBox_->lineEdit()) {
+        edit->setPlaceholderText(UiSettings::Tr(QStringLiteral("输入账号"),
+                                                QStringLiteral("Enter account")));
+    }
     accountBox_->setStyleSheet(
         QStringLiteral(
             "QComboBox { background: %1; border: 1px solid %2; "
@@ -311,7 +304,8 @@ void LoginDialog::buildUi() {
     accLayout->addWidget(accountBox_);
 
     passwordAccount_ = new QLineEdit(accountPage_);
-    passwordAccount_->setPlaceholderText(QStringLiteral("输入密码"));
+    passwordAccount_->setPlaceholderText(UiSettings::Tr(QStringLiteral("输入密码"),
+                                                        QStringLiteral("Enter password")));
     passwordAccount_->setEchoMode(QLineEdit::Password);
     passwordAccount_->setStyleSheet(
         QStringLiteral(
@@ -374,6 +368,25 @@ void LoginDialog::buildUi() {
                  accentPressed.name()));
     accLayout->addWidget(accountLoginBtn_);
 
+    auto *registerRow = new QHBoxLayout();
+    registerRow->setContentsMargins(0, 0, 0, 0);
+    registerRow->setAlignment(Qt::AlignHCenter);
+    auto *registerLabel = new QLabel(QStringLiteral("<a href=\"#\">注册账号</a>"), accountPage_);
+    registerLabel->setTextFormat(Qt::RichText);
+    registerLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    registerLabel->setOpenExternalLinks(false);
+    registerLabel->setStyleSheet(
+        QStringLiteral(
+            "QLabel { color: %1; font-size: 12px; } "
+            "QLabel a { color: %2; text-decoration: none; } "
+            "QLabel a:hover { color: %3; }")
+            .arg(textSub.name(),
+                 accent.name(),
+                 accentHover.name()));
+    connect(registerLabel, &QLabel::linkActivated, this, [this](const QString &) { handleRegister(); });
+    registerRow->addWidget(registerLabel);
+    accLayout->addLayout(registerRow);
+
     auto *bottomRow = new QHBoxLayout();
     bottomRow->setContentsMargins(0, 4, 0, 0);
     bottomRow->setSpacing(12);
@@ -390,7 +403,7 @@ void LoginDialog::buildUi() {
 
     stack_->addWidget(simplePage_);
     stack_->addWidget(accountPage_);
-    stack_->setCurrentWidget(simplePage_);
+    stack_->setCurrentWidget(accountPage_);
 
     connect(accountBox_->lineEdit(), &QLineEdit::textChanged, this, &LoginDialog::updateLoginEnabled);
     connect(passwordAccount_, &QLineEdit::textChanged, this, &LoginDialog::updateLoginEnabled);
@@ -475,7 +488,11 @@ void LoginDialog::onLoginFinished(bool success, const QString &error) {
         if (handlePendingServerTrust(acc, pwd)) {
             return;
         }
-        const QString err = error.trimmed();
+        QString err = error.trimmed();
+        if (err.compare(QStringLiteral("invalid credentials"), Qt::CaseInsensitive) == 0) {
+            err = UiSettings::Tr(QStringLiteral("账号不存在或密码错误，可先点击“注册账号”创建。"),
+                                 QStringLiteral("Invalid credentials. You may need to register first."));
+        }
         errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
         errorLabel_->setVisible(true);
         Toast::Show(this,
@@ -494,6 +511,66 @@ void LoginDialog::onLoginFinished(bool success, const QString &error) {
         emit addAccountRequested();
     }
     accept();
+}
+
+void LoginDialog::handleRegister() {
+    if (loginBusy_) {
+        return;
+    }
+    if (!backend_) {
+        errorLabel_->setText(QStringLiteral("后端未就绪"));
+        errorLabel_->setVisible(true);
+        return;
+    }
+    const QString acc = accountBox_ ? accountBox_->currentText().trimmed() : QString();
+    const QString pwd = passwordAccount_ ? passwordAccount_->text() : QString();
+    if (acc.isEmpty() || pwd.isEmpty()) {
+        errorLabel_->setText(QStringLiteral("请输入账号和密码"));
+        errorLabel_->setVisible(true);
+        return;
+    }
+    if (!agreeCheck_ || !agreeCheck_->isChecked()) {
+        errorLabel_->setText(QStringLiteral("请先勾选协议"));
+        errorLabel_->setVisible(true);
+        return;
+    }
+
+    errorLabel_->setVisible(false);
+    setLoginBusy(true);
+    backend_->registerUserAsync(acc, pwd);
+}
+
+void LoginDialog::onRegisterFinished(bool success, const QString &error) {
+    setLoginBusy(false);
+    if (!success) {
+        const QString acc = accountBox_ ? accountBox_->currentText().trimmed() : QString();
+        const QString pwd = passwordAccount_ ? passwordAccount_->text() : QString();
+        if (handlePendingServerTrustForRegister(acc, pwd)) {
+            return;
+        }
+        const QString err = error.trimmed();
+        errorLabel_->setText(err.isEmpty() ? QStringLiteral("注册失败") : err);
+        errorLabel_->setVisible(true);
+        Toast::Show(this,
+                    err.isEmpty()
+                        ? UiSettings::Tr(QStringLiteral("注册失败：请检查网络或服务器状态"),
+                                         QStringLiteral("Registration failed. Please check your network or server."))
+                        : UiSettings::Tr(QStringLiteral("注册失败：%1").arg(err),
+                                         QStringLiteral("Registration failed: %1").arg(err)),
+                    Toast::Level::Error,
+                    3200);
+        return;
+    }
+
+    const QString acc = accountBox_ ? accountBox_->currentText().trimmed() : QString();
+    const QString pwd = passwordAccount_ ? passwordAccount_->text() : QString();
+    Toast::Show(this,
+                UiSettings::Tr(QStringLiteral("账号已创建，正在登录…"),
+                               QStringLiteral("Account created. Signing in…")),
+                Toast::Level::Success,
+                2000);
+    setLoginBusy(true);
+    backend_->loginAsync(acc, pwd);
 }
 
 bool LoginDialog::handlePendingServerTrust(const QString &account, const QString &password) {
@@ -541,6 +618,51 @@ bool LoginDialog::handlePendingServerTrust(const QString &account, const QString
     return true;
 }
 
+bool LoginDialog::handlePendingServerTrustForRegister(const QString &account, const QString &password) {
+    if (!backend_ || !backend_->hasPendingServerTrust()) {
+        return false;
+    }
+
+    const QString fingerprintHex = backend_->pendingServerFingerprint();
+    const QString pin = backend_->pendingServerPin();
+
+    const QString description = UiSettings::Tr(
+        QStringLiteral("检测到需要验证服务器身份（首次连接或证书指纹变更）。\n"
+                       "请通过线下可信渠道核对安全码/指纹后再继续。"),
+        QStringLiteral("Server identity verification required (first connection or certificate pin changed).\n"
+                       "Verify via an out-of-band channel before trusting."));
+
+    QString input;
+    if (!PromptTrustWithSas(this,
+                            UiSettings::Tr(QStringLiteral("验证服务器身份"),
+                                           QStringLiteral("Verify server identity")),
+                            description,
+                            fingerprintHex,
+                            pin,
+                            input)) {
+        errorLabel_->setText(QStringLiteral("需要先信任服务器（TLS）"));
+        errorLabel_->setVisible(true);
+        return true;
+    }
+
+    QString trustErr;
+    if (!backend_->trustPendingServer(input, trustErr)) {
+        QMessageBox::warning(
+            this,
+            UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed")),
+            trustErr.isEmpty()
+                ? UiSettings::Tr(QStringLiteral("信任失败"), QStringLiteral("Trust failed"))
+                : trustErr);
+        errorLabel_->setText(trustErr.isEmpty() ? QStringLiteral("信任失败") : trustErr);
+        errorLabel_->setVisible(true);
+        return true;
+    }
+
+    setLoginBusy(true);
+    backend_->registerUserAsync(account, password);
+    return true;
+}
+
 void LoginDialog::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         dragPos_ = event->globalPosition().toPoint() - frameGeometry().topLeft();
@@ -553,6 +675,40 @@ void LoginDialog::mouseMoveEvent(QMouseEvent *event) {
         move(event->globalPosition().toPoint() - dragPos_);
     }
     QDialog::mouseMoveEvent(event);
+}
+
+void LoginDialog::paintEvent(QPaintEvent *event) {
+    QDialog::paintEvent(event);
+    if (!frame_) {
+        return;
+    }
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    const QRectF r = frame_->geometry();
+    if (r.isEmpty()) {
+        return;
+    }
+
+    const int shadowSize = 20;
+    const QPointF offset(0.0, 6.0);
+    const qreal radius = 16.0;
+    QColor base(0, 0, 0, 140);
+    if (Theme::scheme() == Theme::Scheme::Light) {
+        base.setAlpha(110);
+    }
+
+    for (int i = shadowSize; i >= 1; --i) {
+        const qreal t = static_cast<qreal>(i) / static_cast<qreal>(shadowSize);
+        QColor c = base;
+        c.setAlphaF(base.alphaF() * t * t);
+        QRectF rr = r.adjusted(-i, -i, i, i);
+        rr.translate(offset);
+        p.setPen(Qt::NoPen);
+        p.setBrush(c);
+        p.drawRoundedRect(rr, radius + i, radius + i);
+    }
 }
 
 void LoginDialog::toggleInputs() {

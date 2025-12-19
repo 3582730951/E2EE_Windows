@@ -134,7 +134,7 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     auto *avatar = createAvatar(central);
     auto *nameLayout = new QHBoxLayout();
     nameLayout->setAlignment(Qt::AlignHCenter);
-    auto *name = new QLabel(QStringLiteral("eds"), central);
+    auto *name = new QLabel(QStringLiteral("E2EE"), central);
     name->setFont(Theme::defaultFont(16, QFont::DemiBold));
     name->setStyleSheet(QStringLiteral("color: %1;").arg(Tokens::textMain().name()));
     auto *arrow = new QLabel(QStringLiteral("\u25BE"), central);
