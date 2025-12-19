@@ -276,6 +276,113 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
     return true;
 }
 
+void BackendAdapter::loginAsync(const QString &account, const QString &password) {
+    const QString acc = account.trimmed();
+    const QString pwd = password;
+    QString initErr;
+    if (acc.isEmpty() || pwd.isEmpty()) {
+        emit loginFinished(false, QStringLiteral("账号或密码为空"));
+        return;
+    }
+    if (fileTransferActive_.load()) {
+        emit loginFinished(false, QStringLiteral("文件传输中，请稍后"));
+        return;
+    }
+    bool expected = false;
+    if (!coreWorkActive_.compare_exchange_strong(expected, true)) {
+        emit loginFinished(false, QStringLiteral("同步中，请稍后"));
+        return;
+    }
+    if (!inited_) {
+        if (!init(configPath_)) {
+            const QString path = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            coreWorkActive_.store(false);
+            emit loginFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
+            return;
+        }
+    }
+
+    const bool allowAutoStart = !attemptedAutoStartServer_;
+    QPointer<BackendAdapter> self(this);
+    std::thread([self, acc, pwd, allowAutoStart]() {
+        if (!self) {
+            return;
+        }
+
+        bool success = self->core_.Login(acc.toStdString(), pwd.toStdString());
+        bool autoStartAttempted = false;
+        QString err;
+
+        if (!success) {
+            QString coreErr = AugmentTransportErrorHint(QString::fromStdString(self->core_.last_error()));
+
+            if (allowAutoStart &&
+                !autoStartAttempted &&
+                (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
+                self->core_.is_remote_mode()) {
+                const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
+                if (IsLoopbackHost(ep.host) && ep.port != 0) {
+                    const QString serverExe = FindBundledServerExe();
+                    if (!serverExe.isEmpty()) {
+                        const QString serverDir = QFileInfo(serverExe).absolutePath();
+                        if (QProcess::startDetached(serverExe, {}, serverDir)) {
+                            autoStartAttempted = true;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                            if (self->core_.Login(acc.toStdString(), pwd.toStdString())) {
+                                success = true;
+                            } else {
+                                coreErr = QString::fromStdString(self->core_.last_error()).trimmed();
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!success) {
+                if (self->core_.HasPendingServerTrust()) {
+                    err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
+                } else if (!coreErr.isEmpty()) {
+                    const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
+                    if (!ep.host.isEmpty() && ep.port != 0) {
+                        err = QStringLiteral("%1（%2:%3）").arg(coreErr, ep.host).arg(ep.port);
+                    } else {
+                        err = coreErr;
+                    }
+                } else {
+                    err = QStringLiteral("登录失败：请检查账号/密码或服务器状态");
+                }
+            }
+        }
+
+        QMetaObject::invokeMethod(self, [self, success, err, acc, autoStartAttempted]() {
+            if (!self) {
+                return;
+            }
+
+            if (autoStartAttempted) {
+                self->attemptedAutoStartServer_ = true;
+            }
+            self->coreWorkActive_.store(false);
+
+            if (!success) {
+                self->loggedIn_ = false;
+                self->online_ = false;
+                if (self->pollTimer_) {
+                    self->pollTimer_->stop();
+                }
+                emit self->loginFinished(false, err);
+                return;
+            }
+
+            self->loggedIn_ = true;
+            self->currentUser_ = acc;
+            self->online_ = true;
+            self->startPolling(self->basePollIntervalMs_);
+            emit self->loginFinished(true, QString());
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
 QVector<BackendAdapter::FriendEntry> BackendAdapter::listFriends(QString &err) {
     QVector<FriendEntry> out;
     if (!loggedIn_) {

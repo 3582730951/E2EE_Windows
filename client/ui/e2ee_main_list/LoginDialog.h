@@ -20,12 +20,14 @@ signals:
 
 private slots:
     void handleLogin();
+    void onLoginFinished(bool success, const QString &error);
     void switchToAccountPage();
     void switchToSimplePage();
     void updateLoginEnabled();
 
 private:
     void buildUi();
+    void setLoginBusy(bool busy);
     bool handlePendingServerTrust(const QString &account, const QString &password);
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -46,6 +48,8 @@ private:
     QLineEdit *passwordAccount_{nullptr};
     QCheckBox *agreeCheck_{nullptr};
     QPushButton *accountLoginBtn_{nullptr};
+    QPushButton *simpleLoginBtn_{nullptr};
+    bool loginBusy_{false};
     QPoint dragPos_;
     BackendAdapter *backend_{nullptr};
 };

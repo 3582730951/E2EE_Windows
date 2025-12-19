@@ -35,6 +35,7 @@ public:
 
     bool init(const QString &configPath = QString());
     bool login(const QString &account, const QString &password, QString &err);
+    void loginAsync(const QString &account, const QString &password);
 
     bool hasPendingServerTrust() const { return core_.HasPendingServerTrust(); }
     QString pendingServerFingerprint() const { return QString::fromStdString(core_.pending_server_fingerprint()); }
@@ -174,6 +175,7 @@ signals:
                           bool success, const QString &error);
     void fileSaveFinished(const QString &convId, const QString &messageId,
                           bool success, const QString &error, const QString &outPath);
+    void loginFinished(bool success, const QString &error);
 
 private:
     struct PendingOutgoing {

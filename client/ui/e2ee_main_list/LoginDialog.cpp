@@ -33,6 +33,9 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
     resize(360, 520);
     setMinimumSize(320, 448);
     buildUi();
+    if (backend_) {
+        connect(backend_, &BackendAdapter::loginFinished, this, &LoginDialog::onLoginFinished);
+    }
 }
 
 void LoginDialog::buildUi() {
@@ -55,7 +58,13 @@ void LoginDialog::buildUi() {
     const QColor inputBorder = Theme::uiInputBorder();
 
     auto *outer = new QVBoxLayout(this);
-    outer->setContentsMargins(10, 10, 10, 10);
+    const int shadowBlur = 18;
+    const int shadowOffsetY = 8;
+    const int shadowPad = 4;
+    outer->setContentsMargins(shadowBlur + shadowPad,
+                              qMax(0, shadowBlur - shadowOffsetY) + shadowPad,
+                              shadowBlur + shadowPad,
+                              shadowBlur + shadowOffsetY + shadowPad);
     outer->setSpacing(0);
 
     auto *frame = new QFrame(this);
@@ -66,12 +75,12 @@ void LoginDialog::buildUi() {
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2);"
             "border: 1px solid %3;"
             "border-radius: 16px;"
-            "}")
-            .arg(frameTop.name(), frameBottom.name(), border.name()));
+             "}")
+             .arg(frameTop.name(), frameBottom.name(), border.name()));
     auto *shadow = new QGraphicsDropShadowEffect(frame);
-    shadow->setBlurRadius(36);
-    shadow->setOffset(0, 12);
-    shadow->setColor(QColor(0, 0, 0, 150));
+    shadow->setBlurRadius(shadowBlur);
+    shadow->setOffset(0, shadowOffsetY);
+    shadow->setColor(QColor(0, 0, 0, 140));
     frame->setGraphicsEffect(shadow);
     outer->addWidget(frame);
 
@@ -131,7 +140,7 @@ void LoginDialog::buildUi() {
     // Simple page
     simplePage_ = new QWidget(frame);
     auto *simpleLayout = new QVBoxLayout(simplePage_);
-    simpleLayout->setContentsMargins(26, 18, 26, 18);
+    simpleLayout->setContentsMargins(22, 16, 22, 16);
     simpleLayout->setSpacing(12);
     simpleLayout->addWidget(titleBar);
     simpleLayout->addSpacing(6);
@@ -176,7 +185,9 @@ void LoginDialog::buildUi() {
     nameLayout->addWidget(nameClick_);
 
     auto *loginBtn = new QPushButton(QStringLiteral("登录"), simplePage_);
-    loginBtn->setFixedSize(260, 46);
+    loginBtn->setFixedHeight(46);
+    loginBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    loginBtn->setMaximumWidth(260);
     loginBtn->setCursor(Qt::PointingHandCursor);
     loginBtn->setStyleSheet(
         QStringLiteral(
@@ -189,8 +200,9 @@ void LoginDialog::buildUi() {
             "}"
             "QPushButton:hover { background: %2; }"
             "QPushButton:pressed { background: %3; }")
-            .arg(accent.name(), accentHover.name(), accentPressed.name()));
+             .arg(accent.name(), accentHover.name(), accentPressed.name()));
     connect(loginBtn, &QPushButton::clicked, this, &LoginDialog::handleLogin);
+    simpleLoginBtn_ = loginBtn;
 
     auto *linksLayout = new QHBoxLayout();
     linksLayout->setAlignment(Qt::AlignHCenter);
@@ -209,14 +221,18 @@ void LoginDialog::buildUi() {
     linksLayout->addWidget(removeLabel);
 
     auto *contentLayout = new QVBoxLayout();
-    contentLayout->setAlignment(Qt::AlignHCenter);
     contentLayout->setSpacing(14);
     contentLayout->addWidget(title);
     contentLayout->addSpacing(12);
     contentLayout->addWidget(avatar, 0, Qt::AlignHCenter);
     contentLayout->addLayout(nameLayout);
     contentLayout->addSpacing(12);
-    contentLayout->addWidget(loginBtn, 0, Qt::AlignHCenter);
+    auto *loginRow = new QHBoxLayout();
+    loginRow->setContentsMargins(0, 0, 0, 0);
+    loginRow->addStretch();
+    loginRow->addWidget(loginBtn);
+    loginRow->addStretch();
+    contentLayout->addLayout(loginRow);
     contentLayout->addSpacing(10);
     contentLayout->addLayout(linksLayout);
 
@@ -338,7 +354,7 @@ void LoginDialog::buildUi() {
             .arg(textSub.name(),
                  accent.name(),
                  accentHover.name()));
-    agreeLabel->setWordWrap(false);
+    agreeLabel->setWordWrap(true);
     agreeRow->addWidget(agreeLabel, 1);
     accLayout->addLayout(agreeRow);
 
@@ -382,7 +398,37 @@ void LoginDialog::buildUi() {
     connect(accountLoginBtn_, &QPushButton::clicked, this, &LoginDialog::handleLogin);
 }
 
+void LoginDialog::setLoginBusy(bool busy) {
+    loginBusy_ = busy;
+    const QString text = busy ? QStringLiteral("登录中…") : QStringLiteral("登录");
+    if (simpleLoginBtn_) {
+        simpleLoginBtn_->setEnabled(!busy);
+        simpleLoginBtn_->setText(text);
+    }
+    if (accountLoginBtn_) {
+        accountLoginBtn_->setText(text);
+        if (busy) {
+            accountLoginBtn_->setEnabled(false);
+        }
+    }
+    if (accountBox_) {
+        accountBox_->setEnabled(!busy);
+    }
+    if (passwordAccount_) {
+        passwordAccount_->setEnabled(!busy);
+    }
+    if (agreeCheck_) {
+        agreeCheck_->setEnabled(!busy);
+    }
+    if (!busy) {
+        updateLoginEnabled();
+    }
+}
+
 void LoginDialog::handleLogin() {
+    if (loginBusy_) {
+        return;
+    }
     const QString acc = accountBox_ ? accountBox_->currentText().trimmed() : QString();
     const QString pwd = passwordAccount_ ? passwordAccount_->text() : QString();
     if (stack_->currentWidget() == simplePage_ && (acc.isEmpty() || pwd.isEmpty())) {
@@ -398,52 +444,56 @@ void LoginDialog::handleLogin() {
             errorLabel_->setVisible(true);
             return;
         }
-        if (backend_) {
-            QString err;
-            if (!backend_->login(acc, pwd, err)) {
-                if (handlePendingServerTrust(acc, pwd)) {
-                    return;
-                }
-                errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
-                errorLabel_->setVisible(true);
-                Toast::Show(this,
-                            err.isEmpty()
-                                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
-                                                 QStringLiteral("Login failed. Please check your account or network."))
-                                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
-                                                 QStringLiteral("Login failed: %1").arg(err)),
-                            Toast::Level::Error,
-                            3200);
-                return;
-            }
+        if (!backend_) {
+            errorLabel_->setText(QStringLiteral("后端未就绪"));
+            errorLabel_->setVisible(true);
+            return;
         }
         errorLabel_->setVisible(false);
-        emit addAccountRequested();
-        accept();
+        setLoginBusy(true);
+        backend_->loginAsync(acc, pwd);
     } else {
         // 简化态下若已有账号密码则尝试登录，否则切换到账号输入
-        if (backend_) {
-            QString err;
-            if (!backend_->login(acc, pwd, err)) {
-                if (handlePendingServerTrust(acc, pwd)) {
-                    return;
-                }
-                errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
-                errorLabel_->setVisible(true);
-                Toast::Show(this,
-                            err.isEmpty()
-                                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
-                                                 QStringLiteral("Login failed. Please check your account or network."))
-                                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
-                                                 QStringLiteral("Login failed: %1").arg(err)),
-                            Toast::Level::Error,
-                            3200);
-                return;
-            }
+        if (!backend_) {
+            errorLabel_->setText(QStringLiteral("后端未就绪"));
+            errorLabel_->setVisible(true);
+            return;
         }
         errorLabel_->setVisible(false);
-        accept();
+        setLoginBusy(true);
+        backend_->loginAsync(acc, pwd);
     }
+}
+
+void LoginDialog::onLoginFinished(bool success, const QString &error) {
+    setLoginBusy(false);
+
+    const QString acc = accountBox_ ? accountBox_->currentText().trimmed() : QString();
+    const QString pwd = passwordAccount_ ? passwordAccount_->text() : QString();
+
+    if (!success) {
+        if (handlePendingServerTrust(acc, pwd)) {
+            return;
+        }
+        const QString err = error.trimmed();
+        errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
+        errorLabel_->setVisible(true);
+        Toast::Show(this,
+                    err.isEmpty()
+                        ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
+                                         QStringLiteral("Login failed. Please check your account or network."))
+                        : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
+                                         QStringLiteral("Login failed: %1").arg(err)),
+                    Toast::Level::Error,
+                    3200);
+        return;
+    }
+
+    errorLabel_->setVisible(false);
+    if (stack_ && stack_->currentWidget() == accountPage_) {
+        emit addAccountRequested();
+    }
+    accept();
 }
 
 bool LoginDialog::handlePendingServerTrust(const QString &account, const QString &password) {
@@ -486,27 +536,8 @@ bool LoginDialog::handlePendingServerTrust(const QString &account, const QString
         return true;
     }
 
-    QString err;
-    if (!backend_->login(account, password, err)) {
-        errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
-        errorLabel_->setVisible(true);
-        Toast::Show(
-            this,
-            err.isEmpty()
-                ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),
-                                 QStringLiteral("Login failed. Please check your account or network."))
-                : UiSettings::Tr(QStringLiteral("登录失败：%1").arg(err),
-                                 QStringLiteral("Login failed: %1").arg(err)),
-            Toast::Level::Error,
-            3200);
-        return true;
-    }
-
-    errorLabel_->setVisible(false);
-    if (stack_ && stack_->currentWidget() == accountPage_) {
-        emit addAccountRequested();
-    }
-    accept();
+    setLoginBusy(true);
+    backend_->loginAsync(account, password);
     return true;
 }
 
@@ -547,7 +578,7 @@ void LoginDialog::updateLoginEnabled() {
     const bool ok = agreeCheck_->isChecked() &&
                     !accountBox_->currentText().trimmed().isEmpty() &&
                     !passwordAccount_->text().isEmpty();
-    accountLoginBtn_->setEnabled(ok);
+    accountLoginBtn_->setEnabled(!loginBusy_ && ok);
 }
 
 bool LoginDialog::eventFilter(QObject *watched, QEvent *event) {
