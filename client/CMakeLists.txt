@@ -11,11 +11,12 @@ endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/mi_e2ee_build_options.cmake)
 
+# Client builds link a subset of server components for protocol/crypto reuse and
+# should not require MySQL by default. Enable explicitly when you intend to build
+# the embedded server target with MySQL.
+option(MI_E2EE_ENABLE_MYSQL "Enable MySQL auth provider" OFF)
+
 # 引入后端静态库（不构建测试），供客户端直接链接。
-if(NOT DEFINED MI_E2EE_ENABLE_MYSQL)
-  # 客户端 UI/核心默认不依赖 MySQL；若需要在 client build 中启用，可手动传 -DMI_E2EE_ENABLE_MYSQL=ON。
-  set(MI_E2EE_ENABLE_MYSQL OFF CACHE BOOL "Enable MySQL auth provider" FORCE)
-endif()
 add_subdirectory(../server ${CMAKE_CURRENT_BINARY_DIR}/server_build EXCLUDE_FROM_ALL)
 
 if(NOT TARGET monocypher)

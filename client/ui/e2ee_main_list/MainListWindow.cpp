@@ -430,7 +430,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     auto *titleLayout = new QHBoxLayout(titleBar);
     titleLayout->setContentsMargins(10, 8, 10, 8);
 
-    auto *titleLabel = new QLabel(QStringLiteral("QQ"), titleBar);
+    auto *titleLabel = new QLabel(QStringLiteral("E2EE"), titleBar);
     titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; letter-spacing: 1px;")
                                   .arg(Tokens::textMain().name()));
     titleLayout->addWidget(titleLabel);
@@ -468,11 +468,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     sideLayout->setContentsMargins(10, 12, 10, 12);
     sideLayout->setSpacing(14);
 
-    auto *qqMark = new QLabel(QStringLiteral("QQ"), sidebar);
-    qqMark->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    qqMark->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
-                              .arg(Tokens::textMain().name()));
-    sideLayout->addWidget(qqMark, 0, Qt::AlignLeft);
+    auto *brandMark = new QLabel(QStringLiteral("E2EE"), sidebar);
+    brandMark->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    brandMark->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                                 .arg(Tokens::textMain().name()));
+    sideLayout->addWidget(brandMark, 0, Qt::AlignLeft);
 
     navBellBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), sidebar, false);
     navBellBtn_->setFixedSize(32, 32);
@@ -660,14 +660,12 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     listView_->setStyleSheet(
         QStringLiteral(
             "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 8px; }"
-            "QListView:focus { border: 1px solid %3; }"
             "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
             "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 20px; }"
             "QScrollBar::handle:vertical:hover { background: %2; }"
             "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }")
             .arg(Theme::uiScrollBarHandle().name(),
-                 Theme::uiScrollBarHandleHover().name(),
-                 Theme::uiAccentBlue().name()));
+                 Theme::uiScrollBarHandleHover().name()));
     setTabOrder(searchEdit_, listView_);
 
     model_ = new QStandardItemModel(listView_);
@@ -731,9 +729,6 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                QString(), 0, true, false, false);
                     }
 
-                     if (model_->rowCount() > 0 && !listView_->currentIndex().isValid()) {
-                         listView_->setCurrentIndex(proxyModel_->index(0, 0));
-                     }
                      updateModePlaceholder();
                  });
         addRow(QStringLiteral("__loading__"),
@@ -751,9 +746,6 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
 
     listView_->setModel(proxyModel_);
     listView_->setItemDelegate(new ConversationDelegate(listView_));
-    if (proxyModel_->rowCount() > 0) {
-        listView_->setCurrentIndex(proxyModel_->index(0, 0));
-    }
     connect(listView_, &QListView::clicked, this, &MainListWindow::previewChatForIndex);
     connect(listView_, &QListView::activated, this, &MainListWindow::previewChatForIndex);
     if (auto *selection = listView_->selectionModel()) {
@@ -1023,7 +1015,6 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     splitter->setSizes(QList<int>{360, 800});
 
     mainLayout2->addWidget(splitter, 1);
-    previewChatForIndex(listView_->currentIndex());
 
     bodyLayout->addWidget(sidebar);
     bodyLayout->addWidget(mainArea, 1);
@@ -1747,10 +1738,16 @@ void MainListWindow::selectConversation(const QString &id) {
 }
 
 void MainListWindow::previewChatForIndex(const QModelIndex &index) {
-    if (!index.isValid()) {
+    if (!embeddedChat_) {
         return;
     }
-    if (!embeddedChat_) {
+
+    if (!index.isValid()) {
+        embeddedConvId_.clear();
+        embeddedChat_->setConversation(QString(),
+                                       UiSettings::Tr(QStringLiteral("请选择会话"),
+                                                      QStringLiteral("Select a chat")),
+                                       false);
         return;
     }
 

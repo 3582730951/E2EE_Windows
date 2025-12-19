@@ -136,7 +136,7 @@ void LoginDialog::buildUi() {
     simpleLayout->addWidget(titleBar);
     simpleLayout->addSpacing(6);
 
-    auto *title = new QLabel(QStringLiteral("QQ"), simplePage_);
+    auto *title = new QLabel(QStringLiteral("E2EE"), simplePage_);
     title->setAlignment(Qt::AlignHCenter);
     title->setFont(Theme::defaultFont(30, QFont::Bold));
     title->setStyleSheet(QStringLiteral("color: %1; letter-spacing: 2px;")
@@ -295,7 +295,7 @@ void LoginDialog::buildUi() {
     accLayout->addWidget(accountBox_);
 
     passwordAccount_ = new QLineEdit(accountPage_);
-    passwordAccount_->setPlaceholderText(QStringLiteral("输入QQ密码"));
+    passwordAccount_->setPlaceholderText(QStringLiteral("输入密码"));
     passwordAccount_->setEchoMode(QLineEdit::Password);
     passwordAccount_->setStyleSheet(
         QStringLiteral(
@@ -325,7 +325,7 @@ void LoginDialog::buildUi() {
             .arg(inputBorder.name()));
     agreeRow->addWidget(agreeCheck_, 0, Qt::AlignTop);
     auto *agreeLabel =
-        new QLabel(QStringLiteral("已阅读并同意 <a href=\"#\">服务协议</a> 和 <a href=\"#\">QQ隐私保护指引</a>"),
+        new QLabel(QStringLiteral("已阅读并同意 <a href=\"#\">服务协议</a> 和 <a href=\"#\">E2EE隐私保护指引</a>"),
                    accountPage_);
     agreeLabel->setTextFormat(Qt::RichText);
     agreeLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);

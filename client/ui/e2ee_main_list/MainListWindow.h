@@ -1,4 +1,4 @@
-// QQ main session list window replica.
+// E2EE main session list window.
 #pragma once
 
 #include <QHash>

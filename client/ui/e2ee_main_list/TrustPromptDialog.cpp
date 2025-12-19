@@ -19,7 +19,7 @@ QString NormalizeSas(QString in) {
     QString out;
     out.reserve(in.size());
     for (const QChar ch : in) {
-        if (ch.isSpace() || ch == QLatin1Char('-')) {
+        if (!ch.isLetterOrNumber()) {
             continue;
         }
         out.push_back(ch);

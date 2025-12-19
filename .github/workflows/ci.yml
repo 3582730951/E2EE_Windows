@@ -184,7 +184,7 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          $exe = "build/client/ui/qq_main_list/qq_main_list.exe"
+          $exe = "build/client/ui/e2ee_main_list/e2ee_main_list.exe"
           $exeDir = Split-Path -Parent $exe
           $dist = "build/client/ui/dist"
           if (!(Test-Path $exe)) {

@@ -257,6 +257,38 @@ QString ExtractFirstUrl(const QString &text) {
     return url;
 }
 
+bool IsNotFriendsError(const QString &err) {
+    const QString e = err.trimmed();
+    return e.compare(QStringLiteral("not friends"), Qt::CaseInsensitive) == 0 ||
+           e.contains(QStringLiteral("not friends"), Qt::CaseInsensitive);
+}
+
+bool IsNonRetryableSendError(const QString &err) {
+    const QString e = err.trimmed().toLower();
+    if (e.isEmpty()) {
+        return false;
+    }
+    if (e.contains(QStringLiteral("not friends"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("recipient not found")) ||
+        e.contains(QStringLiteral("invalid recipient")) ||
+        e.contains(QStringLiteral("recipient empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("payload too large")) ||
+        e.contains(QStringLiteral("payload empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("peer empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("not in group"))) {
+        return true;
+    }
+    return false;
+}
+
 class NoCookieJar : public QNetworkCookieJar {
 public:
     using QNetworkCookieJar::QNetworkCookieJar;
@@ -1026,20 +1058,18 @@ void ChatWindow::buildUi() {
     messageView_->setItemDelegate(messageDelegate_);
     messageView_->setModel(messageModel_);
     messageView_->setSelectionMode(QAbstractItemView::NoSelection);
-    messageView_->setFocusPolicy(Qt::StrongFocus);
+    messageView_->setFocusPolicy(Qt::NoFocus);
     messageView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     messageView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     messageView_->setStyleSheet(
         QStringLiteral(
             "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 8px; }"
-            "QListView:focus { border: 1px solid %3; }"
             "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
             "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 20px; }"
             "QScrollBar::handle:vertical:hover { background: %2; }"
             "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }")
             .arg(Theme::uiScrollBarHandle().name(),
-                 Theme::uiScrollBarHandleHover().name(),
-                 Theme::uiAccentBlue().name()));
+                 Theme::uiScrollBarHandleHover().name()));
     messageView_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(messageView_, &QListView::customContextMenuRequested, this, &ChatWindow::showMessageMenu);
     connect(messageModel_, &QAbstractItemModel::modelReset, this, [this]() { updateEmptyState(); });
@@ -1313,9 +1343,7 @@ void ChatWindow::buildUi() {
 
     auto *sendRow = new QHBoxLayout();
     sendRow->setSpacing(8);
-    auto *placeholder = new QLabel(QStringLiteral(""), composer_);
-    placeholder->setMinimumWidth(120);
-    sendRow->addWidget(placeholder, 1);
+    sendRow->addStretch(1);
 
     auto *closeBtnAction =
         outlineButton(UiSettings::Tr(QStringLiteral("关闭"), QStringLiteral("Close")),
@@ -2277,7 +2305,6 @@ void ChatWindow::sendMessage() {
     if (text.isEmpty()) {
         return;
     }
-    inputEdit_->clear();
 
     const QDateTime now = QDateTime::currentDateTime();
     QString messageId;
@@ -2295,7 +2322,70 @@ void ChatWindow::sendMessage() {
             ok = backend_->sendText(conversationId_, text, messageId, err);
         }
     }
-    const auto status = ok ? MessageItem::Status::Sent : MessageItem::Status::Failed;
+
+    const QString errTrimmed = err.trimmed();
+    if (!ok) {
+        if (!isGroup_ && backend_ && IsNotFriendsError(errTrimmed)) {
+            QMessageBox box(this);
+            box.setIcon(QMessageBox::Warning);
+            box.setWindowTitle(UiSettings::Tr(QStringLiteral("无法发送"),
+                                              QStringLiteral("Cannot send")));
+            box.setText(UiSettings::Tr(QStringLiteral("你和 %1 不是好友，无法发送消息。")
+                                           .arg(conversationId_),
+                                       QStringLiteral("You are not friends with %1; message can't be sent.")
+                                           .arg(conversationId_)));
+            auto *sendReqBtn = box.addButton(UiSettings::Tr(QStringLiteral("发送好友申请"),
+                                                           QStringLiteral("Send friend request")),
+                                             QMessageBox::AcceptRole);
+            box.addButton(UiSettings::Tr(QStringLiteral("取消"), QStringLiteral("Cancel")),
+                          QMessageBox::RejectRole);
+            box.exec();
+            if (box.clickedButton() == sendReqBtn) {
+                bool okInput = false;
+                const QString remark = QInputDialog::getText(
+                    this,
+                    UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Friend Request")),
+                    UiSettings::Tr(QStringLiteral("备注（可选）"), QStringLiteral("Remark (optional)")),
+                    QLineEdit::Normal,
+                    QString(),
+                    &okInput);
+                if (!okInput) {
+                    return;
+                }
+                QString reqErr;
+                if (backend_->sendFriendRequest(conversationId_, remark.trimmed(), reqErr)) {
+                    Toast::Show(this,
+                                UiSettings::Tr(QStringLiteral("好友申请已发送"),
+                                               QStringLiteral("Friend request sent")),
+                                Toast::Level::Success);
+                } else {
+                    Toast::Show(this,
+                                reqErr.trimmed().isEmpty()
+                                    ? UiSettings::Tr(QStringLiteral("发送好友申请失败"),
+                                                     QStringLiteral("Failed to send friend request"))
+                                    : reqErr.trimmed(),
+                                Toast::Level::Error);
+                }
+            }
+            return;
+        }
+
+        if (IsNonRetryableSendError(errTrimmed) || messageId.trimmed().isEmpty()) {
+            const QString shown =
+                errTrimmed.isEmpty()
+                    ? UiSettings::Tr(QStringLiteral("发送失败"),
+                                     QStringLiteral("Send failed"))
+                    : UiSettings::Tr(QStringLiteral("发送失败：%1").arg(errTrimmed),
+                                     QStringLiteral("Send failed: %1").arg(errTrimmed));
+            Toast::Show(this, shown, Toast::Level::Error, 3200);
+            return;
+        }
+    }
+
+    inputEdit_->clear();
+
+    const auto status = ok ? MessageItem::Status::Sent
+                           : MessageItem::Status::Pending;
     QString displayText = text;
     if (!isGroup_ && !replyToMessageId_.trimmed().isEmpty()) {
         const QString preview = replyPreview_.trimmed().isEmpty()
@@ -2307,10 +2397,14 @@ void ChatWindow::sendMessage() {
     messageView_->scrollToBottom();
     clearReplyContext();
 
-    if (!err.isEmpty()) {
-        const QString prefix = ok ? QStringLiteral("提示") : QStringLiteral("发送失败");
-        messageModel_->appendSystemMessage(conversationId_, QStringLiteral("%1：%2").arg(prefix, err), now);
-        messageView_->scrollToBottom();
+    if (ok && !errTrimmed.isEmpty()) {
+        Toast::Show(this, errTrimmed, Toast::Level::Info);
+    } else if (!ok && !errTrimmed.isEmpty()) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("已加入发送队列：%1").arg(errTrimmed),
+                                   QStringLiteral("Queued to retry: %1").arg(errTrimmed)),
+                    Toast::Level::Warning,
+                    2600);
     }
 }
 
@@ -2673,6 +2767,8 @@ void ChatWindow::exportEvidencePackage() {
 
     auto statusToString = [](int s) -> QString {
         switch (static_cast<MessageItem::Status>(s)) {
+        case MessageItem::Status::Pending:
+            return QStringLiteral("pending");
         case MessageItem::Status::Sent:
             return QStringLiteral("sent");
         case MessageItem::Status::Delivered:
@@ -3048,7 +3144,8 @@ void ChatWindow::showMessageMenu(const QPoint &pos) {
     const bool looksAudio = isFile && LooksLikeAudioFile(nameOrPath);
     const bool looksVideo = isFile && LooksLikeVideoFile(nameOrPath);
 
-    if (outgoing && status == MessageItem::Status::Failed && !messageId.isEmpty()) {
+    if (outgoing && (status == MessageItem::Status::Failed || status == MessageItem::Status::Pending) &&
+        !messageId.isEmpty()) {
         retry = menu.addAction(isFile ? QStringLiteral("重试发送文件")
                                       : (isSticker ? QStringLiteral("重试发送贴纸") : QStringLiteral("重试发送")));
     }
@@ -3136,16 +3233,34 @@ void ChatWindow::showMessageMenu(const QPoint &pos) {
             ok = isGroup_ ? backend_->resendGroupText(conversationId_, messageId, text, err)
                           : backend_->resendText(conversationId_, messageId, text, err);
         }
-        messageModel_->updateMessageStatus(messageId, ok ? MessageItem::Status::Sent : MessageItem::Status::Failed);
+        MessageItem::Status nextStatus = MessageItem::Status::Sent;
+        const QString errTrimmed = err.trimmed();
+        if (!ok) {
+            const bool retryable =
+                !messageId.trimmed().isEmpty() &&
+                !IsNonRetryableSendError(errTrimmed) &&
+                !IsNotFriendsError(errTrimmed);
+            nextStatus = retryable ? MessageItem::Status::Pending : MessageItem::Status::Failed;
+        }
+        messageModel_->updateMessageStatus(messageId, nextStatus);
         if (ok && isFile) {
             setFileTransferState(messageId, FileTransferState::Uploading);
         }
-        if (!err.isEmpty()) {
-            Toast::Show(this,
-                        ok ? err
-                           : UiSettings::Tr(QStringLiteral("重试失败：%1").arg(err),
-                                            QStringLiteral("Retry failed: %1").arg(err)),
-                        ok ? Toast::Level::Info : Toast::Level::Error);
+        if (!errTrimmed.isEmpty()) {
+            if (ok) {
+                Toast::Show(this, errTrimmed, Toast::Level::Info);
+            } else if (nextStatus == MessageItem::Status::Pending) {
+                Toast::Show(this,
+                            UiSettings::Tr(QStringLiteral("已加入发送队列：%1").arg(errTrimmed),
+                                           QStringLiteral("Queued to retry: %1").arg(errTrimmed)),
+                            Toast::Level::Warning,
+                            2600);
+            } else {
+                Toast::Show(this,
+                            UiSettings::Tr(QStringLiteral("重试失败：%1").arg(errTrimmed),
+                                           QStringLiteral("Retry failed: %1").arg(errTrimmed)),
+                            Toast::Level::Error);
+            }
         }
         return;
     }

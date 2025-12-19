@@ -1,4 +1,4 @@
-// QQ login window replica.
+// E2EE login window.
 #pragma once
 
 #include "../common/FramelessWindowBase.h"

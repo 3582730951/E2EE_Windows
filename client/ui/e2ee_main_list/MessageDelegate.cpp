@@ -131,6 +131,8 @@ QString StatusText(MessageItem::Status status) {
             return UiSettings::Tr(QStringLiteral("已读"), QStringLiteral("Read"));
         case MessageItem::Status::Delivered:
             return UiSettings::Tr(QStringLiteral("已送达"), QStringLiteral("Delivered"));
+        case MessageItem::Status::Pending:
+            return UiSettings::Tr(QStringLiteral("待发送"), QStringLiteral("Queued"));
         case MessageItem::Status::Failed:
             return UiSettings::Tr(QStringLiteral("发送失败"), QStringLiteral("Failed"));
         case MessageItem::Status::Sent:

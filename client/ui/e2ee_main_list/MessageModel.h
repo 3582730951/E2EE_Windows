@@ -9,7 +9,7 @@
 
 struct MessageItem {
     enum class Type { Text, TimeDivider, System };
-    enum class Status { Sent, Delivered, Read, Failed };
+    enum class Status { Sent, Delivered, Read, Failed, Pending };
     enum class FileTransfer { None = 0, Uploading = 1, Downloading = 2 };
 
     qint64 insertedAtMs{0};

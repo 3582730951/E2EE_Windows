@@ -147,6 +147,32 @@ QString AugmentTransportErrorHint(const QString &coreErr) {
     }
     return e;
 }
+
+bool IsNonRetryableSendError(const QString &coreErr) {
+    const QString e = coreErr.trimmed().toLower();
+    if (e.isEmpty()) {
+        return false;
+    }
+    if (e.contains(QStringLiteral("not friends"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("recipient not found")) ||
+        e.contains(QStringLiteral("invalid recipient")) ||
+        e.contains(QStringLiteral("recipient empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("payload too large")) ||
+        e.contains(QStringLiteral("payload empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("peer empty"))) {
+        return true;
+    }
+    if (e.contains(QStringLiteral("not in group"))) {
+        return true;
+    }
+    return false;
+}
 }  // namespace
 
 bool BackendAdapter::init(const QString &configPath) {
@@ -487,8 +513,10 @@ bool BackendAdapter::sendText(const QString &targetId, const QString &text, QStr
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("后端发送失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("后端发送失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
             p.messageId = outMessageId;
@@ -537,8 +565,10 @@ bool BackendAdapter::sendTextWithReply(const QString &targetId,
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("后端发送失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("后端发送失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
             p.messageId = outMessageId;
@@ -715,13 +745,16 @@ void BackendAdapter::startAsyncFileSend(const QString &convId, bool isGroup,
             }
 
             if (!pathStr.trimmed().isEmpty()) {
-                PendingOutgoing p;
-                p.convId = cid;
-                p.messageId = mid;
-                p.isGroup = isGroup;
-                p.isFile = true;
-                p.filePath = pathStr;
-                self->pendingOutgoing_[mid.toStdString()] = std::move(p);
+                const bool retryable = !IsNonRetryableSendError(err);
+                if (retryable) {
+                    PendingOutgoing p;
+                    p.convId = cid;
+                    p.messageId = mid;
+                    p.isGroup = isGroup;
+                    p.isFile = true;
+                    p.filePath = pathStr;
+                    self->pendingOutgoing_[mid.toStdString()] = std::move(p);
+                }
             }
             emit self->fileSendFinished(cid, mid, false,
                                        err.isEmpty() ? QStringLiteral("文件发送失败") : err);
@@ -802,8 +835,10 @@ bool BackendAdapter::sendLocation(const QString &targetId,
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送位置失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("发送位置失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
             p.messageId = outMessageId;
@@ -849,8 +884,10 @@ bool BackendAdapter::sendContactCard(const QString &targetId,
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送名片失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("发送名片失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
             p.messageId = outMessageId;
@@ -897,8 +934,10 @@ bool BackendAdapter::sendSticker(const QString &targetId,
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送贴纸失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("发送贴纸失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
             p.messageId = outMessageId;
@@ -1419,8 +1458,10 @@ bool BackendAdapter::sendGroupText(const QString &groupId, const QString &text, 
     if (!core_.SendGroupChatText(gid.toStdString(), t.toUtf8().toStdString(), mid)) {
         outMessageId = QString::fromStdString(mid);
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送失败") : QString::fromStdString(coreErr);
-        if (!outMessageId.trimmed().isEmpty()) {
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("发送失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = gid;
             p.messageId = outMessageId;
@@ -1479,14 +1520,18 @@ bool BackendAdapter::resendGroupText(const QString &groupId, const QString &mess
     }
     if (!core_.ResendGroupChatText(gid.toStdString(), mid.toStdString(), text.toUtf8().toStdString())) {
         const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("重试失败") : QString::fromStdString(coreErr);
-        PendingOutgoing p;
-        p.convId = gid;
-        p.messageId = mid;
-        p.isGroup = true;
-        p.isFile = false;
-        p.text = text;
-        pendingOutgoing_[mid.toStdString()] = std::move(p);
+        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
+        err = coreErrQ.isEmpty() ? QStringLiteral("重试失败") : coreErrQ;
+        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        if (retryable) {
+            PendingOutgoing p;
+            p.convId = gid;
+            p.messageId = mid;
+            p.isGroup = true;
+            p.isFile = false;
+            p.text = text;
+            pendingOutgoing_[mid.toStdString()] = std::move(p);
+        }
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;

@@ -8,7 +8,7 @@ namespace mi::client::ui::widgets {
 
 LoginDialog::LoginDialog(const UiPalette& palette, QWidget* parent)
     : QDialog(parent), palette_(palette) {
-    setWindowTitle(tr("QQ 登录"));
+    setWindowTitle(tr("E2EE 登录"));
     setModal(true);
     setFixedSize(420, 520);
     setSizeGripEnabled(false);
@@ -32,7 +32,7 @@ void LoginDialog::setupUi() {
 
     layout->addStretch(1);
 
-    auto* title = new QLabel(tr("QQ 登录"), this);
+    auto* title = new QLabel(tr("E2EE 登录"), this);
     title->setAlignment(Qt::AlignCenter);
     title->setStyleSheet(
         QStringLiteral("font-size:22px; font-weight:700; color:%1;")
@@ -42,7 +42,7 @@ void LoginDialog::setupUi() {
     auto* avatar = new QLabel(this);
     avatar->setFixedSize(120, 120);
     avatar->setAlignment(Qt::AlignCenter);
-    avatar->setPixmap(BuildAvatar(QStringLiteral("QQ"), palette_.accent, 110));
+    avatar->setPixmap(BuildAvatar(QStringLiteral("E2EE"), palette_.accent, 110));
     layout->addWidget(avatar, 0, Qt::AlignHCenter);
 
     userBox_ = new QComboBox(this);

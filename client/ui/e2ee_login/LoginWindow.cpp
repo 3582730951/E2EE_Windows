@@ -126,7 +126,7 @@ LoginWindow::LoginWindow(QWidget *parent) : FramelessWindowBase(parent) {
     mainLayout->addSpacing(8);
 
     // Center content
-    auto *title = new QLabel(QStringLiteral("QQ"), central);
+    auto *title = new QLabel(QStringLiteral("E2EE"), central);
     title->setAlignment(Qt::AlignHCenter);
     title->setFont(Theme::defaultFont(34, QFont::DemiBold));
     title->setStyleSheet(QStringLiteral("color: %1;").arg(Tokens::accent().name()));

@@ -140,10 +140,12 @@ void MessageModel::appendTextMessage(const QString &convId, bool outgoing, const
         auto rank = [](MessageItem::Status s) {
             switch (s) {
             case MessageItem::Status::Read:
-                return 3;
+                return 4;
             case MessageItem::Status::Delivered:
-                return 2;
+                return 3;
             case MessageItem::Status::Sent:
+                return 2;
+            case MessageItem::Status::Pending:
                 return 1;
             case MessageItem::Status::Failed:
                 return 0;
@@ -201,10 +203,12 @@ void MessageModel::appendFileMessage(const QString &convId, bool outgoing, const
         auto rank = [](MessageItem::Status s) {
             switch (s) {
             case MessageItem::Status::Read:
-                return 3;
+                return 4;
             case MessageItem::Status::Delivered:
-                return 2;
+                return 3;
             case MessageItem::Status::Sent:
+                return 2;
+            case MessageItem::Status::Pending:
                 return 1;
             case MessageItem::Status::Failed:
                 return 0;
@@ -275,10 +279,12 @@ void MessageModel::appendStickerMessage(const QString &convId,
         auto rank = [](MessageItem::Status s) {
             switch (s) {
             case MessageItem::Status::Read:
-                return 3;
+                return 4;
             case MessageItem::Status::Delivered:
-                return 2;
+                return 3;
             case MessageItem::Status::Sent:
+                return 2;
+            case MessageItem::Status::Pending:
                 return 1;
             case MessageItem::Status::Failed:
                 return 0;
@@ -347,22 +353,17 @@ bool MessageModel::updateMessageStatus(const QString &messageId, MessageItem::St
     if (messageId.isEmpty()) {
         return false;
     }
-    auto rank = [](MessageItem::Status s) {
-        switch (s) {
-        case MessageItem::Status::Read:
-            return 3;
-        case MessageItem::Status::Delivered:
-            return 2;
-        case MessageItem::Status::Sent:
-            return 1;
-        case MessageItem::Status::Failed:
-            return 0;
-        }
-        return 0;
-    };
     for (int i = 0; i < items_.size(); ++i) {
         if (items_[i].id == messageId) {
-            if (rank(status) <= rank(items_[i].status)) {
+            if (items_[i].status == MessageItem::Status::Read) {
+                return true;
+            }
+            if (items_[i].status == MessageItem::Status::Delivered &&
+                status != MessageItem::Status::Read) {
+                return true;
+            }
+            if (items_[i].status == MessageItem::Status::Sent &&
+                status == MessageItem::Status::Pending) {
                 return true;
             }
             items_[i].status = status;
