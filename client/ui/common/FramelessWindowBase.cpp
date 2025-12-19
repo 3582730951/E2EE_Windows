@@ -27,7 +27,17 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
 
     auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
+    if (m_embedded) {
+        outerLayout->setContentsMargins(0, 0, 0, 0);
+    } else {
+        const int shadowBlur = 18;
+        const int shadowOffsetY = 8;
+        const int shadowPad = 4;
+        outerLayout->setContentsMargins(shadowBlur + shadowPad,
+                                        qMax(0, shadowBlur - shadowOffsetY) + shadowPad,
+                                        shadowBlur + shadowPad,
+                                        shadowBlur + shadowOffsetY + shadowPad);
+    }
     outerLayout->addWidget(m_container);
 
     m_container->setObjectName(QStringLiteral("frameContainer"));
@@ -37,9 +47,9 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
 
     if (!m_embedded) {
         auto *shadow = new QGraphicsDropShadowEffect(this);
-        shadow->setBlurRadius(28.0);
-        shadow->setOffset(0, 10);
-        shadow->setColor(QColor(0, 0, 0, 180));
+        shadow->setBlurRadius(18);
+        shadow->setOffset(0, 8);
+        shadow->setColor(QColor(0, 0, 0, 170));
         m_container->setGraphicsEffect(shadow);
 
         setStyleSheet(QStringLiteral(
