@@ -801,11 +801,22 @@ IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
     return btn;
 }
 
+IconButton *composerIconSvg(const QString &svgPath, QWidget *parent) {
+    auto *btn = new IconButton(QString(), parent);
+    btn->setFixedSize(36, 36);
+    btn->setSvgIcon(svgPath, 32);
+    btn->setPadding(2);
+    btn->setColors(Theme::uiTextSub(), Theme::uiTextMain(), Theme::uiTextMain(),
+                   QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
+    return btn;
+}
+
 IconButton *accentIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
-    btn->setFixedSize(34, 34);
-    btn->setSvgIcon(svgPath, 16);
+    btn->setFixedSize(40, 40);
+    btn->setSvgIcon(svgPath, 32);
     btn->setRound(true);
+    btn->setPadding(4);
     const QColor base = Theme::uiAccentBlue();
     btn->setColors(Qt::white, Qt::white, Qt::white,
                    base, base.lighter(110), base.darker(115));
@@ -922,8 +933,7 @@ void ChatWindow::buildUi() {
     presenceLabel_->setTextFormat(Qt::PlainText);
     presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
                                       .arg(ChatTokens::textMuted().name()));
-    presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
-                                           QStringLiteral("Status off")));
+    presenceLabel_->setText(QString());
     titleTextLayout->addWidget(presenceLabel_);
 
     titleLayout->addWidget(titleTextWrap);
@@ -1284,7 +1294,7 @@ void ChatWindow::buildUi() {
     auto *inputRow = new QHBoxLayout();
     inputRow->setSpacing(8);
 
-    auto *attachBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/paperclip.svg"), composer_);
+    auto *attachBtn = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/paperclip.svg"), composer_);
     attachBtn->setFocusPolicy(Qt::NoFocus);
     attachBtn->setToolTip(UiSettings::Tr(QStringLiteral("附件"), QStringLiteral("Attachments")));
     inputRow->addWidget(attachBtn);
@@ -1335,13 +1345,13 @@ void ChatWindow::buildUi() {
     inputEdit_->installEventFilter(this);
     inputRow->addWidget(inputEdit_, 1);
 
-    emojiBtn_ = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
+    emojiBtn_ = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
     emojiBtn_->setFocusPolicy(Qt::NoFocus);
     emojiBtn_->setToolTip(UiSettings::Tr(QStringLiteral("表情"), QStringLiteral("Emoji")));
     connect(emojiBtn_, &QAbstractButton::clicked, this, &ChatWindow::showEmojiPicker);
     inputRow->addWidget(emojiBtn_);
 
-    auto *sendMore = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), composer_);
+    auto *sendMore = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), composer_);
     sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多"), QStringLiteral("More")));
     sendMore->setFocusPolicy(Qt::NoFocus);
     inputRow->addWidget(sendMore);
@@ -1585,7 +1595,9 @@ void ChatWindow::updateConversationUiState() {
         titleIcon_->setVisible(hasConversation && isGroup_);
     }
     if (presenceLabel_) {
-        presenceLabel_->setVisible(hasConversation);
+        const bool showPresence =
+            hasConversation && presenceAction_ && presenceAction_->isChecked();
+        presenceLabel_->setVisible(showPresence);
     }
     for (auto *btn : titleActionButtons_) {
         if (btn) {
@@ -1927,16 +1939,8 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
         presenceHideTimer_->stop();
     }
     if (presenceLabel_) {
-        if (isGroup_) {
-            presenceLabel_->setText(UiSettings::Tr(QStringLiteral("群聊"),
-                                                   QStringLiteral("Group chat")));
-        } else {
-            presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
-                                                   QStringLiteral("Status off")));
-        }
-        presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
-                                          .arg(ChatTokens::textMuted().name()));
-        presenceLabel_->setVisible(!conversationId_.trimmed().isEmpty());
+        presenceLabel_->setText(QString());
+        presenceLabel_->setVisible(false);
     }
 
     updateEmptyPrompt();
@@ -2307,11 +2311,7 @@ void ChatWindow::setPresenceIndicator(bool online) {
         if (presenceHideTimer_) {
             presenceHideTimer_->stop();
         }
-        presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
-                                               QStringLiteral("Status off")));
-        presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
-                                          .arg(ChatTokens::textMuted().name()));
-        presenceLabel_->setVisible(true);
+        presenceLabel_->setVisible(false);
         return;
     }
     if (online) {

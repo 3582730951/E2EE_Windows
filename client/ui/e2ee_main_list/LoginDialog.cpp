@@ -502,8 +502,8 @@ void LoginDialog::onLoginFinished(bool success, const QString &error) {
             err = UiSettings::Tr(QStringLiteral("账号不存在或密码错误，可先点击“注册账号”创建。"),
                                  QStringLiteral("Invalid credentials. You may need to register first."));
         }
-        errorLabel_->setText(err.isEmpty() ? QStringLiteral("登录失败") : err);
-        errorLabel_->setVisible(true);
+        errorLabel_->setText(QString());
+        errorLabel_->setVisible(false);
         Toast::Show(this,
                     err.isEmpty()
                         ? UiSettings::Tr(QStringLiteral("登录失败：请检查账号或网络"),

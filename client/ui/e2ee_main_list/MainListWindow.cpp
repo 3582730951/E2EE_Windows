@@ -955,8 +955,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     sideLayout->addStretch();
 
     auto *settingsBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), sideBar, false);
-    settingsBtn->setFixedSize(30, 30);
-    settingsBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
+    settingsBtn->setFixedSize(32, 32);
+    settingsBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 18);
     settingsBtn->setToolTip(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
     settingsBtn->setAccessibleName(settingsBtn->toolTip());
     connect(settingsBtn, &QPushButton::clicked, this, &MainListWindow::handleSettings);

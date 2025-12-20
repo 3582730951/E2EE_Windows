@@ -243,6 +243,54 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
     return QSize(width, height);
 }
 
+bool IsEmojiBase(uint32_t cp) {
+    if (cp >= 0x1F300 && cp <= 0x1FAFF) {
+        return true;
+    }
+    if (cp >= 0x2600 && cp <= 0x27BF) {
+        return true;
+    }
+    return false;
+}
+
+bool IsEmojiComponent(uint32_t cp) {
+    if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3) {
+        return true;
+    }
+    if (cp >= 0x1F3FB && cp <= 0x1F3FF) {
+        return true;
+    }
+    return false;
+}
+
+bool IsEmojiOnlyText(const QString &text, int &emojiCount) {
+    emojiCount = 0;
+    for (int i = 0; i < text.size();) {
+        uint32_t cp = text.at(i).unicode();
+        if (QChar::isHighSurrogate(text.at(i).unicode()) &&
+            i + 1 < text.size() &&
+            QChar::isLowSurrogate(text.at(i + 1).unicode())) {
+            cp = QChar::surrogateToUcs4(text.at(i), text.at(i + 1));
+            i += 2;
+        } else {
+            i += 1;
+        }
+
+        if (cp <= 0xFFFF && QChar(static_cast<ushort>(cp)).isSpace()) {
+            continue;
+        }
+        if (IsEmojiBase(cp)) {
+            ++emojiCount;
+            continue;
+        }
+        if (IsEmojiComponent(cp)) {
+            continue;
+        }
+        return false;
+    }
+    return emojiCount > 0 && emojiCount <= 3;
+}
+
 QPainterPath BubblePath(const QRect &bubbleRect, bool outgoing) {
     QPainterPath path;
     path.setFillRule(Qt::WindingFill);
@@ -295,7 +343,6 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
         return QSize(viewWidth, textSize.height() + 14);
     }
     // Text message
-    QFont f = Theme::defaultFont(13);
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height() + 2;
     int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
@@ -304,6 +351,9 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     const bool isFile = index.data(MessageModel::IsFileRole).toBool();
     const bool isSticker = index.data(MessageModel::IsStickerRole).toBool();
     QString text = index.data(MessageModel::TextRole).toString();
+    int emojiCount = 0;
+    const bool emojiOnly = !isFile && !isSticker && IsEmojiOnlyText(text, emojiCount);
+    QFont textFont = Theme::defaultFont(emojiOnly ? 24 : 13);
     if (isSticker) {
         const int stickerSize = 120;
         const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
@@ -326,7 +376,7 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
                      BubbleTokens::margin();
         return QSize(viewWidth, height);
     }
-    QSize bsize = bubbleSize(text, f, maxBubbleWidth);
+    QSize bsize = bubbleSize(text, textFont, maxBubbleWidth);
     bsize.setHeight(bsize.height() + metaHeight);
     const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
     int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) + BubbleTokens::margin();
@@ -405,7 +455,9 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     }
     QColor avatarColor = index.data(MessageModel::AvatarRole).value<QColor>();
 
-    QFont textFont = Theme::defaultFont(13);
+    int emojiCount = 0;
+    const bool emojiOnly = !isFile && !isSticker && IsEmojiOnlyText(text, emojiCount);
+    QFont textFont = Theme::defaultFont(emojiOnly ? 24 : 13);
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height();
     const int metaReserve = metaHeight + 2;
@@ -619,10 +671,15 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         }
     } else {
         painter->setPen(textColor);
+        painter->setFont(textFont);
         QRect textRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
                                              -BubbleTokens::paddingH(),
                                              -BubbleTokens::paddingV() - metaReserve);
-        painter->drawText(textRect, Qt::TextWordWrap, text);
+        if (emojiOnly) {
+            painter->drawText(textRect, Qt::AlignCenter, text);
+        } else {
+            painter->drawText(textRect, Qt::TextWordWrap, text);
+        }
     }
 
     if (!timeText.isEmpty()) {
@@ -635,6 +692,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                        status == MessageItem::Status::Pending) {
                 statusText = StatusText(status);
             } else if (status == MessageItem::Status::Read) {
+                statusText = QStringLiteral("✓✓");
+            } else if (status == MessageItem::Status::Delivered) {
                 statusText = QStringLiteral("✓✓");
             } else {
                 statusText = QStringLiteral("✓");
@@ -675,3 +734,5 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     painter->restore();
 }
+
+
