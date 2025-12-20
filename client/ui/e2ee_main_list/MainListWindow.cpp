@@ -491,8 +491,12 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     statusOfflineAction_ = addStatusAction(UiSettings::Tr(QStringLiteral("离线"),
                                                           QStringLiteral("Offline")),
                                            UserPresenceMode::Offline);
-    statusBtn_->setMenu(statusMenu_);
-    statusBtn_->setPopupMode(QToolButton::InstantPopup);
+    connect(statusBtn_, &QToolButton::clicked, this, [this]() {
+        if (!statusMenu_ || !statusBtn_) {
+            return;
+        }
+        statusMenu_->exec(statusBtn_->mapToGlobal(QPoint(0, statusBtn_->height())));
+    });
     titleLayout->addSpacing(10);
     titleLayout->addWidget(statusBtn_);
     titleLayout->addStretch();

@@ -120,10 +120,17 @@ void LoginDialog::buildUi() {
         UiSettings::Tr(QStringLiteral("帮助"), QStringLiteral("Help")));
     settingsMenuSimple->addAction(
         UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
-    settingBtnSimple->setMenu(settingsMenuSimple);
     settingBtnSimple->setStyleSheet(
         QStringLiteral("QPushButton { border-radius: 6px; }"
                        "QPushButton::menu-indicator { image: none; width: 0px; }"));
+    connect(settingBtnSimple, &QAbstractButton::clicked, this,
+            [settingBtnSimple, settingsMenuSimple]() {
+                if (!settingsMenuSimple || !settingBtnSimple) {
+                    return;
+                }
+                settingsMenuSimple->exec(settingBtnSimple->mapToGlobal(
+                    QPoint(0, settingBtnSimple->height())));
+            });
     connect(settingsActionSimple, &QAction::triggered, this, [this]() {
         SettingsDialog dlg(this);
         if (backend_) {
@@ -260,10 +267,17 @@ void LoginDialog::buildUi() {
         UiSettings::Tr(QStringLiteral("帮助"), QStringLiteral("Help")));
     settingsMenuAcc->addAction(
         UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
-    settingBtnAcc->setMenu(settingsMenuAcc);
     settingBtnAcc->setStyleSheet(
         QStringLiteral("QPushButton { border-radius: 6px; }"
                        "QPushButton::menu-indicator { image: none; width: 0px; }"));
+    connect(settingBtnAcc, &QAbstractButton::clicked, this,
+            [settingBtnAcc, settingsMenuAcc]() {
+                if (!settingsMenuAcc || !settingBtnAcc) {
+                    return;
+                }
+                settingsMenuAcc->exec(settingBtnAcc->mapToGlobal(
+                    QPoint(0, settingBtnAcc->height())));
+            });
     connect(settingsActionAcc, &QAction::triggered, this, [this]() {
         SettingsDialog dlg(this);
         if (backend_) {

@@ -137,8 +137,12 @@ void ChatWindow::buildInputArea(QVBoxLayout* parentLayout) {
     auto* menu = new QMenu(folderBtn);
     menu->addAction(tr("文件上传（占位）"));
     menu->addAction(tr("拉取离线文件"));
-    folderBtn->setMenu(menu);
-    folderBtn->setPopupMode(QToolButton::InstantPopup);
+    connect(folderBtn, &QToolButton::clicked, this, [folderBtn, menu]() {
+        if (!folderBtn || !menu) {
+            return;
+        }
+        menu->exec(folderBtn->mapToGlobal(QPoint(0, folderBtn->height())));
+    });
     toolsRow->addWidget(folderBtn, 0, Qt::AlignLeft);
     toolsRow->addStretch(1);
     parentLayout->addLayout(toolsRow);
