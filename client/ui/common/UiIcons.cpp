@@ -4,11 +4,14 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QIODevice>
 #include <QPainter>
 #include <QResource>
+#include <QScreen>
 #include <QSvgRenderer>
 
+#include <cmath>
 #include <mutex>
 
 static void InitUiResources() {
@@ -54,10 +57,16 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
     if (!QFile::exists(resolvedPath)) {
         return {};
     }
+    qreal dpr = 1.0;
+    if (auto *screen = QGuiApplication::primaryScreen()) {
+        dpr = screen->devicePixelRatio();
+    }
+    const int pixelSize = qMax(1, static_cast<int>(std::lround(size * dpr)));
     static QHash<QString, QPixmap> cache;
     const QString key =
         resolvedPath + QStringLiteral(":") + QString::number(size) + QStringLiteral(":") +
-        QString::number(static_cast<quint32>(color.rgba()), 16);
+        QString::number(static_cast<quint32>(color.rgba()), 16) + QStringLiteral(":") +
+        QString::number(pixelSize);
     const auto it = cache.constFind(key);
     if (it != cache.constEnd()) {
         return it.value();
@@ -73,12 +82,14 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
     if (!renderer.isValid()) {
         return {};
     }
-    QPixmap pm(size, size);
+    QPixmap pm(pixelSize, pixelSize);
     pm.fill(Qt::transparent);
+    pm.setDevicePixelRatio(dpr);
     {
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing, true);
-        renderer.render(&p);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        renderer.render(&p, QRectF(0, 0, pixelSize, pixelSize));
         p.setCompositionMode(QPainter::CompositionMode_SourceIn);
         p.fillRect(pm.rect(), color);
     }

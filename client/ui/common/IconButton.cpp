@@ -80,6 +80,7 @@ void IconButton::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     QColor bg = m_bg;
     QColor fg = m_fg;

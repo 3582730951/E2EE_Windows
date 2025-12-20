@@ -315,6 +315,48 @@ QPainterPath BubblePath(const QRect &bubbleRect, bool outgoing) {
     path.addPolygon(tail);
     return path;
 }
+
+QString StatusGlyphForMeta(bool outgoing,
+                           MessageItem::Status status,
+                           bool isFile,
+                           MessageItem::FileTransfer fileTransfer) {
+    if (!outgoing) {
+        return {};
+    }
+    if (isFile && fileTransfer == MessageItem::FileTransfer::Uploading) {
+        return UiSettings::Tr(QStringLiteral("上传中…"), QStringLiteral("Uploading…"));
+    }
+    if (status == MessageItem::Status::Failed || status == MessageItem::Status::Pending) {
+        return StatusText(status);
+    }
+    if (status == MessageItem::Status::Read || status == MessageItem::Status::Delivered) {
+        return QStringLiteral("✓✓");
+    }
+    return QStringLiteral("✓");
+}
+
+QString BuildMetaText(const QString &timeText,
+                      bool outgoing,
+                      MessageItem::Status status,
+                      bool isFile,
+                      MessageItem::FileTransfer fileTransfer) {
+    if (timeText.isEmpty()) {
+        return {};
+    }
+    const QString statusText = StatusGlyphForMeta(outgoing, status, isFile, fileTransfer);
+    if (statusText.isEmpty()) {
+        return timeText;
+    }
+    return timeText + QStringLiteral(" · ") + statusText;
+}
+
+int MinBubbleWidthForMeta(const QString &metaText, const QFont &font) {
+    if (metaText.isEmpty()) {
+        return 0;
+    }
+    QFontMetrics fm(font);
+    return fm.horizontalAdvance(metaText) + BubbleTokens::paddingH() * 2 + 6;
+}
 }  // namespace
 
 MessageDelegate::MessageDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
@@ -350,6 +392,15 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     const QString sender = index.data(MessageModel::SenderRole).toString();
     const bool isFile = index.data(MessageModel::IsFileRole).toBool();
     const bool isSticker = index.data(MessageModel::IsStickerRole).toBool();
+    const auto status =
+        static_cast<MessageItem::Status>(index.data(MessageModel::StatusRole).toInt());
+    const auto fileTransfer =
+        static_cast<MessageItem::FileTransfer>(index.data(MessageModel::FileTransferRole).toInt());
+    const QDateTime messageTime = index.data(MessageModel::TimeRole).toDateTime();
+    const QString timeText =
+        messageTime.isValid() ? messageTime.toString(QStringLiteral("HH:mm")) : QString();
+    const QString metaText = BuildMetaText(timeText, outgoing, status, isFile, fileTransfer);
+    const int metaMinWidth = MinBubbleWidthForMeta(metaText, metaFont);
     QString text = index.data(MessageModel::TextRole).toString();
     int emojiCount = 0;
     const bool emojiOnly = !isFile && !isSticker && IsEmojiOnlyText(text, emojiCount);
@@ -370,13 +421,16 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
         const int cardH = qMax(icon, contentH);
         const int bubbleH = cardH + BubbleTokens::paddingV() * 2 + metaHeight;
         const int bubbleW = qMax(220, qMin(maxBubbleWidth, 320));
-        QSize bsize(bubbleW, bubbleH);
+        QSize bsize(qMax(bubbleW, metaMinWidth), bubbleH);
         const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
         int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) +
                      BubbleTokens::margin();
         return QSize(viewWidth, height);
     }
     QSize bsize = bubbleSize(text, textFont, maxBubbleWidth);
+    if (metaMinWidth > 0) {
+        bsize.setWidth(qMax(bsize.width(), metaMinWidth));
+    }
     bsize.setHeight(bsize.height() + metaHeight);
     const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
     int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) + BubbleTokens::margin();
@@ -448,6 +502,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     const QString stickerId = index.data(MessageModel::StickerIdRole).toString();
     const QDateTime messageTime = index.data(MessageModel::TimeRole).toDateTime();
     const QString timeText = messageTime.isValid() ? messageTime.toString(QStringLiteral("HH:mm")) : QString();
+    const QString metaText = BuildMetaText(timeText, outgoing, status, isFile, fileTransfer);
     FileKind fileKind = FileKind::Generic;
     if (isFile) {
         const QString nameOrPath = filePath.isEmpty() ? text : filePath;
@@ -462,6 +517,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     const int metaHeight = QFontMetrics(metaFont).height();
     const int metaReserve = metaHeight + 2;
     int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
+    const int metaMinWidth = MinBubbleWidthForMeta(metaText, metaFont);
     QSize bsize;
     if (isSticker) {
         bsize = QSize(120 + BubbleTokens::paddingH() * 2,
@@ -479,6 +535,9 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     } else {
         bsize = bubbleSize(text, textFont, maxBubbleWidth);
         bsize.setHeight(bsize.height() + metaReserve);
+    }
+    if (metaMinWidth > 0) {
+        bsize.setWidth(qMax(bsize.width(), metaMinWidth));
     }
 
     const int avatarSize = BubbleTokens::avatarSize();
@@ -682,29 +741,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         }
     }
 
-    if (!timeText.isEmpty()) {
-        QString statusText;
-        if (outgoing) {
-            if (isFile && fileTransfer == MessageItem::FileTransfer::Uploading) {
-                statusText = UiSettings::Tr(QStringLiteral("上传中…"),
-                                            QStringLiteral("Uploading…"));
-            } else if (status == MessageItem::Status::Failed ||
-                       status == MessageItem::Status::Pending) {
-                statusText = StatusText(status);
-            } else if (status == MessageItem::Status::Read) {
-                statusText = QStringLiteral("✓✓");
-            } else if (status == MessageItem::Status::Delivered) {
-                statusText = QStringLiteral("✓✓");
-            } else {
-                statusText = QStringLiteral("✓");
-            }
-        }
-
-        QString metaText = timeText;
-        if (!statusText.isEmpty()) {
-            metaText += QStringLiteral(" · ") + statusText;
-        }
-
+    if (!metaText.isEmpty()) {
         painter->setFont(metaFont);
         painter->setPen(metaColor);
         QFontMetrics metaFm(metaFont);

@@ -804,7 +804,7 @@ IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
 IconButton *composerIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
     btn->setFixedSize(36, 36);
-    btn->setSvgIcon(svgPath, 32);
+    btn->setSvgIcon(svgPath, 16);
     btn->setPadding(2);
     btn->setColors(Theme::uiTextSub(), Theme::uiTextMain(), Theme::uiTextMain(),
                    QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
@@ -814,7 +814,7 @@ IconButton *composerIconSvg(const QString &svgPath, QWidget *parent) {
 IconButton *accentIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
     btn->setFixedSize(40, 40);
-    btn->setSvgIcon(svgPath, 32);
+    btn->setSvgIcon(svgPath, 16);
     btn->setRound(true);
     btn->setPadding(4);
     const QColor base = Theme::uiAccentBlue();
