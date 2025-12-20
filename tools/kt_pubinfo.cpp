@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "crypto.h"
+#include "key_transparency.h"
 #include "qrcodegen.hpp"
 
 namespace {
