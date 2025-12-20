@@ -1,13 +1,15 @@
 #include "server_app.h"
 
 #include "api_service.h"
+#include "key_transparency.h"
 #include "opaque_pake.h"
 
-#include <filesystem>
 #include <algorithm>
-#include <iostream>
+#include <array>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 
 namespace mi::server {
@@ -26,6 +28,11 @@ struct RustBuf {
 
 constexpr std::uint8_t kOpaqueSetupMagic[8] = {'M', 'I', 'O', 'P',
                                                'A', 'Q', 'S', '1'};
+
+extern "C" {
+int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
+                                             std::uint8_t* sk);
+}
 
 bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
                                    std::vector<std::uint8_t>& out_setup,
@@ -134,6 +141,121 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
   return true;
 }
 
+bool WriteFileAtomic(const std::filesystem::path& path,
+                     const std::uint8_t* data,
+                     std::size_t len,
+                     bool overwrite,
+                     std::string& error) {
+  error.clear();
+  if (path.empty() || !data || len == 0) {
+    error = "kt key path empty";
+    return false;
+  }
+  std::error_code ec;
+  const auto parent = path.parent_path();
+  if (!parent.empty()) {
+    std::filesystem::create_directories(parent, ec);
+    if (ec) {
+      error = "kt key dir create failed";
+      return false;
+    }
+  }
+  if (!overwrite && std::filesystem::exists(path, ec)) {
+    if (ec) {
+      error = "kt key path error";
+      return false;
+    }
+    error = "kt key exists";
+    return false;
+  }
+  const auto tmp = path.string() + ".tmp";
+  {
+    std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+    if (!ofs) {
+      error = "kt key write failed";
+      return false;
+    }
+    ofs.write(reinterpret_cast<const char*>(data),
+              static_cast<std::streamsize>(len));
+    if (!ofs) {
+      error = "kt key write failed";
+      std::filesystem::remove(tmp, ec);
+      return false;
+    }
+  }
+  if (overwrite) {
+    std::filesystem::remove(path, ec);
+    if (ec) {
+      std::filesystem::remove(tmp, ec);
+      error = "kt key remove failed";
+      return false;
+    }
+  }
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    error = "kt key rename failed";
+    return false;
+  }
+  return true;
+}
+
+bool GenerateKtKeyPair(const std::filesystem::path& signing_key,
+                       const std::filesystem::path& root_pub,
+                       std::string& error) {
+  if (signing_key.empty() || root_pub.empty()) {
+    error = "kt key path empty";
+    return false;
+  }
+  if (signing_key == root_pub) {
+    error = "kt key path invalid";
+    return false;
+  }
+  std::array<std::uint8_t, kKtSthSigPublicKeyBytes> pk{};
+  std::array<std::uint8_t, kKtSthSigSecretKeyBytes> sk{};
+  if (PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(pk.data(), sk.data()) != 0) {
+    error = "kt signing key generate failed";
+    return false;
+  }
+  if (!WriteFileAtomic(signing_key, sk.data(), sk.size(), false, error)) {
+    std::fill(sk.begin(), sk.end(), 0);
+    return false;
+  }
+  if (!WriteFileAtomic(root_pub, pk.data(), pk.size(), true, error)) {
+    std::error_code ec;
+    std::filesystem::remove(signing_key, ec);
+    std::fill(sk.begin(), sk.end(), 0);
+    return false;
+  }
+  std::fill(sk.begin(), sk.end(), 0);
+  return true;
+}
+
+bool EnsureKtSigningKey(const std::filesystem::path& signing_key,
+                        const std::filesystem::path& root_pub,
+                        bool& generated,
+                        std::string& error) {
+  generated = false;
+  std::error_code ec;
+  const bool exists = std::filesystem::exists(signing_key, ec);
+  if (ec) {
+    error = "kt_signing_key path error";
+    return false;
+  }
+  if (!exists) {
+    if (!GenerateKtKeyPair(signing_key, root_pub, error)) {
+      return false;
+    }
+    generated = true;
+  }
+  const auto size = std::filesystem::file_size(signing_key, ec);
+  if (ec || size != kKtSthSigSecretKeyBytes) {
+    error = "kt_signing_key size invalid";
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 ServerApp::ServerApp() = default;
@@ -168,9 +290,22 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   if (!kt_signing_key.is_absolute() && !kt_signing_key.empty()) {
     kt_signing_key = storage_dir / kt_signing_key;
   }
-  if (kt_signing_key.empty() || !std::filesystem::exists(kt_signing_key, ec) || ec) {
+  if (kt_signing_key.empty()) {
     error = "kt_signing_key not found";
     return false;
+  }
+  const auto kt_root_pub_dir =
+      kt_signing_key.has_parent_path() ? kt_signing_key.parent_path()
+                                       : storage_dir;
+  const auto kt_root_pub = kt_root_pub_dir / "kt_root_pub.bin";
+  bool kt_generated = false;
+  if (!EnsureKtSigningKey(kt_signing_key, kt_root_pub, kt_generated, error)) {
+    return false;
+  }
+  if (kt_generated) {
+    std::cout << "[mi_e2ee_server] generated kt_signing_key at "
+              << kt_signing_key.string()
+              << " and kt_root_pub at " << kt_root_pub.string() << "\n";
   }
 
   SecureDeleteConfig secure_delete;

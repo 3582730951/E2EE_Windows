@@ -60,7 +60,7 @@ tools/           工具（third_party_audit 等）
    - `tls_cert=mi_e2ee_server.pfx`（Windows 上若不存在会自动生成自签 PFX）
 4. Key Transparency 签名密钥（必需）：
    - `kt_signing_key=kt_signing_key.bin`
-   - 该文件为 ML-DSA65 私钥（4032 字节），请使用 PQClean ML-DSA65 生成。
+   - 该文件为 ML-DSA65 私钥（4032 字节）。若文件不存在，服务端首次启动会自动生成，并在同目录写入 `kt_root_pub.bin`。
 5. 启动：运行 `mi_e2ee_server.exe`（保持窗口开启）。
 
 ### 2) 准备客户端
@@ -82,9 +82,10 @@ $hash
 ```
 
 ### Key Transparency 密钥生成（kt_signing_key / kt_root_pub）
-- 使用 PQClean ML-DSA65 `crypto_sign_keypair` 生成：
-  - `kt_signing_key.bin`（私钥 4032 bytes）
-  - `kt_root_pub.bin`（公钥 1952 bytes）
+- 服务端首次启动会自动生成 `kt_signing_key.bin` 与 `kt_root_pub.bin`（同目录）。
+- 手工生成或轮换（可覆盖已有文件）：
+  - `mi_e2ee_kt_keygen --out-dir .`
+  - 或 `mi_e2ee_kt_keygen --sk <path> --pk <path> --force`
 - 客户端 `root_pubkey_path` 指向公钥文件（强制校验）。
 
 ## 构建与测试
