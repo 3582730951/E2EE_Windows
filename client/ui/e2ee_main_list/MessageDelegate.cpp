@@ -28,12 +28,12 @@ struct BubbleTokens {
     }
     static QColor systemText() { return Theme::uiMessageSystemText(); }
     static QColor systemBg() { return QColor(0, 0, 0, 0); }
-    static int radius() { return 16; }
-    static int paddingH() { return 16; }
-    static int paddingV() { return 12; }
-    static int avatarSize() { return 40; }
-    static int margin() { return 14; }
-    static int lineSpacing() { return 8; }
+    static int radius() { return 12; }
+    static int paddingH() { return 12; }
+    static int paddingV() { return 8; }
+    static int avatarSize() { return 36; }
+    static int margin() { return 10; }
+    static int lineSpacing() { return 6; }
 };
 
 QString FormatFileSize(qint64 bytes) {
@@ -260,17 +260,19 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     const int viewWidth = option.rect.width();
     auto type = static_cast<MessageItem::Type>(index.data(MessageModel::TypeRole).toInt());
     if (type == MessageItem::Type::TimeDivider) {
-        return QSize(viewWidth, 34);
+        return QSize(viewWidth, 30);
     }
     if (type == MessageItem::Type::System) {
-        QFont f = Theme::defaultFont(12);
+        QFont f = Theme::defaultFont(11);
         QSize textSize = layoutText(index.data(MessageModel::SystemTextRole).toString(), f,
-                                    static_cast<int>(viewWidth * 0.7));
-        return QSize(viewWidth, textSize.height() + 16);
+                                    static_cast<int>(viewWidth * 0.68));
+        return QSize(viewWidth, textSize.height() + 14);
     }
     // Text message
     QFont f = Theme::defaultFont(13);
-    int maxBubbleWidth = static_cast<int>(viewWidth * 0.6);
+    QFont metaFont = Theme::defaultFont(10);
+    const int metaHeight = QFontMetrics(metaFont).height() + 2;
+    int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
     const bool outgoing = index.data(MessageModel::OutgoingRole).toBool();
     const QString sender = index.data(MessageModel::SenderRole).toString();
     const bool isFile = index.data(MessageModel::IsFileRole).toBool();
@@ -278,12 +280,9 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     QString text = index.data(MessageModel::TextRole).toString();
     if (isSticker) {
         const int stickerSize = 120;
-        const int senderExtra = (!outgoing && !sender.isEmpty()) ? 16 : 0;
-        const int bubbleH = stickerSize + BubbleTokens::paddingV() * 2;
+        const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
+        const int bubbleH = stickerSize + BubbleTokens::paddingV() * 2 + metaHeight;
         int height = qMax(BubbleTokens::avatarSize(), bubbleH + senderExtra) + BubbleTokens::margin();
-        if (outgoing) {
-            height += 16;
-        }
         return QSize(viewWidth, height);
     }
     if (isFile) {
@@ -293,23 +292,18 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
         const int contentH =
             QFontMetrics(title).height() + 4 + QFontMetrics(sub).height();
         const int cardH = qMax(icon, contentH);
-        const int bubbleH = cardH + BubbleTokens::paddingV() * 2;
+        const int bubbleH = cardH + BubbleTokens::paddingV() * 2 + metaHeight;
         const int bubbleW = qMax(220, qMin(maxBubbleWidth, 320));
         QSize bsize(bubbleW, bubbleH);
-        const int senderExtra = (!outgoing && !sender.isEmpty()) ? 16 : 0;
+        const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
         int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) +
                      BubbleTokens::margin();
-        if (outgoing) {
-            height += 16;
-        }
         return QSize(viewWidth, height);
     }
     QSize bsize = bubbleSize(text, f, maxBubbleWidth);
-    const int senderExtra = (!outgoing && !sender.isEmpty()) ? 16 : 0;
+    bsize.setHeight(bsize.height() + metaHeight);
+    const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
     int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) + BubbleTokens::margin();
-    if (outgoing) {
-        height += 16;
-    }
     return QSize(viewWidth, height);
 }
 
@@ -323,7 +317,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     auto type = static_cast<MessageItem::Type>(index.data(MessageModel::TypeRole).toInt());
 
     if (type == MessageItem::Type::TimeDivider) {
-        QFont f = Theme::defaultFont(11);
+        QFont f = Theme::defaultFont(10);
         painter->setFont(f);
         painter->setPen(BubbleTokens::timeText());
         painter->drawText(r, Qt::AlignCenter, index.data(MessageModel::TextRole).toString());
@@ -331,7 +325,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         return;
     }
     if (type == MessageItem::Type::System) {
-        QFont f = Theme::defaultFont(12);
+        QFont f = Theme::defaultFont(11);
         painter->setFont(f);
         painter->setPen(BubbleTokens::systemText());
         const QString msg = index.data(MessageModel::SystemTextRole).toString();
@@ -363,6 +357,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         static_cast<MessageItem::FileTransfer>(index.data(MessageModel::FileTransferRole).toInt());
     const int fileProgress = index.data(MessageModel::FileProgressRole).toInt();
     const QString stickerId = index.data(MessageModel::StickerIdRole).toString();
+    const QDateTime messageTime = index.data(MessageModel::TimeRole).toDateTime();
+    const QString timeText = messageTime.isValid() ? messageTime.toString(QStringLiteral("HH:mm")) : QString();
     FileKind fileKind = FileKind::Generic;
     if (isFile) {
         const QString nameOrPath = filePath.isEmpty() ? text : filePath;
@@ -371,10 +367,14 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     QColor avatarColor = index.data(MessageModel::AvatarRole).value<QColor>();
 
     QFont textFont = Theme::defaultFont(13);
-    int maxBubbleWidth = static_cast<int>(viewWidth * 0.6);
+    QFont metaFont = Theme::defaultFont(10);
+    const int metaHeight = QFontMetrics(metaFont).height();
+    const int metaReserve = metaHeight + 2;
+    int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
     QSize bsize;
     if (isSticker) {
-        bsize = QSize(120 + BubbleTokens::paddingH() * 2, 120 + BubbleTokens::paddingV() * 2);
+        bsize = QSize(120 + BubbleTokens::paddingH() * 2,
+                      120 + BubbleTokens::paddingV() * 2 + metaReserve);
     } else if (isFile) {
         QFont titleFont = Theme::defaultFont(13, QFont::DemiBold);
         QFont subFont = Theme::defaultFont(11);
@@ -382,11 +382,12 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         const int contentH =
             QFontMetrics(titleFont).height() + 4 + QFontMetrics(subFont).height();
         const int cardH = qMax(icon, contentH);
-        const int bubbleH = cardH + BubbleTokens::paddingV() * 2;
+        const int bubbleH = cardH + BubbleTokens::paddingV() * 2 + metaReserve;
         const int bubbleW = qMax(220, qMin(maxBubbleWidth, 320));
         bsize = QSize(bubbleW, bubbleH);
     } else {
         bsize = bubbleSize(text, textFont, maxBubbleWidth);
+        bsize.setHeight(bsize.height() + metaReserve);
     }
 
     const int avatarSize = BubbleTokens::avatarSize();
@@ -394,7 +395,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     QRect avatarRect;
     QRect bubbleRect;
-    const int senderExtra = (!outgoing && !sender.isEmpty()) ? 16 : 0;
+    const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
     if (outgoing) {
         avatarRect = QRect(r.right() - avatarSize, r.top() + margin / 2, avatarSize, avatarSize);
         bubbleRect =
@@ -406,7 +407,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
             QRect(avatarRect.right() + margin, avatarRect.top() + senderExtra, bsize.width(), bsize.height());
 
         if (!sender.isEmpty()) {
-            QFont sf = Theme::defaultFont(10);
+            QFont sf = Theme::defaultFont(9);
             painter->setFont(sf);
             painter->setPen(BubbleTokens::timeText());
             QRect senderRect(bubbleRect.left(), avatarRect.top(), bubbleRect.width(), senderExtra);
@@ -437,7 +438,10 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     painter->drawRoundedRect(bubbleRect, BubbleTokens::radius(), BubbleTokens::radius());
 
     const QColor textColor = outgoing ? BubbleTokens::textOutgoing() : BubbleTokens::textIncoming();
-    const QColor metaColor = outgoing ? BubbleTokens::timeTextOutgoing() : BubbleTokens::timeText();
+    QColor metaColor = outgoing ? BubbleTokens::timeTextOutgoing() : BubbleTokens::timeText();
+    if (outgoing && status == MessageItem::Status::Failed) {
+        metaColor = Theme::uiDangerRed();
+    }
 
     if (isSticker) {
         const int stickerSize = 120;
@@ -448,7 +452,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         painter->drawPixmap(stickerRect, StickerPixmap(stickerId, stickerSize));
     } else if (isFile) {
         const QRect contentRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
-                                                      -BubbleTokens::paddingH(), -BubbleTokens::paddingV());
+                                                      -BubbleTokens::paddingH(),
+                                                      -BubbleTokens::paddingV() - metaReserve);
         const int iconSize = 44;
         const int gap = 12;
         const QRect iconRect = QRect(contentRect.left(),
@@ -576,27 +581,48 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     } else {
         painter->setPen(textColor);
         QRect textRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
-                                             -BubbleTokens::paddingH(), -BubbleTokens::paddingV());
+                                             -BubbleTokens::paddingH(),
+                                             -BubbleTokens::paddingV() - metaReserve);
         painter->drawText(textRect, Qt::TextWordWrap, text);
+    }
+
+    if (!timeText.isEmpty()) {
+        QString statusText;
+        if (outgoing) {
+            if (isFile && fileTransfer == MessageItem::FileTransfer::Uploading) {
+                statusText = UiSettings::Tr(QStringLiteral("上传中…"),
+                                            QStringLiteral("Uploading…"));
+            } else if (status == MessageItem::Status::Failed ||
+                       status == MessageItem::Status::Pending) {
+                statusText = StatusText(status);
+            } else if (status == MessageItem::Status::Read) {
+                statusText = QStringLiteral("✓✓");
+            } else {
+                statusText = QStringLiteral("✓");
+            }
+        }
+
+        QString metaText = timeText;
+        if (!statusText.isEmpty()) {
+            metaText += QStringLiteral(" · ") + statusText;
+        }
+
+        painter->setFont(metaFont);
+        painter->setPen(metaColor);
+        QFontMetrics metaFm(metaFont);
+        const int metaAvail = bubbleRect.width() - BubbleTokens::paddingH() * 2;
+        const QString metaDraw = metaFm.elidedText(metaText, Qt::ElideLeft, metaAvail);
+        QRect metaRect(bubbleRect.left() + BubbleTokens::paddingH(),
+                       bubbleRect.bottom() - BubbleTokens::paddingV() - metaHeight,
+                       metaAvail,
+                       metaHeight);
+        painter->drawText(metaRect, Qt::AlignRight | Qt::AlignVCenter, metaDraw);
     }
 
     // Avatar
     painter->setBrush(avatarColor);
     painter->setPen(Qt::NoPen);
     painter->drawEllipse(avatarRect);
-
-    if (outgoing) {
-        QFont sf = Theme::defaultFont(10);
-        painter->setFont(sf);
-        const bool uploading = isFile && fileTransfer == MessageItem::FileTransfer::Uploading;
-        painter->setPen(status == MessageItem::Status::Failed ? Theme::uiDangerRed()
-                                                              : BubbleTokens::timeText());
-        const QString st =
-            uploading ? UiSettings::Tr(QStringLiteral("上传中…"), QStringLiteral("Uploading…"))
-                      : StatusText(status);
-        QRect statusRect = QRect(bubbleRect.left(), bubbleRect.bottom() + 2, bubbleRect.width(), 14);
-        painter->drawText(statusRect, Qt::AlignRight | Qt::AlignVCenter, st);
-    }
 
     if (highlightedRow_ >= 0 && index.row() == highlightedRow_) {
         QPen pen(Theme::uiAccentBlue());

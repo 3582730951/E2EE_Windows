@@ -8,6 +8,8 @@ set(UI_MAIN_LIST_SOURCES
     MessageModel.h
     MessageDelegate.cpp
     MessageDelegate.h
+    EmojiPickerDialog.cpp
+    EmojiPickerDialog.h
     LoginDialog.cpp
     LoginDialog.h
     BackendAdapter.cpp

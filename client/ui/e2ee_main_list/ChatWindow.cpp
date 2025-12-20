@@ -52,6 +52,7 @@
 #include <QVBoxLayout>
 #include <QDateTime>
 #include <QSaveFile>
+#include <QScreen>
 #include <QSpinBox>
 #include <QTimer>
 
@@ -66,6 +67,7 @@
 #include "../common/Toast.h"
 #include "BackendAdapter.h"
 #include "ConversationDetailsDialog.h"
+#include "EmojiPickerDialog.h"
 #include "MessageDelegate.h"
 #include "MessageModel.h"
 
@@ -741,8 +743,8 @@ void ShowVideoDialog(QWidget *parent, const QString &title, const std::function<
 
 IconButton *titleIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
-    btn->setFixedSize(28, 28);
-    btn->setSvgIcon(svgPath, 18);
+    btn->setFixedSize(24, 24);
+    btn->setSvgIcon(svgPath, 16);
     btn->setColors(Theme::uiTextMain(), Theme::uiTextMain(), Theme::uiTextMain(),
                    QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
     return btn;
@@ -750,7 +752,7 @@ IconButton *titleIconSvg(const QString &svgPath, QWidget *parent) {
 
 IconButton *toolIcon(const QString &glyph, QWidget *parent) {
     auto *btn = new IconButton(glyph, parent);
-    btn->setFixedSize(28, 28);
+    btn->setFixedSize(24, 24);
     btn->setColors(Theme::uiTextSub(), Theme::uiTextMain(), Theme::uiTextMain(),
                    QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
     return btn;
@@ -758,29 +760,20 @@ IconButton *toolIcon(const QString &glyph, QWidget *parent) {
 
 IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
-    btn->setFixedSize(28, 28);
-    btn->setSvgIcon(svgPath, 18);
+    btn->setFixedSize(24, 24);
+    btn->setSvgIcon(svgPath, 16);
     btn->setColors(Theme::uiTextSub(), Theme::uiTextMain(), Theme::uiTextMain(),
                    QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
     return btn;
 }
 
-QString SurfaceGradient(const QColor &base) {
-    const bool light = (Theme::scheme() == Theme::Scheme::Light);
-    const QColor top = base.lighter(light ? 103 : 108);
-    const QColor bottom = base.darker(light ? 103 : 92);
-    return QStringLiteral(
-        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2);")
-        .arg(top.name(), bottom.name());
-}
-
 QPushButton *outlineButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
-    btn->setFixedSize(86, 34);
+    btn->setFixedSize(82, 32);
     btn->setStyleSheet(
         QStringLiteral(
             "QPushButton { color: %1; background: %2; border: 1px solid %3; "
-            "border-radius: 14px; font-size: 12px; }"
+            "border-radius: 12px; font-size: 12px; }"
             "QPushButton:hover { background: %4; }"
             "QPushButton:pressed { background: %5; }")
             .arg(Theme::uiTextMain().name(),
@@ -793,14 +786,14 @@ QPushButton *outlineButton(const QString &text, QWidget *parent) {
 
 QPushButton *primaryButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
-    btn->setFixedHeight(34);
+    btn->setFixedHeight(32);
     const QColor base = Theme::uiAccentBlue();
     const QColor hover = base.lighter(115);
     const QColor pressed = base.darker(110);
     btn->setStyleSheet(
         QStringLiteral(
             "QPushButton { color: white; background: %1; border: none; "
-            "border-radius: 17px; padding: 0 16px; font-size: 12px; }"
+            "border-radius: 16px; padding: 0 14px; font-size: 12px; }"
             "QPushButton:hover { background: %3; }"
             "QPushButton:pressed { background: %4; }")
             .arg(base.name(), base.name(), hover.name(), pressed.name()));
@@ -858,19 +851,25 @@ void ChatWindow::buildUi() {
     titleBar->setFixedHeight(Theme::kTitleBarHeight);
     titleBar->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::windowBg().name()));
     auto *titleLayout = new QHBoxLayout(titleBar);
-    titleLayout->setContentsMargins(14, 10, 14, 10);
-    titleLayout->setSpacing(10);
+    titleLayout->setContentsMargins(12, 8, 12, 8);
+    titleLayout->setSpacing(8);
+
+    titleIcon_ = new QLabel(titleBar);
+    titleIcon_->setFixedSize(16, 16);
+    titleIcon_->setAlignment(Qt::AlignCenter);
+    titleIcon_->setVisible(false);
+    titleLayout->addWidget(titleIcon_);
 
     titleLabel_ = new QLabel(UiSettings::Tr(QStringLiteral("会话"),
                                             QStringLiteral("Chat")),
                              titleBar);
-    titleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
+    titleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 600;")
                                    .arg(ChatTokens::textMain().name()));
     titleLayout->addWidget(titleLabel_);
     presenceLabel_ = new QLabel(titleBar);
     presenceLabel_->setVisible(false);
     presenceLabel_->setTextFormat(Qt::PlainText);
-    presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; font-weight: 600;")
+    presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 11px; font-weight: 600;")
                                       .arg(Theme::accentGreen().name()));
     presenceLabel_->setText(UiSettings::Tr(QStringLiteral("在线"),
                                            QStringLiteral("Online")));
@@ -949,10 +948,11 @@ void ChatWindow::buildUi() {
     bodyLayout->setSpacing(0);
 
     auto *messageArea = new QWidget(body);
-    messageArea->setStyleSheet(SurfaceGradient(ChatTokens::windowBg()));
+    messageArea->setStyleSheet(QStringLiteral("background: %1;")
+                                   .arg(ChatTokens::windowBg().name()));
     messageArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     auto *msgLayout = new QVBoxLayout(messageArea);
-    msgLayout->setContentsMargins(4, 6, 4, 0);
+    msgLayout->setContentsMargins(6, 6, 6, 0);
     msgLayout->setSpacing(0);
     messageModel_ = new MessageModel(this);
     messageStack_ = new QStackedWidget(messageArea);
@@ -965,17 +965,17 @@ void ChatWindow::buildUi() {
     emptyLayout->setSpacing(10);
     emptyLayout->addStretch();
     auto *emptyIcon = new QLabel(emptyState);
-    emptyIcon->setPixmap(EmptyChatIcon(96));
+    emptyIcon->setPixmap(EmptyChatIcon(72));
     emptyIcon->setAlignment(Qt::AlignHCenter);
     emptyLayout->addWidget(emptyIcon, 0, Qt::AlignHCenter);
     emptyTitleLabel_ = new QLabel(QString(), emptyState);
     emptyTitleLabel_->setAlignment(Qt::AlignHCenter);
-    emptyTitleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 14px; font-weight: 600;")
+    emptyTitleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 600;")
                                         .arg(ChatTokens::textMain().name()));
     emptyLayout->addWidget(emptyTitleLabel_);
     emptySubLabel_ = new QLabel(QString(), emptyState);
     emptySubLabel_->setAlignment(Qt::AlignHCenter);
-    emptySubLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+    emptySubLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
                                       .arg(ChatTokens::textMuted().name()));
     emptyLayout->addWidget(emptySubLabel_);
     emptyLayout->addStretch();
@@ -984,22 +984,22 @@ void ChatWindow::buildUi() {
     searchBar_ = new QWidget(messageArea);
     searchBar_->setVisible(false);
     auto *searchBarLayout = new QHBoxLayout(searchBar_);
-    searchBarLayout->setContentsMargins(12, 0, 12, 10);
+    searchBarLayout->setContentsMargins(10, 0, 10, 8);
     searchBarLayout->setSpacing(0);
 
     auto *searchBox = new QFrame(searchBar_);
-    searchBox->setFixedHeight(38);
+    searchBox->setFixedHeight(34);
     searchBox->setStyleSheet(
         QStringLiteral(
-            "QFrame { background: %1; border-radius: 19px; border: 1px solid %2; }"
-            "QLineEdit { background: transparent; border: none; color: %3; font-size: 13px; }"
+            "QFrame { background: %1; border-radius: 17px; border: 1px solid %2; }"
+            "QLineEdit { background: transparent; border: none; color: %3; font-size: 12px; }"
             "QLabel { color: %4; font-size: 12px; }")
             .arg(Theme::uiSearchBg().name(),
                  ChatTokens::border().name(),
                  ChatTokens::textMain().name(),
                  ChatTokens::textMuted().name()));
     auto *searchBoxLayout = new QHBoxLayout(searchBox);
-    searchBoxLayout->setContentsMargins(12, 6, 8, 6);
+    searchBoxLayout->setContentsMargins(10, 4, 8, 4);
     searchBoxLayout->setSpacing(6);
 
     auto *searchIcon = new QLabel(searchBox);
@@ -1023,27 +1023,27 @@ void ChatWindow::buildUi() {
 
     auto configureNavBtn = [&](IconButton *btn) {
         btn->setFocusPolicy(Qt::NoFocus);
-        btn->setFixedSize(28, 28);
-        btn->setPadding(8);
+        btn->setFixedSize(24, 24);
+        btn->setPadding(6);
         btn->setColors(ChatTokens::textSub(), ChatTokens::textMain(), ChatTokens::textMain(),
                        QColor(0, 0, 0, 0), ChatTokens::hoverBg(), ChatTokens::selectedBg());
     };
 
     searchPrevBtn_ = new IconButton(QStringLiteral("↑"), searchBox);
-    searchPrevBtn_->setGlyph(QStringLiteral("↑"), 12);
+    searchPrevBtn_->setGlyph(QStringLiteral("↑"), 10);
     configureNavBtn(searchPrevBtn_);
     searchPrevBtn_->setToolTip(UiSettings::Tr(QStringLiteral("上一个"), QStringLiteral("Previous")));
 
     searchNextBtn_ = new IconButton(QStringLiteral("↓"), searchBox);
-    searchNextBtn_->setGlyph(QStringLiteral("↓"), 12);
+    searchNextBtn_->setGlyph(QStringLiteral("↓"), 10);
     configureNavBtn(searchNextBtn_);
     searchNextBtn_->setToolTip(UiSettings::Tr(QStringLiteral("下一个"), QStringLiteral("Next")));
 
     searchCloseBtn_ = new IconButton(QString(), searchBox);
-    searchCloseBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
+    searchCloseBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 12);
     searchCloseBtn_->setFocusPolicy(Qt::NoFocus);
-    searchCloseBtn_->setFixedSize(28, 28);
-    searchCloseBtn_->setPadding(7);
+    searchCloseBtn_->setFixedSize(24, 24);
+    searchCloseBtn_->setPadding(6);
     searchCloseBtn_->setToolTip(UiSettings::Tr(QStringLiteral("关闭搜索"), QStringLiteral("Close search")));
     searchCloseBtn_->setColors(ChatTokens::textSub(), ChatTokens::textMain(), Theme::uiDangerRed(),
                                QColor(0, 0, 0, 0), ChatTokens::hoverBg(), ChatTokens::selectedBg());
@@ -1075,8 +1075,8 @@ void ChatWindow::buildUi() {
     messageView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     messageView_->setStyleSheet(
         QStringLiteral(
-            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 12px; }"
-            "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
+            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 10px; }"
+            "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
             "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 20px; }"
             "QScrollBar::handle:vertical:hover { background: %2; }"
             "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }")
@@ -1176,21 +1176,21 @@ void ChatWindow::buildUi() {
     // Composer
     composer_ = new QWidget(body);
     composer_->setStyleSheet(
-        QStringLiteral("%1 border-top: 1px solid %2;")
-            .arg(SurfaceGradient(ChatTokens::panelBg()),
+        QStringLiteral("background: %1; border-top: 1px solid %2;")
+            .arg(ChatTokens::panelBg().name(),
                  ChatTokens::border().name()));
     composer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *composerLayout = new QVBoxLayout(composer_);
-    composerLayout->setContentsMargins(12, 8, 12, 10);
-    composerLayout->setSpacing(8);
+    composerLayout->setContentsMargins(10, 6, 10, 8);
+    composerLayout->setSpacing(6);
 
     auto *toolsRow = new QHBoxLayout();
-    toolsRow->setSpacing(8);
-    auto *stickerBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
-    stickerBtn->setFocusPolicy(Qt::NoFocus);
-    stickerBtn->setToolTip(UiSettings::Tr(QStringLiteral("贴纸"), QStringLiteral("Sticker")));
-    connect(stickerBtn, &QAbstractButton::clicked, this, &ChatWindow::sendStickerPlaceholder);
-    toolsRow->addWidget(stickerBtn);
+    toolsRow->setSpacing(6);
+    emojiBtn_ = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
+    emojiBtn_->setFocusPolicy(Qt::NoFocus);
+    emojiBtn_->setToolTip(UiSettings::Tr(QStringLiteral("表情"), QStringLiteral("Emoji")));
+    connect(emojiBtn_, &QAbstractButton::clicked, this, &ChatWindow::showEmojiPicker);
+    toolsRow->addWidget(emojiBtn_);
 
     auto *fileBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/file.svg"), composer_);
     fileBtn->setFocusPolicy(Qt::NoFocus);
@@ -1238,14 +1238,14 @@ void ChatWindow::buildUi() {
     replyBar_->setVisible(false);
     replyBar_->setStyleSheet(
         QStringLiteral(
-            "QWidget { background: %1; border: 1px solid %2; border-radius: 12px; }")
+            "QWidget { background: %1; border: 1px solid %2; border-radius: 10px; }")
             .arg(Theme::uiInputBg().name(), Theme::uiInputBorder().name()));
     auto *replyLayout = new QHBoxLayout(replyBar_);
-    replyLayout->setContentsMargins(10, 6, 10, 6);
-    replyLayout->setSpacing(8);
+    replyLayout->setContentsMargins(8, 5, 8, 5);
+    replyLayout->setSpacing(6);
     replyLabel_ = new QLabel(replyBar_);
     replyLabel_->setTextFormat(Qt::PlainText);
-    replyLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+    replyLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
                                    .arg(ChatTokens::textSub().name()));
     replyLabel_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     replyLabel_->setText(QStringLiteral(""));
@@ -1263,7 +1263,7 @@ void ChatWindow::buildUi() {
     typingLabel_ = new QLabel(composer_);
     typingLabel_->setVisible(false);
     typingLabel_->setTextFormat(Qt::PlainText);
-    typingLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+    typingLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
                                     .arg(ChatTokens::textSub().name()));
     typingLabel_->setText(
         UiSettings::Tr(QStringLiteral("对方正在输入..."), QStringLiteral("Typing...")));
@@ -1275,13 +1275,16 @@ void ChatWindow::buildUi() {
     inputEdit_->setTabChangesFocus(true);
     inputEdit_->setStyleSheet(
         QStringLiteral(
-            "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 14px; "
-            "color: %3; padding: 10px 12px; font-size: 13px; }"
+            "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 12px; "
+            "color: %3; padding: 8px 10px; font-size: 12px; }"
             "QPlainTextEdit:focus { border-color: %4; }")
             .arg(Theme::uiInputBg().name(),
                  Theme::uiInputBorder().name(),
                  Theme::uiTextMain().name(),
                  Theme::uiAccentBlue().name()));
+    inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    inputEdit_->setMinimumHeight(88);
+    inputEdit_->setMaximumHeight(120);
     inputEdit_->installEventFilter(this);
     composerLayout->addWidget(inputEdit_);
 
@@ -1358,7 +1361,7 @@ void ChatWindow::buildUi() {
     });
 
     auto *sendRow = new QHBoxLayout();
-    sendRow->setSpacing(8);
+    sendRow->setSpacing(6);
     sendRow->addStretch(1);
 
     auto *closeBtnAction =
@@ -1370,11 +1373,11 @@ void ChatWindow::buildUi() {
                                   composer_);
     connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMessage);
     auto *sendMore = new IconButton(QString(), composer_);
-    sendMore->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), 14);
+    sendMore->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), 12);
     sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多发送选项"),
                                         QStringLiteral("More actions")));
     sendMore->setFocusPolicy(Qt::NoFocus);
-    sendMore->setFixedSize(26, 30);
+    sendMore->setFixedSize(24, 28);
     sendMore->setColors(Theme::uiTextMain(), Theme::uiTextMain(), Theme::uiTextMain(),
                         ChatTokens::accentBlue(), ChatTokens::accentBlue().lighter(110),
                         ChatTokens::accentBlue().darker(115));
@@ -1517,7 +1520,7 @@ void ChatWindow::updateEmptyState() {
         }
         effect->setOpacity(0.0);
         auto *anim = new QPropertyAnimation(effect, "opacity", messageStack_);
-        anim->setDuration(160);
+        anim->setDuration(120);
         anim->setStartValue(0.0);
         anim->setEndValue(1.0);
         anim->setEasingCurve(QEasingCurve::OutCubic);
@@ -1538,17 +1541,15 @@ void ChatWindow::updateEmptyPrompt() {
     if (hasConversation) {
         emptyTitleLabel_->setText(UiSettings::Tr(QStringLiteral("暂无消息"),
                                                  QStringLiteral("No messages yet")));
-        emptySubLabel_->setText(
-            UiSettings::Tr(QStringLiteral("发送一条消息开始对话"),
-                           QStringLiteral("Send a message to start the conversation.")));
+        emptySubLabel_->setText(QString());
+        emptySubLabel_->setVisible(false);
         return;
     }
 
     emptyTitleLabel_->setText(
         UiSettings::Tr(QStringLiteral("请选择会话"), QStringLiteral("Select a chat")));
-    emptySubLabel_->setText(
-        UiSettings::Tr(QStringLiteral("选择一个联系人或群聊开始聊天"),
-                       QStringLiteral("Select a contact or group to start chatting.")));
+    emptySubLabel_->setText(QString());
+    emptySubLabel_->setVisible(false);
 }
 
 void ChatWindow::updateConversationUiState() {
@@ -1556,6 +1557,9 @@ void ChatWindow::updateConversationUiState() {
 
     if (titleLabel_) {
         titleLabel_->setVisible(hasConversation);
+    }
+    if (titleIcon_) {
+        titleIcon_->setVisible(hasConversation && isGroup_);
     }
     if (presenceLabel_) {
         presenceLabel_->setVisible(hasConversation && presenceLabel_->isVisible());
@@ -1863,6 +1867,14 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
     const QString previousConvId = conversationId_;
     conversationId_ = id;
     isGroup_ = isGroup;
+    if (titleIcon_) {
+        if (isGroup_) {
+            titleIcon_->setPixmap(UiIcons::TintedSvg(
+                QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), 12, ChatTokens::textMuted()));
+        } else {
+            titleIcon_->setPixmap(QPixmap());
+        }
+    }
     titleLabel_->setText(title);
     updateOverlayForTitle(title);
     setSearchActive(false);
@@ -2437,6 +2449,49 @@ void ChatWindow::sendMessage() {
                     Toast::Level::Warning,
                     2600);
     }
+}
+
+void ChatWindow::showEmojiPicker() {
+    if (!emojiBtn_ || !inputEdit_) {
+        return;
+    }
+    if (!emojiPicker_) {
+        emojiPicker_ = new EmojiPickerDialog(this);
+        connect(emojiPicker_, &EmojiPickerDialog::emojiSelected, this, [this](const QString &emoji) {
+            if (!inputEdit_ || emoji.isEmpty()) {
+                return;
+            }
+            inputEdit_->insertPlainText(emoji);
+            inputEdit_->setFocus(Qt::OtherFocusReason);
+        });
+    }
+    if (emojiPicker_->isVisible()) {
+        emojiPicker_->hide();
+        return;
+    }
+
+    const QPoint anchor = emojiBtn_->mapToGlobal(QPoint(0, emojiBtn_->height()));
+    const QSize popupSize = emojiPicker_->size();
+    QPoint pos(anchor.x(), anchor.y() - popupSize.height());
+    if (QScreen *screen = QGuiApplication::screenAt(anchor)) {
+        const QRect bounds = screen->availableGeometry();
+        if (pos.x() + popupSize.width() > bounds.right()) {
+            pos.setX(bounds.right() - popupSize.width());
+        }
+        if (pos.x() < bounds.left()) {
+            pos.setX(bounds.left());
+        }
+        if (pos.y() < bounds.top()) {
+            pos.setY(anchor.y());
+        }
+        if (pos.y() + popupSize.height() > bounds.bottom()) {
+            pos.setY(bounds.bottom() - popupSize.height());
+        }
+    }
+    emojiPicker_->move(pos);
+    emojiPicker_->show();
+    emojiPicker_->raise();
+    emojiPicker_->activateWindow();
 }
 
 void ChatWindow::sendStickerPlaceholder() {

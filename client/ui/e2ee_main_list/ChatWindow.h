@@ -21,6 +21,7 @@ class QModelIndex;
 class QLabel;
 class QLineEdit;
 class IconButton;
+class EmojiPickerDialog;
 
 class ChatWindow : public FramelessWindowBase {
     Q_OBJECT
@@ -70,6 +71,7 @@ private slots:
     void manageGroupMembers();
     void inviteMember();
     void leaveGroup();
+    void showEmojiPicker();
 
 private:
     void buildUi();
@@ -101,6 +103,7 @@ private:
     bool isGroup_{false};
     bool embeddedMode_{false};
     QLabel *titleLabel_{nullptr};
+    QLabel *titleIcon_{nullptr};
     QLabel *presenceLabel_{nullptr};
     QVector<IconButton *> titleActionButtons_;
     IconButton *windowDownBtn_{nullptr};
@@ -124,6 +127,8 @@ private:
     int searchMatchIndex_{-1};
     QWidget *composer_{nullptr};
     QPlainTextEdit *inputEdit_{nullptr};
+    IconButton *emojiBtn_{nullptr};
+    EmojiPickerDialog *emojiPicker_{nullptr};
     QWidget *replyBar_{nullptr};
     QLabel *replyLabel_{nullptr};
     QLabel *typingLabel_{nullptr};

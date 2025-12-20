@@ -1,7 +1,6 @@
 #include "LoginWindow.h"
 
 #include <QApplication>
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -38,11 +37,6 @@ QLabel *createAvatar(QWidget *parent) {
             .arg(Tokens::accent().lighter(118).name(),
                  Tokens::accent().darker(105).name(),
                  Tokens::border().name()));
-    auto *shadow = new QGraphicsDropShadowEffect(avatar);
-    shadow->setBlurRadius(36);
-    shadow->setOffset(0, 10);
-    shadow->setColor(QColor(0, 0, 0, 120));
-    avatar->setGraphicsEffect(shadow);
     return avatar;
 }
 

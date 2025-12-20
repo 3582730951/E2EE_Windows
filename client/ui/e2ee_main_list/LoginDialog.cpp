@@ -109,6 +109,8 @@ void LoginDialog::buildUi() {
     auto *settingBtnSimple = new IconButton(QString(), titleBar);
     settingBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnSimple->setFixedSize(28, 28);
+    settingBtnSimple->setPadding(4);
+    settingBtnSimple->setFocusPolicy(Qt::NoFocus);
     settingBtnSimple->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuSimple = new QMenu(settingBtnSimple);
     UiStyle::ApplyMenuStyle(*settingsMenuSimple);
@@ -244,6 +246,8 @@ void LoginDialog::buildUi() {
     auto *settingBtnAcc = new IconButton(QString(), accTopBar);
     settingBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
     settingBtnAcc->setFixedSize(28, 28);
+    settingBtnAcc->setPadding(4);
+    settingBtnAcc->setFocusPolicy(Qt::NoFocus);
     settingBtnAcc->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuAcc = new QMenu(settingBtnAcc);
     UiStyle::ApplyMenuStyle(*settingsMenuAcc);
@@ -329,9 +333,10 @@ void LoginDialog::buildUi() {
     agreeCheck_ = new QCheckBox(accountPage_);
     agreeCheck_->setStyleSheet(
         QStringLiteral("QCheckBox { color: %1; }").arg(textSub.name()) +
-        "QCheckBox::indicator { width: 16px; height: 16px; }"
+        "QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; }"
         +
-        QStringLiteral("QCheckBox::indicator:checked { image: none; border: 1px solid %1; background: %1; }")
+        QStringLiteral("QCheckBox::indicator:checked { image: url(:/mi/e2ee/ui/icons/check.svg); "
+                       "border: 1px solid %1; background: %1; }")
             .arg(accent.name()) +
         QStringLiteral("QCheckBox::indicator:unchecked { image: none; border: 1px solid %1; background: transparent; }")
             .arg(inputBorder.name()));
@@ -726,7 +731,7 @@ void LoginDialog::showEvent(QShowEvent *event) {
     introPlayed_ = true;
     setWindowOpacity(0.0);
     auto *anim = new QPropertyAnimation(this, "windowOpacity", this);
-    anim->setDuration(180);
+    anim->setDuration(120);
     anim->setStartValue(0.0);
     anim->setEndValue(1.0);
     anim->setEasingCurve(QEasingCurve::OutCubic);

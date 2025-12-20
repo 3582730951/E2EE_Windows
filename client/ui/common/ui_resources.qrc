@@ -10,6 +10,7 @@
         <file alias="icons/clock.svg">../icons/clock.svg</file>
         <file alias="icons/bell.svg">../icons/bell.svg</file>
         <file alias="icons/chevron-down.svg">../icons/chevron-down.svg</file>
+        <file alias="icons/check.svg">../icons/check.svg</file>
         <file alias="icons/close.svg">../icons/close.svg</file>
         <file alias="icons/emoji.svg">../icons/emoji.svg</file>
         <file alias="icons/file.svg">../icons/file.svg</file>
@@ -24,5 +25,6 @@
         <file alias="icons/settings.svg">../icons/settings.svg</file>
         <file alias="icons/star.svg">../icons/star.svg</file>
         <file alias="icons/video.svg">../icons/video.svg</file>
+        <file alias="emoji/emoji.json">../data/emoji.json</file>
     </qresource>
 </RCC>
