@@ -5,6 +5,7 @@
 
 #include "connection_handler.h"
 #include "frame.h"
+#include "key_transparency.h"
 #include "protocol.h"
 #include "secure_channel.h"
 #include "server_app.h"
@@ -25,8 +26,22 @@ static void WriteFile(const std::string& path, const std::string& content) {
 
 int main() {
   WriteFile("config.ini",
-            "[mode]\nmode=1\n[server]\nlist_port=7778\n");
+            "[mode]\nmode=1\n[server]\nlist_port=7778\n"
+            "offline_dir=.\n"
+            "tls_enable=1\n"
+            "require_tls=1\n"
+            "tls_cert=mi_e2ee_server.pfx\n"
+            "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "u1:p1\n");
+  {
+    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x22);
+    std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
+    if (!kf) {
+      return 1;
+    }
+    kf.write(reinterpret_cast<const char*>(key.data()),
+             static_cast<std::streamsize>(key.size()));
+  }
 
   ServerApp app;
   std::string err;
@@ -44,6 +59,20 @@ int main() {
   auto bytes = mi::server::EncodeFrame(login);
 
   std::vector<std::uint8_t> resp_bytes;
+  ok = handler.OnData(bytes.data(), bytes.size(), resp_bytes, "127.0.0.1",
+                      mi::server::TransportKind::kTcp);
+  if (!ok) {
+    return 1;
+  }
+
+  Frame tls_resp;
+  ok = mi::server::DecodeFrame(resp_bytes.data(), resp_bytes.size(), tls_resp);
+  if (!ok || tls_resp.type != FrameType::kLogin || tls_resp.payload.empty() ||
+      tls_resp.payload[0] != 0) {
+    return 1;
+  }
+
+  resp_bytes.clear();
   ok = handler.OnData(bytes.data(), bytes.size(), resp_bytes, {});
   if (!ok) {
     return 1;

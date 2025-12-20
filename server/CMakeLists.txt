@@ -113,6 +113,25 @@ if(NOT TARGET pqclean_mlkem768_clean)
   endif()
 endif()
 
+if(NOT TARGET pqclean_mldsa65_clean)
+  add_library(pqclean_mldsa65_clean STATIC
+      ../third_party/pqclean_mldsa65_clean/ntt.c
+      ../third_party/pqclean_mldsa65_clean/packing.c
+      ../third_party/pqclean_mldsa65_clean/poly.c
+      ../third_party/pqclean_mldsa65_clean/polyvec.c
+      ../third_party/pqclean_mldsa65_clean/reduce.c
+      ../third_party/pqclean_mldsa65_clean/rounding.c
+      ../third_party/pqclean_mldsa65_clean/sign.c
+      ../third_party/pqclean_mldsa65_clean/symmetric-shake.c
+  )
+  target_include_directories(pqclean_mldsa65_clean PRIVATE
+      ../third_party/pqclean_mldsa65_clean
+  )
+  if(WIN32)
+    target_link_libraries(pqclean_mldsa65_clean PUBLIC advapi32)
+  endif()
+endif()
+
 if(MSVC)
   # Derive the latest available MSVC redist next to the compiler to avoid
   # depending on a potentially old system-wide runtime (std::mutex crashed with
@@ -196,6 +215,8 @@ if(WIN32)
   target_link_libraries(mi_crypto PUBLIC bcrypt)
 endif()
 
+add_subdirectory(../tools tools)
+
 add_library(mi_e2ee_core STATIC
     src/config.cpp
     src/auth_provider.cpp
@@ -218,7 +239,7 @@ add_library(mi_e2ee_core STATIC
 )
 
 target_include_directories(mi_e2ee_core PUBLIC include ../shard)
-target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean)
+target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean)
 if(TARGET mi_opaque_pake_rust)
   target_link_libraries(mi_e2ee_core PUBLIC mi_opaque_pake_rust)
 endif()

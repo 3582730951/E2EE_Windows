@@ -17,6 +17,7 @@ using mi::server::GroupManager;
 using mi::server::OfflineQueue;
 using mi::server::Session;
 using mi::server::SessionManager;
+using mi::server::TransportKind;
 
 static DemoUser MakeDemoUser(const std::string& username,
                              const std::string& password) {
@@ -44,13 +45,13 @@ int main() {
   Session alice;
   Session charlie;
   std::string err;
-  if (!sessions.Login("bob", "pwd123", bob, err)) {
+  if (!sessions.Login("bob", "pwd123", TransportKind::kLocal, bob, err)) {
     return 1;
   }
-  if (!sessions.Login("alice", "alice123", alice, err)) {
+  if (!sessions.Login("alice", "alice123", TransportKind::kLocal, alice, err)) {
     return 1;
   }
-  if (!sessions.Login("charlie", "c123", charlie, err)) {
+  if (!sessions.Login("charlie", "c123", TransportKind::kLocal, charlie, err)) {
     return 1;
   }
 
@@ -95,4 +96,3 @@ int main() {
 
   return 0;
 }
-

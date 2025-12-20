@@ -86,10 +86,17 @@ struct OfflineStorageStats {
   std::uint64_t bytes{0};
 };
 
+struct SecureDeleteConfig {
+  bool enabled{false};
+  std::filesystem::path plugin_path;
+};
+
 class OfflineStorage {
  public:
   OfflineStorage(std::filesystem::path base_dir,
-                 std::chrono::seconds ttl = std::chrono::hours(12));
+                 std::chrono::seconds ttl = std::chrono::hours(12),
+                 SecureDeleteConfig secure_delete = {});
+  ~OfflineStorage();
 
   PutResult Put(const std::string& owner,
                 const std::vector<std::uint8_t>& plaintext);
@@ -131,13 +138,29 @@ class OfflineStorage {
   OfflineStorageStats GetStats() const;
 
   void CleanupExpired();
+  bool SecureDeleteReady() const { return secure_delete_ready_; }
+  const std::string& SecureDeleteError() const { return secure_delete_error_; }
 
  private:
+  using SecureDeleteFn = int (*)(const char*);
+
   std::filesystem::path ResolvePath(const std::string& file_id) const;
   std::filesystem::path ResolveUploadTempPath(const std::string& file_id) const;
+  std::filesystem::path ResolveKeyPath(const std::string& file_id) const;
+  std::optional<std::filesystem::path> ResolveKeyPathForData(
+      const std::filesystem::path& data_path) const;
   std::string GenerateId() const;
   std::array<std::uint8_t, 32> GenerateKey() const;
   std::string GenerateSessionId() const;
+  bool SaveEraseKey(const std::filesystem::path& data_path,
+                    const std::array<std::uint8_t, 32>& erase_key,
+                    std::string& error) const;
+  bool LoadEraseKey(const std::filesystem::path& data_path,
+                    std::array<std::uint8_t, 32>& erase_key,
+                    std::string& error) const;
+  std::array<std::uint8_t, 32> DeriveStorageKey(
+      const std::array<std::uint8_t, 32>& file_key,
+      const std::array<std::uint8_t, 32>& erase_key) const;
   bool EncryptAead(const std::vector<std::uint8_t>& plaintext,
                    const std::array<std::uint8_t, 32>& key,
                    const std::array<std::uint8_t, 24>& nonce,
@@ -160,12 +183,21 @@ class OfflineStorage {
                      const std::array<std::uint8_t, 16>& nonce,
                      const std::array<std::uint8_t, 32>& tag,
                      std::vector<std::uint8_t>& plaintext) const;
+  bool LoadSecureDeletePlugin(const std::filesystem::path& path,
+                              std::string& error);
+  bool CallSecureDeletePlugin(const std::filesystem::path& path) const;
+  void BestEffortWipe(const std::filesystem::path& path) const;
   void WipeFile(const std::filesystem::path& path) const;
 
   std::filesystem::path base_dir_;
   std::chrono::seconds ttl_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, StoredFileMeta> metadata_;
+  SecureDeleteConfig secure_delete_{};
+  void* secure_delete_handle_{nullptr};
+  SecureDeleteFn secure_delete_fn_{nullptr};
+  bool secure_delete_ready_{false};
+  std::string secure_delete_error_;
   struct BlobUploadSession {
     std::string upload_id;
     std::string owner;

@@ -164,6 +164,29 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   }
   std::filesystem::remove(probe, ec);
 
+  std::filesystem::path kt_signing_key = config_.server.kt_signing_key;
+  if (!kt_signing_key.is_absolute() && !kt_signing_key.empty()) {
+    kt_signing_key = storage_dir / kt_signing_key;
+  }
+  if (kt_signing_key.empty() || !std::filesystem::exists(kt_signing_key, ec) || ec) {
+    error = "kt_signing_key not found";
+    return false;
+  }
+
+  SecureDeleteConfig secure_delete;
+  secure_delete.enabled = config_.server.secure_delete_enabled;
+  if (secure_delete.enabled) {
+    secure_delete.plugin_path = config_.server.secure_delete_plugin;
+    if (!secure_delete.plugin_path.is_absolute()) {
+      secure_delete.plugin_path = storage_dir / secure_delete.plugin_path;
+    }
+    if (secure_delete.plugin_path.empty() ||
+        !std::filesystem::exists(secure_delete.plugin_path, ec) || ec) {
+      error = "secure_delete_plugin not found";
+      return false;
+    }
+  }
+
   std::vector<std::uint8_t> opaque_setup;
   if (!LoadOrCreateOpaqueServerSetup(storage_dir, opaque_setup, error)) {
     return false;
@@ -179,7 +202,14 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                                std::move(opaque_setup));
   groups_ = std::make_unique<GroupManager>();
   directory_ = std::make_unique<GroupDirectory>();
-  offline_storage_ = std::make_unique<OfflineStorage>(storage_dir);
+  offline_storage_ = std::make_unique<OfflineStorage>(
+      storage_dir, std::chrono::hours(12), secure_delete);
+  if (secure_delete.enabled && !offline_storage_->SecureDeleteReady()) {
+    error = offline_storage_->SecureDeleteError().empty()
+                ? "secure delete plugin load failed"
+                : offline_storage_->SecureDeleteError();
+    return false;
+  }
   offline_queue_ = std::make_unique<OfflineQueue>();
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),
                                       directory_.get(), offline_storage_.get(),
@@ -189,7 +219,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                           ? std::optional<MySqlConfig>(
                                                 config_.mysql)
                                           : std::nullopt,
-                                      storage_dir);
+                                      storage_dir,
+                                      kt_signing_key);
   router_ = std::make_unique<FrameRouter>(api_.get());
   last_cleanup_ = std::chrono::steady_clock::now();
   return true;
@@ -215,12 +246,13 @@ bool ServerApp::RunOnce(std::string& error) {
   return true;
 }
 
-bool ServerApp::HandleFrame(const Frame& in, Frame& out, std::string& error) {
+bool ServerApp::HandleFrame(const Frame& in, Frame& out,
+                            TransportKind transport, std::string& error) {
   if (!router_) {
     error = "router not initialized";
     return false;
   }
-  if (!router_->Handle(in, out, "")) {
+  if (!router_->Handle(in, out, "", transport)) {
     error = "handle frame failed";
     return false;
   }
@@ -229,12 +261,13 @@ bool ServerApp::HandleFrame(const Frame& in, Frame& out, std::string& error) {
 
 bool ServerApp::HandleFrameWithToken(const Frame& in, Frame& out,
                                      const std::string& token,
+                                     TransportKind transport,
                                      std::string& error) {
   if (!router_) {
     error = "router not initialized";
     return false;
   }
-  if (!router_->Handle(in, out, token)) {
+  if (!router_->Handle(in, out, token, transport)) {
     error = "handle frame failed";
     return false;
   }

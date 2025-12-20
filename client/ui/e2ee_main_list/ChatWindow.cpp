@@ -82,7 +82,7 @@ struct ChatTokens {
     static QColor textMuted() { return Theme::uiTextMuted(); }
     static QColor accentBlue() { return Theme::uiAccentBlue(); }
     static QColor accentGrey() { return Theme::uiBorder(); }
-    static int radius() { return 10; }
+    static int radius() { return 16; }
 };
 
 bool LooksLikeImageFile(const QString &nameOrPath) {
@@ -765,13 +765,22 @@ IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
     return btn;
 }
 
+QString SurfaceGradient(const QColor &base) {
+    const bool light = (Theme::scheme() == Theme::Scheme::Light);
+    const QColor top = base.lighter(light ? 103 : 108);
+    const QColor bottom = base.darker(light ? 103 : 92);
+    return QStringLiteral(
+        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2);")
+        .arg(top.name(), bottom.name());
+}
+
 QPushButton *outlineButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
-    btn->setFixedSize(78, 30);
+    btn->setFixedSize(86, 34);
     btn->setStyleSheet(
         QStringLiteral(
             "QPushButton { color: %1; background: %2; border: 1px solid %3; "
-            "border-radius: 6px; font-size: 12px; }"
+            "border-radius: 14px; font-size: 12px; }"
             "QPushButton:hover { background: %4; }"
             "QPushButton:pressed { background: %5; }")
             .arg(Theme::uiTextMain().name(),
@@ -784,14 +793,14 @@ QPushButton *outlineButton(const QString &text, QWidget *parent) {
 
 QPushButton *primaryButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
-    btn->setFixedHeight(30);
+    btn->setFixedHeight(34);
     const QColor base = Theme::uiAccentBlue();
     const QColor hover = base.lighter(115);
     const QColor pressed = base.darker(110);
     btn->setStyleSheet(
         QStringLiteral(
-            "QPushButton { color: white; background: %1; border: 1px solid %2; "
-            "border-radius: 6px; padding: 0 14px; font-size: 12px; }"
+            "QPushButton { color: white; background: %1; border: none; "
+            "border-radius: 17px; padding: 0 16px; font-size: 12px; }"
             "QPushButton:hover { background: %3; }"
             "QPushButton:pressed { background: %4; }")
             .arg(base.name(), base.name(), hover.name(), pressed.name()));
@@ -939,7 +948,7 @@ void ChatWindow::buildUi() {
     bodyLayout->setSpacing(0);
 
     auto *messageArea = new QWidget(body);
-    messageArea->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::windowBg().name()));
+    messageArea->setStyleSheet(SurfaceGradient(ChatTokens::windowBg()));
     messageArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     auto *msgLayout = new QVBoxLayout(messageArea);
     msgLayout->setContentsMargins(4, 6, 4, 0);
@@ -1065,7 +1074,7 @@ void ChatWindow::buildUi() {
     messageView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     messageView_->setStyleSheet(
         QStringLiteral(
-            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 8px; }"
+            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 12px; }"
             "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
             "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 20px; }"
             "QScrollBar::handle:vertical:hover { background: %2; }"
@@ -1087,7 +1096,7 @@ void ChatWindow::buildUi() {
     newMessagePill_->setStyleSheet(
         QStringLiteral(
             "QPushButton { background: %1; color: white; border: 1px solid rgba(255,255,255,30); "
-            "border-radius: 14px; padding: 6px 10px; font-size: 12px; }"
+            "border-radius: 16px; padding: 6px 12px; font-size: 12px; }"
             "QPushButton:hover { background: %2; }"
             "QPushButton:pressed { background: %3; }")
             .arg(Theme::uiAccentBlue().name(),
@@ -1165,11 +1174,14 @@ void ChatWindow::buildUi() {
 
     // Composer
     composer_ = new QWidget(body);
-    composer_->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::panelBg().name()));
+    composer_->setStyleSheet(
+        QStringLiteral("%1 border-top: 1px solid %2;")
+            .arg(SurfaceGradient(ChatTokens::panelBg()),
+                 ChatTokens::border().name()));
     composer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *composerLayout = new QVBoxLayout(composer_);
-    composerLayout->setContentsMargins(10, 6, 10, 8);
-    composerLayout->setSpacing(6);
+    composerLayout->setContentsMargins(12, 8, 12, 10);
+    composerLayout->setSpacing(8);
 
     auto *toolsRow = new QHBoxLayout();
     toolsRow->setSpacing(8);
@@ -1225,7 +1237,7 @@ void ChatWindow::buildUi() {
     replyBar_->setVisible(false);
     replyBar_->setStyleSheet(
         QStringLiteral(
-            "QWidget { background: %1; border: 1px solid %2; border-radius: 8px; }")
+            "QWidget { background: %1; border: 1px solid %2; border-radius: 12px; }")
             .arg(Theme::uiInputBg().name(), Theme::uiInputBorder().name()));
     auto *replyLayout = new QHBoxLayout(replyBar_);
     replyLayout->setContentsMargins(10, 6, 10, 6);
@@ -1262,8 +1274,8 @@ void ChatWindow::buildUi() {
     inputEdit_->setTabChangesFocus(true);
     inputEdit_->setStyleSheet(
         QStringLiteral(
-            "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 8px; "
-            "color: %3; padding: 8px; font-size: 13px; }"
+            "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 14px; "
+            "color: %3; padding: 10px 12px; font-size: 13px; }"
             "QPlainTextEdit:focus { border-color: %4; }")
             .arg(Theme::uiInputBg().name(),
                  Theme::uiInputBorder().name(),

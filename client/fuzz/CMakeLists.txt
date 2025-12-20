@@ -16,3 +16,7 @@ else()
   target_compile_definitions(mi_e2ee_fuzz_file_blob_v2 PRIVATE MI_E2EE_FUZZ_STANDALONE=1)
 endif()
 
+if(MI_E2EE_FUZZ_SMOKE AND NOT MI_E2EE_FUZZ_USE_LIBFUZZER)
+  add_test(NAME fuzz_file_blob_v2_smoke
+           COMMAND mi_e2ee_fuzz_file_blob_v2 ${CMAKE_CURRENT_LIST_DIR}/seed_blob.bin)
+endif()

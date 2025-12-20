@@ -12,6 +12,7 @@ using mi::server::DemoUserTable;
 using mi::server::GroupManager;
 using mi::server::Session;
 using mi::server::SessionManager;
+using mi::server::TransportKind;
 
 static DemoUser MakeDemoUser(const std::string& username,
                              const std::string& password) {
@@ -35,10 +36,10 @@ int main() {
   Session bob;
   Session alice;
   std::string err;
-  if (!sessions.Login("bob", "pwd123", bob, err)) {
+  if (!sessions.Login("bob", "pwd123", TransportKind::kLocal, bob, err)) {
     return 1;
   }
-  if (!sessions.Login("alice", "alice123", alice, err)) {
+  if (!sessions.Login("alice", "alice123", TransportKind::kLocal, alice, err)) {
     return 1;
   }
 

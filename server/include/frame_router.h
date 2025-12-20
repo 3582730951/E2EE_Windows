@@ -13,7 +13,8 @@ class FrameRouter {
   explicit FrameRouter(ApiService* api);
 
   //  ApiService
-  bool Handle(const Frame& in, Frame& out, const std::string& token);
+  bool Handle(const Frame& in, Frame& out, const std::string& token,
+              TransportKind transport);
 
  private:
   ApiService* api_;

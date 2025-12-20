@@ -24,7 +24,8 @@ class ConnectionHandler {
   // 
   bool OnData(const std::uint8_t* data, std::size_t len,
               std::vector<std::uint8_t>& out_bytes,
-              const std::string& remote_ip);
+              const std::string& remote_ip,
+              TransportKind transport = TransportKind::kLocal);
 
  private:
   struct ChannelState {

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <random>
 
 #include "pake.h"
 #include "secure_channel.h"
@@ -63,6 +64,26 @@ int main() {
   ok = server2.Decrypt(cipher2, FrameType::kMessage, out2);
   assert(ok);
   assert(out2 == plain);
+
+  // Property-based: random payloads round-trip.
+  std::mt19937 rng(0x4D495F31u);
+  std::uniform_int_distribution<std::size_t> len_dist(0, 2048);
+  std::uniform_int_distribution<int> byte_dist(0, 255);
+  for (int i = 0; i < 128; ++i) {
+    const std::size_t len = len_dist(rng);
+    std::vector<std::uint8_t> msg(len);
+    for (auto& b : msg) {
+      b = static_cast<std::uint8_t>(byte_dist(rng));
+    }
+    std::vector<std::uint8_t> enc;
+    ok = client.Encrypt(static_cast<std::uint64_t>(100 + i),
+                        FrameType::kMessage, msg, enc);
+    assert(ok);
+    std::vector<std::uint8_t> dec;
+    ok = server.Decrypt(enc, FrameType::kMessage, dec);
+    assert(ok);
+    assert(dec == msg);
+  }
 
   return 0;
 }

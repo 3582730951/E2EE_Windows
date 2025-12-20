@@ -135,7 +135,8 @@ int main() {
   lf_req.credential_finalization.assign(finalization.ptr,
                                         finalization.ptr + finalization.len);
   mi::server::Session session;
-  if (!mgr.OpaqueLoginFinish(lf_req, session, sm_err)) {
+  if (!mgr.OpaqueLoginFinish(lf_req, mi::server::TransportKind::kLocal, session,
+                             sm_err)) {
     return 1;
   }
   if (session.token.empty() || session.username != username) {
@@ -180,7 +181,8 @@ int main() {
     wlf_req.login_id = wls_hello.login_id;
     wlf_req.credential_finalization.assign(wfinal.ptr, wfinal.ptr + wfinal.len);
     mi::server::Session wsession;
-    if (mgr.OpaqueLoginFinish(wlf_req, wsession, sm_err)) {
+    if (mgr.OpaqueLoginFinish(wlf_req, mi::server::TransportKind::kLocal,
+                              wsession, sm_err)) {
       return 1;
     }
   }

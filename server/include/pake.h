@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mi::server {
@@ -28,11 +29,16 @@ struct DerivedKeys {
   std::array<std::uint8_t, 32> ratchet_root{};
 };
 
+enum class TransportKind : std::uint8_t { kTcp = 0, kTls = 1, kLocal = 2 };
+
+std::string_view TransportLabel(TransportKind transport);
+
 bool DeriveKeysFromHybridKeyExchange(
     const std::array<std::uint8_t, 32>& dh_shared,
     const std::array<std::uint8_t, 32>& kem_shared,
     const std::string& username,
     const std::string& token,
+    TransportKind transport,
     DerivedKeys& out_keys,
     std::string& error);
 
@@ -40,22 +46,25 @@ bool DeriveKeysFromPakeHandshake(
     const std::array<std::uint8_t, 32>& handshake_key,
     const std::string& username,
     const std::string& token,
+    TransportKind transport,
     DerivedKeys& out_keys,
     std::string& error);
 
 bool DeriveKeysFromOpaqueSessionKey(const std::vector<std::uint8_t>& session_key,
                                     const std::string& username,
                                     const std::string& token,
+                                    TransportKind transport,
                                     DerivedKeys& out_keys,
                                     std::string& error);
 
 // Legacy: username+password input until real PAKE is wired.
-bool DeriveKeysFromPake(const std::string& pake_shared, DerivedKeys& out_keys,
-                        std::string& error);
+bool DeriveKeysFromPake(const std::string& pake_shared, TransportKind transport,
+                        DerivedKeys& out_keys, std::string& error);
 
 // Simplified: username+password input until real PAKE is wired.
 bool DeriveKeysFromCredentials(const std::string& username,
                                const std::string& password,
+                               TransportKind transport,
                                DerivedKeys& out_keys,
                                std::string& error);
 

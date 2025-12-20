@@ -82,9 +82,9 @@ struct Tokens {
     static QColor badgeRed() { return Theme::uiBadgeRed(); }
     static QColor badgeGrey() { return Theme::uiBadgeGrey(); }
     static QColor accentBlue() { return Theme::uiAccentBlue(); }
-    static int sidebarWidth() { return 78; }
-    static int rowHeight() { return 74; }
-    static int radius() { return 10; }
+    static int sidebarWidth() { return 72; }
+    static int rowHeight() { return 78; }
+    static int radius() { return 14; }
 };
 
 bool LooksLikeImageFile(const QString &nameOrPath) {
@@ -129,6 +129,15 @@ QColor avatarColorFor(const QString &seed) {
     int g = 90 + ((hash >> 8) & 0x7F);
     int b = 110 + ((hash >> 16) & 0x7F);
     return QColor(r, g, b);
+}
+
+QString SurfaceGradient(const QColor &base) {
+    const bool light = (Theme::scheme() == Theme::Scheme::Light);
+    const QColor top = base.lighter(light ? 103 : 108);
+    const QColor bottom = base.darker(light ? 103 : 92);
+    return QStringLiteral(
+        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2);")
+        .arg(top.name(), bottom.name());
 }
 
 #ifdef Q_OS_WIN
@@ -259,7 +268,7 @@ public:
         painter->setRenderHint(QPainter::Antialiasing, true);
         painter->setPen(Qt::NoPen);
         painter->setBrush(bg);
-        painter->drawRoundedRect(r, 10, 10);
+        painter->drawRoundedRect(r, Tokens::radius(), Tokens::radius());
 
         const QString title = index.data(TitleRole).toString();
         const QString preview = index.data(PreviewRole).toString();
@@ -270,15 +279,17 @@ public:
         const bool pinned = index.data(PinnedRole).toBool();
 
         // Avatar
-        QRect avatarRect = QRect(r.left() + 12, r.top() + 10, 46, 46);
+        const int avatarSize = 48;
+        const int avatarTop = r.top() + (r.height() - avatarSize) / 2;
+        QRect avatarRect = QRect(r.left() + 14, avatarTop, avatarSize, avatarSize);
         painter->setBrush(avatarColorFor(title));
         painter->setPen(Qt::NoPen);
         painter->drawEllipse(avatarRect);
 
         // Text area
         int textLeft = avatarRect.right() + 12;
-        QRect titleRect(textLeft, r.top() + 10, r.width() - textLeft - 80, 22);
-        QRect previewRect(textLeft, titleRect.bottom() + 6, r.width() - textLeft - 90, 20);
+        QRect titleRect(textLeft, avatarRect.top() + 2, r.width() - textLeft - 84, 22);
+        QRect previewRect(textLeft, titleRect.bottom() + 4, r.width() - textLeft - 84, 20);
 
         QFont titleFont = Theme::defaultFont(14, QFont::DemiBold);
         painter->setFont(titleFont);
@@ -318,7 +329,7 @@ public:
         QFont timeFont = Theme::defaultFont(11, QFont::Normal);
         painter->setFont(timeFont);
         painter->setPen(Tokens::textMuted());
-        QRect timeRect(r.right() - 64, r.top() + 12, 60, 16);
+        QRect timeRect(r.right() - 64, avatarRect.top() + 2, 60, 16);
         painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, time);
 
         // Pin indicator
@@ -326,7 +337,7 @@ public:
             const QColor iconColor = selected ? Tokens::textMain() : Tokens::textMuted();
             const QPixmap star = UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"),
                                                     12, iconColor);
-            painter->drawPixmap(QRect(r.right() - 80, r.top() + 13, 12, 12), star);
+            painter->drawPixmap(QRect(r.right() - 80, timeRect.top() + 1, 12, 12), star);
         }
 
         // Badge
@@ -425,13 +436,13 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
 
     // Title bar with custom buttons.
     auto *titleBar = new QWidget(central);
-    titleBar->setFixedHeight(44);
+    titleBar->setFixedHeight(48);
     titleBar->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::windowBg().name()));
     auto *titleLayout = new QHBoxLayout(titleBar);
     titleLayout->setContentsMargins(10, 8, 10, 8);
 
     auto *titleLabel = new QLabel(QStringLiteral("E2EE"), titleBar);
-    titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; letter-spacing: 1px;")
+    titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; letter-spacing: 1px;")
                                   .arg(Tokens::textMain().name()));
     titleLayout->addWidget(titleLabel);
     connLabel_ = new QLabel(QStringLiteral(""), titleBar);
@@ -563,7 +574,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
 
     // Right main area
     auto *mainArea = new QWidget(body);
-    mainArea->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::windowBg().name()));
+    mainArea->setStyleSheet(SurfaceGradient(Tokens::windowBg()));
     auto *mainLayout2 = new QVBoxLayout(mainArea);
     mainLayout2->setContentsMargins(12, 12, 12, 12);
     mainLayout2->setSpacing(10);
@@ -572,10 +583,10 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     searchRow->setSpacing(8);
 
     auto *searchBox = new QFrame(mainArea);
-    searchBox->setFixedHeight(36);
+    searchBox->setFixedHeight(38);
     searchBox->setStyleSheet(
         QStringLiteral(
-            "QFrame { background: %1; border-radius: 18px; border: 1px solid %2; }"
+            "QFrame { background: %1; border-radius: 19px; border: 1px solid %2; }"
             "QLineEdit { background: transparent; border: none; color: %3; font-size: 13px; }"
             "QLabel { color: %4; font-size: 13px; }")
             .arg(Tokens::searchBg().name(),
@@ -583,7 +594,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                  Tokens::textMain().name(),
                  Tokens::textMuted().name()));
     auto *sLayout = new QHBoxLayout(searchBox);
-    sLayout->setContentsMargins(12, 6, 12, 6);
+    sLayout->setContentsMargins(12, 7, 12, 7);
     sLayout->setSpacing(8);
     auto *searchIcon = new QLabel(searchBox);
     searchIcon->setFixedSize(16, 16);
@@ -617,7 +628,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     auto *plusBtn = new IconButton(QString(), mainArea);
     plusBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/plus.svg"), 18);
     plusBtn->setFocusPolicy(Qt::NoFocus);
-    plusBtn->setFixedSize(36, 36);
+    plusBtn->setFixedSize(38, 38);
     plusBtn->setColors(Tokens::textMain(), Tokens::textMain(), Tokens::textMain(),
                        Tokens::searchBg(), Tokens::hoverBg(), Tokens::selectedBg());
     connect(plusBtn, &QPushButton::clicked, this, [this, plusBtn]() {
@@ -659,7 +670,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     listView_->setSelectionMode(QAbstractItemView::SingleSelection);
     listView_->setStyleSheet(
         QStringLiteral(
-            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 8px; }"
+            "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 12px; }"
             "QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }"
             "QScrollBar::handle:vertical { background: %1; border-radius: 4px; min-height: 20px; }"
             "QScrollBar::handle:vertical:hover { background: %2; }"

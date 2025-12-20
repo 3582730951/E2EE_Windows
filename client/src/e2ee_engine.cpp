@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -18,10 +19,13 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
+#include <ncrypt.h>
 #include <wincrypt.h>
+#include <winreg.h>
 #endif
 
 #include "crypto.h"
+#include "dpapi_util.h"
 #include "monocypher.h"
 
 extern "C" {
@@ -87,6 +91,95 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
   }
   return true;
 #endif
+}
+
+bool RandomUint32(std::uint32_t& out) {
+  return RandomBytes(reinterpret_cast<std::uint8_t*>(&out), sizeof(out));
+}
+
+constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
+constexpr std::size_t kPadHeaderBytes = 8;
+constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048, 4096, 8192, 16384};
+
+std::size_t SelectPadTarget(std::size_t min_len) {
+  for (const auto bucket : kPadBuckets) {
+    if (bucket >= min_len) {
+      if (bucket == min_len) {
+        return bucket;
+      }
+      std::uint32_t r = 0;
+      if (!RandomUint32(r)) {
+        return bucket;
+      }
+      const std::size_t span = bucket - min_len;
+      return min_len + (static_cast<std::size_t>(r) % (span + 1));
+    }
+  }
+  const std::size_t round = ((min_len + 4095) / 4096) * 4096;
+  if (round <= min_len) {
+    return min_len;
+  }
+  std::uint32_t r = 0;
+  if (!RandomUint32(r)) {
+    return round;
+  }
+  const std::size_t span = round - min_len;
+  return min_len + (static_cast<std::size_t>(r) % (span + 1));
+}
+
+bool PadPayload(const std::vector<std::uint8_t>& plain,
+                std::vector<std::uint8_t>& out,
+                std::string& error) {
+  error.clear();
+  out.clear();
+  if (plain.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "pad size overflow";
+    return false;
+  }
+  const std::size_t min_len = kPadHeaderBytes + plain.size();
+  const std::size_t target_len = SelectPadTarget(min_len);
+  out.reserve(target_len);
+  out.insert(out.end(), kPadMagic, kPadMagic + sizeof(kPadMagic));
+  const std::uint32_t len32 = static_cast<std::uint32_t>(plain.size());
+  out.push_back(static_cast<std::uint8_t>(len32 & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 24) & 0xFF));
+  out.insert(out.end(), plain.begin(), plain.end());
+  if (out.size() < target_len) {
+    const std::size_t pad_len = target_len - out.size();
+    const std::size_t offset = out.size();
+    out.resize(target_len);
+    if (!RandomBytes(out.data() + offset, pad_len)) {
+      error = "pad rng failed";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UnpadPayload(const std::vector<std::uint8_t>& plain,
+                  std::vector<std::uint8_t>& out,
+                  std::string& error) {
+  error.clear();
+  out.clear();
+  if (plain.size() < kPadHeaderBytes ||
+      std::memcmp(plain.data(), kPadMagic, sizeof(kPadMagic)) != 0) {
+    out = plain;
+    return true;
+  }
+  const std::uint32_t len =
+      static_cast<std::uint32_t>(plain[4]) |
+      (static_cast<std::uint32_t>(plain[5]) << 8) |
+      (static_cast<std::uint32_t>(plain[6]) << 16) |
+      (static_cast<std::uint32_t>(plain[7]) << 24);
+  if (kPadHeaderBytes + len > plain.size()) {
+    error = "pad size invalid";
+    return false;
+  }
+  out.assign(plain.begin() + kPadHeaderBytes,
+             plain.begin() + kPadHeaderBytes + len);
+  return true;
 }
 
 std::string Sha256Hex(const std::uint8_t* data, std::size_t len) {
@@ -229,7 +322,62 @@ bool WriteAll(const std::filesystem::path& path,
   return true;
 }
 
-#ifdef _WIN32
+std::uint64_t NowUnixSeconds() {
+  const auto now = std::chrono::system_clock::now();
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          now.time_since_epoch())
+          .count());
+}
+
+bool ReadLe32(const std::vector<std::uint8_t>& data, std::size_t& off,
+              std::uint32_t& out) {
+  if (off + 4 > data.size()) {
+    return false;
+  }
+  out = static_cast<std::uint32_t>(data[off]) |
+        (static_cast<std::uint32_t>(data[off + 1]) << 8) |
+        (static_cast<std::uint32_t>(data[off + 2]) << 16) |
+        (static_cast<std::uint32_t>(data[off + 3]) << 24);
+  off += 4;
+  return true;
+}
+
+bool ReadLe64(const std::vector<std::uint8_t>& data, std::size_t& off,
+              std::uint64_t& out) {
+  if (off + 8 > data.size()) {
+    return false;
+  }
+  std::uint64_t v = 0;
+  for (int i = 0; i < 8; ++i) {
+    v |= (static_cast<std::uint64_t>(data[off + static_cast<std::size_t>(i)]) << (i * 8));
+  }
+  off += 8;
+  out = v;
+  return true;
+}
+
+void WriteLe32(std::uint32_t v, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(v & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFF));
+}
+
+void WriteLe64(std::uint64_t v, std::vector<std::uint8_t>& out) {
+  for (int i = 0; i < 8; ++i) {
+    out.push_back(static_cast<std::uint8_t>((v >> (i * 8)) & 0xFF));
+  }
+}
+
+enum class IdentityWrapKind { kNone = 0, kDpapiV1 = 1, kDpapiV2 = 2, kTpmV1 = 3 };
+
+constexpr char kIdentityDpapiV1Magic[] = "MI_E2EE_IDENTITY_DPAPI1";
+constexpr char kIdentityDpapiV2Magic[] = "MI_E2EE_IDENTITY_DPAPI2";
+constexpr char kIdentityTpmMagic[] = "MI_E2EE_IDENTITY_TPM1";
+constexpr char kIdentityEntropyV1[] = "MI_E2EE_IDENTITY_ENTROPY_V1";
+constexpr char kIdentityEntropyV2Prefix[] = "MI_E2EE_IDENTITY_ENTROPY_V2";
+
 bool StartsWithBytes(const std::vector<std::uint8_t>& data,
                      const char* prefix, std::size_t prefix_len) {
   if (!prefix || prefix_len == 0 || data.size() < prefix_len) {
@@ -238,107 +386,332 @@ bool StartsWithBytes(const std::vector<std::uint8_t>& data,
   return std::memcmp(data.data(), prefix, prefix_len) == 0;
 }
 
-bool MaybeUnprotectIdentityDpapi(const std::vector<std::uint8_t>& in,
-                                std::vector<std::uint8_t>& out_plain,
-                                bool& out_was_dpapi,
-                                std::string& error) {
-  error.clear();
-  out_plain.clear();
-  out_was_dpapi = false;
-  static constexpr char kMagic[] = "MI_E2EE_IDENTITY_DPAPI1";
-  if (!StartsWithBytes(in, kMagic, sizeof(kMagic) - 1)) {
-    out_plain = in;
-    return true;
+IdentityWrapKind DetectIdentityWrapKind(const std::vector<std::uint8_t>& data) {
+  if (StartsWithBytes(data, kIdentityTpmMagic, sizeof(kIdentityTpmMagic) - 1)) {
+    return IdentityWrapKind::kTpmV1;
   }
-  if (in.size() < (sizeof(kMagic) - 1 + 4)) {
-    error = "identity dpapi header truncated";
+  if (StartsWithBytes(data, kIdentityDpapiV2Magic,
+                      sizeof(kIdentityDpapiV2Magic) - 1)) {
+    return IdentityWrapKind::kDpapiV2;
+  }
+  if (StartsWithBytes(data, kIdentityDpapiV1Magic,
+                      sizeof(kIdentityDpapiV1Magic) - 1)) {
+    return IdentityWrapKind::kDpapiV1;
+  }
+  return IdentityWrapKind::kNone;
+}
+
+#ifdef _WIN32
+namespace {
+struct ScopedNcryptProvider {
+  NCRYPT_PROV_HANDLE handle{0};
+  ~ScopedNcryptProvider() {
+    if (handle) {
+      NCryptFreeObject(handle);
+      handle = 0;
+    }
+  }
+};
+
+struct ScopedNcryptKey {
+  NCRYPT_KEY_HANDLE handle{0};
+  ~ScopedNcryptKey() {
+    if (handle) {
+      NCryptFreeObject(handle);
+      handle = 0;
+    }
+  }
+};
+
+std::string ReadMachineGuid() {
+  char buf[128] = {};
+  DWORD size = static_cast<DWORD>(sizeof(buf));
+  const LONG rc = RegGetValueA(
+      HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid",
+      RRF_RT_REG_SZ, nullptr, buf, &size);
+  if (rc != ERROR_SUCCESS || size == 0) {
+    return {};
+  }
+  std::string guid(buf);
+  while (!guid.empty() &&
+         (guid.back() == '\0' || guid.back() == '\r' || guid.back() == '\n')) {
+    guid.pop_back();
+  }
+  return guid;
+}
+
+std::string BuildIdentityEntropyV2() {
+  std::string entropy = kIdentityEntropyV2Prefix;
+  const std::string guid = ReadMachineGuid();
+  if (!guid.empty()) {
+    entropy.push_back(':');
+    entropy.append(guid);
+  }
+  return entropy;
+}
+
+bool OpenTpmKey(ScopedNcryptProvider& provider, ScopedNcryptKey& key,
+                bool allow_create, std::string& error) {
+  error.clear();
+  SECURITY_STATUS status =
+      NCryptOpenStorageProvider(&provider.handle, MS_PLATFORM_CRYPTO_PROVIDER, 0);
+  if (status != ERROR_SUCCESS) {
+    error = "tpm provider unavailable";
     return false;
   }
-  std::size_t off = sizeof(kMagic) - 1;
-  const std::uint32_t blob_len =
+
+  status = NCryptOpenKey(provider.handle, &key.handle, L"mi_e2ee_identity", 0, 0);
+  if (status == NTE_BAD_KEYSET || status == NTE_NO_KEY) {
+    if (!allow_create) {
+      error = "tpm key missing";
+      return false;
+    }
+    status = NCryptCreatePersistedKey(provider.handle, &key.handle,
+                                      NCRYPT_RSA_ALGORITHM, L"mi_e2ee_identity",
+                                      0, 0);
+    if (status != ERROR_SUCCESS) {
+      error = "tpm key create failed";
+      return false;
+    }
+    const DWORD key_len = 2048;
+    status = NCryptSetProperty(
+        key.handle, NCRYPT_LENGTH_PROPERTY,
+        reinterpret_cast<PBYTE>(const_cast<DWORD*>(&key_len)), sizeof(key_len), 0);
+    if (status != ERROR_SUCCESS) {
+      error = "tpm key length set failed";
+      return false;
+    }
+    DWORD usage = NCRYPT_ALLOW_ALL_USAGES;
+    status = NCryptSetProperty(key.handle, NCRYPT_KEY_USAGE_PROPERTY,
+                               reinterpret_cast<PBYTE>(&usage), sizeof(usage),
+                               0);
+    if (status != ERROR_SUCCESS) {
+      error = "tpm key usage set failed";
+      return false;
+    }
+    status = NCryptFinalizeKey(key.handle, 0);
+    if (status != ERROR_SUCCESS) {
+      error = "tpm key finalize failed";
+      return false;
+    }
+  } else if (status != ERROR_SUCCESS) {
+    error = "tpm key open failed";
+    return false;
+  }
+  return true;
+}
+
+bool TpmWrapKey(const std::array<std::uint8_t, 32>& key_bytes,
+                std::vector<std::uint8_t>& out_wrapped,
+                std::string& error) {
+  out_wrapped.clear();
+  ScopedNcryptProvider provider;
+  ScopedNcryptKey key;
+  if (!OpenTpmKey(provider, key, true, error)) {
+    return false;
+  }
+
+  BCRYPT_OAEP_PADDING_INFO padding{};
+  padding.pszAlgId = const_cast<wchar_t*>(BCRYPT_SHA256_ALGORITHM);
+  padding.pbLabel = nullptr;
+  padding.cbLabel = 0;
+
+  DWORD out_len = 0;
+  SECURITY_STATUS status = NCryptEncrypt(
+      key.handle, const_cast<PBYTE>(key_bytes.data()),
+      static_cast<DWORD>(key_bytes.size()), &padding, nullptr, 0, &out_len,
+      NCRYPT_PAD_OAEP_FLAG);
+  if (status != ERROR_SUCCESS || out_len == 0) {
+    error = "tpm encrypt failed";
+    return false;
+  }
+
+  out_wrapped.resize(out_len);
+  status = NCryptEncrypt(key.handle, const_cast<PBYTE>(key_bytes.data()),
+                         static_cast<DWORD>(key_bytes.size()), &padding,
+                         out_wrapped.data(), out_len, &out_len,
+                         NCRYPT_PAD_OAEP_FLAG);
+  if (status != ERROR_SUCCESS || out_len == 0) {
+    out_wrapped.clear();
+    error = "tpm encrypt failed";
+    return false;
+  }
+  out_wrapped.resize(out_len);
+  return true;
+}
+
+bool TpmUnwrapKey(const std::vector<std::uint8_t>& wrapped,
+                  std::array<std::uint8_t, 32>& out_key,
+                  std::string& error) {
+  out_key.fill(0);
+  ScopedNcryptProvider provider;
+  ScopedNcryptKey key;
+  if (!OpenTpmKey(provider, key, false, error)) {
+    return false;
+  }
+
+  BCRYPT_OAEP_PADDING_INFO padding{};
+  padding.pszAlgId = const_cast<wchar_t*>(BCRYPT_SHA256_ALGORITHM);
+  padding.pbLabel = nullptr;
+  padding.cbLabel = 0;
+
+  DWORD out_len = 0;
+  SECURITY_STATUS status = NCryptDecrypt(
+      key.handle, const_cast<PBYTE>(wrapped.data()),
+      static_cast<DWORD>(wrapped.size()), &padding, nullptr, 0, &out_len,
+      NCRYPT_PAD_OAEP_FLAG);
+  if (status != ERROR_SUCCESS || out_len == 0) {
+    error = "tpm decrypt failed";
+    return false;
+  }
+
+  std::vector<std::uint8_t> buf;
+  buf.resize(out_len);
+  status = NCryptDecrypt(key.handle, const_cast<PBYTE>(wrapped.data()),
+                         static_cast<DWORD>(wrapped.size()), &padding,
+                         buf.data(), static_cast<DWORD>(buf.size()), &out_len,
+                         NCRYPT_PAD_OAEP_FLAG);
+  if (status != ERROR_SUCCESS || out_len != out_key.size()) {
+    error = "tpm decrypt failed";
+    return false;
+  }
+  std::copy_n(buf.begin(), out_key.size(), out_key.begin());
+  crypto_wipe(buf.data(), buf.size());
+  return true;
+}
+
+bool UnwrapIdentityDpapi(const std::vector<std::uint8_t>& in,
+                         const char* magic,
+                         const std::string& entropy,
+                         std::vector<std::uint8_t>& out_plain,
+                         std::string& error) {
+  bool was_dpapi = false;
+  if (!MaybeUnprotectDpapi(in, magic, entropy.c_str(), out_plain, was_dpapi,
+                           error)) {
+    return false;
+  }
+  if (!was_dpapi) {
+    error = "dpapi header missing";
+    return false;
+  }
+  return true;
+}
+
+bool WrapIdentityDpapi(const std::vector<std::uint8_t>& plain,
+                       const char* magic,
+                       const std::string& entropy,
+                       std::vector<std::uint8_t>& out_wrapped,
+                       std::string& error) {
+  return ProtectDpapi(plain, magic, entropy.c_str(), out_wrapped, error);
+}
+
+bool WrapIdentityTpm(const std::vector<std::uint8_t>& plain,
+                     std::vector<std::uint8_t>& out_wrapped,
+                     std::string& error) {
+  out_wrapped.clear();
+  std::array<std::uint8_t, 32> data_key{};
+  if (!RandomBytes(data_key.data(), data_key.size())) {
+    error = "rng failed";
+    return false;
+  }
+
+  std::vector<std::uint8_t> wrapped_key;
+  if (!TpmWrapKey(data_key, wrapped_key, error)) {
+    crypto_wipe(data_key.data(), data_key.size());
+    return false;
+  }
+
+  std::array<std::uint8_t, 24> nonce{};
+  if (!RandomBytes(nonce.data(), nonce.size())) {
+    crypto_wipe(data_key.data(), data_key.size());
+    error = "rng failed";
+    return false;
+  }
+
+  std::vector<std::uint8_t> cipher;
+  cipher.resize(plain.size());
+  std::array<std::uint8_t, 16> tag{};
+  crypto_aead_lock(cipher.data(), tag.data(), data_key.data(), nonce.data(),
+                   reinterpret_cast<const std::uint8_t*>(kIdentityTpmMagic),
+                   sizeof(kIdentityTpmMagic) - 1,
+                   plain.data(), plain.size());
+
+  const std::uint32_t wrapped_len =
+      static_cast<std::uint32_t>(wrapped_key.size());
+  out_wrapped.reserve((sizeof(kIdentityTpmMagic) - 1) + 4 + wrapped_key.size() +
+                      nonce.size() + tag.size() + cipher.size());
+  out_wrapped.insert(out_wrapped.end(), kIdentityTpmMagic,
+                     kIdentityTpmMagic + sizeof(kIdentityTpmMagic) - 1);
+  out_wrapped.push_back(static_cast<std::uint8_t>(wrapped_len & 0xFF));
+  out_wrapped.push_back(static_cast<std::uint8_t>((wrapped_len >> 8) & 0xFF));
+  out_wrapped.push_back(static_cast<std::uint8_t>((wrapped_len >> 16) & 0xFF));
+  out_wrapped.push_back(static_cast<std::uint8_t>((wrapped_len >> 24) & 0xFF));
+  out_wrapped.insert(out_wrapped.end(), wrapped_key.begin(), wrapped_key.end());
+  out_wrapped.insert(out_wrapped.end(), nonce.begin(), nonce.end());
+  out_wrapped.insert(out_wrapped.end(), tag.begin(), tag.end());
+  out_wrapped.insert(out_wrapped.end(), cipher.begin(), cipher.end());
+  crypto_wipe(data_key.data(), data_key.size());
+  return true;
+}
+
+bool UnwrapIdentityTpm(const std::vector<std::uint8_t>& in,
+                       std::vector<std::uint8_t>& out_plain,
+                       std::string& error) {
+  out_plain.clear();
+  if (!StartsWithBytes(in, kIdentityTpmMagic, sizeof(kIdentityTpmMagic) - 1)) {
+    error = "tpm header missing";
+    return false;
+  }
+  std::size_t off = sizeof(kIdentityTpmMagic) - 1;
+  if (off + 4 > in.size()) {
+    error = "tpm header truncated";
+    return false;
+  }
+  const std::uint32_t wrapped_len =
       static_cast<std::uint32_t>(in[off]) |
       (static_cast<std::uint32_t>(in[off + 1]) << 8) |
       (static_cast<std::uint32_t>(in[off + 2]) << 16) |
       (static_cast<std::uint32_t>(in[off + 3]) << 24);
   off += 4;
-  if (off + blob_len != in.size()) {
-    error = "identity dpapi size invalid";
+  if (wrapped_len == 0 || off + wrapped_len + 24 + 16 > in.size()) {
+    error = "tpm payload invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> wrapped_key(in.begin() + static_cast<std::ptrdiff_t>(off),
+                                        in.begin() + static_cast<std::ptrdiff_t>(off + wrapped_len));
+  off += wrapped_len;
+  std::array<std::uint8_t, 24> nonce{};
+  std::memcpy(nonce.data(), in.data() + off, nonce.size());
+  off += nonce.size();
+  std::array<std::uint8_t, 16> tag{};
+  std::memcpy(tag.data(), in.data() + off, tag.size());
+  off += tag.size();
+  const std::size_t cipher_len = in.size() - off;
+  if (cipher_len == 0) {
+    error = "tpm payload invalid";
     return false;
   }
 
-  DATA_BLOB blob_in;
-  blob_in.cbData = blob_len;
-  blob_in.pbData = const_cast<BYTE*>(reinterpret_cast<const BYTE*>(in.data() + off));
-
-  static constexpr char kEntropy[] = "MI_E2EE_IDENTITY_ENTROPY_V1";
-  DATA_BLOB entropy;
-  entropy.cbData = static_cast<DWORD>(sizeof(kEntropy) - 1);
-  entropy.pbData = const_cast<BYTE*>(reinterpret_cast<const BYTE*>(kEntropy));
-
-  DATA_BLOB blob_out;
-  blob_out.cbData = 0;
-  blob_out.pbData = nullptr;
-  const BOOL ok = CryptUnprotectData(&blob_in, nullptr, &entropy, nullptr,
-                                    nullptr, CRYPTPROTECT_UI_FORBIDDEN,
-                                    &blob_out);
-  if (!ok || !blob_out.pbData || blob_out.cbData == 0) {
-    error = "CryptUnprotectData failed";
-    if (blob_out.pbData) {
-      LocalFree(blob_out.pbData);
-    }
+  std::array<std::uint8_t, 32> data_key{};
+  if (!TpmUnwrapKey(wrapped_key, data_key, error)) {
     return false;
   }
-  out_plain.assign(blob_out.pbData, blob_out.pbData + blob_out.cbData);
-  LocalFree(blob_out.pbData);
-  out_was_dpapi = true;
+
+  out_plain.resize(cipher_len);
+  const int ok = crypto_aead_unlock(
+      out_plain.data(), tag.data(), data_key.data(), nonce.data(),
+      reinterpret_cast<const std::uint8_t*>(kIdentityTpmMagic),
+      sizeof(kIdentityTpmMagic) - 1,
+      in.data() + off, cipher_len);
+  crypto_wipe(data_key.data(), data_key.size());
+  if (ok != 0) {
+    out_plain.clear();
+    error = "tpm decrypt failed";
+    return false;
+  }
   return true;
 }
-
-bool ProtectIdentityDpapi(const std::vector<std::uint8_t>& plain,
-                          std::vector<std::uint8_t>& out_wrapped,
-                          std::string& error) {
-  error.clear();
-  out_wrapped.clear();
-  if (plain.empty()) {
-    error = "identity empty";
-    return false;
-  }
-
-  DATA_BLOB blob_in;
-  blob_in.cbData = static_cast<DWORD>(plain.size());
-  blob_in.pbData = const_cast<BYTE*>(reinterpret_cast<const BYTE*>(plain.data()));
-
-  static constexpr char kEntropy[] = "MI_E2EE_IDENTITY_ENTROPY_V1";
-  DATA_BLOB entropy;
-  entropy.cbData = static_cast<DWORD>(sizeof(kEntropy) - 1);
-  entropy.pbData = const_cast<BYTE*>(reinterpret_cast<const BYTE*>(kEntropy));
-
-  DATA_BLOB blob_out;
-  blob_out.cbData = 0;
-  blob_out.pbData = nullptr;
-  const BOOL ok = CryptProtectData(&blob_in, nullptr, &entropy, nullptr, nullptr,
-                                  CRYPTPROTECT_UI_FORBIDDEN, &blob_out);
-  if (!ok || !blob_out.pbData || blob_out.cbData == 0) {
-    error = "CryptProtectData failed";
-    if (blob_out.pbData) {
-      LocalFree(blob_out.pbData);
-    }
-    return false;
-  }
-
-  static constexpr char kMagic[] = "MI_E2EE_IDENTITY_DPAPI1";
-  out_wrapped.reserve((sizeof(kMagic) - 1) + 4 + blob_out.cbData);
-  out_wrapped.insert(out_wrapped.end(), kMagic, kMagic + sizeof(kMagic) - 1);
-  const std::uint32_t len = static_cast<std::uint32_t>(blob_out.cbData);
-  out_wrapped.push_back(static_cast<std::uint8_t>(len & 0xFF));
-  out_wrapped.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
-  out_wrapped.push_back(static_cast<std::uint8_t>((len >> 16) & 0xFF));
-  out_wrapped.push_back(static_cast<std::uint8_t>((len >> 24) & 0xFF));
-  out_wrapped.insert(out_wrapped.end(), blob_out.pbData,
-                     blob_out.pbData + blob_out.cbData);
-  LocalFree(blob_out.pbData);
-  return true;
-}
+}  // namespace
 #endif
 
 bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
@@ -462,6 +835,10 @@ std::size_t Engine::SkippedKeyIdHash::operator()(const SkippedKeyId& v) const no
 Engine::Engine() = default;
 Engine::~Engine() = default;
 
+void Engine::SetIdentityPolicy(IdentityPolicy policy) {
+  identity_policy_ = policy;
+}
+
 bool Engine::Init(const std::filesystem::path& state_dir, std::string& error) {
   error.clear();
   state_dir_ = state_dir;
@@ -488,25 +865,69 @@ void Engine::SetLocalUsername(std::string username) {
   local_username_ = std::move(username);
 }
 
+bool Engine::MaybeRotatePreKeys(bool& out_rotated, std::string& error) {
+  out_rotated = false;
+  error.clear();
+  if (state_dir_.empty() || identity_path_.empty()) {
+    error = "identity path empty";
+    return false;
+  }
+  if (!MaybeRotatePreKeysLocked(out_rotated, error)) {
+    return false;
+  }
+  const std::uint64_t now = NowUnixSeconds();
+  const bool pruned = PruneLegacyKeys(now);
+  if (out_rotated || pruned) {
+    return SaveIdentity(error);
+  }
+  return true;
+}
+
 bool Engine::LoadOrCreateIdentity(std::string& error) {
   error.clear();
   std::vector<std::uint8_t> bytes;
   std::string read_err;
   const bool exists = ReadAll(identity_path_, bytes, read_err);
+  bool need_save = false;
+  bool migrate_protection = false;
   if (exists) {
 #ifdef _WIN32
-    bool was_dpapi = false;
+    const IdentityWrapKind wrap_kind = DetectIdentityWrapKind(bytes);
     std::vector<std::uint8_t> plain_bytes;
     std::string unprotect_err;
-    if (!MaybeUnprotectIdentityDpapi(bytes, plain_bytes, was_dpapi,
-                                     unprotect_err)) {
-      error = unprotect_err.empty() ? "identity unprotect failed" : unprotect_err;
-      return false;
+    if (wrap_kind == IdentityWrapKind::kTpmV1) {
+      if (!UnwrapIdentityTpm(bytes, plain_bytes, unprotect_err)) {
+        error = unprotect_err.empty() ? "identity unprotect failed" : unprotect_err;
+        return false;
+      }
+    } else if (wrap_kind == IdentityWrapKind::kDpapiV2) {
+      const std::string entropy = BuildIdentityEntropyV2();
+      if (!UnwrapIdentityDpapi(bytes, kIdentityDpapiV2Magic, entropy, plain_bytes,
+                               unprotect_err)) {
+        error = unprotect_err.empty() ? "identity unprotect failed" : unprotect_err;
+        return false;
+      }
+    } else if (wrap_kind == IdentityWrapKind::kDpapiV1) {
+      const std::string entropy = kIdentityEntropyV1;
+      if (!UnwrapIdentityDpapi(bytes, kIdentityDpapiV1Magic, entropy, plain_bytes,
+                               unprotect_err)) {
+        error = unprotect_err.empty() ? "identity unprotect failed" : unprotect_err;
+        return false;
+      }
+      migrate_protection = true;
+    } else {
+      plain_bytes = bytes;
     }
     bytes = std::move(plain_bytes);
-    const bool migrate_dpapi = !was_dpapi;
+    if (identity_policy_.tpm_enable &&
+        wrap_kind != IdentityWrapKind::kTpmV1) {
+      migrate_protection = true;
+    }
 #else
-    const bool migrate_dpapi = false;
+    if (DetectIdentityWrapKind(bytes) != IdentityWrapKind::kNone) {
+      error = "identity protection unsupported";
+      return false;
+    }
 #endif
 
     std::size_t off = 0;
@@ -515,6 +936,9 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
       return false;
     }
     const std::uint8_t version = bytes[off++];
+    const std::uint64_t now = NowUnixSeconds();
+    legacy_keys_.clear();
+
     if (version == 1) {
       if (bytes.size() != (1 + 32 + 32 + 4 + 32)) {
         error = "identity size invalid";
@@ -541,14 +965,10 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
         error = "mldsa keypair failed";
         return false;
       }
-
-      if (!DeriveIdentity(error)) {
-        return false;
-      }
-      return SaveIdentity(error);
-    }
-
-    if (version == 2) {
+      identity_created_at_ = now;
+      identity_rotated_at_ = now;
+      need_save = true;
+    } else if (version == 2) {
       if (bytes.size() != (1 + 32 + 32 + 4 + 32 + kKemSecretKeyBytes +
                            kKemPublicKeyBytes)) {
         error = "identity size invalid";
@@ -573,42 +993,130 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
         error = "mldsa keypair failed";
         return false;
       }
-
-      if (!DeriveIdentity(error)) {
+      identity_created_at_ = now;
+      identity_rotated_at_ = now;
+      need_save = true;
+    } else if (version == 3) {
+      if (bytes.size() != (1 + kSigSecretKeyBytes + kSigPublicKeyBytes + 32 + 4 +
+                           32 + kKemSecretKeyBytes + kKemPublicKeyBytes)) {
+        error = "identity size invalid";
         return false;
       }
-      return SaveIdentity(error);
-    }
+      std::memcpy(id_sig_sk_.data(), bytes.data() + off, id_sig_sk_.size());
+      off += id_sig_sk_.size();
+      std::memcpy(id_sig_pk_.data(), bytes.data() + off, id_sig_pk_.size());
+      off += id_sig_pk_.size();
+      std::memcpy(id_dh_sk_.data(), bytes.data() + off, 32);
+      off += 32;
+      spk_id_ = static_cast<std::uint32_t>(bytes[off]) |
+                (static_cast<std::uint32_t>(bytes[off + 1]) << 8) |
+                (static_cast<std::uint32_t>(bytes[off + 2]) << 16) |
+                (static_cast<std::uint32_t>(bytes[off + 3]) << 24);
+      off += 4;
+      std::memcpy(spk_sk_.data(), bytes.data() + off, 32);
+      off += 32;
+      std::memcpy(kem_sk_.data(), bytes.data() + off, kem_sk_.size());
+      off += kem_sk_.size();
+      std::memcpy(kem_pk_.data(), bytes.data() + off, kem_pk_.size());
+      identity_created_at_ = now;
+      identity_rotated_at_ = now;
+      need_save = true;
+    } else if (version == kIdentityVersion) {
+      std::uint64_t created_at = 0;
+      std::uint64_t rotated_at = 0;
+      if (!ReadLe64(bytes, off, created_at) || !ReadLe64(bytes, off, rotated_at)) {
+        error = "identity size invalid";
+        return false;
+      }
+      identity_created_at_ = created_at;
+      identity_rotated_at_ = rotated_at;
+      if (bytes.size() < off + kSigSecretKeyBytes + kSigPublicKeyBytes + 32 +
+                             4 + 32 + kKemSecretKeyBytes + kKemPublicKeyBytes + 4) {
+        error = "identity size invalid";
+        return false;
+      }
+      std::memcpy(id_sig_sk_.data(), bytes.data() + off, id_sig_sk_.size());
+      off += id_sig_sk_.size();
+      std::memcpy(id_sig_pk_.data(), bytes.data() + off, id_sig_pk_.size());
+      off += id_sig_pk_.size();
+      std::memcpy(id_dh_sk_.data(), bytes.data() + off, 32);
+      off += 32;
+      std::uint32_t spk_id = 0;
+      if (!ReadLe32(bytes, off, spk_id)) {
+        error = "identity size invalid";
+        return false;
+      }
+      spk_id_ = spk_id;
+      std::memcpy(spk_sk_.data(), bytes.data() + off, 32);
+      off += 32;
+      std::memcpy(kem_sk_.data(), bytes.data() + off, kem_sk_.size());
+      off += kem_sk_.size();
+      std::memcpy(kem_pk_.data(), bytes.data() + off, kem_pk_.size());
+      off += kem_pk_.size();
 
-    if (version != kIdentityVersion) {
+      std::uint32_t legacy_count = 0;
+      if (!ReadLe32(bytes, off, legacy_count)) {
+        error = "identity size invalid";
+        return false;
+      }
+      if (legacy_count > 64) {
+        error = "identity legacy overflow";
+        return false;
+      }
+      legacy_keys_.clear();
+      legacy_keys_.reserve(legacy_count);
+      for (std::uint32_t i = 0; i < legacy_count; ++i) {
+        LegacyKeyset legacy;
+        std::uint32_t legacy_id = 0;
+        std::uint64_t retired_at = 0;
+        if (!ReadLe32(bytes, off, legacy_id) ||
+            !ReadLe64(bytes, off, retired_at)) {
+          error = "identity size invalid";
+          return false;
+        }
+        if (off + 32 + legacy.kem_sk.size() > bytes.size()) {
+          error = "identity size invalid";
+          return false;
+        }
+        legacy.spk_id = legacy_id;
+        legacy.retired_at = retired_at;
+        std::memcpy(legacy.spk_sk.data(), bytes.data() + off, legacy.spk_sk.size());
+        off += legacy.spk_sk.size();
+        std::memcpy(legacy.kem_sk.data(), bytes.data() + off, legacy.kem_sk.size());
+        off += legacy.kem_sk.size();
+        legacy_keys_.push_back(std::move(legacy));
+      }
+      if (off != bytes.size()) {
+        error = "identity size invalid";
+        return false;
+      }
+    } else {
       error = "identity version mismatch";
       return false;
     }
-    if (bytes.size() != (1 + kSigSecretKeyBytes + kSigPublicKeyBytes + 32 + 4 +
-                         32 + kKemSecretKeyBytes + kKemPublicKeyBytes)) {
-      error = "identity size invalid";
-      return false;
+
+    if (identity_created_at_ == 0) {
+      identity_created_at_ = now;
+      need_save = true;
     }
-    std::memcpy(id_sig_sk_.data(), bytes.data() + off, id_sig_sk_.size());
-    off += id_sig_sk_.size();
-    std::memcpy(id_sig_pk_.data(), bytes.data() + off, id_sig_pk_.size());
-    off += id_sig_pk_.size();
-    std::memcpy(id_dh_sk_.data(), bytes.data() + off, 32);
-    off += 32;
-    spk_id_ = static_cast<std::uint32_t>(bytes[off]) |
-              (static_cast<std::uint32_t>(bytes[off + 1]) << 8) |
-              (static_cast<std::uint32_t>(bytes[off + 2]) << 16) |
-              (static_cast<std::uint32_t>(bytes[off + 3]) << 24);
-    off += 4;
-    std::memcpy(spk_sk_.data(), bytes.data() + off, 32);
-    off += 32;
-    std::memcpy(kem_sk_.data(), bytes.data() + off, kem_sk_.size());
-    off += kem_sk_.size();
-    std::memcpy(kem_pk_.data(), bytes.data() + off, kem_pk_.size());
+    if (identity_rotated_at_ == 0) {
+      identity_rotated_at_ = now;
+      need_save = true;
+    }
     if (!DeriveIdentity(error)) {
       return false;
     }
-    if (migrate_dpapi) {
+    bool rotated = false;
+    if (!MaybeRotatePreKeysLocked(rotated, error)) {
+      return false;
+    }
+    if (rotated) {
+      need_save = true;
+    }
+    if (PruneLegacyKeys(now)) {
+      need_save = true;
+    }
+    if (migrate_protection || need_save) {
       return SaveIdentity(error);
     }
     return true;
@@ -633,6 +1141,10 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
     error = "mldsa keypair failed";
     return false;
   }
+  const std::uint64_t now = NowUnixSeconds();
+  identity_created_at_ = now;
+  identity_rotated_at_ = now;
+  legacy_keys_.clear();
   if (!DeriveIdentity(error)) {
     return false;
   }
@@ -641,28 +1153,152 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
 
 bool Engine::SaveIdentity(std::string& error) const {
   std::vector<std::uint8_t> out;
-  out.reserve(1 + kSigSecretKeyBytes + kSigPublicKeyBytes + 32 + 4 + 32 +
-              kKemSecretKeyBytes + kKemPublicKeyBytes);
+  out.reserve(1 + 8 + 8 + kSigSecretKeyBytes + kSigPublicKeyBytes + 32 + 4 +
+              32 + kKemSecretKeyBytes + kKemPublicKeyBytes + 4 +
+              legacy_keys_.size() * (4 + 8 + 32 + kKemSecretKeyBytes));
   out.push_back(kIdentityVersion);
+  WriteLe64(identity_created_at_, out);
+  WriteLe64(identity_rotated_at_, out);
   out.insert(out.end(), id_sig_sk_.begin(), id_sig_sk_.end());
   out.insert(out.end(), id_sig_pk_.begin(), id_sig_pk_.end());
   out.insert(out.end(), id_dh_sk_.begin(), id_dh_sk_.end());
-  out.push_back(static_cast<std::uint8_t>(spk_id_ & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((spk_id_ >> 8) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((spk_id_ >> 16) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((spk_id_ >> 24) & 0xFF));
+  WriteLe32(spk_id_, out);
   out.insert(out.end(), spk_sk_.begin(), spk_sk_.end());
   out.insert(out.end(), kem_sk_.begin(), kem_sk_.end());
   out.insert(out.end(), kem_pk_.begin(), kem_pk_.end());
+  WriteLe32(static_cast<std::uint32_t>(legacy_keys_.size()), out);
+  for (const auto& legacy : legacy_keys_) {
+    WriteLe32(legacy.spk_id, out);
+    WriteLe64(legacy.retired_at, out);
+    out.insert(out.end(), legacy.spk_sk.begin(), legacy.spk_sk.end());
+    out.insert(out.end(), legacy.kem_sk.begin(), legacy.kem_sk.end());
+  }
 #ifdef _WIN32
   std::vector<std::uint8_t> wrapped;
-  if (!ProtectIdentityDpapi(out, wrapped, error)) {
+  if (identity_policy_.tpm_enable) {
+    std::string wrap_err;
+    if (WrapIdentityTpm(out, wrapped, wrap_err)) {
+      return WriteAll(identity_path_, wrapped, error);
+    }
+    if (identity_policy_.tpm_require) {
+      error = wrap_err.empty() ? "tpm protect failed" : wrap_err;
+      return false;
+    }
+  }
+  const std::string entropy = BuildIdentityEntropyV2();
+  if (!WrapIdentityDpapi(out, kIdentityDpapiV2Magic, entropy, wrapped, error)) {
     return false;
   }
   return WriteAll(identity_path_, wrapped, error);
 #else
   return WriteAll(identity_path_, out, error);
 #endif
+}
+
+bool Engine::MaybeRotatePreKeysLocked(bool& out_rotated, std::string& error) {
+  out_rotated = false;
+  error.clear();
+  if (identity_policy_.rotation_days == 0) {
+    return true;
+  }
+  const std::uint64_t now = NowUnixSeconds();
+  const std::uint64_t interval_sec =
+      static_cast<std::uint64_t>(identity_policy_.rotation_days) * 86400ULL;
+  if (interval_sec == 0) {
+    return true;
+  }
+  if (identity_rotated_at_ != 0 &&
+      now < identity_rotated_at_ + interval_sec) {
+    return true;
+  }
+
+  PruneLegacyKeys(now);
+
+  LegacyKeyset legacy;
+  legacy.spk_id = spk_id_;
+  legacy.retired_at = now;
+  legacy.spk_sk = spk_sk_;
+  legacy.kem_sk = kem_sk_;
+  legacy_keys_.push_back(legacy);
+
+  constexpr std::size_t kMaxLegacyKeys = 64;
+  while (legacy_keys_.size() > kMaxLegacyKeys) {
+    legacy_keys_.erase(legacy_keys_.begin());
+  }
+
+  std::uint32_t next_spk_id = 0;
+  std::array<std::uint8_t, 32> next_spk_sk{};
+  bool have_candidate = false;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    if (!RandomBytes(reinterpret_cast<std::uint8_t*>(&next_spk_id),
+                     sizeof(next_spk_id)) ||
+        !RandomBytes(next_spk_sk.data(), next_spk_sk.size())) {
+      error = "rng failed";
+      return false;
+    }
+    if (next_spk_id == 0 || next_spk_id == spk_id_) {
+      continue;
+    }
+    if (FindLegacyKey(next_spk_id) != nullptr) {
+      continue;
+    }
+    have_candidate = true;
+    break;
+  }
+  if (!have_candidate) {
+    error = "spk id reuse";
+    return false;
+  }
+
+  spk_id_ = next_spk_id;
+  spk_sk_ = next_spk_sk;
+  if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(kem_pk_.data(),
+                                                kem_sk_.data()) != 0) {
+    error = "mlkem keypair failed";
+    return false;
+  }
+
+  identity_rotated_at_ = now;
+  if (!DeriveIdentity(error)) {
+    return false;
+  }
+  out_rotated = true;
+  return true;
+}
+
+bool Engine::PruneLegacyKeys(std::uint64_t now_sec) {
+  if (legacy_keys_.empty()) {
+    return false;
+  }
+  if (identity_policy_.legacy_retention_days == 0) {
+    return false;
+  }
+  const std::uint64_t retention_sec =
+      static_cast<std::uint64_t>(identity_policy_.legacy_retention_days) * 86400ULL;
+  if (retention_sec == 0) {
+    return false;
+  }
+  const std::size_t before = legacy_keys_.size();
+  legacy_keys_.erase(
+      std::remove_if(legacy_keys_.begin(), legacy_keys_.end(),
+                     [now_sec, retention_sec](const LegacyKeyset& legacy) {
+                       if (legacy.retired_at == 0) {
+                         return false;
+                       }
+                       return now_sec > legacy.retired_at &&
+                              (now_sec - legacy.retired_at) > retention_sec;
+                     }),
+      legacy_keys_.end());
+  return legacy_keys_.size() != before;
+}
+
+const Engine::LegacyKeyset* Engine::FindLegacyKey(std::uint32_t spk_id) const {
+  for (const auto& legacy : legacy_keys_) {
+    if (legacy.spk_id == spk_id) {
+      return &legacy;
+    }
+  }
+  return nullptr;
 }
 
 bool Engine::DeriveIdentity(std::string& error) {
@@ -909,6 +1545,13 @@ bool Engine::TryDecryptWithSkippedMk(
     out_plain.clear();
     return false;
   }
+  std::vector<std::uint8_t> unpadded;
+  std::string pad_err;
+  if (!UnpadPayload(out_plain, unpadded, pad_err)) {
+    out_plain.clear();
+    return false;
+  }
+  out_plain = std::move(unpadded);
   session.skipped_mks.erase(it);
   return true;
 }
@@ -990,18 +1633,27 @@ bool Engine::InitSessionAsResponder(const std::string& peer_username,
                                     Session& out_session,
                                     std::string& error) {
   error.clear();
+  const std::array<std::uint8_t, 32>* spk_sk = &spk_sk_;
+  const std::array<std::uint8_t, kKemSecretKeyBytes>* kem_sk = &kem_sk_;
+  std::array<std::uint8_t, 32> spk_pk = spk_pk_;
   if (peer.spk_id != spk_id_) {
-    error = "spk_id mismatch";
-    return false;
+    const auto* legacy = FindLegacyKey(peer.spk_id);
+    if (!legacy) {
+      error = "spk_id mismatch";
+      return false;
+    }
+    spk_sk = &legacy->spk_sk;
+    kem_sk = &legacy->kem_sk;
+    crypto_x25519_public_key(spk_pk.data(), spk_sk->data());
   }
 
-  const auto dh1 = X25519(spk_sk_, peer.id_dh_pk);
+  const auto dh1 = X25519(*spk_sk, peer.id_dh_pk);
   const auto dh2 = X25519(id_dh_sk_, sender_eph_pk);
-  const auto dh3 = X25519(spk_sk_, sender_eph_pk);
+  const auto dh3 = X25519(*spk_sk, sender_eph_pk);
 
   std::array<std::uint8_t, kKemSharedSecretBytes> kem_ss{};
   if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_dec(kem_ss.data(), kem_ct.data(),
-                                           kem_sk_.data()) != 0) {
+                                           kem_sk->data()) != 0) {
     error = "mlkem dec failed";
     return false;
   }
@@ -1027,8 +1679,8 @@ bool Engine::InitSessionAsResponder(const std::string& peer_username,
   std::memcpy(out_session.ck_r.data(), hk.data() + 32, 32);
   out_session.has_ck_r = true;
   out_session.has_ck_s = false;
-  out_session.dhs_sk = spk_sk_;
-  out_session.dhs_pk = spk_pk_;
+  out_session.dhs_sk = *spk_sk;
+  out_session.dhs_pk = spk_pk;
   out_session.dhr_pk = sender_eph_pk;
   out_session.kem_r_pk = sender_ratchet_kem_pk;
   return true;
@@ -1043,6 +1695,10 @@ bool Engine::EncryptMessage(Session& session, std::uint8_t msg_type,
   out_payload.clear();
   if (!session.has_ck_s) {
     error = "no send chain";
+    return false;
+  }
+  std::vector<std::uint8_t> padded;
+  if (!PadPayload(plaintext, padded, error)) {
     return false;
   }
 
@@ -1063,11 +1719,11 @@ bool Engine::EncryptMessage(Session& session, std::uint8_t msg_type,
   }
 
   std::vector<std::uint8_t> cipher;
-  cipher.resize(plaintext.size());
+  cipher.resize(padded.size());
   std::array<std::uint8_t, 16> mac{};
   crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(),
                    header_ad.data(), header_ad.size(),
-                   plaintext.data(), plaintext.size());
+                   padded.data(), padded.size());
 
   out_payload = header_ad;
   out_payload.insert(out_payload.end(), nonce.begin(), nonce.end());
@@ -1141,6 +1797,12 @@ bool Engine::DecryptWithSession(Session& session, std::uint8_t msg_type,
     out_plain.clear();
     return false;
   }
+  std::vector<std::uint8_t> unpadded;
+  if (!UnpadPayload(out_plain, unpadded, error)) {
+    out_plain.clear();
+    return false;
+  }
+  out_plain = std::move(unpadded);
 
   for (const auto& e : pending) {
     const auto& id = e.first;

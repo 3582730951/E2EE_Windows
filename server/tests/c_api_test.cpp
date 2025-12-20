@@ -2,9 +2,11 @@
 #include <cstdint>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "c_api.h"
 #include "frame.h"
+#include "key_transparency.h"
 #include "protocol.h"
 
 static void WriteFile(const std::string& path, const std::string& content) {
@@ -14,8 +16,19 @@ static void WriteFile(const std::string& path, const std::string& content) {
 
 int main() {
   WriteFile("config.ini",
-            "[mode]\nmode=1\n[server]\nlist_port=8888\n");
+            "[mode]\nmode=1\n[server]\nlist_port=8888\n"
+            "offline_dir=.\n"
+            "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "u:p\n");
+  {
+    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x44);
+    std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
+    if (!kf) {
+      return 1;
+    }
+    kf.write(reinterpret_cast<const char*>(key.data()),
+             static_cast<std::streamsize>(key.size()));
+  }
 
   mi_server_handle* h = mi_server_create("config.ini");
   if (!h) {

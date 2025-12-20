@@ -68,11 +68,13 @@ class SessionManager {
                           std::vector<std::uint8_t> opaque_server_setup = {});
 
   bool Login(const std::string& username, const std::string& password,
-             Session& out_session, std::string& error);
+             TransportKind transport, Session& out_session,
+             std::string& error);
 
   bool LoginHybrid(const std::string& username, const std::string& password,
                    const std::array<std::uint8_t, 32>& client_dh_pk,
                    const std::vector<std::uint8_t>& client_kem_pk,
+                   TransportKind transport,
                    LoginHybridServerHello& out_hello,
                    Session& out_session,
                    std::string& error);
@@ -86,7 +88,7 @@ class SessionManager {
                         OpaqueLoginStartServerHello& out_hello,
                         std::string& error);
   bool OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
-                         Session& out_session,
+                         TransportKind transport, Session& out_session,
                          std::string& error);
 
   bool UserExists(const std::string& username, std::string& error) const;

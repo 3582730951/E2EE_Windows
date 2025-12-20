@@ -23,7 +23,8 @@ int main() {
               "[server]\nlist_port=9000  # listen port\n"
               "max_connections=10\n"
               "max_connections_per_ip=3\n"
-              "max_connection_bytes=65536\n");
+              "max_connection_bytes=65536\n"
+              "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
@@ -41,7 +42,8 @@ int main() {
     const std::string path = "tmp_config_demo.ini";
     WriteFile(path,
               "[mode]  # auth mode\nmode=1  # demo\n"
-              "[server]\nlist_port=8000  # listen port\n");
+              "[server]\nlist_port=8000  # listen port\n"
+              "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
@@ -54,7 +56,8 @@ int main() {
     const std::string path = "tmp_config_require_tls_fail.ini";
     WriteFile(path,
               "[mode]\nmode=1\n"
-              "[server]\nlist_port=8000\nrequire_tls=1\ntls_enable=0\n");
+              "[server]\nlist_port=8000\nrequire_tls=1\ntls_enable=0\n"
+              "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
@@ -65,7 +68,8 @@ int main() {
     const std::string path = "tmp_config_require_tls_ok.ini";
     WriteFile(path,
               "[mode]\nmode=1\n"
-              "[server]\nlist_port=8000\nrequire_tls=1\ntls_enable=1\n");
+              "[server]\nlist_port=8000\nrequire_tls=1\ntls_enable=1\n"
+              "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
@@ -76,11 +80,38 @@ int main() {
 
   {
     const std::string path = "tmp_config_conn_bytes_too_small.ini";
-    WriteFile(path, "[mode]\nmode=1\n[server]\nlist_port=8000\nmax_connection_bytes=1\n");
+    WriteFile(path, "[mode]\nmode=1\n[server]\nlist_port=8000\nmax_connection_bytes=1\n"
+                    "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
     assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_secure_delete_missing.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nsecure_delete_enabled=1\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_secure_delete_ok.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nsecure_delete_enabled=1\n"
+              "secure_delete_plugin=secure_delete_plugin.dll\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(ok);
+    assert(cfg.server.secure_delete_enabled);
   }
 
   {

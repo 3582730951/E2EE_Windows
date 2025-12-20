@@ -16,3 +16,8 @@ else()
   target_compile_definitions(mi_e2ee_fuzz_frame_decode PRIVATE MI_E2EE_FUZZ_STANDALONE=1)
 endif()
 
+if(MI_E2EE_FUZZ_SMOKE AND NOT MI_E2EE_FUZZ_USE_LIBFUZZER AND
+   CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  add_test(NAME fuzz_frame_decode_smoke
+           COMMAND mi_e2ee_fuzz_frame_decode ${CMAKE_CURRENT_LIST_DIR}/seed_frame.bin)
+endif()

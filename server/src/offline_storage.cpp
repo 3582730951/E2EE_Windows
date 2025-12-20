@@ -5,6 +5,15 @@
 #include <fstream>
 #include <random>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #include "crypto.h"
 #include "monocypher.h"
 
@@ -20,7 +29,10 @@ constexpr std::size_t kOfflineFileLegacyNonceBytes = 16;
 constexpr std::size_t kOfflineFileLegacyTagBytes = 32;
 constexpr std::array<std::uint8_t, 8> kOfflineFileMagic = {
     'M', 'I', 'O', 'F', 'A', 'E', 'A', 'D'};
-constexpr std::uint8_t kOfflineFileMagicVersion = 1;
+constexpr std::uint8_t kOfflineFileMagicVersionV1 = 1;
+constexpr std::uint8_t kOfflineFileMagicVersionV2 = 2;
+constexpr std::uint8_t kOfflineFileMagicVersionLatest =
+    kOfflineFileMagicVersionV2;
 constexpr std::size_t kOfflineFileHeaderBytes =
     kOfflineFileMagic.size() + 1;
 
@@ -68,10 +80,35 @@ void DeriveBlock(const std::array<std::uint8_t, 32>& key,
 }  // namespace
 
 OfflineStorage::OfflineStorage(std::filesystem::path base_dir,
-                               std::chrono::seconds ttl)
-    : base_dir_(std::move(base_dir)), ttl_(ttl) {
+                               std::chrono::seconds ttl,
+                               SecureDeleteConfig secure_delete)
+    : base_dir_(std::move(base_dir)),
+      ttl_(ttl),
+      secure_delete_(std::move(secure_delete)) {
   std::error_code ec;
   std::filesystem::create_directories(base_dir_, ec);
+  if (secure_delete_.enabled) {
+    std::string err;
+    if (!LoadSecureDeletePlugin(secure_delete_.plugin_path, err)) {
+      secure_delete_error_ = err.empty() ? "secure delete plugin load failed"
+                                         : err;
+      secure_delete_ready_ = false;
+    } else {
+      secure_delete_ready_ = true;
+    }
+  }
+}
+
+OfflineStorage::~OfflineStorage() {
+  if (secure_delete_handle_) {
+#ifdef _WIN32
+    FreeLibrary(static_cast<HMODULE>(secure_delete_handle_));
+#else
+    dlclose(secure_delete_handle_);
+#endif
+    secure_delete_handle_ = nullptr;
+  }
+  secure_delete_fn_ = nullptr;
 }
 
 PutResult OfflineStorage::Put(const std::string& owner,
@@ -83,17 +120,24 @@ PutResult OfflineStorage::Put(const std::string& owner,
   }
 
   const std::string id = GenerateId();
-  const std::array<std::uint8_t, 32> key = GenerateKey();
+  std::array<std::uint8_t, 32> file_key = GenerateKey();
+  std::array<std::uint8_t, 32> erase_key = GenerateKey();
+  std::array<std::uint8_t, 32> storage_key =
+      DeriveStorageKey(file_key, erase_key);
   const auto nonce = RandomAeadNonce();
 
   std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
   std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
-  ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersion;
+  ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersionLatest;
 
   std::vector<std::uint8_t> cipher;
   std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
-  if (!EncryptAead(plaintext, key, nonce, ad.data(), ad.size(), cipher, tag)) {
+  if (!EncryptAead(plaintext, storage_key, nonce, ad.data(), ad.size(), cipher,
+                   tag)) {
     result.error = "encrypt failed";
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
     return result;
   }
 
@@ -105,7 +149,7 @@ PutResult OfflineStorage::Put(const std::string& owner,
   }
   ofs.write(reinterpret_cast<const char*>(kOfflineFileMagic.data()),
             static_cast<std::streamsize>(kOfflineFileMagic.size()));
-  const char ver = static_cast<char>(kOfflineFileMagicVersion);
+  const char ver = static_cast<char>(kOfflineFileMagicVersionLatest);
   ofs.write(&ver, 1);
   ofs.write(reinterpret_cast<const char*>(nonce.data()),
             static_cast<std::streamsize>(nonce.size()));
@@ -114,6 +158,25 @@ PutResult OfflineStorage::Put(const std::string& owner,
   ofs.write(reinterpret_cast<const char*>(tag.data()),
             static_cast<std::streamsize>(tag.size()));
   ofs.close();
+  if (!ofs.good()) {
+    result.error = "write file failed";
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
+    return result;
+  }
+
+  std::string key_err;
+  if (!SaveEraseKey(path, erase_key, key_err)) {
+    result.error = key_err.empty() ? "key store failed" : key_err;
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
+    WipeFile(path);
+    return result;
+  }
+  crypto_wipe(storage_key.data(), storage_key.size());
+  crypto_wipe(erase_key.data(), erase_key.size());
 
   StoredFileMeta meta;
   meta.id = id;
@@ -128,8 +191,9 @@ PutResult OfflineStorage::Put(const std::string& owner,
 
   result.success = true;
   result.file_id = id;
-  result.file_key = key;
+  result.file_key = file_key;
   result.meta = meta;
+  crypto_wipe(file_key.data(), file_key.size());
   return result;
 }
 
@@ -538,7 +602,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
   if (content.size() >= kOfflineFileHeaderBytes &&
       std::equal(kOfflineFileMagic.begin(), kOfflineFileMagic.end(),
                  content.begin())) {
-    if (content[kOfflineFileMagic.size()] != kOfflineFileMagicVersion) {
+    const std::uint8_t version = content[kOfflineFileMagic.size()];
+    if (version != kOfflineFileMagicVersionV1 &&
+        version != kOfflineFileMagicVersionV2) {
       error = "unsupported format";
       return std::nullopt;
     }
@@ -579,13 +645,33 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
 
     std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
     std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
-    ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersion;
+    ad[kOfflineFileMagic.size()] = version;
 
-    if (!DecryptAead(cipher, file_key, nonce, ad.data(), ad.size(), tag,
+    std::array<std::uint8_t, 32> file_key_copy = file_key;
+    std::array<std::uint8_t, 32> storage_key = file_key_copy;
+    std::array<std::uint8_t, 32> erase_key{};
+    if (version == kOfflineFileMagicVersionV2) {
+      std::string key_err;
+      if (!LoadEraseKey(path, erase_key, key_err)) {
+        error = key_err.empty() ? "erase key missing" : key_err;
+        crypto_wipe(file_key_copy.data(), file_key_copy.size());
+        crypto_wipe(erase_key.data(), erase_key.size());
+        return std::nullopt;
+      }
+      storage_key = DeriveStorageKey(file_key_copy, erase_key);
+    }
+
+    if (!DecryptAead(cipher, storage_key, nonce, ad.data(), ad.size(), tag,
                      plaintext)) {
+      crypto_wipe(storage_key.data(), storage_key.size());
+      crypto_wipe(file_key_copy.data(), file_key_copy.size());
+      crypto_wipe(erase_key.data(), erase_key.size());
       error = "auth failed";
       return std::nullopt;
     }
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(file_key_copy.data(), file_key_copy.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
   } else {
     if (content.size() < (kOfflineFileLegacyNonceBytes + kOfflineFileLegacyTagBytes)) {
       error = "file truncated";
@@ -718,6 +804,23 @@ std::filesystem::path OfflineStorage::ResolveUploadTempPath(
   return base_dir_ / (file_id + ".part");
 }
 
+std::filesystem::path OfflineStorage::ResolveKeyPath(
+    const std::string& file_id) const {
+  return base_dir_ / (file_id + ".key");
+}
+
+std::optional<std::filesystem::path> OfflineStorage::ResolveKeyPathForData(
+    const std::filesystem::path& data_path) const {
+  if (data_path.extension() != ".bin") {
+    return std::nullopt;
+  }
+  const auto stem = data_path.stem().string();
+  if (stem.empty()) {
+    return std::nullopt;
+  }
+  return data_path.parent_path() / (stem + ".key");
+}
+
 std::string OfflineStorage::GenerateId() const {
   std::array<std::uint8_t, 16> rnd{};
   (void)FillRandom(rnd.data(), rnd.size());
@@ -739,6 +842,75 @@ std::array<std::uint8_t, 32> OfflineStorage::GenerateKey() const {
 }
 
 std::string OfflineStorage::GenerateSessionId() const { return GenerateId(); }
+
+bool OfflineStorage::SaveEraseKey(const std::filesystem::path& data_path,
+                                  const std::array<std::uint8_t, 32>& erase_key,
+                                  std::string& error) const {
+  error.clear();
+  const auto key_path = ResolveKeyPathForData(data_path);
+  if (!key_path.has_value()) {
+    error = "key path invalid";
+    return false;
+  }
+  const auto tmp = key_path->string() + ".tmp";
+  {
+    std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+    if (!ofs) {
+      error = "key write failed";
+      return false;
+    }
+    ofs.write(reinterpret_cast<const char*>(erase_key.data()),
+              static_cast<std::streamsize>(erase_key.size()));
+    if (!ofs) {
+      error = "key write failed";
+      return false;
+    }
+  }
+  std::error_code ec;
+  std::filesystem::rename(tmp, *key_path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    error = "key write failed";
+    return false;
+  }
+  return true;
+}
+
+bool OfflineStorage::LoadEraseKey(const std::filesystem::path& data_path,
+                                  std::array<std::uint8_t, 32>& erase_key,
+                                  std::string& error) const {
+  error.clear();
+  erase_key.fill(0);
+  const auto key_path = ResolveKeyPathForData(data_path);
+  if (!key_path.has_value()) {
+    error = "key path invalid";
+    return false;
+  }
+  std::ifstream ifs(*key_path, std::ios::binary);
+  if (!ifs) {
+    error = "erase key not found";
+    return false;
+  }
+  std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(ifs)),
+                                  std::istreambuf_iterator<char>());
+  if (bytes.size() != erase_key.size()) {
+    error = "erase key invalid";
+    return false;
+  }
+  std::memcpy(erase_key.data(), bytes.data(), erase_key.size());
+  return true;
+}
+
+std::array<std::uint8_t, 32> OfflineStorage::DeriveStorageKey(
+    const std::array<std::uint8_t, 32>& file_key,
+    const std::array<std::uint8_t, 32>& erase_key) const {
+  crypto::Sha256Digest digest;
+  crypto::HmacSha256(file_key.data(), file_key.size(), erase_key.data(),
+                     erase_key.size(), digest);
+  std::array<std::uint8_t, 32> out{};
+  std::memcpy(out.data(), digest.bytes.data(), out.size());
+  return out;
+}
 
 bool OfflineStorage::EncryptAead(
     const std::vector<std::uint8_t>& plaintext,
@@ -842,7 +1014,65 @@ bool OfflineStorage::DecryptLegacy(const std::vector<std::uint8_t>& cipher,
   return true;
 }
 
-void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
+bool OfflineStorage::LoadSecureDeletePlugin(const std::filesystem::path& path,
+                                            std::string& error) {
+  error.clear();
+  if (path.empty()) {
+    error = "secure delete plugin path empty";
+    return false;
+  }
+#ifdef _WIN32
+  const std::wstring wpath = path.wstring();
+  HMODULE handle = LoadLibraryW(wpath.c_str());
+  if (!handle) {
+    error = "secure delete plugin load failed";
+    return false;
+  }
+  auto fn = reinterpret_cast<SecureDeleteFn>(
+      GetProcAddress(handle, "mi_secure_delete"));
+  if (!fn) {
+    FreeLibrary(handle);
+    error = "secure delete plugin missing mi_secure_delete";
+    return false;
+  }
+  secure_delete_handle_ = handle;
+  secure_delete_fn_ = fn;
+#else
+  void* handle = dlopen(path.c_str(), RTLD_NOW);
+  if (!handle) {
+    error = "secure delete plugin load failed";
+    return false;
+  }
+  auto fn = reinterpret_cast<SecureDeleteFn>(dlsym(handle, "mi_secure_delete"));
+  if (!fn) {
+    dlclose(handle);
+    error = "secure delete plugin missing mi_secure_delete";
+    return false;
+  }
+  secure_delete_handle_ = handle;
+  secure_delete_fn_ = fn;
+#endif
+  return true;
+}
+
+bool OfflineStorage::CallSecureDeletePlugin(
+    const std::filesystem::path& path) const {
+  if (!secure_delete_.enabled || !secure_delete_ready_ || !secure_delete_fn_) {
+    return false;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) || ec) {
+    return true;
+  }
+  const std::string path_utf8 = path.u8string();
+  if (path_utf8.empty()) {
+    return false;
+  }
+  const int rc = secure_delete_fn_(path_utf8.c_str());
+  return rc != 0;
+}
+
+void OfflineStorage::BestEffortWipe(const std::filesystem::path& path) const {
   std::error_code ec;
   if (!std::filesystem::exists(path, ec)) {
     return;
@@ -879,6 +1109,23 @@ void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
   fs.flush();
   fs.close();
   std::filesystem::remove(path, ec);
+}
+
+void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
+  std::error_code ec;
+  const auto key_path = ResolveKeyPathForData(path);
+  if (key_path.has_value() && std::filesystem::exists(*key_path, ec) && !ec) {
+    if (!CallSecureDeletePlugin(*key_path)) {
+      BestEffortWipe(*key_path);
+    } else {
+      std::filesystem::remove(*key_path, ec);
+    }
+  }
+  if (!CallSecureDeletePlugin(path)) {
+    BestEffortWipe(path);
+  } else {
+    std::filesystem::remove(path, ec);
+  }
 }
 
 OfflineQueue::OfflineQueue(std::chrono::seconds default_ttl)

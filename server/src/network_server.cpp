@@ -922,7 +922,8 @@ void NetworkServer::Run() {
                 break;
               }
               std::vector<std::uint8_t> response;
-              if (!listener_->Process(request, response, slot.ip)) {
+              if (!listener_->Process(request, response, slot.ip,
+                                      TransportKind::kTls)) {
                 break;
               }
               bytes_total += response.size();
@@ -963,7 +964,8 @@ void NetworkServer::Run() {
             }
 
             std::vector<std::uint8_t> response;
-            if (!listener_->Process(request, response, slot.ip)) {
+            if (!listener_->Process(request, response, slot.ip,
+                                    TransportKind::kTcp)) {
               break;
             }
             bytes_total += response.size();
@@ -1091,7 +1093,8 @@ void NetworkServer::Run() {
             }
 
             std::vector<std::uint8_t> response;
-            if (!listener_->Process(request, response, slot.ip)) {
+            if (!listener_->Process(request, response, slot.ip,
+                                    TransportKind::kTcp)) {
               break;
             }
             bytes_total += response.size();

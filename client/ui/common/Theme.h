@@ -67,6 +67,6 @@ QColor uiDangerRed();
 
 constexpr int kTitleBarHeight = 56;
 constexpr int kResizeBorder = 6;
-constexpr int kWindowRadius = 10;
+constexpr int kWindowRadius = 16;
 
 }  // namespace Theme

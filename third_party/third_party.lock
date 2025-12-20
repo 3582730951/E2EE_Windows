@@ -1,0 +1,5 @@
+# name|version|license|path|sha256
+monocypher|__git__|BSD-2-Clause OR CC0-1.0|monocypher|274f12b0b457003dc3ba00aee133f09ecf3004592f6339a4dc38fd3a12c3177c
+miniz|3.1.0|public-domain|miniz|10ce092315b2c2bdb69e3acb574ae9dfeb5065f13593e9fda9a1cb3177b0a9be
+pqclean_mlkem768_clean|snapshot|unknown|pqclean_mlkem768_clean|9a9ed8cce6732c75ae7662ea8fd8216048cb71721248e965ba608a2e9bd50ee5
+pqclean_mldsa65_clean|snapshot|unknown|pqclean_mldsa65_clean|00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd

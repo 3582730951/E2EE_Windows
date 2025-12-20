@@ -376,6 +376,7 @@ class ClientCore {
     std::uint32_t next_iteration{0};
     std::array<std::uint8_t, 32> ck{};
     std::string members_hash;
+    std::uint64_t rotated_at{0};
     std::uint64_t sent_count{0};
     std::unordered_map<std::uint32_t, std::array<std::uint8_t, 32>> skipped_mks;
     std::deque<std::uint32_t> skipped_order;
@@ -406,6 +407,7 @@ class ClientCore {
   bool LoadKtState();
   bool SaveKtState();
   bool EnsurePreKeyPublished();
+  bool MaybeSendCoverTraffic();
   bool FetchPreKeyBundle(const std::string& peer_username,
                          std::vector<std::uint8_t>& out_bundle);
   bool FetchKtConsistency(std::uint64_t old_size, std::uint64_t new_size,
@@ -427,6 +429,8 @@ class ClientCore {
                                    const std::vector<std::string>& members,
                                    GroupSenderKeyState*& out_sender_key,
                                    std::string& out_warn);
+  void ResendPendingSenderKeyDistributions();
+  void RecordKtGossipMismatch(const std::string& reason);
 
   bool LoadOrCreateDeviceId();
   bool LoadDeviceSyncKey();
@@ -510,6 +514,8 @@ class ClientCore {
   std::string server_ip_;
   std::uint16_t server_port_{0};
   bool use_tls_{false};
+  bool require_tls_{true};
+  mi::server::TransportKind transport_kind_{mi::server::TransportKind::kLocal};
   AuthMode auth_mode_{AuthMode::kLegacy};
   ProxyConfig proxy_;
   std::mutex remote_stream_mutex_;
@@ -517,6 +523,8 @@ class ClientCore {
   bool remote_ok_{true};
   std::string remote_error_;
   std::string trust_store_path_;
+  bool trust_store_tls_required_{false};
+  bool require_pinned_fingerprint_{true};
   std::string pinned_server_fingerprint_;
   std::string pending_server_fingerprint_;
   std::string pending_server_pin_;
@@ -536,13 +544,23 @@ class ClientCore {
   std::filesystem::path kt_state_path_;
   std::uint64_t kt_tree_size_{0};
   std::array<std::uint8_t, 32> kt_root_{};
+  bool kt_require_signature_{true};
+  std::uint32_t kt_gossip_alert_threshold_{3};
+  std::vector<std::uint8_t> kt_root_pubkey_;
+  bool kt_root_pubkey_loaded_{false};
+  std::uint32_t kt_gossip_mismatch_count_{0};
+  bool kt_gossip_alerted_{false};
   bool device_sync_enabled_{false};
   bool device_sync_is_primary_{true};
   std::string device_id_;
   std::filesystem::path device_sync_key_path_;
   bool device_sync_key_loaded_{false};
   std::array<std::uint8_t, 32> device_sync_key_{};
-   mi::client::e2ee::Engine e2ee_;
+  mi::client::e2ee::Engine e2ee_;
+  mi::client::e2ee::IdentityPolicy identity_policy_{};
+  bool cover_traffic_enabled_{true};
+  std::uint32_t cover_traffic_interval_sec_{30};
+  std::chrono::steady_clock::time_point cover_traffic_last_sent_{};
 
   std::unordered_map<std::string, CachedPeerIdentity> peer_id_cache_;
   std::unordered_map<std::string, GroupSenderKeyState> group_sender_keys_;

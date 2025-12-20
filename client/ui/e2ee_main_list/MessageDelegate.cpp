@@ -18,15 +18,21 @@ namespace {
 struct BubbleTokens {
     static QColor bgOutgoing() { return Theme::uiMessageOutgoingBg(); }
     static QColor bgIncoming() { return Theme::uiMessageIncomingBg(); }
-    static QColor text() { return Theme::uiMessageText(); }
+    static QColor textIncoming() { return Theme::uiMessageText(); }
+    static QColor textOutgoing() { return QColor(Qt::white); }
     static QColor timeText() { return Theme::uiMessageTimeText(); }
+    static QColor timeTextOutgoing() {
+        QColor c(Qt::white);
+        c.setAlpha(190);
+        return c;
+    }
     static QColor systemText() { return Theme::uiMessageSystemText(); }
     static QColor systemBg() { return QColor(0, 0, 0, 0); }
-    static int radius() { return 10; }
-    static int paddingH() { return 14; }
-    static int paddingV() { return 10; }
-    static int avatarSize() { return 38; }
-    static int margin() { return 12; }
+    static int radius() { return 16; }
+    static int paddingH() { return 16; }
+    static int paddingV() { return 12; }
+    static int avatarSize() { return 40; }
+    static int margin() { return 14; }
     static int lineSpacing() { return 8; }
 };
 
@@ -430,6 +436,9 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     painter->setPen(Qt::NoPen);
     painter->drawRoundedRect(bubbleRect, BubbleTokens::radius(), BubbleTokens::radius());
 
+    const QColor textColor = outgoing ? BubbleTokens::textOutgoing() : BubbleTokens::textIncoming();
+    const QColor metaColor = outgoing ? BubbleTokens::timeTextOutgoing() : BubbleTokens::timeText();
+
     if (isSticker) {
         const int stickerSize = 120;
         const QRect stickerRect = QRect(bubbleRect.left() + BubbleTokens::paddingH(),
@@ -484,7 +493,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         QFont subFont = Theme::defaultFont(11);
 
         painter->setFont(titleFont);
-        painter->setPen(BubbleTokens::text());
+        painter->setPen(textColor);
         QFontMetrics titleFm(titleFont);
         const QString titleText = titleFm.elidedText(fileName, Qt::ElideMiddle, textArea.width());
         QRect titleRect(textArea.left(), textArea.top(), textArea.width(), titleFm.height());
@@ -511,7 +520,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
             meta += QStringLiteral(" · ") + transferTag;
         }
         painter->setFont(subFont);
-        painter->setPen(BubbleTokens::timeText());
+        painter->setPen(metaColor);
         QFontMetrics subFm(subFont);
         const QString metaText = subFm.elidedText(meta, Qt::ElideRight, textArea.width());
         QRect metaRect(textArea.left(), titleRect.bottom() + 4, textArea.width(), subFm.height());
@@ -524,14 +533,17 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                           contentRect.width(),
                           barH);
             barRect = barRect.adjusted(0, 0, 0, -1);
-            QColor track = BubbleTokens::timeText();
-            track.setAlpha(60);
+            QColor track = metaColor;
+            track.setAlpha(outgoing ? 70 : 60);
             painter->setPen(Qt::NoPen);
             painter->setBrush(track);
             painter->drawRoundedRect(barRect, barH / 2.0, barH / 2.0);
 
-            QColor accent = Theme::uiAccentBlue();
-            accent.setAlpha(200);
+            QColor accent = outgoing ? QColor(255, 255, 255, 210)
+                                     : Theme::uiAccentBlue();
+            if (!outgoing) {
+                accent.setAlpha(200);
+            }
             if (fileProgress >= 0) {
                 const int w = qMax(2, static_cast<int>(barRect.width() * (fileProgress / 100.0)));
                 QRect fill = barRect;
@@ -562,7 +574,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
             }
         }
     } else {
-        painter->setPen(BubbleTokens::text());
+        painter->setPen(textColor);
         QRect textRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
                                              -BubbleTokens::paddingH(), -BubbleTokens::paddingV());
         painter->drawText(textRect, Qt::TextWordWrap, text);

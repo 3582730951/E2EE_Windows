@@ -27,9 +27,11 @@ class ServerApp {
 
   bool RunOnce(std::string& error);  // 占位：未来替换为事件循环/监听
 
-  bool HandleFrame(const Frame& in, Frame& out, std::string& error);
+  bool HandleFrame(const Frame& in, Frame& out, TransportKind transport,
+                   std::string& error);
   bool HandleFrameWithToken(const Frame& in, Frame& out,
-                            const std::string& token, std::string& error);
+                            const std::string& token, TransportKind transport,
+                            std::string& error);
 
   const ServerConfig& config() const { return config_; }
   SessionManager* sessions() { return sessions_.get(); }

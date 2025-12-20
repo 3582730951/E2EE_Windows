@@ -66,7 +66,8 @@ int main() {
 
   Frame login = MakeLoginFrame("bob", "pwd");
   Frame resp;
-  bool ok = router.Handle(login, resp, "");
+  bool ok = router.Handle(login, resp, "",
+                          mi::server::TransportKind::kLocal);
   if (!ok || resp.type != FrameType::kLogin || resp.payload.empty() ||
       resp.payload[0] != 1) {
     return 1;
@@ -82,14 +83,16 @@ int main() {
 
   Frame join = MakeGroupEventFrame(0, "g1");
   Frame join_resp;
-  ok = router.Handle(join, join_resp, token);
+  ok = router.Handle(join, join_resp, token,
+                     mi::server::TransportKind::kLocal);
   if (!ok || join_resp.payload.empty() || join_resp.payload[0] != 1) {
     return 1;
   }
 
   Frame msg = MakeGroupMessageFrame("g1", 1);
   Frame msg_resp;
-  ok = router.Handle(msg, msg_resp, token);
+  ok = router.Handle(msg, msg_resp, token,
+                     mi::server::TransportKind::kLocal);
   if (!ok || msg_resp.payload.empty() || msg_resp.payload[0] != 1) {
     return 1;
   }
@@ -107,7 +110,8 @@ int main() {
   Frame logout;
   logout.type = FrameType::kLogout;
   Frame logout_resp;
-  ok = router.Handle(logout, logout_resp, token);
+  ok = router.Handle(logout, logout_resp, token,
+                     mi::server::TransportKind::kLocal);
   if (!ok || logout_resp.payload.empty() || logout_resp.payload[0] != 1) {
     return 1;
   }

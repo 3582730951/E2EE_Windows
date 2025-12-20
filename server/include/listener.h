@@ -18,11 +18,13 @@ class Listener {
 
   //  KCP/TCP 
   bool Process(const std::vector<std::uint8_t>& frame_bytes,
-               std::vector<std::uint8_t>& out_bytes);
+               std::vector<std::uint8_t>& out_bytes,
+               TransportKind transport = TransportKind::kLocal);
 
   bool Process(const std::vector<std::uint8_t>& frame_bytes,
                std::vector<std::uint8_t>& out_bytes,
-               const std::string& remote_ip);
+               const std::string& remote_ip,
+               TransportKind transport);
 
  private:
   ConnectionHandler handler_;

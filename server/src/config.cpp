@@ -120,6 +120,12 @@ void ApplyKV(IniState& state, const std::string& key,
       ParseBool(value, state.cfg->server.require_tls);
     } else if (key == "tls_cert") {
       state.cfg->server.tls_cert = value;
+    } else if (key == "kt_signing_key") {
+      state.cfg->server.kt_signing_key = value;
+    } else if (key == "secure_delete_enabled") {
+      ParseBool(value, state.cfg->server.secure_delete_enabled);
+    } else if (key == "secure_delete_plugin") {
+      state.cfg->server.secure_delete_plugin = value;
     } else if (key == "ops_enable") {
       ParseBool(value, state.cfg->server.ops_enable);
     } else if (key == "ops_allow_remote") {
@@ -231,6 +237,15 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   }
   if (out_config.server.tls_enable && out_config.server.tls_cert.empty()) {
     error = "tls_cert empty";
+    return false;
+  }
+  if (out_config.server.kt_signing_key.empty()) {
+    error = "kt_signing_key missing";
+    return false;
+  }
+  if (out_config.server.secure_delete_enabled &&
+      out_config.server.secure_delete_plugin.empty()) {
+    error = "secure_delete_plugin missing";
     return false;
   }
   if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {

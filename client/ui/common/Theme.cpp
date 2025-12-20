@@ -62,8 +62,13 @@ QColor Pick(Scheme schemeValue, QColor dark, QColor light, QColor highContrast) 
 
 QFont defaultFont(int pointSize, QFont::Weight weight) {
     QFont font;
-    font.setFamilies(QStringList() << QStringLiteral("Microsoft YaHei UI")
+    font.setFamilies(QStringList() << QStringLiteral("SF Pro Text")
+                                   << QStringLiteral("SF Pro Display")
+                                   << QStringLiteral("HarmonyOS Sans")
+                                   << QStringLiteral("MiSans")
                                    << QStringLiteral("PingFang SC")
+                                   << QStringLiteral("Microsoft YaHei UI")
+                                   << QStringLiteral("Segoe UI Variable")
                                    << QStringLiteral("Segoe UI"));
     font.setPointSize(ScalePoints(pointSize));
     font.setWeight(weight);
@@ -125,22 +130,22 @@ void ApplyTo(QApplication &app) {
 }
 
 QColor background() {
-    return Pick(gScheme, QColor(0x12, 0x12, 0x12), QColor(0xF4, 0xF6, 0xF8),
+    return Pick(gScheme, QColor(0x0D, 0x0F, 0x12), QColor(0xF7, 0xF8, 0xFA),
                 QColor(Qt::black));
 }
 
 QColor panel() {
-    return Pick(gScheme, QColor(0x18, 0x18, 0x18), QColor(0xFF, 0xFF, 0xFF),
+    return Pick(gScheme, QColor(0x15, 0x18, 0x1D), QColor(0xFF, 0xFF, 0xFF),
                 QColor(Qt::black));
 }
 
 QColor panelLighter() {
-    return Pick(gScheme, QColor(0x20, 0x20, 0x20), QColor(0xFF, 0xFF, 0xFF),
-                QColor(0x10, 0x10, 0x10));
+    return Pick(gScheme, QColor(0x1C, 0x20, 0x26), QColor(0xFF, 0xFF, 0xFF),
+                QColor(0x14, 0x16, 0x1A));
 }
 
 QColor outline() {
-    return Pick(gScheme, QColor(0x2A, 0x2A, 0x2A), QColor(0xD7, 0xDC, 0xE3),
+    return Pick(gScheme, QColor(0x20, 0x24, 0x2B), QColor(0xE1, 0xE5, 0xEB),
                 QColor(Qt::white));
 }
 
@@ -150,129 +155,129 @@ QColor accentBlue() {
 }
 
 QColor accentRed() {
-    return Pick(gScheme, QColor(0xF0, 0x5C, 0x5C), QColor(0xD9, 0x4E, 0x4E),
-                QColor(0xFF, 0x33, 0x33));
+    return Pick(gScheme, QColor(0xFF, 0x45, 0x3A), QColor(0xFF, 0x3B, 0x30),
+                QColor(0xFF, 0x3B, 0x30));
 }
 
 QColor accentOrange() {
-    return Pick(gScheme, QColor(0xF2, 0x8C, 0x48), QColor(0xF2, 0x8C, 0x48),
+    return Pick(gScheme, QColor(0xFF, 0x9F, 0x0A), QColor(0xFF, 0x95, 0x00),
                 QColor(0xFF, 0xAA, 0x00));
 }
 
 QColor accentGreen() {
-    return Pick(gScheme, QColor(0x3F, 0xBF, 0x7F), QColor(0x35, 0xB0, 0x74),
+    return Pick(gScheme, QColor(0x30, 0xD1, 0x58), QColor(0x34, 0xC7, 0x59),
                 QColor(0x00, 0xFF, 0x88));
 }
 
 QColor textPrimary() {
-    return Pick(gScheme, QColor(0xF5, 0xF5, 0xF5), QColor(0x1A, 0x1C, 0x1F),
+    return Pick(gScheme, QColor(0xF2, 0xF3, 0xF5), QColor(0x1C, 0x1C, 0x1E),
                 QColor(Qt::white));
 }
 
 QColor textSecondary() {
-    return Pick(gScheme, QColor(0xB8, 0xB8, 0xB8), QColor(0x4F, 0x59, 0x65),
+    return Pick(gScheme, QColor(0xC0, 0xC6, 0xD0), QColor(0x5C, 0x63, 0x70),
                 QColor(Qt::white));
 }
 
 QColor textMuted() {
-    return Pick(gScheme, QColor(0x7A, 0x7A, 0x7A), QColor(0x7C, 0x85, 0x92),
+    return Pick(gScheme, QColor(0x8B, 0x92, 0xA0), QColor(0x8E, 0x95, 0xA3),
                 QColor(0xCC, 0xCC, 0xCC));
 }
 
 QColor separator() {
-    return Pick(gScheme, QColor(0x24, 0x24, 0x24), QColor(0xE3, 0xE9, 0xF2),
+    return Pick(gScheme, QColor(0x1F, 0x23, 0x29), QColor(0xE6, 0xE9, 0xEF),
                 QColor(Qt::white));
 }
 
 QColor bubbleGray() {
-    return Pick(gScheme, QColor(0x28, 0x28, 0x28), QColor(0xEE, 0xF2, 0xF6),
+    return Pick(gScheme, QColor(0x2C, 0x2F, 0x36), QColor(0xEE, 0xF1, 0xF5),
                 QColor(0x10, 0x10, 0x10));
 }
 
 QColor uiWindowBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#14161A")),
-                QColor(QStringLiteral("#F4F6F8")), QColor(Qt::black));
+    return Pick(gScheme, QColor(QStringLiteral("#0D0F12")),
+                QColor(QStringLiteral("#F7F8FA")), QColor(Qt::black));
 }
 
 QColor uiPanelBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#191C20")),
+    return Pick(gScheme, QColor(QStringLiteral("#15181D")),
                 QColor(QStringLiteral("#FFFFFF")), QColor(Qt::black));
 }
 
 QColor uiSidebarBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#1D2025")),
-                QColor(QStringLiteral("#FFFFFF")), QColor(Qt::black));
+    return Pick(gScheme, QColor(QStringLiteral("#121419")),
+                QColor(QStringLiteral("#F9FAFC")), QColor(Qt::black));
 }
 
 QColor uiHoverBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#20242A")),
-                QColor(QStringLiteral("#EEF2F6")), QColor(QStringLiteral("#101010")));
+    return Pick(gScheme, QColor(QStringLiteral("#1D2128")),
+                QColor(QStringLiteral("#EEF1F6")), QColor(QStringLiteral("#101010")));
 }
 
 QColor uiSelectedBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#262B32")),
-                QColor(QStringLiteral("#E3E9F2")), QColor(QStringLiteral("#181818")));
+    return Pick(gScheme, QColor(QStringLiteral("#232833")),
+                QColor(QStringLiteral("#E6ECF5")), QColor(QStringLiteral("#181818")));
 }
 
 QColor uiSearchBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#1F2227")),
-                QColor(QStringLiteral("#EEF2F6")), QColor(QStringLiteral("#101010")));
+    return Pick(gScheme, QColor(QStringLiteral("#1A1E24")),
+                QColor(QStringLiteral("#F0F2F6")), QColor(QStringLiteral("#101010")));
 }
 
 QColor uiBorder() {
-    return Pick(gScheme, QColor(QStringLiteral("#1E2025")),
-                QColor(QStringLiteral("#D7DCE3")), QColor(Qt::white));
+    return Pick(gScheme, QColor(QStringLiteral("#20242B")),
+                QColor(QStringLiteral("#E1E5EB")), QColor(Qt::white));
 }
 
-QColor uiTextMain() { return Pick(gScheme, QColor(QStringLiteral("#F0F2F5")), QColor(QStringLiteral("#1A1C1F")), QColor(Qt::white)); }
+QColor uiTextMain() { return Pick(gScheme, QColor(QStringLiteral("#F2F3F5")), QColor(QStringLiteral("#1C1C1E")), QColor(Qt::white)); }
 
-QColor uiTextSub() { return Pick(gScheme, QColor(QStringLiteral("#A9ADB3")), QColor(QStringLiteral("#4F5965")), QColor(Qt::white)); }
+QColor uiTextSub() { return Pick(gScheme, QColor(QStringLiteral("#C0C6D0")), QColor(QStringLiteral("#5C6370")), QColor(Qt::white)); }
 
-QColor uiTextMuted() { return Pick(gScheme, QColor(QStringLiteral("#7C8087")), QColor(QStringLiteral("#7C8592")), QColor(0xCC, 0xCC, 0xCC)); }
+QColor uiTextMuted() { return Pick(gScheme, QColor(QStringLiteral("#8B92A0")), QColor(QStringLiteral("#8E95A3")), QColor(0xCC, 0xCC, 0xCC)); }
 
 QColor uiInputBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#181B1F")), QColor(QStringLiteral("#FFFFFF")),
+    return Pick(gScheme, QColor(QStringLiteral("#12161B")), QColor(QStringLiteral("#FFFFFF")),
                 QColor(Qt::black));
 }
 
 QColor uiInputBorder() {
-    return Pick(gScheme, QColor(QStringLiteral("#1F2025")), QColor(QStringLiteral("#D7DCE3")),
+    return Pick(gScheme, QColor(QStringLiteral("#262B33")), QColor(QStringLiteral("#E3E6EC")),
                 QColor(Qt::white));
 }
 
 QColor uiScrollBarHandle() {
-    return Pick(gScheme, QColor(QStringLiteral("#2A2D33")), QColor(QStringLiteral("#C9D0DA")),
+    return Pick(gScheme, QColor(QStringLiteral("#2A303A")), QColor(QStringLiteral("#C4CAD3")),
                 QColor(QStringLiteral("#4A4A4A")));
 }
 
 QColor uiScrollBarHandleHover() {
-    return Pick(gScheme, QColor(QStringLiteral("#343842")), QColor(QStringLiteral("#B8C0CC")),
+    return Pick(gScheme, QColor(QStringLiteral("#37404C")), QColor(QStringLiteral("#B3BAC6")),
                 QColor(QStringLiteral("#6A6A6A")));
 }
 
 QColor uiMenuBg() {
-    return Pick(gScheme, QColor(QStringLiteral("#1B1E22")), QColor(QStringLiteral("#FFFFFF")),
+    return Pick(gScheme, QColor(QStringLiteral("#181C22")), QColor(QStringLiteral("#FFFFFF")),
                 QColor(Qt::black));
 }
 
-QColor uiTagColor() { return Pick(gScheme, QColor(QStringLiteral("#E36A5C")), QColor(QStringLiteral("#C43D2E")), QColor(0xFF, 0x66, 0x66)); }
+QColor uiTagColor() { return Pick(gScheme, QColor(QStringLiteral("#F06A5C")), QColor(QStringLiteral("#D05A4F")), QColor(0xFF, 0x66, 0x66)); }
 
-QColor uiBadgeRed() { return Pick(gScheme, QColor(QStringLiteral("#D74D4D")), QColor(QStringLiteral("#D74D4D")), QColor(0xFF, 0x33, 0x33)); }
+QColor uiBadgeRed() { return Pick(gScheme, QColor(QStringLiteral("#FF453A")), QColor(QStringLiteral("#FF3B30")), QColor(0xFF, 0x33, 0x33)); }
 
-QColor uiBadgeGrey() { return Pick(gScheme, QColor(QStringLiteral("#464A50")), QColor(QStringLiteral("#7C8592")), QColor(Qt::white)); }
+QColor uiBadgeGrey() { return Pick(gScheme, QColor(QStringLiteral("#525A66")), QColor(QStringLiteral("#B0B7C3")), QColor(Qt::white)); }
 
 QColor uiAccentBlue() { return Pick(gScheme, QColor(QStringLiteral("#0A84FF")), QColor(QStringLiteral("#007AFF")), QColor(0x00, 0xAE, 0xFF)); }
 
-QColor uiMessageOutgoingBg() { return Pick(gScheme, QColor(QStringLiteral("#3A3D40")), QColor(QStringLiteral("#DDE7F7")), QColor(QStringLiteral("#101010"))); }
+QColor uiMessageOutgoingBg() { return Pick(gScheme, QColor(QStringLiteral("#0A84FF")), QColor(QStringLiteral("#007AFF")), QColor(QStringLiteral("#0A84FF"))); }
 
-QColor uiMessageIncomingBg() { return Pick(gScheme, QColor(QStringLiteral("#2F3235")), QColor(QStringLiteral("#EEF2F6")), QColor(QStringLiteral("#101010"))); }
+QColor uiMessageIncomingBg() { return Pick(gScheme, QColor(QStringLiteral("#2C2F36")), QColor(QStringLiteral("#EEF1F5")), QColor(QStringLiteral("#101010"))); }
 
-QColor uiMessageText() { return Pick(gScheme, QColor(QStringLiteral("#E6E6E6")), QColor(QStringLiteral("#1A1C1F")), QColor(Qt::white)); }
+QColor uiMessageText() { return Pick(gScheme, QColor(QStringLiteral("#F2F3F5")), QColor(QStringLiteral("#1C1C1E")), QColor(Qt::white)); }
 
-QColor uiMessageTimeText() { return Pick(gScheme, QColor(QStringLiteral("#6E737A")), QColor(QStringLiteral("#7C8592")), QColor(0xCC, 0xCC, 0xCC)); }
+QColor uiMessageTimeText() { return Pick(gScheme, QColor(QStringLiteral("#8B92A0")), QColor(QStringLiteral("#9BA2B0")), QColor(0xCC, 0xCC, 0xCC)); }
 
-QColor uiMessageSystemText() { return Pick(gScheme, QColor(QStringLiteral("#9A9FA6")), QColor(QStringLiteral("#4F5965")), QColor(Qt::white)); }
+QColor uiMessageSystemText() { return Pick(gScheme, QColor(QStringLiteral("#A1A7B3")), QColor(QStringLiteral("#7A8594")), QColor(Qt::white)); }
 
-QColor uiDangerRed() { return Pick(gScheme, QColor(QStringLiteral("#D95C5C")), QColor(QStringLiteral("#D74D4D")), QColor(0xFF, 0x33, 0x33)); }
+QColor uiDangerRed() { return Pick(gScheme, QColor(QStringLiteral("#FF453A")), QColor(QStringLiteral("#FF3B30")), QColor(0xFF, 0x33, 0x33)); }
 
 }  // namespace Theme

@@ -35,6 +35,9 @@ struct ServerSection {
 #endif
   bool require_tls{false};
   std::string tls_cert{"mi_e2ee_server.pfx"};
+  std::string kt_signing_key;
+  bool secure_delete_enabled{false};
+  std::string secure_delete_plugin;
   bool ops_enable{false};
   bool ops_allow_remote{false};
   shard::ScrambledString ops_token;

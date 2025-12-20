@@ -1,7 +1,9 @@
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "frame.h"
+#include "key_transparency.h"
 #include "server_app.h"
 
 using mi::server::Frame;
@@ -15,8 +17,19 @@ static void WriteFile(const std::string& path, const std::string& content) {
 
 int main() {
   WriteFile("config.ini",
-            "[mode]\nmode=1\n[server]\nlist_port=7777\n");
+            "[mode]\nmode=1\n[server]\nlist_port=7777\n"
+            "offline_dir=.\n"
+            "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "alice:secret\n");
+  {
+    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x42);
+    std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
+    if (!kf) {
+      return 1;
+    }
+    kf.write(reinterpret_cast<const char*>(key.data()),
+             static_cast<std::streamsize>(key.size()));
+  }
 
   ServerApp app;
   std::string err;
@@ -37,7 +50,7 @@ int main() {
   login.payload.insert(login.payload.end(), pass.begin(), pass.end());
 
   Frame resp;
-  ok = app.HandleFrame(login, resp, err);
+  ok = app.HandleFrame(login, resp, mi::server::TransportKind::kLocal, err);
   if (!ok || resp.payload.empty() || resp.payload[0] != 1) {
     return 1;
   }

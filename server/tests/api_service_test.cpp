@@ -42,12 +42,14 @@ int main() {
   OfflineQueue queue(std::chrono::seconds(60));
   ApiService api(&sessions, &groups, &dir, &storage, &queue);
 
-  auto login_ok = api.Login(LoginRequest{"alice", "secret"});
+  auto login_ok =
+      api.Login(LoginRequest{"alice", "secret"}, mi::server::TransportKind::kLocal);
   if (!login_ok.success || login_ok.token.empty()) {
     return 1;
   }
 
-  auto login_fail = api.Login(LoginRequest{"alice", "bad"});
+  auto login_fail =
+      api.Login(LoginRequest{"alice", "bad"}, mi::server::TransportKind::kLocal);
   if (login_fail.success) {
     return 1;
   }

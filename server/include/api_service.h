@@ -238,6 +238,7 @@ struct PreKeyFetchResponse {
   std::uint32_t kt_version{0};
   std::uint64_t kt_tree_size{0};
   Sha256Hash kt_root{};
+  std::vector<std::uint8_t> kt_signature;
   std::uint64_t kt_leaf_index{0};
   std::vector<Sha256Hash> kt_audit_path;
   std::vector<Sha256Hash> kt_consistency_path;
@@ -345,16 +346,17 @@ class ApiService {
              OfflineQueue* queue = nullptr,
              std::uint32_t group_threshold = 10000,
              std::optional<MySqlConfig> friend_mysql = std::nullopt,
-             std::filesystem::path kt_dir = {});
+             std::filesystem::path kt_dir = {},
+             std::filesystem::path kt_signing_key = {});
 
-  LoginResponse Login(const LoginRequest& req);
+  LoginResponse Login(const LoginRequest& req, TransportKind transport);
   OpaqueRegisterStartResponse OpaqueRegisterStart(
       const OpaqueRegisterStartRequest& req);
   OpaqueRegisterFinishResponse OpaqueRegisterFinish(
       const OpaqueRegisterFinishRequest& req);
   OpaqueLoginStartResponse OpaqueLoginStart(const OpaqueLoginStartRequest& req);
   OpaqueLoginFinishResponse OpaqueLoginFinish(
-      const OpaqueLoginFinishRequest& req);
+      const OpaqueLoginFinishRequest& req, TransportKind transport);
   LogoutResponse Logout(const LogoutRequest& req);
 
   GroupEventResponse JoinGroup(const std::string& token,
@@ -565,6 +567,7 @@ class ApiService {
   bool RateLimitFile(const std::string& action, const std::string& token,
                      std::optional<Session>& out_session,
                      std::string& out_error);
+  bool SignKtSth(KeyTransparencySth& sth, std::string& out_error);
 
   struct PendingFriendRequest {
     std::string requester_remark;
@@ -606,6 +609,9 @@ class ApiService {
       devices_by_user_;
 
   std::unique_ptr<KeyTransparencyLog> kt_log_;
+  std::array<std::uint8_t, kKtSthSigSecretKeyBytes> kt_signing_sk_{};
+  bool kt_signing_ready_{false};
+  std::string kt_signing_error_;
 };
 
 }  // namespace mi::server

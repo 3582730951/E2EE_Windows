@@ -14,13 +14,29 @@ namespace mi::server {
 
 constexpr std::size_t kKtIdentitySigPublicKeyBytes = 1952;
 constexpr std::size_t kKtIdentityDhPublicKeyBytes = 32;
+constexpr std::size_t kKtSthSigPublicKeyBytes = 1952;
+constexpr std::size_t kKtSthSigSecretKeyBytes = 4032;
+constexpr std::size_t kKtSthSigBytes = 3309;
 
 using Sha256Hash = std::array<std::uint8_t, 32>;
 
 struct KeyTransparencySth {
   std::uint64_t tree_size{0};
   Sha256Hash root{};
+  std::vector<std::uint8_t> signature;
 };
+
+inline std::vector<std::uint8_t> BuildKtSthSignatureMessage(
+    const KeyTransparencySth& sth) {
+  std::vector<std::uint8_t> msg;
+  static constexpr char kPrefix[] = "MI_KT_STH_V1";
+  msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (int i = 0; i < 8; ++i) {
+    msg.push_back(static_cast<std::uint8_t>((sth.tree_size >> (i * 8)) & 0xFF));
+  }
+  msg.insert(msg.end(), sth.root.begin(), sth.root.end());
+  return msg;
+}
 
 struct KeyTransparencyProof {
   KeyTransparencySth sth{};

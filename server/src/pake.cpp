@@ -10,11 +10,36 @@
 
 namespace mi::server {
 
+std::string_view TransportLabel(TransportKind transport) {
+  switch (transport) {
+    case TransportKind::kTls:
+      return "tls";
+    case TransportKind::kLocal:
+      return "local";
+    case TransportKind::kTcp:
+    default:
+      return "tcp";
+  }
+}
+
+namespace {
+void AppendWithNull(const std::string& value, std::vector<std::uint8_t>& out) {
+  out.insert(out.end(), value.begin(), value.end());
+  out.push_back(0);
+}
+
+void AppendWithNull(std::string_view value, std::vector<std::uint8_t>& out) {
+  out.insert(out.end(), value.begin(), value.end());
+  out.push_back(0);
+}
+}  // namespace
+
 bool DeriveKeysFromHybridKeyExchange(
     const std::array<std::uint8_t, 32>& dh_shared,
     const std::array<std::uint8_t, 32>& kem_shared,
     const std::string& username,
     const std::string& token,
+    TransportKind transport,
     DerivedKeys& out_keys,
     std::string& error) {
   if (username.empty() || token.empty()) {
@@ -26,14 +51,16 @@ bool DeriveKeysFromHybridKeyExchange(
   std::copy_n(dh_shared.begin(), dh_shared.size(), ikm.begin() + 0);
   std::copy_n(kem_shared.begin(), kem_shared.size(), ikm.begin() + 32);
 
-  constexpr char kInfoPrefix[] = "mi_e2ee_login_hybrid_v1";
+  constexpr char kInfoPrefix[] = "mi_e2ee_login_hybrid_v2";
+  const auto transport_label = TransportLabel(transport);
   std::vector<std::uint8_t> info;
-  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size());
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size() +
+               1 + transport_label.size());
   info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
   info.push_back(0);
-  info.insert(info.end(), username.begin(), username.end());
-  info.push_back(0);
-  info.insert(info.end(), token.begin(), token.end());
+  AppendWithNull(username, info);
+  AppendWithNull(token, info);
+  info.insert(info.end(), transport_label.begin(), transport_label.end());
 
   std::array<std::uint8_t, 128> buf{};
   const bool ok = mi::server::crypto::HkdfSha256(
@@ -59,6 +86,7 @@ bool DeriveKeysFromHybridKeyExchange(
 }
 
 bool DeriveKeysFromPake(const std::string& pake_shared,
+                        TransportKind transport,
                         DerivedKeys& out_keys,
                         std::string& error) {
   if (pake_shared.empty()) {
@@ -66,17 +94,24 @@ bool DeriveKeysFromPake(const std::string& pake_shared,
     return false;
   }
 
-  constexpr char kInfo[] = "mi_e2ee_pake_derive_v1";
+  constexpr char kInfo[] = "mi_e2ee_pake_derive_v2";
   constexpr std::array<std::uint8_t, 32> kSalt = {
       0x5a, 0x12, 0x33, 0x97, 0xc1, 0x4f, 0x28, 0x0b, 0x91, 0x61, 0xaf,
       0x72, 0x4d, 0xf3, 0x86, 0x9b, 0x3c, 0x55, 0x6e, 0x21, 0xda, 0x01,
       0x44, 0x8f, 0xb7, 0x0a, 0xce, 0x19, 0x2e, 0x73, 0x58, 0xd4};
 
+  const auto transport_label = TransportLabel(transport);
+  std::vector<std::uint8_t> info;
+  info.reserve(sizeof(kInfo) - 1 + 1 + transport_label.size());
+  info.insert(info.end(), kInfo, kInfo + sizeof(kInfo) - 1);
+  info.push_back(0);
+  info.insert(info.end(), transport_label.begin(), transport_label.end());
+
   std::array<std::uint8_t, 128> buf{};
   const bool ok = mi::server::crypto::HkdfSha256(
       reinterpret_cast<const std::uint8_t*>(pake_shared.data()),
       pake_shared.size(), kSalt.data(), kSalt.size(),
-      reinterpret_cast<const std::uint8_t*>(kInfo), sizeof(kInfo) - 1,
+      info.data(), info.size(),
       buf.data(), buf.size());
   if (!ok) {
     error = "hkdf derivation failed";
@@ -99,6 +134,7 @@ bool DeriveKeysFromPakeHandshake(
     const std::array<std::uint8_t, 32>& handshake_key,
     const std::string& username,
     const std::string& token,
+    TransportKind transport,
     DerivedKeys& out_keys,
     std::string& error) {
   if (username.empty() || token.empty()) {
@@ -106,15 +142,16 @@ bool DeriveKeysFromPakeHandshake(
     return false;
   }
 
-  constexpr char kInfoPrefix[] = "mi_e2ee_pake_session_v1";
+  constexpr char kInfoPrefix[] = "mi_e2ee_pake_session_v2";
+  const auto transport_label = TransportLabel(transport);
   std::vector<std::uint8_t> info;
-  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 +
-               token.size());
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size() +
+               1 + transport_label.size());
   info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
   info.push_back(0);
-  info.insert(info.end(), username.begin(), username.end());
-  info.push_back(0);
-  info.insert(info.end(), token.begin(), token.end());
+  AppendWithNull(username, info);
+  AppendWithNull(token, info);
+  info.insert(info.end(), transport_label.begin(), transport_label.end());
 
   std::array<std::uint8_t, 128> buf{};
   const bool ok = mi::server::crypto::HkdfSha256(
@@ -140,6 +177,7 @@ bool DeriveKeysFromPakeHandshake(
 bool DeriveKeysFromOpaqueSessionKey(const std::vector<std::uint8_t>& session_key,
                                     const std::string& username,
                                     const std::string& token,
+                                    TransportKind transport,
                                     DerivedKeys& out_keys,
                                     std::string& error) {
   if (session_key.empty()) {
@@ -151,14 +189,16 @@ bool DeriveKeysFromOpaqueSessionKey(const std::vector<std::uint8_t>& session_key
     return false;
   }
 
-  constexpr char kInfoPrefix[] = "mi_e2ee_opaque_session_v1";
+  constexpr char kInfoPrefix[] = "mi_e2ee_opaque_session_v2";
+  const auto transport_label = TransportLabel(transport);
   std::vector<std::uint8_t> info;
-  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size());
+  info.reserve(sizeof(kInfoPrefix) - 1 + 1 + username.size() + 1 + token.size() +
+               1 + transport_label.size());
   info.insert(info.end(), kInfoPrefix, kInfoPrefix + sizeof(kInfoPrefix) - 1);
   info.push_back(0);
-  info.insert(info.end(), username.begin(), username.end());
-  info.push_back(0);
-  info.insert(info.end(), token.begin(), token.end());
+  AppendWithNull(username, info);
+  AppendWithNull(token, info);
+  info.insert(info.end(), transport_label.begin(), transport_label.end());
 
   std::array<std::uint8_t, 128> buf{};
   const bool ok = mi::server::crypto::HkdfSha256(
@@ -183,13 +223,14 @@ bool DeriveKeysFromOpaqueSessionKey(const std::vector<std::uint8_t>& session_key
 
 bool DeriveKeysFromCredentials(const std::string& username,
                                const std::string& password,
+                               TransportKind transport,
                                DerivedKeys& out_keys,
                                std::string& error) {
   if (username.empty() || password.empty()) {
     error = "credentials empty";
     return false;
   }
-  return DeriveKeysFromPake(username + ":" + password, out_keys, error);
+  return DeriveKeysFromPake(username + ":" + password, transport, out_keys, error);
 }
 
 bool DeriveMessageKey(const std::array<std::uint8_t, 32>& ratchet_root,

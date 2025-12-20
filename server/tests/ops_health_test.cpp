@@ -4,6 +4,7 @@
 
 #include "connection_handler.h"
 #include "frame.h"
+#include "key_transparency.h"
 #include "protocol.h"
 #include "server_app.h"
 
@@ -27,11 +28,21 @@ int main() {
             "[mode]\nmode=1\n"
             "[server]\n"
             "list_port=7777\n"
-            "offline_dir=offline_ops_test\n"
+            "offline_dir=.\n"
             "ops_enable=1\n"
             "ops_allow_remote=0\n"
-            "ops_token=abcdefghijklmnop\n");
+            "ops_token=abcdefghijklmnop\n"
+            "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "alice:secret\n");
+  {
+    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x11);
+    std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
+    if (!kf) {
+      return 1;
+    }
+    kf.write(reinterpret_cast<const char*>(key.data()),
+             static_cast<std::streamsize>(key.size()));
+  }
 
   ServerApp app;
   std::string err;

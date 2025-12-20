@@ -303,6 +303,7 @@ std::vector<std::uint8_t> EncodePreKeyFetchResp(const PreKeyFetchResponse& resp)
         std::vector<std::uint8_t> b(h.begin(), h.end());
         proto::WriteBytes(b, out);
       }
+      proto::WriteBytes(resp.kt_signature, out);
     }
   } else {
     proto::WriteString(resp.error, out);
@@ -318,6 +319,7 @@ std::vector<std::uint8_t> EncodeKeyTransparencyHeadResp(
     proto::WriteUint64(resp.sth.tree_size, out);
     std::vector<std::uint8_t> root(resp.sth.root.begin(), resp.sth.root.end());
     proto::WriteBytes(root, out);
+    proto::WriteBytes(resp.sth.signature, out);
   } else {
     proto::WriteString(resp.error, out);
   }
@@ -578,7 +580,8 @@ std::vector<std::uint8_t> EncodeE2eeFileDownloadChunkResp(
 
 FrameRouter::FrameRouter(ApiService* api) : api_(api) {}
 
-bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token) {
+bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
+                         TransportKind transport) {
   if (!api_) {
     return false;
   }
@@ -620,7 +623,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token) 
         }
       }
 
-      auto resp = api_->Login(req);
+      auto resp = api_->Login(req, transport);
       out.payload = EncodeLoginResp(resp);
       return true;
     }
@@ -684,7 +687,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token) 
       OpaqueLoginFinishRequest req;
       req.login_id = s1;
       req.credential_finalization = std::move(finalization);
-      auto resp = api_->OpaqueLoginFinish(req);
+      auto resp = api_->OpaqueLoginFinish(req, transport);
       out.payload = EncodeOpaqueLoginFinishResp(resp);
       return true;
     }

@@ -145,6 +145,16 @@ QString AugmentTransportErrorHint(const QString &coreErr) {
                        QStringLiteral("（服务端未编译 MySQL：请用 -DMI_E2EE_ENABLE_MYSQL=ON 重新构建服务端，或将服务端 config.ini 的 [mode] mode=1 使用 test_user.txt）"),
                        QStringLiteral(" (MySQL not enabled on the server: rebuild with -DMI_E2EE_ENABLE_MYSQL=ON, or set [mode] mode=1 to use test_user.txt)"));
     }
+    if (e == QStringLiteral("pinned fingerprint required")) {
+        return e + UiSettings::Tr(
+                       QStringLiteral("（需预置服务器指纹：在 client_config.ini 填写 pinned_fingerprint）"),
+                       QStringLiteral(" (Preloaded server pin required: set pinned_fingerprint in client_config.ini)"));
+    }
+    if (e == QStringLiteral("server fingerprint mismatch")) {
+        return e + UiSettings::Tr(
+                       QStringLiteral("（指纹不匹配：请通过可信渠道更新 client_config.ini 的 pinned_fingerprint）"),
+                       QStringLiteral(" (Fingerprint mismatch: update pinned_fingerprint in client_config.ini after out-of-band verification)"));
+    }
     return e;
 }
 
@@ -208,8 +218,11 @@ bool BackendAdapter::ensureInited(QString &err) {
     }
     if (!inited_) {
         if (!init(configPath_)) {
-            err = QStringLiteral("后端初始化失败（检查 %1）")
-                      .arg(configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_);
+            const QString coreErr = QString::fromStdString(core_.last_error());
+            const QString pathHint = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            err = coreErr.isEmpty()
+                      ? QStringLiteral("后端初始化失败（检查 %1）").arg(pathHint)
+                      : QStringLiteral("后端初始化失败：%1（检查 %2）").arg(coreErr, pathHint);
             return false;
         }
     }
@@ -296,8 +309,13 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
     if (!inited_) {
         if (!init(configPath_)) {
             const QString path = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            const QString coreErr = QString::fromStdString(core_.last_error());
             coreWorkActive_.store(false);
-            emit loginFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
+            if (coreErr.isEmpty()) {
+                emit loginFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
+            } else {
+                emit loginFinished(false, QStringLiteral("后端初始化失败：%1（检查 %2）").arg(coreErr, path));
+            }
             return;
         }
     }
@@ -453,8 +471,13 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
     if (!inited_) {
         if (!init(configPath_)) {
             const QString path = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            const QString coreErr = QString::fromStdString(core_.last_error());
             coreWorkActive_.store(false);
-            emit registerFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
+            if (coreErr.isEmpty()) {
+                emit registerFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
+            } else {
+                emit registerFinished(false, QStringLiteral("后端初始化失败：%1（检查 %2）").arg(coreErr, path));
+            }
             return;
         }
     }

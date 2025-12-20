@@ -12,11 +12,13 @@ int main() {
   DerivedKeys b{};
   std::string err;
 
-  bool ok = DeriveKeysFromCredentials("u", "p", a, err);
+  bool ok =
+      DeriveKeysFromCredentials("u", "p", mi::server::TransportKind::kLocal, a,
+                                err);
   if (!ok) {
     return 1;
   }
-  ok = DeriveKeysFromPake("u:p", b, err);
+  ok = DeriveKeysFromPake("u:p", mi::server::TransportKind::kLocal, b, err);
   if (!ok) {
     return 1;
   }
@@ -28,7 +30,8 @@ int main() {
 
   err.clear();
   DerivedKeys c{};
-  ok = DeriveKeysFromCredentials("", "", c, err);
+  ok = DeriveKeysFromCredentials("", "", mi::server::TransportKind::kLocal, c,
+                                 err);
   if (ok) {
     return 1;
   }

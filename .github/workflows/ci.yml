@@ -62,6 +62,14 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Generate self-signed TLS cert
+        shell: pwsh
+        run: |
+          $pfxPath = "server/mi_e2ee_server.pfx"
+          if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
+          $cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\CurrentUser\My"
+          $pwd = ConvertTo-SecureString -String "" -AsPlainText -Force
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
 
       - name: Install build tools
         shell: pwsh
@@ -114,6 +122,7 @@ jobs:
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
           Copy-Item build/server-win/*.dll artifacts/server-win/ -ErrorAction SilentlyContinue
           Copy-Item server/config.example.ini artifacts/server-win/config.example.ini -ErrorAction SilentlyContinue
+          Copy-Item server/mi_e2ee_server.pfx artifacts/server-win/ -ErrorAction SilentlyContinue
           @"
           [mode]
           mode=1  # 0=mysql, 1=demo
@@ -128,6 +137,10 @@ jobs:
           rotation_threshold=10000
           offline_dir=offline_store
           debug_log=0
+          tls_enable=1
+          require_tls=1
+          tls_cert=mi_e2ee_server.pfx
+          kt_signing_key=kt_signing_key.bin
           "@ | Set-Content -Encoding ASCII artifacts/server-win/config.ini
           Copy-Item build/server-win/test_user.txt artifacts/server-win/test_user.txt -ErrorAction Stop
           Compress-Archive -Path artifacts/server-win/* -DestinationPath server-win-${{ env.BUILD_TYPE }}.zip

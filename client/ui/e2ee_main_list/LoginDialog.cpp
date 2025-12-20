@@ -13,6 +13,9 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QMessageBox>
+#include <QPropertyAnimation>
+#include <QShowEvent>
+#include <QEasingCurve>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -29,8 +32,8 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
     : QDialog(parent), backend_(backend) {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Dialog);
     setAttribute(Qt::WA_TranslucentBackground);
-    resize(360, 520);
-    setMinimumSize(320, 448);
+    resize(380, 560);
+    setMinimumSize(340, 480);
     buildUi();
     if (backend_) {
         connect(backend_, &BackendAdapter::loginFinished, this, &LoginDialog::onLoginFinished);
@@ -39,10 +42,9 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
 }
 
 void LoginDialog::buildUi() {
-    const QColor frameTop =
-        (Theme::scheme() == Theme::Scheme::Light) ? Theme::uiPanelBg() : Theme::uiPanelBg().lighter(106);
-    const QColor frameBottom =
-        (Theme::scheme() == Theme::Scheme::Light) ? Theme::uiPanelBg() : Theme::uiPanelBg().darker(110);
+    const bool lightScheme = (Theme::scheme() == Theme::Scheme::Light);
+    const QColor frameTop = Theme::uiPanelBg().lighter(lightScheme ? 102 : 108);
+    const QColor frameBottom = Theme::uiPanelBg().darker(lightScheme ? 102 : 94);
     const QColor border = Theme::uiBorder();
     const QColor accent = Theme::uiAccentBlue();
     const QColor accentHover = accent.lighter(110);
@@ -75,7 +77,7 @@ void LoginDialog::buildUi() {
             "#loginFrame {"
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2);"
             "border: 1px solid %3;"
-            "border-radius: 16px;"
+            "border-radius: 20px;"
              "}")
              .arg(frameTop.name(), frameBottom.name(), border.name()));
     outer->addWidget(frame);
@@ -185,7 +187,7 @@ void LoginDialog::buildUi() {
             "  color: white;"
             "  background: %1;"
             "  border: none;"
-            "  border-radius: 10px;"
+            "  border-radius: 16px;"
             "  font-size: 15px;"
             "}"
             "QPushButton:hover { background: %2; }"
@@ -290,7 +292,7 @@ void LoginDialog::buildUi() {
     accountBox_->setStyleSheet(
         QStringLiteral(
             "QComboBox { background: %1; border: 1px solid %2; "
-            "border-radius: 10px; padding: 10px 36px 10px 12px; color: %3; font-size: 14px; }"
+            "border-radius: 14px; padding: 12px 36px 12px 12px; color: %3; font-size: 14px; }"
             "QComboBox:focus { border-color: %4; }"
             "QComboBox::drop-down { width: 28px; border: none; }"
             "QComboBox::down-arrow { image: none; }"
@@ -310,7 +312,7 @@ void LoginDialog::buildUi() {
     passwordAccount_->setStyleSheet(
         QStringLiteral(
             "QLineEdit { background: %1; border: 1px solid %2; "
-            "border-radius: 10px; padding: 10px 12px; color: %3; font-size: 14px; }"
+            "border-radius: 14px; padding: 12px 12px; color: %3; font-size: 14px; }"
             "QLineEdit:placeholder { color: %4; }"
             "QLineEdit:focus { border-color: %5; }")
             .arg(inputBg.name(),
@@ -357,7 +359,7 @@ void LoginDialog::buildUi() {
     accountLoginBtn_->setEnabled(false);
     accountLoginBtn_->setStyleSheet(
         QStringLiteral(
-            "QPushButton { color: white; background: %1; border: none; border-radius: 10px; font-size: 15px; }"
+            "QPushButton { color: white; background: %1; border: none; border-radius: 16px; font-size: 15px; }"
             "QPushButton:disabled { background: %2; color: %3; }"
             "QPushButton:hover:enabled { background: %4; }"
             "QPushButton:pressed:enabled { background: %5; }")
@@ -489,7 +491,9 @@ void LoginDialog::onLoginFinished(bool success, const QString &error) {
             return;
         }
         QString err = error.trimmed();
-        if (err.compare(QStringLiteral("invalid credentials"), Qt::CaseInsensitive) == 0) {
+        if (err.compare(QStringLiteral("invalid credentials"), Qt::CaseInsensitive) == 0 ||
+            err.compare(QStringLiteral("client login finish failed"), Qt::CaseInsensitive) == 0 ||
+            err.compare(QStringLiteral("opaque login finish failed"), Qt::CaseInsensitive) == 0) {
             err = UiSettings::Tr(QStringLiteral("账号不存在或密码错误，可先点击“注册账号”创建。"),
                                  QStringLiteral("Invalid credentials. You may need to register first."));
         }
@@ -709,6 +713,21 @@ void LoginDialog::paintEvent(QPaintEvent *event) {
         p.setBrush(c);
         p.drawRoundedRect(rr, radius + i, radius + i);
     }
+}
+
+void LoginDialog::showEvent(QShowEvent *event) {
+    QDialog::showEvent(event);
+    if (introPlayed_) {
+        return;
+    }
+    introPlayed_ = true;
+    setWindowOpacity(0.0);
+    auto *anim = new QPropertyAnimation(this, "windowOpacity", this);
+    anim->setDuration(180);
+    anim->setStartValue(0.0);
+    anim->setEndValue(1.0);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void LoginDialog::toggleInputs() {

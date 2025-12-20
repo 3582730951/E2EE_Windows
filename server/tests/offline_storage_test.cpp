@@ -8,6 +8,7 @@
 #include <fstream>
 #include <thread>
 #include <vector>
+#include <random>
 
 #include "crypto.h"
 
@@ -54,7 +55,17 @@ int main() {
       if (!std::equal(kMagic.begin(), kMagic.end(), hdr.begin())) {
         return 1;
       }
-      if (hdr[8] != 1) {
+      if (hdr[8] != 2) {
+        return 1;
+      }
+    }
+    {
+      const auto key_path = dir / (put.file_id + ".key");
+      std::error_code ec;
+      if (!std::filesystem::exists(key_path, ec) || ec) {
+        return 1;
+      }
+      if (std::filesystem::file_size(key_path, ec) != 32 || ec) {
         return 1;
       }
     }
@@ -67,8 +78,59 @@ int main() {
     if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
       return 1;
     }
+    if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
+      return 1;
+    }
     if (storage.Meta(put.file_id).has_value()) {
       return 1;
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_key_delete");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+
+    std::vector<std::uint8_t> payload = {0xAA, 0xBB, 0xCC};
+    auto put = storage.Put("alice", payload);
+    if (!put.success) {
+      return 1;
+    }
+    std::error_code ec;
+    std::filesystem::remove(dir / (put.file_id + ".key"), ec);
+    std::string err;
+    auto fetched = storage.Fetch(put.file_id, put.file_key, false, err);
+    if (fetched.has_value()) {
+      return 1;
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_roundtrip_random");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    std::mt19937 rng(0x4D495F32u);
+    std::uniform_int_distribution<std::size_t> len_dist(1, 1024);
+    std::uniform_int_distribution<int> byte_dist(0, 255);
+    for (int i = 0; i < 64; ++i) {
+      const std::size_t len = len_dist(rng);
+      std::vector<std::uint8_t> payload(len);
+      for (auto& b : payload) {
+        b = static_cast<std::uint8_t>(byte_dist(rng));
+      }
+      auto put = storage.Put("alice", payload);
+      if (!put.success) {
+        return 1;
+      }
+      std::string err;
+      auto fetched = storage.Fetch(put.file_id, put.file_key, true, err);
+      if (!fetched.has_value() || fetched.value() != payload) {
+        return 1;
+      }
+      if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
+        return 1;
+      }
+      if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
+        return 1;
+      }
     }
   }
 
@@ -238,6 +300,9 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     storage.CleanupExpired();
     if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
+      return 1;
+    }
+    if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
       return 1;
     }
     if (storage.Meta(put.file_id).has_value()) {

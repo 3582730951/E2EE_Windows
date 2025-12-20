@@ -115,6 +115,7 @@ void SessionManager::CleanupLoginFailuresLocked(
 
 bool SessionManager::Login(const std::string& username,
                            const std::string& password,
+                           TransportKind transport,
                            Session& out_session, std::string& error) {
   if (!auth_) {
     error = "auth provider missing";
@@ -137,7 +138,7 @@ bool SessionManager::Login(const std::string& username,
 
   DerivedKeys keys{};
   std::string derive_err;
-  if (!DeriveKeysFromCredentials(username, password, keys, derive_err)) {
+  if (!DeriveKeysFromCredentials(username, password, transport, keys, derive_err)) {
     error = derive_err;
     return false;
   }
@@ -369,6 +370,7 @@ bool SessionManager::LoginHybrid(
     const std::string& password,
     const std::array<std::uint8_t, 32>& client_dh_pk,
     const std::vector<std::uint8_t>& client_kem_pk,
+    TransportKind transport,
     LoginHybridServerHello& out_hello,
     Session& out_session,
     std::string& error) {
@@ -432,7 +434,7 @@ bool SessionManager::LoginHybrid(
   DerivedKeys keys{};
   std::string derive_err;
   if (!DeriveKeysFromHybridKeyExchange(dh_shared, kem_shared, username, token,
-                                       keys, derive_err)) {
+                                       transport, keys, derive_err)) {
     error = derive_err.empty() ? "key derivation failed" : derive_err;
     return false;
   }
@@ -644,6 +646,7 @@ bool SessionManager::OpaqueLoginStart(const OpaqueLoginStartRequest& req,
 }
 
 bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
+                                       TransportKind transport,
                                        Session& out_session,
                                        std::string& error) {
   error.clear();
@@ -708,7 +711,8 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
   DerivedKeys keys{};
   std::string derive_err;
   std::vector<std::uint8_t> sk(session_key.ptr, session_key.ptr + session_key.len);
-  if (!DeriveKeysFromOpaqueSessionKey(sk, p.username, token, keys, derive_err)) {
+  if (!DeriveKeysFromOpaqueSessionKey(sk, p.username, token, transport, keys,
+                                      derive_err)) {
     error = derive_err.empty() ? "key derivation failed" : derive_err;
     return false;
   }

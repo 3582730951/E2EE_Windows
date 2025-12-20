@@ -89,7 +89,7 @@ target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_core)
 target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_build_flags)
 target_link_libraries(mi_e2ee_client_core PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean)
 if(WIN32)
-  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32)
+  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt)
 endif()
 
 add_executable(mi_e2ee_client

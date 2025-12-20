@@ -8,6 +8,7 @@ option(MI_E2EE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(MI_E2EE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (clang/gcc)" OFF)
 option(MI_E2EE_BUILD_FUZZERS "Build fuzz harness targets" OFF)
 option(MI_E2EE_FUZZ_USE_LIBFUZZER "Use libFuzzer engine (clang only)" OFF)
+option(MI_E2EE_FUZZ_SMOKE "Run fuzz smoke tests via CTest" OFF)
 
 if(MI_E2EE_PGO_INSTRUMENT AND MI_E2EE_PGO_USE)
   message(FATAL_ERROR "MI_E2EE_PGO_INSTRUMENT and MI_E2EE_PGO_USE are mutually exclusive")
@@ -74,4 +75,3 @@ elseif(MI_E2EE_PGO_USE)
     target_link_options(mi_e2ee_build_flags INTERFACE $<$<CONFIG:Release>:${_pgo_use}>)
   endif()
 endif()
-

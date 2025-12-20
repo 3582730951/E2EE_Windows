@@ -37,6 +37,7 @@ private:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
+    void showEvent(QShowEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void toggleInputs();
 
@@ -57,6 +58,7 @@ private:
     QPushButton *accountLoginBtn_{nullptr};
     QPushButton *simpleLoginBtn_{nullptr};
     bool loginBusy_{false};
+    bool introPlayed_{false};
     QPoint dragPos_;
     BackendAdapter *backend_{nullptr};
 };

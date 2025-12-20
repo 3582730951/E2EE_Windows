@@ -39,6 +39,15 @@ bool ParseUint16(const std::string& text, std::uint16_t& out) {
   return true;
 }
 
+bool ParseUint32(const std::string& text, std::uint32_t& out) {
+  if (text.empty()) return false;
+  char* end_ptr = nullptr;
+  const unsigned long v = std::strtoul(text.c_str(), &end_ptr, 10);
+  if (end_ptr == text.c_str() || v > 0xFFFFFFFFu) return false;
+  out = static_cast<std::uint32_t>(v);
+  return true;
+}
+
 bool ParseBool(const std::string& text, bool& out) {
   if (text == "1" || text == "true" || text == "on") {
     out = true;
@@ -136,8 +145,14 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         ParseUint16(val, out_cfg.server_port);
       } else if (key == "use_tls") {
         ParseBool(val, out_cfg.use_tls);
+      } else if (key == "require_tls") {
+        ParseBool(val, out_cfg.require_tls);
       } else if (key == "trust_store") {
         out_cfg.trust_store = val;
+      } else if (key == "require_pinned_fingerprint") {
+        ParseBool(val, out_cfg.require_pinned_fingerprint);
+      } else if (key == "pinned_fingerprint") {
+        out_cfg.pinned_fingerprint = val;
       } else if (key == "auth_mode") {
         if (!ParseAuthMode(val, out_cfg.auth_mode)) {
           error = "invalid auth_mode at line " + std::to_string(line_no);
@@ -164,6 +179,32 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
       } else if (key == "key_path") {
         out_cfg.device_sync.key_path = val;
       }
+    } else if (section == "identity") {
+      if (key == "rotation_days") {
+        ParseUint32(val, out_cfg.identity.rotation_days);
+      } else if (key == "legacy_retention_days") {
+        ParseUint32(val, out_cfg.identity.legacy_retention_days);
+      } else if (key == "tpm_enable") {
+        ParseBool(val, out_cfg.identity.tpm_enable);
+      } else if (key == "tpm_require") {
+        ParseBool(val, out_cfg.identity.tpm_require);
+      }
+    } else if (section == "traffic") {
+      if (key == "cover_traffic_enabled") {
+        ParseBool(val, out_cfg.traffic.cover_traffic_enabled);
+      } else if (key == "cover_traffic_interval_sec") {
+        ParseUint32(val, out_cfg.traffic.cover_traffic_interval_sec);
+      }
+    } else if (section == "kt") {
+      if (key == "require_signature") {
+        ParseBool(val, out_cfg.kt.require_signature);
+      } else if (key == "gossip_alert_threshold") {
+        ParseUint32(val, out_cfg.kt.gossip_alert_threshold);
+      } else if (key == "root_pubkey_hex") {
+        out_cfg.kt.root_pubkey_hex = val;
+      } else if (key == "root_pubkey_path") {
+        out_cfg.kt.root_pubkey_path = val;
+      }
     }
   }
   if (!saw_client_section) {
@@ -172,6 +213,30 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   }
   if (out_cfg.server_port == 0) {
     error = "server_port missing";
+    return false;
+  }
+  if (out_cfg.require_tls && !out_cfg.use_tls) {
+    error = "require_tls=1 but use_tls=0";
+    return false;
+  }
+  if (!out_cfg.require_pinned_fingerprint) {
+    error = "require_pinned_fingerprint must be enabled";
+    return false;
+  }
+  if (out_cfg.identity.tpm_require && !out_cfg.identity.tpm_enable) {
+    error = "tpm_require=1 but tpm_enable=0";
+    return false;
+  }
+  if (out_cfg.traffic.cover_traffic_interval_sec == 0) {
+    out_cfg.traffic.cover_traffic_interval_sec = 30;
+  }
+  if (out_cfg.kt.gossip_alert_threshold == 0) {
+    out_cfg.kt.gossip_alert_threshold = 3;
+  }
+  if (out_cfg.kt.require_signature &&
+      out_cfg.kt.root_pubkey_hex.empty() &&
+      out_cfg.kt.root_pubkey_path.empty()) {
+    error = "kt root_pubkey missing";
     return false;
   }
   if (out_cfg.proxy.type == ProxyType::kSocks5 &&

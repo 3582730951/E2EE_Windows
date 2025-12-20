@@ -239,3 +239,9 @@ if(MSVC)
   target_compile_options(group_notice_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 add_test(NAME group_notice_test COMMAND group_notice_test)
+
+if(TARGET mi_e2ee_third_party_audit)
+  set(THIRD_PARTY_LOCK "${CMAKE_CURRENT_LIST_DIR}/../../third_party/third_party.lock")
+  add_test(NAME third_party_lock_test
+           COMMAND mi_e2ee_third_party_audit --verify --lock "${THIRD_PARTY_LOCK}")
+endif()

@@ -31,6 +31,16 @@ bool WritePlainLogoutError(const std::string& error,
   return true;
 }
 
+bool WriteTlsRequiredError(FrameType type, std::vector<std::uint8_t>& out_bytes) {
+  Frame out;
+  out.type = type;
+  out.payload.clear();
+  out.payload.push_back(0);
+  proto::WriteString("tls required", out.payload);
+  out_bytes = EncodeFrame(out);
+  return true;
+}
+
 bool ConstantTimeEqual(std::string_view a, std::string_view b) {
   if (a.size() != b.size()) {
     return false;
@@ -250,7 +260,8 @@ void ConnectionHandler::CleanupAuthTokenStateLocked(
 
 bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
                                std::vector<std::uint8_t>& out_bytes,
-                               const std::string& remote_ip) {
+                               const std::string& remote_ip,
+                               TransportKind transport) {
   if (!app_) {
     return false;
   }
@@ -276,6 +287,13 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   };
   Frame out;
   std::string error;
+
+  const auto& cfg = app_->config().server;
+  if (cfg.require_tls && transport == TransportKind::kTcp) {
+    WriteTlsRequiredError(in.type, out_bytes);
+    finish(false);
+    return true;
+  }
 
   if (in.type == FrameType::kLogin ||
       in.type == FrameType::kOpaqueLoginStart ||
@@ -399,7 +417,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
       finish(success);
       return true;
     }
-    if (!app_->HandleFrame(in, out, error)) {
+    if (!app_->HandleFrame(in, out, transport, error)) {
       finish(false);
       return false;
     }
@@ -476,7 +494,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   inner.type = in.type;
   inner.payload = plain;
 
-  if (!app_->HandleFrameWithToken(inner, out, token, error)) {
+  if (!app_->HandleFrameWithToken(inner, out, token, transport, error)) {
     finish(false);
     return false;
   }

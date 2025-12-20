@@ -93,9 +93,137 @@ std::string EndpointKey(const std::string& host, std::uint16_t port) {
   return host + ":" + std::to_string(port);
 }
 
-bool LoadPinnedFingerprint(const std::string& path, const std::string& endpoint,
-                           std::string& out_fingerprint) {
-  out_fingerprint.clear();
+struct TrustEntry {
+  std::string fingerprint;
+  bool tls_required{false};
+};
+
+std::string ToLower(std::string s) {
+  for (auto& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
+}
+
+std::string NormalizeFingerprint(std::string v) {
+  return ToLower(Trim(v));
+}
+
+bool IsHex64(const std::string& v) {
+  if (v.size() != 64) {
+    return false;
+  }
+  for (const char c : v) {
+    if (!std::isxdigit(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int HexNibble(char c) {
+  if (c >= '0' && c <= '9') {
+    return c - '0';
+  }
+  if (c >= 'a' && c <= 'f') {
+    return 10 + (c - 'a');
+  }
+  if (c >= 'A' && c <= 'F') {
+    return 10 + (c - 'A');
+  }
+  return -1;
+}
+
+bool HexToBytes(const std::string& hex, std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (hex.empty() || (hex.size() % 2) != 0) {
+    return false;
+  }
+  out.reserve(hex.size() / 2);
+  for (std::size_t i = 0; i < hex.size(); i += 2) {
+    const int hi = HexNibble(hex[i]);
+    const int lo = HexNibble(hex[i + 1]);
+    if (hi < 0 || lo < 0) {
+      out.clear();
+      return false;
+    }
+    out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
+  }
+  return true;
+}
+
+bool ReadFileBytes(const std::filesystem::path& path,
+                   std::vector<std::uint8_t>& out,
+                   std::string& error) {
+  error.clear();
+  out.clear();
+  if (path.empty()) {
+    error = "kt root pubkey path empty";
+    return false;
+  }
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    error = "kt root pubkey not found";
+    return false;
+  }
+  out.assign(std::istreambuf_iterator<char>(ifs),
+             std::istreambuf_iterator<char>());
+  if (out.empty()) {
+    error = "kt root pubkey empty";
+    return false;
+  }
+  return true;
+}
+
+bool ParseTrustValue(const std::string& value, TrustEntry& out) {
+  out = TrustEntry{};
+  if (value.empty()) {
+    return false;
+  }
+  std::string v = value;
+  std::vector<std::string> parts;
+  std::size_t start = 0;
+  while (start <= v.size()) {
+    const auto pos = v.find(',', start);
+    if (pos == std::string::npos) {
+      parts.push_back(Trim(v.substr(start)));
+      break;
+    }
+    parts.push_back(Trim(v.substr(start, pos - start)));
+    start = pos + 1;
+  }
+  if (parts.empty() || parts[0].empty()) {
+    return false;
+  }
+  std::string fp = ToLower(Trim(parts[0]));
+  if (!IsHex64(fp)) {
+    return false;
+  }
+  out.fingerprint = fp;
+  for (std::size_t i = 1; i < parts.size(); ++i) {
+    const std::string token = ToLower(parts[i]);
+    if (token == "tls=1" || token == "tls=true" || token == "tls=on" ||
+        token == "tls_required=1" || token == "tls_required=true") {
+      out.tls_required = true;
+    }
+  }
+  return true;
+}
+
+std::string BuildTrustValue(const TrustEntry& entry) {
+  if (entry.fingerprint.empty()) {
+    return {};
+  }
+  std::string out = entry.fingerprint;
+  if (entry.tls_required) {
+    out += ",tls=1";
+  }
+  return out;
+}
+
+bool LoadTrustEntry(const std::string& path, const std::string& endpoint,
+                    TrustEntry& out_entry) {
+  out_entry = TrustEntry{};
   if (path.empty() || endpoint.empty()) {
     return false;
   }
@@ -116,18 +244,21 @@ bool LoadPinnedFingerprint(const std::string& path, const std::string& endpoint,
     const std::string key = Trim(t.substr(0, pos));
     const std::string val = Trim(t.substr(pos + 1));
     if (key == endpoint && !val.empty()) {
-      out_fingerprint = val;
-      return true;
+      TrustEntry entry;
+      if (ParseTrustValue(val, entry)) {
+        out_entry = entry;
+        return true;
+      }
+      return false;
     }
   }
   return false;
 }
 
-bool StorePinnedFingerprint(const std::string& path, const std::string& endpoint,
-                            const std::string& fingerprint,
-                            std::string& error) {
+bool StoreTrustEntry(const std::string& path, const std::string& endpoint,
+                     const TrustEntry& entry, std::string& error) {
   error.clear();
-  if (path.empty() || endpoint.empty() || fingerprint.empty()) {
+  if (path.empty() || endpoint.empty() || entry.fingerprint.empty()) {
     error = "invalid trust store input";
     return false;
   }
@@ -153,7 +284,7 @@ bool StorePinnedFingerprint(const std::string& path, const std::string& endpoint
       entries.emplace_back(key, val);
     }
   }
-  entries.emplace_back(endpoint, fingerprint);
+  entries.emplace_back(endpoint, BuildTrustValue(entry));
   std::sort(entries.begin(), entries.end(),
             [](const auto& a, const auto& b) { return a.first < b.first; });
 
@@ -170,7 +301,7 @@ bool StorePinnedFingerprint(const std::string& path, const std::string& endpoint
     return false;
   }
   out << "# mi_e2ee client trust store\n";
-  out << "# format: host:port=sha256(cert_der)_hex\n";
+  out << "# format: host:port=sha256(cert_der)_hex[,tls=1]\n";
   for (const auto& kv : entries) {
     out << kv.first << "=" << kv.second << "\n";
   }
@@ -208,6 +339,95 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
   }
   return true;
 #endif
+}
+
+bool RandomUint32(std::uint32_t& out) {
+  return RandomBytes(reinterpret_cast<std::uint8_t*>(&out), sizeof(out));
+}
+
+constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
+constexpr std::size_t kPadHeaderBytes = 8;
+constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048, 4096, 8192, 16384};
+
+std::size_t SelectPadTarget(std::size_t min_len) {
+  for (const auto bucket : kPadBuckets) {
+    if (bucket >= min_len) {
+      if (bucket == min_len) {
+        return bucket;
+      }
+      std::uint32_t r = 0;
+      if (!RandomUint32(r)) {
+        return bucket;
+      }
+      const std::size_t span = bucket - min_len;
+      return min_len + (static_cast<std::size_t>(r) % (span + 1));
+    }
+  }
+  const std::size_t round = ((min_len + 4095) / 4096) * 4096;
+  if (round <= min_len) {
+    return min_len;
+  }
+  std::uint32_t r = 0;
+  if (!RandomUint32(r)) {
+    return round;
+  }
+  const std::size_t span = round - min_len;
+  return min_len + (static_cast<std::size_t>(r) % (span + 1));
+}
+
+bool PadPayload(const std::vector<std::uint8_t>& plain,
+                std::vector<std::uint8_t>& out,
+                std::string& error) {
+  error.clear();
+  out.clear();
+  if (plain.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "pad size overflow";
+    return false;
+  }
+  const std::size_t min_len = kPadHeaderBytes + plain.size();
+  const std::size_t target_len = SelectPadTarget(min_len);
+  out.reserve(target_len);
+  out.insert(out.end(), kPadMagic, kPadMagic + sizeof(kPadMagic));
+  const std::uint32_t len32 = static_cast<std::uint32_t>(plain.size());
+  out.push_back(static_cast<std::uint8_t>(len32 & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len32 >> 24) & 0xFF));
+  out.insert(out.end(), plain.begin(), plain.end());
+  if (out.size() < target_len) {
+    const std::size_t pad_len = target_len - out.size();
+    const std::size_t offset = out.size();
+    out.resize(target_len);
+    if (!RandomBytes(out.data() + offset, pad_len)) {
+      error = "pad rng failed";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UnpadPayload(const std::vector<std::uint8_t>& plain,
+                  std::vector<std::uint8_t>& out,
+                  std::string& error) {
+  error.clear();
+  out.clear();
+  if (plain.size() < kPadHeaderBytes ||
+      std::memcmp(plain.data(), kPadMagic, sizeof(kPadMagic)) != 0) {
+    out = plain;
+    return true;
+  }
+  const std::uint32_t len =
+      static_cast<std::uint32_t>(plain[4]) |
+      (static_cast<std::uint32_t>(plain[5]) << 8) |
+      (static_cast<std::uint32_t>(plain[6]) << 16) |
+      (static_cast<std::uint32_t>(plain[7]) << 24);
+  if (kPadHeaderBytes + len > plain.size()) {
+    error = "pad size invalid";
+    return false;
+  }
+  out.assign(plain.begin() + kPadHeaderBytes,
+             plain.begin() + kPadHeaderBytes + len);
+  return true;
 }
 
 bool IsAllZero(const std::uint8_t* data, std::size_t len) {
@@ -475,33 +695,6 @@ bool UnwrapGossip(const std::vector<std::uint8_t>& in,
 }
 
 namespace {
-
-int HexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
-  return -1;
-}
-
-bool HexToBytes(const std::string& hex, std::vector<std::uint8_t>& out) {
-  out.clear();
-  if ((hex.size() % 2) != 0) {
-    return false;
-  }
-  out.reserve(hex.size() / 2);
-  for (std::size_t i = 0; i < hex.size(); i += 2) {
-    const int hi = HexNibble(hex[i]);
-    const int lo = HexNibble(hex[i + 1]);
-    if (hi < 0 || lo < 0) {
-      out.clear();
-      return false;
-    }
-    out.push_back(
-        static_cast<std::uint8_t>((static_cast<unsigned>(hi) << 4) |
-                                  static_cast<unsigned>(lo)));
-  }
-  return true;
-}
 
 std::string GroupHex4(const std::string& hex) {
   if (hex.empty()) {
@@ -1482,6 +1675,9 @@ constexpr std::size_t kGroupCipherMacBytes = 16;
 constexpr std::size_t kMaxGroupSkippedMessageKeys = 2048;
 constexpr std::size_t kMaxGroupSkip = 4096;
 constexpr std::uint64_t kGroupSenderKeyRotationThreshold = 10000;
+constexpr std::uint64_t kGroupSenderKeyRotationIntervalSec =
+    7ull * 24ull * 60ull * 60ull;
+constexpr std::chrono::seconds kSenderKeyDistResendInterval{5};
 
 bool KdfGroupCk(const std::array<std::uint8_t, 32>& ck,
                 std::array<std::uint8_t, 32>& out_ck,
@@ -1673,6 +1869,7 @@ constexpr std::uint8_t kFileBlobMagic[4] = {'M', 'I', 'F', '1'};
 constexpr std::uint8_t kFileBlobVersionV1 = 1;
 constexpr std::uint8_t kFileBlobVersionV2 = 2;
 constexpr std::uint8_t kFileBlobVersionV3 = 3;
+constexpr std::uint8_t kFileBlobVersionV4 = 4;
 constexpr std::uint8_t kFileBlobAlgoRaw = 0;
 constexpr std::uint8_t kFileBlobAlgoDeflate = 1;
 constexpr std::uint8_t kFileBlobFlagDoubleCompression = 0x01;
@@ -1684,10 +1881,22 @@ constexpr std::size_t kFileBlobV2HeaderSize = kFileBlobV2PrefixSize + 24 + 16;
 constexpr std::size_t kFileBlobV3PrefixSize =
     sizeof(kFileBlobMagic) + 1 + 1 + 1 + 1 + 4 + 8 + 24;
 constexpr std::size_t kFileBlobV3HeaderSize = kFileBlobV3PrefixSize;
+constexpr std::size_t kFileBlobV4BaseHeaderSize =
+    sizeof(kFileBlobMagic) + 1 + 1 + 1 + 1 + 4 + 8 + 24;
 constexpr std::size_t kMaxChatFileBytes = 300u * 1024u * 1024u;
 constexpr std::size_t kMaxChatFileBlobBytes = 320u * 1024u * 1024u;
 constexpr std::uint32_t kFileBlobV3ChunkBytes = 256u * 1024u;
+constexpr std::uint32_t kFileBlobV4PlainChunkBytes = 128u * 1024u;
 constexpr std::uint32_t kE2eeBlobChunkBytes = 4u * 1024u * 1024u;
+constexpr std::size_t kFileBlobV4PadBuckets[] = {
+    64u * 1024u,
+    96u * 1024u,
+    128u * 1024u,
+    160u * 1024u,
+    192u * 1024u,
+    256u * 1024u,
+    384u * 1024u
+};
 
 bool LooksLikeAlreadyCompressedFileName(const std::string& file_name) {
   if (file_name.empty()) {
@@ -1714,6 +1923,35 @@ bool LooksLikeAlreadyCompressedFileName(const std::string& file_name) {
       "pdf",  "docx", "xlsx","pptx"
   };
   return kCompressed.find(ext) != kCompressed.end();
+}
+
+std::size_t SelectFileChunkTarget(std::size_t min_len) {
+  if (min_len == 0 || min_len > (kE2eeBlobChunkBytes - 16u)) {
+    return 0;
+  }
+  for (const auto bucket : kFileBlobV4PadBuckets) {
+    if (bucket >= min_len) {
+      if (bucket == min_len) {
+        return bucket;
+      }
+      std::uint32_t r = 0;
+      if (!RandomUint32(r)) {
+        return bucket;
+      }
+      const std::size_t span = bucket - min_len;
+      return min_len + (static_cast<std::size_t>(r) % (span + 1));
+    }
+  }
+  const std::size_t round = ((min_len + 4095) / 4096) * 4096;
+  if (round < min_len || round > (kE2eeBlobChunkBytes - 16u)) {
+    return 0;
+  }
+  std::uint32_t r = 0;
+  if (!RandomUint32(r)) {
+    return round;
+  }
+  const std::size_t span = round - min_len;
+  return min_len + (static_cast<std::size_t>(r) % (span + 1));
 }
 
 bool DeflateCompress(const std::uint8_t* data, std::size_t len, int level,
@@ -4511,12 +4749,25 @@ bool ClientCore::Init(const std::string& config_path) {
     server_ip_ = cfg.server_ip;
     server_port_ = cfg.server_port;
     use_tls_ = cfg.use_tls;
+    require_tls_ = cfg.require_tls;
+    transport_kind_ =
+        use_tls_ ? mi::server::TransportKind::kTls
+                 : mi::server::TransportKind::kTcp;
     auth_mode_ = cfg.auth_mode;
     proxy_ = cfg.proxy;
     device_sync_enabled_ = cfg.device_sync.enabled;
     device_sync_is_primary_ =
         (cfg.device_sync.role == mi::client::DeviceSyncRole::kPrimary);
+    identity_policy_.rotation_days = cfg.identity.rotation_days;
+    identity_policy_.legacy_retention_days = cfg.identity.legacy_retention_days;
+    identity_policy_.tpm_enable = cfg.identity.tpm_enable;
+    identity_policy_.tpm_require = cfg.identity.tpm_require;
+    cover_traffic_enabled_ = cfg.traffic.cover_traffic_enabled;
+    cover_traffic_interval_sec_ = cfg.traffic.cover_traffic_interval_sec;
+    cover_traffic_last_sent_ = {};
     trust_store_path_.clear();
+    trust_store_tls_required_ = false;
+    require_pinned_fingerprint_ = cfg.require_pinned_fingerprint;
     pinned_server_fingerprint_.clear();
     pending_server_fingerprint_.clear();
     pending_server_pin_.clear();
@@ -4526,9 +4777,32 @@ bool ClientCore::Init(const std::string& config_path) {
         trust = std::filesystem::path(config_path_).parent_path() / trust;
       }
       trust_store_path_ = trust.string();
-      LoadPinnedFingerprint(trust_store_path_,
-                            EndpointKey(server_ip_, server_port_),
-                            pinned_server_fingerprint_);
+      TrustEntry entry;
+      if (LoadTrustEntry(trust_store_path_,
+                         EndpointKey(server_ip_, server_port_),
+                         entry)) {
+        pinned_server_fingerprint_ = entry.fingerprint;
+        trust_store_tls_required_ = entry.tls_required;
+      }
+    }
+    if (!cfg.pinned_fingerprint.empty()) {
+      const std::string pin = NormalizeFingerprint(cfg.pinned_fingerprint);
+      if (!IsHex64(pin)) {
+        last_error_ = "pinned_fingerprint invalid";
+        return false;
+      }
+      pinned_server_fingerprint_ = pin;
+      if (!trust_store_path_.empty()) {
+        TrustEntry entry{pin, require_tls_};
+        std::string store_err;
+        if (!StoreTrustEntry(trust_store_path_,
+                             EndpointKey(server_ip_, server_port_),
+                             entry, store_err)) {
+          last_error_ = store_err.empty() ? "store trust failed" : store_err;
+          return false;
+        }
+        trust_store_tls_required_ = entry.tls_required;
+      }
     }
     if (local_handle_) {
       mi_server_destroy(local_handle_);
@@ -4551,6 +4825,40 @@ bool ClientCore::Init(const std::string& config_path) {
     }
     e2ee_state_dir_ = base / "e2ee_state";
     kt_state_path_ = e2ee_state_dir_ / "kt_state.bin";
+    kt_require_signature_ = cfg.kt.require_signature;
+    kt_gossip_alert_threshold_ = cfg.kt.gossip_alert_threshold;
+    kt_root_pubkey_.clear();
+    kt_root_pubkey_loaded_ = false;
+    kt_gossip_mismatch_count_ = 0;
+    kt_gossip_alerted_ = false;
+    if (kt_require_signature_) {
+      std::vector<std::uint8_t> key_bytes;
+      if (!cfg.kt.root_pubkey_path.empty()) {
+        std::filesystem::path key_path = cfg.kt.root_pubkey_path;
+        if (!key_path.is_absolute()) {
+          key_path = base / key_path;
+        }
+        std::string key_err;
+        if (!ReadFileBytes(key_path, key_bytes, key_err)) {
+          last_error_ = key_err.empty() ? "kt root pubkey load failed" : key_err;
+          return false;
+        }
+      } else if (!cfg.kt.root_pubkey_hex.empty()) {
+        if (!HexToBytes(cfg.kt.root_pubkey_hex, key_bytes)) {
+          last_error_ = "kt root pubkey hex invalid";
+          return false;
+        }
+      } else {
+        last_error_ = "kt root pubkey missing";
+        return false;
+      }
+      if (key_bytes.size() != mi::server::kKtSthSigPublicKeyBytes) {
+        last_error_ = "kt root pubkey size invalid";
+        return false;
+      }
+      kt_root_pubkey_ = std::move(key_bytes);
+      kt_root_pubkey_loaded_ = true;
+    }
     if (!cfg.device_sync.key_path.empty()) {
       std::filesystem::path kp = cfg.device_sync.key_path;
       if (!kp.is_absolute()) {
@@ -4568,12 +4876,26 @@ bool ClientCore::Init(const std::string& config_path) {
       }
       last_error_.clear();
     }
+    if (require_tls_ && !use_tls_) {
+      last_error_ = "require_tls=1 but use_tls=0";
+      return false;
+    }
+    if (trust_store_tls_required_ && !use_tls_) {
+      last_error_ = "tls downgrade detected";
+      return false;
+    }
+    if (require_pinned_fingerprint_ && pinned_server_fingerprint_.empty()) {
+      last_error_ = "pinned_fingerprint missing";
+      return false;
+    }
     return !server_ip_.empty() && server_port_ != 0;
   }
 
   server_ip_.clear();
   server_port_ = 0;
   use_tls_ = false;
+  require_tls_ = true;
+  transport_kind_ = mi::server::TransportKind::kLocal;
   auth_mode_ = AuthMode::kLegacy;
   proxy_ = ProxyConfig{};
   device_sync_enabled_ = false;
@@ -4583,9 +4905,15 @@ bool ClientCore::Init(const std::string& config_path) {
   device_sync_key_path_.clear();
   device_id_.clear();
   trust_store_path_.clear();
+  trust_store_tls_required_ = false;
+  require_pinned_fingerprint_ = true;
   pinned_server_fingerprint_.clear();
   pending_server_fingerprint_.clear();
   pending_server_pin_.clear();
+  identity_policy_ = mi::client::e2ee::IdentityPolicy{};
+  cover_traffic_enabled_ = true;
+  cover_traffic_interval_sec_ = 30;
+  cover_traffic_last_sent_ = {};
   last_error_.clear();
   if (local_handle_) {
     mi_server_destroy(local_handle_);
@@ -4605,6 +4933,12 @@ bool ClientCore::Init(const std::string& config_path) {
   }
   e2ee_state_dir_ = base / "e2ee_state";
   kt_state_path_ = e2ee_state_dir_ / "kt_state.bin";
+  kt_require_signature_ = false;
+  kt_gossip_alert_threshold_ = 3;
+  kt_root_pubkey_.clear();
+  kt_root_pubkey_loaded_ = false;
+  kt_gossip_mismatch_count_ = 0;
+  kt_gossip_alerted_ = false;
   device_sync_key_path_ = e2ee_state_dir_ / "device_sync_key.bin";
   LoadKtState();
   LoadOrCreateDeviceId();
@@ -5025,7 +5359,7 @@ bool ClientCore::Login(const std::string& username,
 
   std::string err;
   if (!mi::server::DeriveKeysFromPakeHandshake(handshake_key, username, token_,
-                                               keys_, err)) {
+                                               transport_kind_, keys_, err)) {
     token_.clear();
     last_error_ = err.empty() ? "key derivation failed" : err;
     return false;
@@ -5088,8 +5422,8 @@ bool ClientCore::Login(const std::string& username,
     token_ = std::move(token_or_error);
 
     std::string key_err;
-    if (!mi::server::DeriveKeysFromCredentials(username, password, keys_,
-                                               key_err)) {
+    if (!mi::server::DeriveKeysFromCredentials(username, password,
+                                               transport_kind_, keys_, key_err)) {
       token_.clear();
       last_error_ = key_err.empty() ? "key derivation failed" : key_err;
       return false;
@@ -5208,7 +5542,10 @@ bool ClientCore::Login(const std::string& username,
       &err2.ptr, &err2.len);
   if (finish_rc != 0 || !finalization.ptr || finalization.len == 0 ||
       !session_key.ptr || session_key.len == 0) {
-    last_error_ = RustError(err2, "opaque login finish failed");
+    const std::string rust_err = RustError(err2, "opaque login finish failed");
+    last_error_ =
+        (rust_err == "client login finish failed") ? "invalid credentials"
+                                                   : rust_err;
     return false;
   }
   if (finalization.len > kMaxOpaqueMessageBytes ||
@@ -5257,7 +5594,8 @@ bool ClientCore::Login(const std::string& username,
 
   std::string key_err;
   if (!mi::server::DeriveKeysFromOpaqueSessionKey(session_key_vec, username,
-                                                  token_, keys_, key_err)) {
+                                                  token_, transport_kind_,
+                                                  keys_, key_err)) {
     token_.clear();
     last_error_ = key_err.empty() ? "key derivation failed" : key_err;
     return false;
@@ -5314,6 +5652,7 @@ bool ClientCore::Logout() {
   chat_seen_ids_.clear();
   chat_seen_order_.clear();
   history_store_.reset();
+  cover_traffic_last_sent_ = {};
   last_error_.clear();
   return true;
 }
@@ -5347,6 +5686,7 @@ bool ClientCore::EnsureE2ee() {
   }
 
   std::string err;
+  e2ee_.SetIdentityPolicy(identity_policy_);
   if (!e2ee_.Init(e2ee_state_dir_, err)) {
     last_error_ = err.empty() ? "e2ee init failed" : err;
     return false;
@@ -6017,6 +6357,18 @@ void ClientCore::BestEffortPersistHistoryStatus(
 }
 
 bool ClientCore::EnsurePreKeyPublished() {
+  if (!EnsureE2ee()) {
+    return false;
+  }
+  bool rotated = false;
+  std::string rotate_err;
+  if (!e2ee_.MaybeRotatePreKeys(rotated, rotate_err)) {
+    last_error_ = rotate_err.empty() ? "prekey rotation failed" : rotate_err;
+    return false;
+  }
+  if (rotated) {
+    prekey_published_ = false;
+  }
   if (prekey_published_) {
     return true;
   }
@@ -6025,6 +6377,32 @@ bool ClientCore::EnsurePreKeyPublished() {
   }
   prekey_published_ = true;
   return true;
+}
+
+bool ClientCore::MaybeSendCoverTraffic() {
+  if (!cover_traffic_enabled_ || cover_traffic_interval_sec_ == 0) {
+    return true;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (cover_traffic_last_sent_.time_since_epoch().count() != 0 &&
+      now - cover_traffic_last_sent_ <
+          std::chrono::seconds(cover_traffic_interval_sec_)) {
+    return true;
+  }
+  std::vector<std::uint8_t> payload;
+  std::string pad_err;
+  if (!PadPayload({}, payload, pad_err)) {
+    return false;
+  }
+  const std::string saved_err = last_error_;
+  std::vector<std::uint8_t> ignore;
+  const bool ok = ProcessEncrypted(mi::server::FrameType::kHeartbeat, payload,
+                                   ignore);
+  last_error_ = saved_err;
+  if (ok) {
+    cover_traffic_last_sent_ = now;
+  }
+  return ok;
 }
 
 bool ClientCore::FetchPreKeyBundle(const std::string& peer_username,
@@ -6119,6 +6497,11 @@ bool ClientCore::FetchPreKeyBundle(const std::string& peer_username,
         std::copy_n(node.begin(), h.size(), h.begin());
         cons_path.push_back(h);
       }
+      std::vector<std::uint8_t> sth_sig;
+      if (!mi::server::proto::ReadBytes(resp_payload, off, sth_sig)) {
+        last_error_ = "kt response invalid";
+        return false;
+      }
       if (off != resp_payload.size()) {
         last_error_ = "kt response invalid";
         return false;
@@ -6138,30 +6521,53 @@ bool ClientCore::FetchPreKeyBundle(const std::string& peer_username,
                              static_cast<std::size_t>(tree_size), audit_path,
                              computed_root) ||
           computed_root != root) {
-        last_error_ = "kt inclusion proof invalid";
+        RecordKtGossipMismatch("kt inclusion proof invalid");
         return false;
       }
 
       if (kt_tree_size_ > 0) {
         if (tree_size < kt_tree_size_) {
-          last_error_ = "kt tree rolled back";
+          RecordKtGossipMismatch("kt tree rolled back");
           return false;
         }
         if (tree_size == kt_tree_size_) {
           if (root != kt_root_) {
-            last_error_ = "kt split view";
+            RecordKtGossipMismatch("kt split view");
             return false;
           }
         } else {
           if (!VerifyConsistencyProof(static_cast<std::size_t>(kt_tree_size_),
                                       static_cast<std::size_t>(tree_size),
                                       kt_root_, root, cons_path)) {
-            last_error_ = "kt consistency proof invalid";
+            RecordKtGossipMismatch("kt consistency proof invalid");
             return false;
           }
         }
       }
 
+      if (kt_require_signature_) {
+        if (!kt_root_pubkey_loaded_) {
+          last_error_ = "kt root pubkey missing";
+          return false;
+        }
+        if (sth_sig.size() != mi::server::kKtSthSigBytes) {
+          RecordKtGossipMismatch("kt signature size invalid");
+          return false;
+        }
+        mi::server::KeyTransparencySth sth;
+        sth.tree_size = tree_size;
+        sth.root = root;
+        sth.signature = sth_sig;
+        const auto sig_msg = mi::server::BuildKtSthSignatureMessage(sth);
+        std::string sig_err;
+        if (!mi::client::e2ee::Engine::VerifyDetached(sig_msg, sth_sig,
+                                                      kt_root_pubkey_, sig_err)) {
+          RecordKtGossipMismatch(sig_err.empty() ? "kt signature invalid" : sig_err);
+          return false;
+        }
+      }
+      kt_gossip_mismatch_count_ = 0;
+      kt_gossip_alerted_ = false;
       kt_tree_size_ = tree_size;
       kt_root_ = root;
       SaveKtState();
@@ -6257,12 +6663,20 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
   const std::string members_hash = HashGroupMembers(members);
   const bool have_key = (sender_key.version != 0 &&
                          !IsAllZero(sender_key.ck.data(), sender_key.ck.size()));
+  const std::uint64_t now_sec = NowUnixSeconds();
+  if (have_key && sender_key.rotated_at == 0) {
+    sender_key.rotated_at = now_sec;
+  }
   const bool membership_changed =
       (!sender_key.members_hash.empty() && sender_key.members_hash != members_hash);
   const bool threshold_reached =
       (sender_key.sent_count >= kGroupSenderKeyRotationThreshold);
+  const bool time_window_reached =
+      (have_key && sender_key.rotated_at != 0 &&
+       now_sec > sender_key.rotated_at &&
+       (now_sec - sender_key.rotated_at) >= kGroupSenderKeyRotationIntervalSec);
 
-  if (!have_key || membership_changed || threshold_reached) {
+  if (!have_key || membership_changed || threshold_reached || time_window_reached) {
     const std::uint32_t next_version =
         have_key ? (sender_key.version + 1) : 1;
     if (!RandomBytes(sender_key.ck.data(), sender_key.ck.size())) {
@@ -6272,6 +6686,7 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
     sender_key.version = next_version;
     sender_key.next_iteration = 0;
     sender_key.members_hash = members_hash;
+    sender_key.rotated_at = now_sec;
     sender_key.sent_count = 0;
     sender_key.skipped_mks.clear();
     sender_key.skipped_order.clear();
@@ -6342,7 +6757,7 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
     if (pending.group_id != group_id || pending.pending_members.empty()) {
       continue;
     }
-    if (now - pending.last_sent < std::chrono::seconds(5)) {
+    if (now - pending.last_sent < kSenderKeyDistResendInterval) {
       continue;
     }
     pending.last_sent = now;
@@ -6355,6 +6770,50 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
 
   out_sender_key = &sender_key;
   return true;
+}
+
+void ClientCore::ResendPendingSenderKeyDistributions() {
+  if (pending_sender_key_dists_.empty()) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  for (auto it = pending_sender_key_dists_.begin();
+       it != pending_sender_key_dists_.end();) {
+    auto& pending = it->second;
+    if (pending.pending_members.empty()) {
+      it = pending_sender_key_dists_.erase(it);
+      continue;
+    }
+    if (now - pending.last_sent < kSenderKeyDistResendInterval) {
+      ++it;
+      continue;
+    }
+    pending.last_sent = now;
+    for (const auto& member : pending.pending_members) {
+      const std::string saved_err = last_error_;
+      SendPrivateE2ee(member, pending.envelope);
+      last_error_ = saved_err;
+    }
+    ++it;
+  }
+}
+
+void ClientCore::RecordKtGossipMismatch(const std::string& reason) {
+  if (kt_gossip_alert_threshold_ == 0) {
+    kt_gossip_alert_threshold_ = 3;
+  }
+  if (kt_gossip_mismatch_count_ < (std::numeric_limits<std::uint32_t>::max)()) {
+    kt_gossip_mismatch_count_++;
+  }
+  if (kt_gossip_mismatch_count_ >= kt_gossip_alert_threshold_) {
+    kt_gossip_alerted_ = true;
+    last_error_ = reason.empty() ? "kt gossip alert"
+                                 : ("kt gossip alert: " + reason);
+    return;
+  }
+  if (!reason.empty()) {
+    last_error_ = reason;
+  }
 }
 
 bool ClientCore::FetchKtConsistency(
@@ -6452,6 +6911,15 @@ bool ClientCore::ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
       if (!remote_stream_->Connect(fingerprint, err)) {
         remote_stream_.reset();
         if (!fingerprint.empty()) {
+          if (require_pinned_fingerprint_) {
+            pending_server_fingerprint_.clear();
+            pending_server_pin_.clear();
+            last_error_ = pinned_server_fingerprint_.empty()
+                              ? "pinned fingerprint required"
+                              : "server fingerprint mismatch";
+            set_remote_ok(false, last_error_);
+            return false;
+          }
           pending_server_fingerprint_ = fingerprint;
           pending_server_pin_ = FingerprintSas80Hex(fingerprint);
           last_error_ =
@@ -7530,6 +7998,12 @@ bool ClientCore::SendGroupChatText(const std::string& group_id,
     last_error_ = "encode group text failed";
     return false;
   }
+  std::vector<std::uint8_t> padded_envelope;
+  std::string pad_err;
+  if (!PadPayload(plain_envelope, padded_envelope, pad_err)) {
+    last_error_ = pad_err.empty() ? "pad group message failed" : pad_err;
+    return false;
+  }
 
   std::array<std::uint8_t, 32> next_ck{};
   std::array<std::uint8_t, 32> mk{};
@@ -7548,10 +8022,10 @@ bool ClientCore::SendGroupChatText(const std::string& group_id,
   BuildGroupCipherAd(group_id, username_, sender_key->version, iter, ad);
 
   std::vector<std::uint8_t> cipher;
-  cipher.resize(plain_envelope.size());
+  cipher.resize(padded_envelope.size());
   std::array<std::uint8_t, 16> mac{};
   crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(), ad.data(),
-                   ad.size(), plain_envelope.data(), plain_envelope.size());
+                   ad.size(), padded_envelope.data(), padded_envelope.size());
 
   std::vector<std::uint8_t> wire_no_sig;
   if (!EncodeGroupCipherNoSig(group_id, username_, sender_key->version, iter,
@@ -7676,6 +8150,12 @@ bool ClientCore::ResendGroupChatText(const std::string& group_id,
     last_error_ = "encode group text failed";
     return false;
   }
+  std::vector<std::uint8_t> padded_envelope;
+  std::string pad_err;
+  if (!PadPayload(plain_envelope, padded_envelope, pad_err)) {
+    last_error_ = pad_err.empty() ? "pad group message failed" : pad_err;
+    return false;
+  }
 
   std::array<std::uint8_t, 32> next_ck{};
   std::array<std::uint8_t, 32> mk{};
@@ -7694,10 +8174,10 @@ bool ClientCore::ResendGroupChatText(const std::string& group_id,
   BuildGroupCipherAd(group_id, username_, sender_key->version, iter, ad);
 
   std::vector<std::uint8_t> cipher;
-  cipher.resize(plain_envelope.size());
+  cipher.resize(padded_envelope.size());
   std::array<std::uint8_t, 16> mac{};
   crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(), ad.data(),
-                   ad.size(), plain_envelope.data(), plain_envelope.size());
+                   ad.size(), padded_envelope.data(), padded_envelope.size());
 
   std::vector<std::uint8_t> wire_no_sig;
   if (!EncodeGroupCipherNoSig(group_id, username_, sender_key->version, iter,
@@ -7896,6 +8376,13 @@ bool ClientCore::SendGroupChatFile(const std::string& group_id,
     out_message_id_hex.clear();
     return false;
   }
+  std::vector<std::uint8_t> padded_envelope;
+  std::string pad_err;
+  if (!PadPayload(envelope, padded_envelope, pad_err)) {
+    last_error_ = pad_err.empty() ? "pad group message failed" : pad_err;
+    out_message_id_hex.clear();
+    return false;
+  }
 
   std::array<std::uint8_t, 32> next_ck{};
   std::array<std::uint8_t, 32> mk{};
@@ -7916,10 +8403,10 @@ bool ClientCore::SendGroupChatFile(const std::string& group_id,
   BuildGroupCipherAd(group_id, username_, sender_key->version, iter, ad);
 
   std::vector<std::uint8_t> cipher;
-  cipher.resize(envelope.size());
+  cipher.resize(padded_envelope.size());
   std::array<std::uint8_t, 16> mac{};
   crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(), ad.data(),
-                   ad.size(), envelope.data(), envelope.size());
+                   ad.size(), padded_envelope.data(), padded_envelope.size());
 
   std::vector<std::uint8_t> wire_no_sig;
   if (!EncodeGroupCipherNoSig(group_id, username_, sender_key->version, iter,
@@ -8111,6 +8598,12 @@ bool ClientCore::ResendGroupChatFile(const std::string& group_id,
     last_error_ = "encode group file failed";
     return false;
   }
+  std::vector<std::uint8_t> padded_envelope;
+  std::string pad_err;
+  if (!PadPayload(envelope, padded_envelope, pad_err)) {
+    last_error_ = pad_err.empty() ? "pad group message failed" : pad_err;
+    return false;
+  }
 
   std::array<std::uint8_t, 32> next_ck{};
   std::array<std::uint8_t, 32> mk{};
@@ -8129,10 +8622,10 @@ bool ClientCore::ResendGroupChatFile(const std::string& group_id,
   BuildGroupCipherAd(group_id, username_, sender_key->version, iter, ad);
 
   std::vector<std::uint8_t> cipher;
-  cipher.resize(envelope.size());
+  cipher.resize(padded_envelope.size());
   std::array<std::uint8_t, 16> mac{};
   crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(), ad.data(),
-                   ad.size(), envelope.data(), envelope.size());
+                   ad.size(), padded_envelope.data(), padded_envelope.size());
 
   std::vector<std::uint8_t> wire_no_sig;
   if (!EncodeGroupCipherNoSig(group_id, username_, sender_key->version, iter,
@@ -10039,6 +10532,16 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
     last_error_ = "not logged in";
     return result;
   }
+  {
+    const std::string saved_err = last_error_;
+    (void)MaybeSendCoverTraffic();
+    last_error_ = saved_err;
+  }
+  {
+    const std::string saved_err = last_error_;
+    ResendPendingSenderKeyDistributions();
+    last_error_ = saved_err;
+  }
 
   if (device_sync_enabled_ && !device_sync_is_primary_) {
     if (!device_sync_key_loaded_ && !LoadDeviceSyncKey()) {
@@ -10473,11 +10976,19 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       std::vector<std::uint8_t> ad;
       BuildGroupCipherAd(group_id, username_, sender_key->version, iter, ad);
 
+      std::vector<std::uint8_t> padded_envelope;
+      std::string pad_err;
+      if (!PadPayload(envelope, padded_envelope, pad_err)) {
+        last_error_ = pad_err.empty() ? "pad group message failed" : pad_err;
+        return false;
+      }
+
       std::vector<std::uint8_t> cipher;
-      cipher.resize(envelope.size());
+      cipher.resize(padded_envelope.size());
       std::array<std::uint8_t, 16> mac{};
       crypto_aead_lock(cipher.data(), mac.data(), mk.data(), nonce.data(),
-                       ad.data(), ad.size(), envelope.data(), envelope.size());
+                       ad.data(), ad.size(), padded_envelope.data(),
+                       padded_envelope.size());
 
       std::vector<std::uint8_t> wire_no_sig;
       if (!EncodeGroupCipherNoSig(group_id, username_, sender_key->version, iter,
@@ -10945,6 +11456,7 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
         state.next_iteration = iteration;
         state.ck = ck;
         state.members_hash.clear();
+        state.rotated_at = NowUnixSeconds();
         state.sent_count = 0;
         state.skipped_mks.clear();
         state.skipped_order.clear();
@@ -11310,6 +11822,14 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       send_key_req(group_id, sender_username, sender_key_version);
       continue;
     }
+    std::vector<std::uint8_t> unpadded;
+    std::string pad_err;
+    if (!UnpadPayload(plain, unpadded, pad_err)) {
+      crypto_wipe(plain.data(), plain.size());
+      continue;
+    }
+    crypto_wipe(plain.data(), plain.size());
+    plain = std::move(unpadded);
     it->second = std::move(tmp);
 
     std::uint8_t type = 0;
@@ -12097,14 +12617,33 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
   }
 
   const std::uint64_t chunks =
-      (plaintext_size + kFileBlobV3ChunkBytes - 1) / kFileBlobV3ChunkBytes;
-  if (chunks == 0 || chunks > (1ull << 31)) {
+      (plaintext_size + kFileBlobV4PlainChunkBytes - 1) / kFileBlobV4PlainChunkBytes;
+  if (chunks == 0 || chunks > (1ull << 31) ||
+      chunks > static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())) {
     last_error_ = "file size invalid";
     return false;
   }
+  std::vector<std::uint32_t> chunk_sizes;
+  chunk_sizes.reserve(static_cast<std::size_t>(chunks));
+  std::uint64_t remaining = plaintext_size;
+  std::uint64_t payload_bytes = 0;
+  for (std::uint64_t idx = 0; idx < chunks; ++idx) {
+    const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
+        remaining, kFileBlobV4PlainChunkBytes));
+    const std::size_t min_len = want + 4;
+    const std::size_t target_len = SelectFileChunkTarget(min_len);
+    if (target_len == 0) {
+      last_error_ = "file chunk size invalid";
+      return false;
+    }
+    chunk_sizes.push_back(static_cast<std::uint32_t>(target_len));
+    payload_bytes += 16u + static_cast<std::uint64_t>(target_len);
+    remaining -= want;
+  }
+  const std::size_t header_size =
+      kFileBlobV4BaseHeaderSize + chunk_sizes.size() * 4;
   const std::uint64_t blob_size =
-      static_cast<std::uint64_t>(kFileBlobV3PrefixSize) + chunks * 16u +
-      plaintext_size;
+      static_cast<std::uint64_t>(header_size) + payload_bytes;
   if (blob_size == 0 ||
       blob_size > static_cast<std::uint64_t>(kMaxChatFileBlobBytes)) {
     last_error_ = "payload too large";
@@ -12112,14 +12651,14 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
   }
 
   std::vector<std::uint8_t> header;
-  header.reserve(kFileBlobV3PrefixSize);
+  header.reserve(header_size);
   header.insert(header.end(), kFileBlobMagic,
                 kFileBlobMagic + sizeof(kFileBlobMagic));
-  header.push_back(kFileBlobVersionV3);
+  header.push_back(kFileBlobVersionV4);
   header.push_back(0);  // flags
   header.push_back(kFileBlobAlgoRaw);
   header.push_back(0);  // reserved
-  mi::server::proto::WriteUint32(kFileBlobV3ChunkBytes, header);
+  mi::server::proto::WriteUint32(static_cast<std::uint32_t>(chunks), header);
   mi::server::proto::WriteUint64(plaintext_size, header);
   std::array<std::uint8_t, 24> base_nonce{};
   if (!RandomBytes(base_nonce.data(), base_nonce.size())) {
@@ -12127,7 +12666,10 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
     return false;
   }
   header.insert(header.end(), base_nonce.begin(), base_nonce.end());
-  if (header.size() != kFileBlobV3PrefixSize) {
+  for (const auto chunk_len : chunk_sizes) {
+    mi::server::proto::WriteUint32(chunk_len, header);
+  }
+  if (header.size() != header_size) {
     last_error_ = "blob header invalid";
     return false;
   }
@@ -12158,12 +12700,11 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
   }
 
   std::vector<std::uint8_t> plain;
-  plain.resize(kFileBlobV3ChunkBytes);
-  std::uint64_t remaining = plaintext_size;
-  std::uint64_t idx = 0;
-  while (remaining > 0) {
+  plain.resize(kFileBlobV4PlainChunkBytes);
+  remaining = plaintext_size;
+  for (std::uint64_t idx = 0; idx < chunks; ++idx) {
     const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
-        remaining, kFileBlobV3ChunkBytes));
+        remaining, kFileBlobV4PlainChunkBytes));
     ifs.read(reinterpret_cast<char*>(plain.data()),
              static_cast<std::streamsize>(want));
     if (!ifs) {
@@ -12172,16 +12713,42 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
       return false;
     }
 
+    const std::uint32_t target_len =
+        chunk_sizes[static_cast<std::size_t>(idx)];
+    if (target_len < 4u + want) {
+      last_error_ = "file chunk size invalid";
+      crypto_wipe(plain.data(), plain.size());
+      return false;
+    }
+    std::vector<std::uint8_t> padded;
+    padded.resize(target_len);
+    padded[0] = static_cast<std::uint8_t>(want & 0xFF);
+    padded[1] = static_cast<std::uint8_t>((want >> 8) & 0xFF);
+    padded[2] = static_cast<std::uint8_t>((want >> 16) & 0xFF);
+    padded[3] = static_cast<std::uint8_t>((want >> 24) & 0xFF);
+    if (want > 0) {
+      std::memcpy(padded.data() + 4, plain.data(), want);
+    }
+    const std::size_t pad_len = padded.size() - 4 - want;
+    if (pad_len > 0 &&
+        !RandomBytes(padded.data() + 4 + want, pad_len)) {
+      last_error_ = "rng failed";
+      crypto_wipe(plain.data(), plain.size());
+      crypto_wipe(padded.data(), padded.size());
+      return false;
+    }
+
     std::vector<std::uint8_t> record;
-    record.resize(16 + want);
+    record.resize(16u + padded.size());
     std::array<std::uint8_t, 24> nonce = base_nonce;
     for (int i = 0; i < 8; ++i) {
       nonce[16 + i] = static_cast<std::uint8_t>((idx >> (8 * i)) & 0xFF);
     }
     crypto_aead_lock(record.data() + 16, record.data(), file_key.data(),
-                     nonce.data(), header.data(), header.size(), plain.data(),
-                     want);
+                     nonce.data(), header.data(), header.size(), padded.data(),
+                     padded.size());
     crypto_wipe(plain.data(), want);
+    crypto_wipe(padded.data(), padded.size());
 
     std::uint64_t received = 0;
     if (!UploadE2eeFileBlobChunk(file_id, upload_id, off, record, received)) {
@@ -12194,7 +12761,6 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
     off = received;
 
     remaining -= want;
-    idx++;
   }
   crypto_wipe(plain.data(), plain.size());
 
@@ -12245,8 +12811,12 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     last_error_ = "file blob header invalid";
     return false;
   }
-  if (std::memcmp(header.data(), kFileBlobMagic, sizeof(kFileBlobMagic)) != 0 ||
-      header[sizeof(kFileBlobMagic)] != kFileBlobVersionV3) {
+  if (std::memcmp(header.data(), kFileBlobMagic, sizeof(kFileBlobMagic)) != 0) {
+    last_error_ = "file blob header invalid";
+    return false;
+  }
+  const std::uint8_t version = header[sizeof(kFileBlobMagic)];
+  if (version != kFileBlobVersionV3 && version != kFileBlobVersionV4) {
     last_error_ = "file blob version mismatch";
     return false;
   }
@@ -12255,17 +12825,128 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
   const std::uint8_t flags = header[h++];
   const std::uint8_t algo = header[h++];
   h++;  // reserved
-  std::uint32_t chunk_size = 0;
+
+  if (version == kFileBlobVersionV3) {
+    std::uint32_t chunk_size = 0;
+    std::uint64_t original_size = 0;
+    if (!mi::server::proto::ReadUint32(header, h, chunk_size) ||
+        !mi::server::proto::ReadUint64(header, h, original_size) ||
+        h + 24 != header.size()) {
+      last_error_ = "file blob header invalid";
+      return false;
+    }
+    (void)flags;
+    if (algo != kFileBlobAlgoRaw || chunk_size == 0 || original_size == 0 ||
+        chunk_size > (kE2eeBlobChunkBytes - 16u) ||
+        original_size > static_cast<std::uint64_t>(kMaxChatFileBytes)) {
+      last_error_ = "file blob header invalid";
+      return false;
+    }
+
+    std::array<std::uint8_t, 24> base_nonce{};
+    std::memcpy(base_nonce.data(), header.data() + h, base_nonce.size());
+
+    const std::uint64_t chunks = (original_size + chunk_size - 1) / chunk_size;
+    const std::uint64_t expect =
+        static_cast<std::uint64_t>(kFileBlobV3PrefixSize) + chunks * 16u +
+        original_size;
+    if (expect != blob_size) {
+      last_error_ = "file blob size mismatch";
+      return false;
+    }
+
+    std::error_code ec;
+    const auto parent = out_path.has_parent_path()
+                            ? out_path.parent_path()
+                            : std::filesystem::path{};
+    if (!parent.empty()) {
+      std::filesystem::create_directories(parent, ec);
+    }
+    const auto temp_path = out_path.string() + ".part";
+    std::ofstream ofs(temp_path, std::ios::binary | std::ios::trunc);
+    if (!ofs) {
+      last_error_ = "open output file failed";
+      return false;
+    }
+
+    std::uint64_t blob_off = kFileBlobV3PrefixSize;
+    std::uint64_t written = 0;
+    for (std::uint64_t idx = 0; idx < chunks; ++idx) {
+      const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
+          chunk_size, original_size - written));
+      const std::uint32_t record_len =
+          static_cast<std::uint32_t>(16 + want);
+      std::vector<std::uint8_t> record;
+      bool record_eof = false;
+      if (!DownloadE2eeFileBlobChunk(file_id, download_id, blob_off, record_len,
+                                     record, record_eof)) {
+        crypto_wipe(record.data(), record.size());
+        return false;
+      }
+      if (record.size() != record_len) {
+        crypto_wipe(record.data(), record.size());
+        last_error_ = "file download chunk invalid";
+        return false;
+      }
+
+      std::array<std::uint8_t, 24> nonce = base_nonce;
+      for (int i = 0; i < 8; ++i) {
+        nonce[16 + i] = static_cast<std::uint8_t>((idx >> (8 * i)) & 0xFF);
+      }
+
+      std::vector<std::uint8_t> plain;
+      plain.resize(want);
+      const std::uint8_t* mac = record.data();
+      const std::uint8_t* cipher = record.data() + 16;
+      const int ok = crypto_aead_unlock(plain.data(), mac, file_key.data(),
+                                        nonce.data(), header.data(), header.size(),
+                                        cipher, want);
+      crypto_wipe(record.data(), record.size());
+      if (ok != 0) {
+        crypto_wipe(plain.data(), plain.size());
+        last_error_ = "file decrypt failed";
+        return false;
+      }
+
+      ofs.write(reinterpret_cast<const char*>(plain.data()),
+                static_cast<std::streamsize>(plain.size()));
+      crypto_wipe(plain.data(), plain.size());
+      if (!ofs) {
+        last_error_ = "write output file failed";
+        return false;
+      }
+
+      blob_off += record_len;
+      written += want;
+      eof = record_eof;
+    }
+    ofs.close();
+    if (written != original_size || blob_off != blob_size || !eof) {
+      last_error_ = "file download incomplete";
+      std::filesystem::remove(temp_path, ec);
+      return false;
+    }
+
+    std::filesystem::remove(out_path, ec);
+    std::filesystem::rename(temp_path, out_path, ec);
+    if (ec) {
+      std::filesystem::remove(temp_path, ec);
+      last_error_ = "finalize output failed";
+      return false;
+    }
+    return true;
+  }
+
+  std::uint32_t chunk_count = 0;
   std::uint64_t original_size = 0;
-  if (!mi::server::proto::ReadUint32(header, h, chunk_size) ||
+  if (!mi::server::proto::ReadUint32(header, h, chunk_count) ||
       !mi::server::proto::ReadUint64(header, h, original_size) ||
       h + 24 != header.size()) {
     last_error_ = "file blob header invalid";
     return false;
   }
   (void)flags;
-  if (algo != kFileBlobAlgoRaw || chunk_size == 0 || original_size == 0 ||
-      chunk_size > (kE2eeBlobChunkBytes - 16u) ||
+  if (algo != kFileBlobAlgoRaw || chunk_count == 0 || original_size == 0 ||
       original_size > static_cast<std::uint64_t>(kMaxChatFileBytes)) {
     last_error_ = "file blob header invalid";
     return false;
@@ -12274,18 +12955,65 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
   std::array<std::uint8_t, 24> base_nonce{};
   std::memcpy(base_nonce.data(), header.data() + h, base_nonce.size());
 
-  const std::uint64_t chunks = (original_size + chunk_size - 1) / chunk_size;
+  const std::size_t header_size =
+      kFileBlobV4BaseHeaderSize + static_cast<std::size_t>(chunk_count) * 4u;
+  if (header_size < kFileBlobV4BaseHeaderSize ||
+      header_size > static_cast<std::size_t>(blob_size)) {
+    last_error_ = "file blob header invalid";
+    return false;
+  }
+  if (header_size > header.size()) {
+    const std::size_t need = header_size - header.size();
+    if (need > kE2eeBlobChunkBytes) {
+      last_error_ = "file blob header invalid";
+      return false;
+    }
+    std::vector<std::uint8_t> tail;
+    bool tail_eof = false;
+    if (!DownloadE2eeFileBlobChunk(
+            file_id, download_id, header.size(),
+            static_cast<std::uint32_t>(need), tail, tail_eof)) {
+      return false;
+    }
+    header.insert(header.end(), tail.begin(), tail.end());
+  }
+  if (header.size() != header_size) {
+    last_error_ = "file blob header invalid";
+    return false;
+  }
+
+  std::vector<std::uint32_t> chunk_sizes;
+  chunk_sizes.reserve(chunk_count);
+  std::uint64_t payload_expect = 0;
+  std::size_t table_off = kFileBlobV4BaseHeaderSize;
+  for (std::uint32_t i = 0; i < chunk_count; ++i) {
+    std::uint32_t chunk_len = 0;
+    if (!mi::server::proto::ReadUint32(header, table_off, chunk_len)) {
+      last_error_ = "file blob header invalid";
+      return false;
+    }
+    if (chunk_len < 4u || chunk_len > (kE2eeBlobChunkBytes - 16u)) {
+      last_error_ = "file blob header invalid";
+      return false;
+    }
+    chunk_sizes.push_back(chunk_len);
+    payload_expect += 16u + static_cast<std::uint64_t>(chunk_len);
+  }
+  if (table_off != header.size()) {
+    last_error_ = "file blob header invalid";
+    return false;
+  }
   const std::uint64_t expect =
-      static_cast<std::uint64_t>(kFileBlobV3PrefixSize) + chunks * 16u +
-      original_size;
+      static_cast<std::uint64_t>(header_size) + payload_expect;
   if (expect != blob_size) {
     last_error_ = "file blob size mismatch";
     return false;
   }
 
   std::error_code ec;
-  const auto parent =
-      out_path.has_parent_path() ? out_path.parent_path() : std::filesystem::path{};
+  const auto parent = out_path.has_parent_path()
+                          ? out_path.parent_path()
+                          : std::filesystem::path{};
   if (!parent.empty()) {
     std::filesystem::create_directories(parent, ec);
   }
@@ -12296,13 +13024,11 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     return false;
   }
 
-  std::uint64_t blob_off = kFileBlobV3PrefixSize;
+  std::uint64_t blob_off = header_size;
   std::uint64_t written = 0;
-  for (std::uint64_t idx = 0; idx < chunks; ++idx) {
-    const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
-        chunk_size, original_size - written));
-    const std::uint32_t record_len =
-        static_cast<std::uint32_t>(16 + want);
+  for (std::uint64_t idx = 0; idx < chunk_sizes.size(); ++idx) {
+    const std::uint32_t chunk_len = chunk_sizes[static_cast<std::size_t>(idx)];
+    const std::uint32_t record_len = static_cast<std::uint32_t>(16u + chunk_len);
     std::vector<std::uint8_t> record;
     bool record_eof = false;
     if (!DownloadE2eeFileBlobChunk(file_id, download_id, blob_off, record_len,
@@ -12322,21 +13048,37 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     }
 
     std::vector<std::uint8_t> plain;
-    plain.resize(want);
+    plain.resize(chunk_len);
     const std::uint8_t* mac = record.data();
     const std::uint8_t* cipher = record.data() + 16;
     const int ok = crypto_aead_unlock(plain.data(), mac, file_key.data(),
                                       nonce.data(), header.data(), header.size(),
-                                      cipher, want);
+                                      cipher, chunk_len);
     crypto_wipe(record.data(), record.size());
     if (ok != 0) {
       crypto_wipe(plain.data(), plain.size());
       last_error_ = "file decrypt failed";
       return false;
     }
+    if (plain.size() < 4) {
+      crypto_wipe(plain.data(), plain.size());
+      last_error_ = "file blob chunk invalid";
+      return false;
+    }
+    const std::uint32_t actual_len =
+        static_cast<std::uint32_t>(plain[0]) |
+        (static_cast<std::uint32_t>(plain[1]) << 8) |
+        (static_cast<std::uint32_t>(plain[2]) << 16) |
+        (static_cast<std::uint32_t>(plain[3]) << 24);
+    if (actual_len > (plain.size() - 4) ||
+        written + actual_len > original_size) {
+      crypto_wipe(plain.data(), plain.size());
+      last_error_ = "file blob chunk invalid";
+      return false;
+    }
 
-    ofs.write(reinterpret_cast<const char*>(plain.data()),
-              static_cast<std::streamsize>(plain.size()));
+    ofs.write(reinterpret_cast<const char*>(plain.data() + 4),
+              static_cast<std::streamsize>(actual_len));
     crypto_wipe(plain.data(), plain.size());
     if (!ofs) {
       last_error_ = "write output file failed";
@@ -12344,7 +13086,7 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     }
 
     blob_off += record_len;
-    written += want;
+    written += actual_len;
     eof = record_eof;
   }
   ofs.close();
@@ -12453,6 +13195,10 @@ bool ClientCore::TrustPendingServer(const std::string& pin) {
     last_error_ = "tls not enabled";
     return false;
   }
+  if (require_pinned_fingerprint_) {
+    last_error_ = "pinned fingerprint required";
+    return false;
+  }
   if (pending_server_fingerprint_.empty() || pending_server_pin_.empty()) {
     last_error_ = "no pending server trust";
     return false;
@@ -12469,9 +13215,11 @@ bool ClientCore::TrustPendingServer(const std::string& pin) {
     trust_store_path_ = trust.string();
   }
   std::string err;
-  const bool ok = StorePinnedFingerprint(
-      trust_store_path_, EndpointKey(server_ip_, server_port_),
-      pending_server_fingerprint_, err);
+  TrustEntry entry;
+  entry.fingerprint = pending_server_fingerprint_;
+  entry.tls_required = require_tls_;
+  const bool ok = StoreTrustEntry(
+      trust_store_path_, EndpointKey(server_ip_, server_port_), entry, err);
   if (!ok) {
     last_error_ = err.empty() ? "store trust failed" : err;
     return false;

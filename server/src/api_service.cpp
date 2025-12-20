@@ -3,10 +3,19 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <type_traits>
 #include <utility>
 
 #include "protocol.h"
+
+extern "C" {
+int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
+                                               std::size_t* siglen,
+                                               const std::uint8_t* m,
+                                               std::size_t mlen,
+                                               const std::uint8_t* sk);
+}
 
 #ifdef MI_E2EE_ENABLE_MYSQL
 #ifdef _WIN32
@@ -57,13 +66,37 @@ bool AreFriendsMysql(const MySqlConfig& cfg, const std::string& username,
 bool IsBlockedMysql(const MySqlConfig& cfg, const std::string& username,
                     const std::string& blocked_username, std::string& error);
 #endif
+
+bool ReadFileBytes(const std::filesystem::path& path,
+                   std::vector<std::uint8_t>& out,
+                   std::string& error) {
+  error.clear();
+  out.clear();
+  if (path.empty()) {
+    error = "kt signing key path empty";
+    return false;
+  }
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    error = "kt signing key not found";
+    return false;
+  }
+  out.assign(std::istreambuf_iterator<char>(ifs),
+             std::istreambuf_iterator<char>());
+  if (out.empty()) {
+    error = "kt signing key empty";
+    return false;
+  }
+  return true;
+}
 }  // namespace
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupDirectory* directory, OfflineStorage* storage,
                        OfflineQueue* queue, std::uint32_t group_threshold,
                        std::optional<MySqlConfig> friend_mysql,
-                       std::filesystem::path kt_dir)
+                       std::filesystem::path kt_dir,
+                       std::filesystem::path kt_signing_key)
     : sessions_(sessions),
       groups_(groups),
       directory_(directory),
@@ -85,6 +118,23 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
       std::filesystem::remove(path, ec);
       kt_log_ = std::make_unique<KeyTransparencyLog>(path);
       kt_log_->Load(err);
+    }
+  }
+  if (kt_log_) {
+    if (!kt_signing_key.empty()) {
+      std::vector<std::uint8_t> bytes;
+      std::string err;
+      if (!ReadFileBytes(kt_signing_key, bytes, err)) {
+        kt_signing_error_ = err.empty() ? "kt signing key load failed" : err;
+      } else if (bytes.size() != kKtSthSigSecretKeyBytes) {
+        kt_signing_error_ = "kt signing key size invalid";
+      } else {
+        std::copy_n(bytes.begin(), kt_signing_sk_.size(),
+                    kt_signing_sk_.begin());
+        kt_signing_ready_ = true;
+      }
+    } else {
+      kt_signing_error_ = "kt signing key missing";
     }
   }
 }
@@ -231,7 +281,33 @@ bool ApiService::RateLimitFile(const std::string& action, const std::string& tok
   return true;
 }
 
-LoginResponse ApiService::Login(const LoginRequest& req) {
+bool ApiService::SignKtSth(KeyTransparencySth& sth, std::string& out_error) {
+  out_error.clear();
+  sth.signature.clear();
+  if (!kt_signing_ready_) {
+    out_error = kt_signing_error_.empty() ? "kt signing unavailable"
+                                          : kt_signing_error_;
+    return false;
+  }
+  const auto msg = BuildKtSthSignatureMessage(sth);
+  sth.signature.resize(kKtSthSigBytes);
+  std::size_t sig_len = 0;
+  if (PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(
+          sth.signature.data(), &sig_len, msg.data(), msg.size(),
+          kt_signing_sk_.data()) != 0) {
+    out_error = "kt sign failed";
+    sth.signature.clear();
+    return false;
+  }
+  if (sig_len != sth.signature.size()) {
+    out_error = "kt signature size invalid";
+    sth.signature.clear();
+    return false;
+  }
+  return true;
+}
+
+LoginResponse ApiService::Login(const LoginRequest& req, TransportKind transport) {
   LoginResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
@@ -251,7 +327,8 @@ LoginResponse ApiService::Login(const LoginRequest& req) {
   if (req.kex_version == kLoginKeyExchangeV1) {
     LoginHybridServerHello hello;
     if (!sessions_->LoginHybrid(req.username, req.password, req.client_dh_pk,
-                                req.client_kem_pk, hello, session, err)) {
+                                req.client_kem_pk, transport, hello, session,
+                                err)) {
       resp.error = err;
       return resp;
     }
@@ -263,7 +340,7 @@ LoginResponse ApiService::Login(const LoginRequest& req) {
     return resp;
   }
 
-  if (!sessions_->Login(req.username, req.password, session, err)) {
+  if (!sessions_->Login(req.username, req.password, transport, session, err)) {
     resp.error = err;
     return resp;
   }
@@ -340,7 +417,7 @@ OpaqueLoginStartResponse ApiService::OpaqueLoginStart(
 }
 
 OpaqueLoginFinishResponse ApiService::OpaqueLoginFinish(
-    const OpaqueLoginFinishRequest& req) {
+    const OpaqueLoginFinishRequest& req, TransportKind transport) {
   OpaqueLoginFinishResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
@@ -353,7 +430,7 @@ OpaqueLoginFinishResponse ApiService::OpaqueLoginFinish(
   }
   Session session;
   std::string err;
-  if (!sessions_->OpaqueLoginFinish(req, session, err)) {
+  if (!sessions_->OpaqueLoginFinish(req, transport, session, err)) {
     resp.error = err.empty() ? "opaque login finish failed" : err;
     return resp;
   }
@@ -2978,6 +3055,13 @@ PreKeyFetchResponse ApiService::FetchPreKeyBundle(
     resp.kt_version = 1;
     resp.kt_tree_size = proof.sth.tree_size;
     resp.kt_root = proof.sth.root;
+    KeyTransparencySth sth = proof.sth;
+    std::string sign_err;
+    if (!SignKtSth(sth, sign_err)) {
+      resp.error = sign_err.empty() ? "kt sign failed" : sign_err;
+      return resp;
+    }
+    resp.kt_signature = std::move(sth.signature);
     resp.kt_leaf_index = proof.leaf_index;
     resp.kt_audit_path = std::move(proof.audit_path);
     resp.kt_consistency_path = std::move(proof.consistency_path);
@@ -3004,8 +3088,13 @@ KeyTransparencyHeadResponse ApiService::GetKeyTransparencyHead(
     resp.error = "kt disabled";
     return resp;
   }
-  resp.success = true;
   resp.sth = kt_log_->Head();
+  std::string sign_err;
+  if (!SignKtSth(resp.sth, sign_err)) {
+    resp.error = sign_err.empty() ? "kt sign failed" : sign_err;
+    return resp;
+  }
+  resp.success = true;
   return resp;
 }
 

@@ -64,7 +64,7 @@ int mi_server_process(mi_server_handle* handle,
   try {
     std::vector<std::uint8_t> out;
     std::vector<std::uint8_t> in_bytes(data, data + len);
-    if (!handle->listener->Process(in_bytes, out)) {
+    if (!handle->listener->Process(in_bytes, out, mi::server::TransportKind::kLocal)) {
       return 0;
     }
     *out_len = out.size();
@@ -105,7 +105,8 @@ int mi_server_login(mi_server_handle* handle,
     if (!sessions) {
       return 0;
     }
-    if (!sessions->Login(username, password, session, error)) {
+    if (!sessions->Login(username, password, mi::server::TransportKind::kLocal,
+                         session, error)) {
       return 0;
     }
     char* buf = static_cast<char*>(std::malloc(session.token.size() + 1));

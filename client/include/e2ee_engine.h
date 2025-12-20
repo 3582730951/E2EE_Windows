@@ -23,13 +23,24 @@ struct PrivateMessage {
   std::vector<std::uint8_t> plaintext;
 };
 
+struct IdentityPolicy {
+  std::uint32_t rotation_days{90};
+  std::uint32_t legacy_retention_days{180};
+  bool tpm_enable{true};
+  bool tpm_require{false};
+};
+
 class Engine {
  public:
   Engine();
   ~Engine();
 
+  void SetIdentityPolicy(IdentityPolicy policy);
+
   bool Init(const std::filesystem::path& state_dir, std::string& error);
   void SetLocalUsername(std::string username);
+
+  bool MaybeRotatePreKeys(bool& out_rotated, std::string& error);
 
   bool BuildPublishBundle(std::vector<std::uint8_t>& out_bundle,
                           std::string& error) const;
@@ -72,7 +83,7 @@ class Engine {
                          std::string& error);
 
  private:
-   static constexpr std::uint8_t kIdentityVersion = 3;
+   static constexpr std::uint8_t kIdentityVersion = 4;
    static constexpr std::uint8_t kProtocolVersion = 5;
    static constexpr std::size_t kSigPublicKeyBytes = 1952;
    static constexpr std::size_t kSigSecretKeyBytes = 4032;
@@ -107,7 +118,7 @@ class Engine {
      std::size_t operator()(const SkippedKeyId& v) const noexcept;
    };
 
-   struct Session {
+ struct Session {
     std::string peer_username;
     std::string peer_fingerprint_hex;
     std::array<std::uint8_t, 32> rk{};
@@ -127,6 +138,13 @@ class Engine {
     std::uint32_t ns{0};
     std::uint32_t nr{0};
     std::uint32_t pn{0};
+  };
+
+  struct LegacyKeyset {
+    std::uint32_t spk_id{0};
+    std::uint64_t retired_at{0};
+    std::array<std::uint8_t, 32> spk_sk{};
+    std::array<std::uint8_t, kKemSecretKeyBytes> kem_sk{};
   };
 
   bool LoadOrCreateIdentity(std::string& error);
@@ -164,13 +182,17 @@ class Engine {
                                Session& out_session,
                                std::string& error);
 
-   bool InitSessionAsResponder(const std::string& peer_username,
-                               const PeerBundle& peer,
-                               const std::array<std::uint8_t, 32>& sender_eph_pk,
-                               const std::array<std::uint8_t, kKemPublicKeyBytes>& sender_ratchet_kem_pk,
-                               const std::array<std::uint8_t, kKemCiphertextBytes>& kem_ct,
-                               Session& out_session,
-                               std::string& error);
+  bool InitSessionAsResponder(const std::string& peer_username,
+                              const PeerBundle& peer,
+                              const std::array<std::uint8_t, 32>& sender_eph_pk,
+                              const std::array<std::uint8_t, kKemPublicKeyBytes>& sender_ratchet_kem_pk,
+                              const std::array<std::uint8_t, kKemCiphertextBytes>& kem_ct,
+                              Session& out_session,
+                              std::string& error);
+
+  bool MaybeRotatePreKeysLocked(bool& out_rotated, std::string& error);
+  bool PruneLegacyKeys(std::uint64_t now_sec);
+  const LegacyKeyset* FindLegacyKey(std::uint32_t spk_id) const;
 
   bool EncryptMessage(Session& session, std::uint8_t msg_type,
                       const std::vector<std::uint8_t>& header_ad,
@@ -207,6 +229,9 @@ class Engine {
    std::array<std::uint8_t, kSigBytes> spk_sig_{};
    std::array<std::uint8_t, kKemSecretKeyBytes> kem_sk_{};
    std::array<std::uint8_t, kKemPublicKeyBytes> kem_pk_{};
+   std::uint64_t identity_created_at_{0};
+   std::uint64_t identity_rotated_at_{0};
+   std::vector<LegacyKeyset> legacy_keys_;
 
    std::unordered_map<std::string, std::string> trusted_peers_;
    PendingPeerTrust pending_{};
@@ -214,6 +239,7 @@ class Engine {
   std::unordered_map<std::string, std::vector<std::vector<std::uint8_t>>>
       pending_payloads_;
   std::vector<PrivateMessage> ready_messages_;
+  IdentityPolicy identity_policy_{};
 };
 
 }  // namespace mi::client::e2ee

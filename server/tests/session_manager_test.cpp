@@ -24,7 +24,8 @@ int main() {
 
   Session session;
   std::string err;
-  bool ok = mgr.Login("bob", "pwd123", session, err);
+  bool ok = mgr.Login("bob", "pwd123", mi::server::TransportKind::kLocal,
+                      session, err);
   if (!ok || session.token.empty()) {
     return 1;
   }
@@ -44,7 +45,7 @@ int main() {
     return 1;
   }
 
-  ok = mgr.Login("bob", "wrong", session, err);
+  ok = mgr.Login("bob", "wrong", mi::server::TransportKind::kLocal, session, err);
   if (ok) {
     return 1;
   }
@@ -55,7 +56,9 @@ int main() {
   Session tmp;
   std::string lock_err;
   for (int i = 0; i < 11; ++i) {
-    const bool ok_fail = mgr.Login("bob", "wrong", tmp, lock_err);
+    const bool ok_fail =
+        mgr.Login("bob", "wrong", mi::server::TransportKind::kLocal, tmp,
+                  lock_err);
     if (ok_fail) {
       return 1;
     }
@@ -63,11 +66,15 @@ int main() {
       return 1;
     }
   }
-  const bool ok_banned = mgr.Login("bob", "wrong", tmp, lock_err);
+  const bool ok_banned =
+      mgr.Login("bob", "wrong", mi::server::TransportKind::kLocal, tmp,
+                lock_err);
   if (ok_banned || lock_err != "rate limited") {
     return 1;
   }
-  const bool ok_banned_good = mgr.Login("bob", "pwd123", tmp, lock_err);
+  const bool ok_banned_good =
+      mgr.Login("bob", "pwd123", mi::server::TransportKind::kLocal, tmp,
+                lock_err);
   if (ok_banned_good || lock_err != "rate limited") {
     return 1;
   }
@@ -84,7 +91,8 @@ int main() {
                            std::chrono::seconds(0));
   Session s2;
   std::string err2;
-  bool ok2 = short_mgr.Login("c", "d", s2, err2);
+  bool ok2 = short_mgr.Login("c", "d", mi::server::TransportKind::kLocal, s2,
+                             err2);
   if (!ok2) {
     return 1;
   }
