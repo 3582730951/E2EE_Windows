@@ -1,97 +1,133 @@
-# MI E2EE（Windows / TCP Demo）
+# MI E2EE (Windows)
 
-## 运行（Demo 模式：`mode=1`）
+[![Build](https://github.com/3582730951/E2EE_Windows/actions/workflows/ci.yml/badge.svg)](https://github.com/3582730951/E2EE_Windows/actions/workflows/ci.yml)
+![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
 
-### 1) 启动服务端
-- 目录示例：`server-win-Release.zip` 解压后（例如 `D:\core-test\1\s`）
-- 确保同目录下有：
-  - `mi_e2ee_server.exe`
-  - `config.ini`
-  - `test_user.txt`
-- 启动：双击运行或命令行运行 `mi_e2ee_server.exe`（保持窗口不要关闭）
+端到端加密聊天栈（服务端+客户端），面向 Windows 环境，包含 PAKE/OPAQUE 认证、双重 Ratchet、群聊 Sender Key、Key Transparency、离线文件加密与 UI 客户端。
 
-`test_user.txt` 格式：每行 `username:password`，支持整行 `#` 注释与行内注释（`空格 + #`）。
+## 目录
+- 特性
+- 架构与目录
+- 安全模型与威胁边界
+- 快速开始（Demo）
+- 构建与测试
+- 配置要点
+- CI
+- 贡献与反馈
+- License
 
-示例（构建产物里已自带一份）：
+## 特性
+- 认证：OPAQUE / PAKE，无明文口令存储
+- 会话：X25519 + ML-KEM（可混合）+ HKDF 派生
+- 消息：Double Ratchet + AEAD，Sender Key 群聊
+- Key Transparency：STH 签名与一致性校验、gossip 阈值告警
+- 传输：TLS（Windows Schannel）+ 证书指纹 pin + 降级检测
+- 元数据对抗：消息/心跳/文件分块桶化填充 + cover traffic
+- 离线文件：一次一密 + 密钥删除优先 + 可选 secure-delete 插件
+- 客户端：Qt 6 UI（默认开启），核心逻辑走 `mi_e2ee_client_core`
+
+## 架构与目录
 ```
-u1:p1
-alice:alice123
-bob:bob123
-```
-
-### 2) 启动客户端 UI
-- 目录示例：`client-ui-Release.zip` 解压后（例如 `D:\core-test\1\c`）
-- 确保同目录下有 `client_config.ini`（或 `config.ini`），内容：
-```
-[client]
-server_ip=127.0.0.1
-server_port=9000
-```
-- 运行 `mi_e2ee.exe`，用 `test_user.txt` 里的账号密码登录。
-
-### 3) 好友列表 / 添加好友（当前实现）
-- 登录后主列表会向后端拉取好友列表（为空会提示“暂无好友”）。
-- 点击右上角 `+` 输入好友账号（必须在认证用户表里存在），后端会直接建立**双向好友关系**，列表立刻出现该好友。
-- 好友备注：列表右键 `修改备注`（为空则显示账号）。
-- 说明：
-  - `mode=1`（demo）：好友关系在服务端内存中保存，服务端重启会清空。
-  - `mode=0`（mysql）：好友关系写入 MySQL 表 `user_friend`，服务端重启不丢失。
-
-## MySQL 登录（`mode=0`）建库建表示例
-
-后端查询语句固定为：
-`SELECT password FROM user_auth WHERE username=? LIMIT 1`
-
-### 1) 建库建表
-```sql
-CREATE DATABASE IF NOT EXISTS mi_e2ee
-  DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_bin;
-
-USE mi_e2ee;
-
-CREATE TABLE IF NOT EXISTS user_auth (
-  username VARCHAR(64) NOT NULL,
-  password VARCHAR(255) NOT NULL,
-  PRIMARY KEY (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
--- 好友关系（双向各一行）
-CREATE TABLE IF NOT EXISTS user_friend (
-  username VARCHAR(64) NOT NULL,
-  friend_username VARCHAR(64) NOT NULL,
-  remark VARCHAR(128) NOT NULL DEFAULT '',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (username, friend_username),
-  INDEX idx_friend_username(friend_username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+server/          服务端（TCP/KCP 网关、转发、离线/文件）
+client/          客户端核心库与 UI
+shard/           共享安全类型与加扰逻辑（含 C 接口）
+third_party/     第三方依赖（hash lock + SBOM）
+tools/           工具（third_party_audit 等）
 ```
 
-### 2) 插入示例账号
-后端支持 3 种密码存储格式：
-1) 明文：`password = 'alice123'`
-2) 纯哈希：`password = sha256(password)` 的十六进制（**小写**）
-3) 加盐：`password = 'salt:sha256(salt+password)'`（**小写**）
+## 安全模型与威胁边界
+已覆盖（显著提高攻击成本）：
+- 旁路窃听、MITM、中间人证书替换（TLS + pin + 降级检测）
+- 服务器被动窥探（内容端到端加密，服务端不解密）
+- 群密钥滥用（Sender Key 轮换+分发 ACK）
+- KT 分叉/回滚（STH 签名 + gossip 告警）
 
-```sql
--- 1) 明文
-INSERT INTO user_auth(username, password) VALUES ('alice', 'alice123');
+不保证完全防御：
+- 终端被入侵（恶意软件、内存注入、键盘记录）
+- 物理取证/系统级后门
+- 高级流量关联与侧信道（仅降低可识别性）
 
--- 2) sha256(password)（注意转小写，后端内部计算为小写 hex）
-INSERT INTO user_auth(username, password)
-VALUES ('bob', LOWER(SHA2('bob123', 256)));
+## 快速开始（Demo）
+> Demo 模式用于本地测试；生产环境请启用 TLS + 预置 pin + KT 签名校验。
 
--- 3) salt:sha256(salt+password)
-SET @salt = 's1';
-INSERT INTO user_auth(username, password)
-VALUES ('u1', CONCAT(@salt, ':', LOWER(SHA2(CONCAT(@salt, 'p1'), 256))));
+### 1) 准备服务端
+1. 复制 `server/config.example.ini` 到 `config.ini`。
+2. Demo 模式：`[mode] mode=1`（MySQL 用 `mode=0`）。
+3. TLS（建议保持开启）：
+   - `tls_enable=1`
+   - `require_tls=1`
+   - `tls_cert=mi_e2ee_server.pfx`（Windows 上若不存在会自动生成自签 PFX）
+4. Key Transparency 签名密钥（必需）：
+   - `kt_signing_key=kt_signing_key.bin`
+   - 该文件为 ML-DSA65 私钥（4032 字节），请使用 PQClean ML-DSA65 生成。
+5. 启动：运行 `mi_e2ee_server.exe`（保持窗口开启）。
+
+### 2) 准备客户端
+1. 复制 `client/client_config.example.ini` 到 `client_config.ini`。
+2. 必填项：
+   - `server_ip` / `server_port`
+   - `use_tls=1` + `require_tls=1`
+   - `require_pinned_fingerprint=1` + `pinned_fingerprint=...`
+   - `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
+3. 运行 `mi_e2ee.exe`，用 `test_user.txt` 中的账号登录。
+
+### TLS 指纹获取（pinned_fingerprint）
+PowerShell 示例（输出 64 位 hex）：
+```powershell
+$cert = Get-PfxCertificate -FilePath .\mi_e2ee_server.pfx
+$der = $cert.Export('Cert')
+$hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace("-", "").ToLower()
+$hash
 ```
 
-## 加好友流程建议
+### Key Transparency 密钥生成（kt_signing_key / kt_root_pub）
+- 使用 PQClean ML-DSA65 `crypto_sign_keypair` 生成：
+  - `kt_signing_key.bin`（私钥 4032 bytes）
+  - `kt_root_pub.bin`（公钥 1952 bytes）
+- 客户端 `root_pubkey_path` 指向公钥文件（强制校验）。
 
-当前实现是“直接加好友”。更接近主流聊天软件的交互可以拆成：
-1) 搜索/输入账号 → 发送好友申请（pending）
-2) 对方“新的好友”列表显示申请 → 同意/拒绝
-3) 同意后双方写入好友关系，好友列表拉取即可展示
+## 构建与测试
+### 服务端
+```powershell
+cmake -S server -B build/server
+cmake --build build/server --config Release
+ctest --output-on-failure --test-dir build/server
+```
 
-（如需我把“申请/同意/拒绝 + MySQL 持久化 + UI 展示”也做掉，告诉我期望交互与表结构即可。）
+### 客户端（UI 默认开启）
+```powershell
+cmake -S client -B build/client
+cmake --build build/client --config Release
+ctest --output-on-failure --test-dir build/client
+```
+
+### 关闭 UI（仅核心库）
+```powershell
+cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
+```
+
+## 配置要点（摘要）
+服务端 `config.ini`：
+- `mode=0/1`（mysql/demo）
+- `tls_enable=1` + `require_tls=1`
+- `tls_cert=mi_e2ee_server.pfx`
+- `kt_signing_key=kt_signing_key.bin`
+- `offline_dir=offline_store`
+
+客户端 `client_config.ini`：
+- `use_tls=1` + `require_tls=1`
+- `require_pinned_fingerprint=1` + `pinned_fingerprint=...`
+- `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
+- `[traffic] cover_traffic_enabled=1`
+
+## CI
+GitHub Actions：`.github/workflows/ci.yml`
+- Windows 构建默认生成自签 TLS 证书并执行 Debug/Release 测试。
+
+## 贡献与反馈
+- 提交遵循 Conventional Commits
+- PR 需包含变更摘要与测试结果
+
+## License
+未提供（请在发布前补充许可证）
