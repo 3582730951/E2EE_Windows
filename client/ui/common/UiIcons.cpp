@@ -89,7 +89,8 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color) {
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        const qreal pad = qMax(1.0, pixelSize * 0.06);
+        const qreal padRatio = pixelSize <= 20 ? 0.14 : (pixelSize <= 28 ? 0.10 : 0.06);
+        const qreal pad = qMax(1.0, pixelSize * padRatio);
         const qreal side = qMax<qreal>(1.0, pixelSize - pad * 2.0);
         renderer.render(&p, QRectF(pad, pad, side, side));
         p.setCompositionMode(QPainter::CompositionMode_SourceIn);
