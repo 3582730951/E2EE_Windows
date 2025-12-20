@@ -1462,8 +1462,8 @@ void ChatWindow::buildUi() {
         }
     });
     presenceAction_ =
-        sendMenu_->addAction(UiSettings::Tr(QStringLiteral("在线状态（默认关闭）"),
-                                            QStringLiteral("Presence (default off)")));
+        sendMenu_->addAction(UiSettings::Tr(QStringLiteral("在线状态"),
+                                            QStringLiteral("Presence")));
     presenceAction_->setCheckable(true);
     presenceAction_->setChecked(false);
     connect(presenceAction_, &QAction::toggled, this, [this](bool on) {
@@ -1475,6 +1475,10 @@ void ChatWindow::buildUi() {
         }
         presencePingTimer_->stop();
         if (!on || isGroup_ || !backend_ || conversationId_.trimmed().isEmpty()) {
+            if (!isGroup_ && backend_ && !conversationId_.trimmed().isEmpty()) {
+                QString err;
+                backend_->sendPresence(conversationId_, false, err);
+            }
             setPresenceIndicator(false);
             return;
         }
@@ -1596,7 +1600,7 @@ void ChatWindow::updateConversationUiState() {
     }
     if (presenceLabel_) {
         const bool showPresence =
-            hasConversation && presenceAction_ && presenceAction_->isChecked();
+            hasConversation && !presenceLabel_->text().trimmed().isEmpty();
         presenceLabel_->setVisible(showPresence);
     }
     for (auto *btn : titleActionButtons_) {
@@ -2307,13 +2311,6 @@ void ChatWindow::setPresenceIndicator(bool online) {
     if (isGroup_ || !presenceLabel_) {
         return;
     }
-    if (!presenceAction_ || !presenceAction_->isChecked()) {
-        if (presenceHideTimer_) {
-            presenceHideTimer_->stop();
-        }
-        presenceLabel_->setVisible(false);
-        return;
-    }
     if (online) {
         presenceLabel_->setText(UiSettings::Tr(QStringLiteral("在线"),
                                                QStringLiteral("Online")));
@@ -2333,6 +2330,16 @@ void ChatWindow::setPresenceIndicator(bool online) {
     presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
                                       .arg(ChatTokens::textMuted().name()));
     presenceLabel_->setVisible(true);
+}
+
+void ChatWindow::setPresenceEnabled(bool enabled) {
+    if (!presenceAction_ || isGroup_) {
+        return;
+    }
+    if (presenceAction_->isChecked() == enabled) {
+        return;
+    }
+    presenceAction_->setChecked(enabled);
 }
 
 bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {

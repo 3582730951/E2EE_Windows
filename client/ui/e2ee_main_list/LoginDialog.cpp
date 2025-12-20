@@ -107,9 +107,9 @@ void LoginDialog::buildUi() {
     titleLayout->setDirection(QBoxLayout::LeftToRight);
     titleLayout->addStretch();
     auto *settingBtnSimple = new IconButton(QString(), titleBar);
-    settingBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
+    settingBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 18);
     settingBtnSimple->setFixedSize(28, 28);
-    settingBtnSimple->setPadding(4);
+    settingBtnSimple->setPadding(3);
     settingBtnSimple->setFocusPolicy(Qt::NoFocus);
     settingBtnSimple->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuSimple = new QMenu(settingBtnSimple);
@@ -121,7 +121,9 @@ void LoginDialog::buildUi() {
     settingsMenuSimple->addAction(
         UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
     settingBtnSimple->setMenu(settingsMenuSimple);
-    settingBtnSimple->setStyleSheet("QToolButton { border-radius: 6px; }");
+    settingBtnSimple->setStyleSheet(
+        QStringLiteral("QPushButton { border-radius: 6px; }"
+                       "QPushButton::menu-indicator { image: none; width: 0px; }"));
     connect(settingsActionSimple, &QAction::triggered, this, [this]() {
         SettingsDialog dlg(this);
         if (backend_) {
@@ -130,8 +132,9 @@ void LoginDialog::buildUi() {
         dlg.exec();
     });
     auto *closeBtnSimple = new IconButton(QString(), titleBar);
-    closeBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
-    closeBtnSimple->setFixedSize(24, 24);
+    closeBtnSimple->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 16);
+    closeBtnSimple->setFixedSize(26, 26);
+    closeBtnSimple->setPadding(4);
     closeBtnSimple->setColors(textSub, textMain, danger, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     connect(closeBtnSimple, &QPushButton::clicked, this, &LoginDialog::reject);
     titleLayout->addWidget(settingBtnSimple);
@@ -244,9 +247,9 @@ void LoginDialog::buildUi() {
     accTopLayout->setDirection(QBoxLayout::LeftToRight);
     accTopLayout->addStretch();
     auto *settingBtnAcc = new IconButton(QString(), accTopBar);
-    settingBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
+    settingBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 18);
     settingBtnAcc->setFixedSize(28, 28);
-    settingBtnAcc->setPadding(4);
+    settingBtnAcc->setPadding(3);
     settingBtnAcc->setFocusPolicy(Qt::NoFocus);
     settingBtnAcc->setColors(textSub, textMain, textMain, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     auto *settingsMenuAcc = new QMenu(settingBtnAcc);
@@ -258,7 +261,9 @@ void LoginDialog::buildUi() {
     settingsMenuAcc->addAction(
         UiSettings::Tr(QStringLiteral("关于"), QStringLiteral("About")));
     settingBtnAcc->setMenu(settingsMenuAcc);
-    settingBtnAcc->setStyleSheet("QToolButton { border-radius: 6px; }");
+    settingBtnAcc->setStyleSheet(
+        QStringLiteral("QPushButton { border-radius: 6px; }"
+                       "QPushButton::menu-indicator { image: none; width: 0px; }"));
     connect(settingsActionAcc, &QAction::triggered, this, [this]() {
         SettingsDialog dlg(this);
         if (backend_) {
@@ -269,8 +274,9 @@ void LoginDialog::buildUi() {
     accTopLayout->addWidget(settingBtnAcc);
     accTopLayout->addSpacing(6);
     auto *closeBtnAcc = new IconButton(QString(), accTopBar);
-    closeBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 14);
-    closeBtnAcc->setFixedSize(24, 24);
+    closeBtnAcc->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/close.svg"), 16);
+    closeBtnAcc->setFixedSize(26, 26);
+    closeBtnAcc->setPadding(4);
     closeBtnAcc->setColors(textSub, textMain, danger, QColor(0, 0, 0, 0), hoverBg, selectedBg);
     connect(closeBtnAcc, &QPushButton::clicked, this, &LoginDialog::reject);
     accTopLayout->addWidget(closeBtnAcc);

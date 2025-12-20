@@ -15,11 +15,13 @@
 class ChatWindow;
 class BackendAdapter;
 class QLabel;
+class QToolButton;
 class IconButton;
 class QSortFilterProxyModel;
 class QSystemTrayIcon;
 class QMenu;
 class QAction;
+class QActionGroup;
 class QCloseEvent;
 
 class MainListWindow : public FramelessWindowBase {
@@ -71,6 +73,13 @@ private:
         GroupsOnly = 2,
     };
 
+    enum class UserPresenceMode {
+        Online = 0,
+        DoNotDisturb = 1,
+        Invisible = 2,
+        Offline = 3,
+    };
+
     struct PendingGroupInvite {
         QString groupId;
         QString fromUser;
@@ -91,6 +100,10 @@ private:
     void togglePinnedForId(const QString &id);
     void loadPinned();
     void savePinned() const;
+    void setPresenceMode(UserPresenceMode mode);
+    void applyPresenceMode();
+    void updatePresenceLabel();
+    bool presenceEnabled() const;
 
     QListView *listView_{nullptr};
     QStandardItemModel *model_{nullptr};
@@ -100,7 +113,16 @@ private:
     QString embeddedConvId_;
     QLineEdit *searchEdit_{nullptr};
     BackendAdapter *backend_{nullptr};
-    QLabel *connLabel_{nullptr};
+    QToolButton *statusBtn_{nullptr};
+    QMenu *statusMenu_{nullptr};
+    QActionGroup *statusGroup_{nullptr};
+    QAction *statusOnlineAction_{nullptr};
+    QAction *statusDndAction_{nullptr};
+    QAction *statusInvisibleAction_{nullptr};
+    QAction *statusOfflineAction_{nullptr};
+    UserPresenceMode presenceMode_{UserPresenceMode::Online};
+    bool backendOnline_{false};
+    QString connectionDetail_;
     QLabel *bellBadge_{nullptr};
     IconButton *navBellBtn_{nullptr};
     IconButton *navAllBtn_{nullptr};

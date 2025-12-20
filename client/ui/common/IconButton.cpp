@@ -21,6 +21,7 @@ IconButton::IconButton(const QString &glyph, QWidget *parent)
     setFlat(true);
     setCheckable(false);
     setCursor(Qt::PointingHandCursor);
+    setStyleSheet(QStringLiteral("QPushButton::menu-indicator { image: none; width: 0px; }"));
     setGlyph(glyph, 10);
 }
 

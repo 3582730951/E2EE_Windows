@@ -55,6 +55,7 @@ public:
     void markFailed(const QString &messageId);
     void setTypingIndicator(bool typing);
     void setPresenceIndicator(bool online);
+    void setPresenceEnabled(bool enabled);
     void setFileTransferState(const QString &messageId, FileTransferState state, int progress = -1);
     void setFileLocalPath(const QString &messageId, const QString &filePath);
 

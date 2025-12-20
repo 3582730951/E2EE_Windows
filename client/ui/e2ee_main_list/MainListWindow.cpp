@@ -11,6 +11,8 @@
 #include <QListView>
 #include <QPainter>
 #include <QPushButton>
+#include <QToolButton>
+#include <QActionGroup>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QStandardItemModel>
@@ -456,11 +458,43 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     titleLabel->setStyleSheet(QStringLiteral("color: %1; font-size: 12px; letter-spacing: 1px;")
                                   .arg(Tokens::textMain().name()));
     titleLayout->addWidget(titleLabel);
-    connLabel_ = new QLabel(QStringLiteral(""), titleBar);
-    connLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+    statusBtn_ = new QToolButton(titleBar);
+    statusBtn_->setAutoRaise(true);
+    statusBtn_->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    statusBtn_->setCursor(Qt::PointingHandCursor);
+    statusBtn_->setText(QStringLiteral("离线"));
+    statusBtn_->setStyleSheet(QStringLiteral(
+        "QToolButton { color: %1; font-size: 10px; background: transparent; border: none; }"
+        "QToolButton::menu-indicator { image: none; width: 0px; }")
                                   .arg(Tokens::textMuted().name()));
+    statusMenu_ = new QMenu(statusBtn_);
+    UiStyle::ApplyMenuStyle(*statusMenu_);
+    statusGroup_ = new QActionGroup(statusMenu_);
+    statusGroup_->setExclusive(true);
+    auto addStatusAction = [this](const QString &text, UserPresenceMode mode) {
+        QAction *act = statusMenu_->addAction(text);
+        act->setCheckable(true);
+        act->setData(static_cast<int>(mode));
+        statusGroup_->addAction(act);
+        connect(act, &QAction::triggered, this, [this, mode]() { setPresenceMode(mode); });
+        return act;
+    };
+    statusOnlineAction_ = addStatusAction(UiSettings::Tr(QStringLiteral("在线"),
+                                                         QStringLiteral("Online")),
+                                          UserPresenceMode::Online);
+    statusDndAction_ = addStatusAction(UiSettings::Tr(QStringLiteral("勿扰"),
+                                                      QStringLiteral("Do Not Disturb")),
+                                       UserPresenceMode::DoNotDisturb);
+    statusInvisibleAction_ = addStatusAction(UiSettings::Tr(QStringLiteral("隐身"),
+                                                            QStringLiteral("Invisible")),
+                                             UserPresenceMode::Invisible);
+    statusOfflineAction_ = addStatusAction(UiSettings::Tr(QStringLiteral("离线"),
+                                                          QStringLiteral("Offline")),
+                                           UserPresenceMode::Offline);
+    statusBtn_->setMenu(statusMenu_);
+    statusBtn_->setPopupMode(QToolButton::InstantPopup);
     titleLayout->addSpacing(10);
-    titleLayout->addWidget(connLabel_);
+    titleLayout->addWidget(statusBtn_);
     titleLayout->addStretch();
     auto *minBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar, Tokens::textSub());
     auto *funcBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, Tokens::textSub());
@@ -1017,6 +1051,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         connect(backend_, &BackendAdapter::groupNoticeReceived, this, &MainListWindow::handleGroupNoticeReceived);
         connect(backend_, &BackendAdapter::connectionStateChanged, this, &MainListWindow::handleConnectionStateChanged);
         handleConnectionStateChanged(backend_->isOnline(), backend_->isOnline() ? QStringLiteral("在线") : QStringLiteral("离线"));
+    } else {
+        applyPresenceMode();
     }
 }
 
@@ -1277,6 +1313,94 @@ void MainListWindow::savePinned() const {
     });
     s.setValue(PinnedSettingsKey(), list);
     s.sync();
+}
+
+bool MainListWindow::presenceEnabled() const {
+    return backend_ && backendOnline_ &&
+           (presenceMode_ == UserPresenceMode::Online || presenceMode_ == UserPresenceMode::DoNotDisturb);
+}
+
+void MainListWindow::setPresenceMode(UserPresenceMode mode) {
+    if (presenceMode_ == mode) {
+        applyPresenceMode();
+        return;
+    }
+    presenceMode_ = mode;
+    applyPresenceMode();
+}
+
+void MainListWindow::applyPresenceMode() {
+    updatePresenceLabel();
+    const bool enabled = presenceEnabled();
+    if (embeddedChat_) {
+        embeddedChat_->setPresenceEnabled(enabled);
+    }
+    for (auto it = chatWindows_.begin(); it != chatWindows_.end(); ++it) {
+        if (it.value()) {
+            it.value()->setPresenceEnabled(enabled);
+        }
+    }
+}
+
+void MainListWindow::updatePresenceLabel() {
+    if (!statusBtn_) {
+        return;
+    }
+    if (!connectionDetail_.trimmed().isEmpty()) {
+        statusBtn_->setToolTip(connectionDetail_);
+    }
+    if (!backendOnline_) {
+        statusBtn_->setText(UiSettings::Tr(QStringLiteral("离线"), QStringLiteral("Offline")));
+        statusBtn_->setEnabled(false);
+        statusBtn_->setStyleSheet(QStringLiteral(
+            "QToolButton { color: %1; font-size: 10px; background: transparent; border: none; }"
+            "QToolButton::menu-indicator { image: none; width: 0px; }")
+                                      .arg(Theme::uiDangerRed().name()));
+        if (statusOfflineAction_) {
+            statusOfflineAction_->setChecked(true);
+        }
+        return;
+    }
+
+    statusBtn_->setEnabled(true);
+    QString text;
+    QColor color = Theme::accentGreen();
+    switch (presenceMode_) {
+        case UserPresenceMode::DoNotDisturb:
+            text = UiSettings::Tr(QStringLiteral("勿扰"), QStringLiteral("Do Not Disturb"));
+            color = Theme::accentOrange();
+            if (statusDndAction_) {
+                statusDndAction_->setChecked(true);
+            }
+            break;
+        case UserPresenceMode::Invisible:
+            text = UiSettings::Tr(QStringLiteral("隐身"), QStringLiteral("Invisible"));
+            color = Theme::uiTextMuted();
+            if (statusInvisibleAction_) {
+                statusInvisibleAction_->setChecked(true);
+            }
+            break;
+        case UserPresenceMode::Offline:
+            text = UiSettings::Tr(QStringLiteral("离线"), QStringLiteral("Offline"));
+            color = Theme::uiTextMuted();
+            if (statusOfflineAction_) {
+                statusOfflineAction_->setChecked(true);
+            }
+            break;
+        case UserPresenceMode::Online:
+        default:
+            text = UiSettings::Tr(QStringLiteral("在线"), QStringLiteral("Online"));
+            color = Theme::accentGreen();
+            if (statusOnlineAction_) {
+                statusOnlineAction_->setChecked(true);
+            }
+            break;
+    }
+    statusBtn_->setText(text);
+    statusBtn_->setStyleSheet(QStringLiteral(
+        "QToolButton { color: %1; font-size: 10px; background: transparent; border: none; }"
+        "QToolButton::menu-indicator { image: none; width: 0px; }")
+                                  .arg(color.name()));
 }
 
 void MainListWindow::togglePinnedForId(const QString &id) {
@@ -1769,6 +1893,7 @@ void MainListWindow::previewChatForIndex(const QModelIndex &index) {
     const bool changing = (embeddedConvId_ != id);
     embeddedConvId_ = id;
     embeddedChat_->setConversation(id, title, isGroup);
+    embeddedChat_->setPresenceEnabled(presenceEnabled());
     if (auto *item = findItemById(id)) {
         item->setData(0, UnreadRole);
     }
@@ -1815,6 +1940,7 @@ void MainListWindow::openChatForIndex(const QModelIndex &index) {
     ChatWindow *win = new ChatWindow(backend_);
     win->setAttribute(Qt::WA_DeleteOnClose, true);
     win->setConversation(id, title, isGroup);
+    win->setPresenceEnabled(presenceEnabled());
     chatWindows_[id] = win;
     connect(win, &QObject::destroyed, this, [this, id]() { chatWindows_.remove(id); });
     win->show();
@@ -3051,11 +3177,7 @@ void MainListWindow::handleGroupNoticeReceived(const QString &groupId, const QSt
 }
 
 void MainListWindow::handleConnectionStateChanged(bool online, const QString &detail) {
-    if (!connLabel_) {
-        return;
-    }
-    connLabel_->setText(detail);
-    connLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
-                                  .arg(online ? Theme::accentGreen().name()
-                                              : Theme::uiDangerRed().name()));
+    backendOnline_ = online;
+    connectionDetail_ = detail;
+    applyPresenceMode();
 }
