@@ -1069,7 +1069,8 @@ void ChatWindow::buildUi() {
     searchIcon->setPixmap(
         UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
                            16,
-                           ChatTokens::textMuted()));
+                           ChatTokens::textMuted(),
+                           searchIcon->devicePixelRatioF()));
     searchIcon->setAlignment(Qt::AlignCenter);
 
     searchEdit_ = new QLineEdit(searchBox);
@@ -1909,7 +1910,8 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
     if (titleIcon_) {
         if (isGroup_) {
             titleIcon_->setPixmap(UiIcons::TintedSvg(
-                QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), 14, ChatTokens::textMuted()));
+                QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), 14, ChatTokens::textMuted(),
+                titleIcon_->devicePixelRatioF()));
         } else {
             titleIcon_->setPixmap(QPixmap());
         }

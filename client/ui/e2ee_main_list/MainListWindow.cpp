@@ -250,6 +250,7 @@ public:
                const QModelIndex &index) const override {
         painter->save();
         QRect r = option.rect.adjusted(6, 3, -6, -3);
+        const qreal iconDpr = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
         const bool selected = option.state.testFlag(QStyle::State_Selected);
         const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
         QColor bg = Tokens::windowBg();
@@ -301,7 +302,7 @@ public:
             iconX = qMin(iconX, titleRect.right() - groupIconSize);
             const QPixmap groupIcon =
                 UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/group.svg"),
-                                   groupIconSize, Tokens::textMuted());
+                                   groupIconSize, Tokens::textMuted(), iconDpr);
             const QRect iconRect(iconX, titleRect.top() + 2, groupIconSize, groupIconSize);
             painter->drawPixmap(iconRect, groupIcon);
         }
@@ -345,7 +346,7 @@ public:
         if (pinned) {
             const QColor iconColor = selected ? Tokens::textMain() : Tokens::textMuted();
             const QPixmap star = UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"),
-                                                    10, iconColor);
+                                                    10, iconColor, iconDpr);
             painter->drawPixmap(QRect(timeRect.left() - 14, timeRect.top() + 2, 10, 10), star);
         }
 
@@ -547,7 +548,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     auto *searchIcon = new QLabel(searchBox);
     searchIcon->setFixedSize(16, 16);
     searchIcon->setPixmap(UiIcons::TintedSvg(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
-                                             16, Tokens::textMuted()));
+                                             16, Tokens::textMuted(),
+                                             searchIcon->devicePixelRatioF()));
     searchIcon->setAlignment(Qt::AlignCenter);
     searchEdit_ = new QLineEdit(searchBox);
     searchEdit_->setPlaceholderText(UiSettings::Tr(QStringLiteral("搜索"), QStringLiteral("Search")));

@@ -628,7 +628,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
         const QString fileIcon = FileKindIconPath(fileKind);
         const int svgSide = 20;
-        const QPixmap pm = UiIcons::TintedSvg(fileIcon, svgSide, Qt::white);
+        const qreal iconDpr = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
+        const QPixmap pm = UiIcons::TintedSvg(fileIcon, svgSide, Qt::white, iconDpr);
         const QRect svgRect(iconRect.center().x() - svgSide / 2, iconRect.center().y() - svgSide / 2,
                             svgSide, svgSide);
         painter->drawPixmap(svgRect, pm);

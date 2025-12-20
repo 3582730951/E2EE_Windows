@@ -108,7 +108,7 @@ void IconButton::paintEvent(QPaintEvent *event) {
     if (!m_svgPath.isEmpty()) {
         const int side = qMin(qMin(r.width(), r.height()), m_svgSize);
         const QRect iconRect(r.center().x() - side / 2, r.center().y() - side / 2, side, side);
-        painter.drawPixmap(iconRect, UiIcons::TintedSvg(m_svgPath, side, fg));
+        painter.drawPixmap(iconRect, UiIcons::TintedSvg(m_svgPath, side, fg, devicePixelRatioF()));
     } else {
         painter.drawText(r, Qt::AlignCenter, m_glyph);
     }
