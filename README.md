@@ -130,4 +130,5 @@ GitHub Actions：`.github/workflows/ci.yml`
 - PR 需包含变更摘要与测试结果
 
 ## License
-未提供（请在发布前补充许可证）
+本项目使用 PolyForm Noncommercial License 1.0.0（见 `LICENSE`）。
+允许个人非商业使用、拉取、修改、创建分支；商业使用需作者书面许可。
