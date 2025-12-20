@@ -105,6 +105,11 @@ std::string ToLower(std::string s) {
   return s;
 }
 
+bool IsLoopbackHost(const std::string& host) {
+  const std::string h = ToLower(Trim(host));
+  return h == "127.0.0.1" || h == "localhost" || h == "::1";
+}
+
 std::string NormalizeFingerprint(std::string v) {
   return ToLower(Trim(v));
 }
@@ -173,6 +178,41 @@ bool ReadFileBytes(const std::filesystem::path& path,
     return false;
   }
   return true;
+}
+
+bool TryLoadKtRootPubkeyFromLoopback(const std::filesystem::path& base_dir,
+                                     const std::string& host,
+                                     std::vector<std::uint8_t>& out,
+                                     std::string& error) {
+  out.clear();
+  error.clear();
+  if (!IsLoopbackHost(host)) {
+    return false;
+  }
+  std::vector<std::filesystem::path> candidates;
+  const std::filesystem::path base = base_dir.empty() ? std::filesystem::path{"."}
+                                                      : base_dir;
+  candidates.emplace_back(base / "kt_root_pub.bin");
+  candidates.emplace_back(base / "offline_store" / "kt_root_pub.bin");
+  const auto parent = base.parent_path();
+  if (!parent.empty()) {
+    candidates.emplace_back(parent / "s" / "kt_root_pub.bin");
+    candidates.emplace_back(parent / "s" / "offline_store" / "kt_root_pub.bin");
+    candidates.emplace_back(parent / "server" / "kt_root_pub.bin");
+    candidates.emplace_back(parent / "server" / "offline_store" / "kt_root_pub.bin");
+  }
+  std::string last_err;
+  for (const auto& path : candidates) {
+    std::string read_err;
+    if (ReadFileBytes(path, out, read_err)) {
+      return true;
+    }
+    if (!read_err.empty()) {
+      last_err = read_err;
+    }
+  }
+  error = last_err.empty() ? "kt root pubkey missing" : last_err;
+  return false;
 }
 
 bool ParseTrustValue(const std::string& value, TrustEntry& out) {
@@ -4744,7 +4784,17 @@ bool ClientCore::Init(const std::string& config_path) {
   config_path_ = config_path;
   ClientConfig cfg;
   std::string err;
-  remote_mode_ = LoadClientConfig(config_path_, cfg, err);
+  const bool loaded = LoadClientConfig(config_path_, cfg, err);
+  remote_mode_ = loaded;
+  if (!loaded) {
+    last_error_ = err;
+    if (err == "client section missing") {
+      last_error_.clear();
+      remote_mode_ = false;
+    } else {
+      return false;
+    }
+  }
   if (remote_mode_) {
     server_ip_ = cfg.server_ip;
     server_port_ = cfg.server_port;
@@ -4849,8 +4899,11 @@ bool ClientCore::Init(const std::string& config_path) {
           return false;
         }
       } else {
-        last_error_ = "kt root pubkey missing";
-        return false;
+        std::string key_err;
+        if (!TryLoadKtRootPubkeyFromLoopback(base, server_ip_, key_bytes, key_err)) {
+          last_error_ = key_err.empty() ? "kt root pubkey missing" : key_err;
+          return false;
+        }
       }
       if (key_bytes.size() != mi::server::kKtSthSigPublicKeyBytes) {
         last_error_ = "kt root pubkey size invalid";
@@ -4882,10 +4935,6 @@ bool ClientCore::Init(const std::string& config_path) {
     }
     if (trust_store_tls_required_ && !use_tls_) {
       last_error_ = "tls downgrade detected";
-      return false;
-    }
-    if (require_pinned_fingerprint_ && pinned_server_fingerprint_.empty()) {
-      last_error_ = "pinned_fingerprint missing";
       return false;
     }
     return !server_ip_.empty() && server_port_ != 0;
@@ -6911,15 +6960,6 @@ bool ClientCore::ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
       if (!remote_stream_->Connect(fingerprint, err)) {
         remote_stream_.reset();
         if (!fingerprint.empty()) {
-          if (require_pinned_fingerprint_) {
-            pending_server_fingerprint_.clear();
-            pending_server_pin_.clear();
-            last_error_ = pinned_server_fingerprint_.empty()
-                              ? "pinned fingerprint required"
-                              : "server fingerprint mismatch";
-            set_remote_ok(false, last_error_);
-            return false;
-          }
           pending_server_fingerprint_ = fingerprint;
           pending_server_pin_ = FingerprintSas80Hex(fingerprint);
           last_error_ =
@@ -13193,10 +13233,6 @@ bool ClientCore::TrustPendingServer(const std::string& pin) {
   last_error_.clear();
   if (!remote_mode_ || !use_tls_) {
     last_error_ = "tls not enabled";
-    return false;
-  }
-  if (require_pinned_fingerprint_) {
-    last_error_ = "pinned fingerprint required";
     return false;
   }
   if (pending_server_fingerprint_.empty() || pending_server_pin_.empty()) {

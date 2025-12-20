@@ -1,8 +1,13 @@
 #include "BackendAdapter.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
+#include <QSettings>
+#include <QMessageBox>
 #include <QPointer>
 #include <QRandomGenerator>
 #include <QTimer>
@@ -118,6 +123,78 @@ QString FindBundledServerExe() {
     return {};
 }
 
+QString GroupHex4(const QString &hex) {
+    if (hex.isEmpty()) {
+        return {};
+    }
+    QString out;
+    out.reserve(hex.size() + (hex.size() / 4));
+    for (int i = 0; i < hex.size(); ++i) {
+        if (i != 0 && (i % 4) == 0) {
+            out.append('-');
+        }
+        out.append(hex.at(i));
+    }
+    return out;
+}
+
+QString KtRootFingerprintHex(const QString &path, QString &err) {
+    err.clear();
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        err = QStringLiteral("kt root pubkey not found");
+        return {};
+    }
+    const QByteArray bytes = f.readAll();
+    if (bytes.isEmpty()) {
+        err = QStringLiteral("kt root pubkey empty");
+        return {};
+    }
+    if (bytes.size() != static_cast<int>(mi::server::kKtSthSigPublicKeyBytes)) {
+        err = QStringLiteral("kt root pubkey size invalid");
+        return {};
+    }
+    const QByteArray digest = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+    return QString::fromLatin1(digest.toHex());
+}
+
+QString KtRootSasHex(const QString &fingerprintHex) {
+    const QByteArray fp = QByteArray::fromHex(fingerprintHex.toLatin1());
+    if (fp.size() != 32) {
+        return {};
+    }
+    QByteArray msg("MI_KT_ROOT_SAS_V1");
+    msg.append(fp);
+    const QByteArray digest = QCryptographicHash::hash(msg, QCryptographicHash::Sha256);
+    return GroupHex4(QString::fromLatin1(digest.toHex().left(20)));
+}
+
+bool IsKtRootError(const QString &err) {
+    const QString e = err.trimmed().toLower();
+    return e.startsWith(QStringLiteral("kt root pubkey"));
+}
+
+bool WriteKtRootPath(const QString &configPath, const QString &keyPath, QString &err) {
+    err.clear();
+    const QFileInfo cfgInfo(configPath);
+    const QDir cfgDir(cfgInfo.absolutePath());
+    QString storePath = keyPath;
+    if (!cfgInfo.absolutePath().isEmpty()) {
+        storePath = cfgDir.relativeFilePath(QFileInfo(keyPath).absoluteFilePath());
+    }
+    QSettings settings(configPath, QSettings::IniFormat);
+    settings.beginGroup(QStringLiteral("kt"));
+    settings.setValue(QStringLiteral("require_signature"), 1);
+    settings.setValue(QStringLiteral("root_pubkey_path"), storePath);
+    settings.endGroup();
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        err = QStringLiteral("write client_config failed");
+        return false;
+    }
+    return true;
+}
+
 QString AugmentTransportErrorHint(const QString &coreErr) {
     const QString e = coreErr.trimmed();
     if (e == QStringLiteral("tcp recv failed") ||
@@ -204,6 +281,57 @@ bool BackendAdapter::init(const QString &configPath) {
         configPath_ = ResolveConfigPath(QStringLiteral("config.ini"));
     }
     inited_ = core_.Init(configPath_.toStdString());
+    if (!inited_ && !promptedKtRoot_) {
+        const QString coreErr = QString::fromStdString(core_.last_error());
+        if (IsKtRootError(coreErr)) {
+            promptedKtRoot_ = true;
+            bool ktApplied = false;
+            const QString baseDir = QFileInfo(configPath_).absolutePath();
+            const QString pick = QFileDialog::getOpenFileName(
+                nullptr,
+                UiSettings::Tr(QStringLiteral("选择 KT 根公钥"),
+                               QStringLiteral("Select KT root pubkey")),
+                baseDir,
+                QStringLiteral("KT Root Pubkey (kt_root_pub.bin);;All Files (*)"));
+            if (!pick.isEmpty()) {
+                QString fpErr;
+                const QString fp = KtRootFingerprintHex(pick, fpErr);
+                if (!fp.isEmpty()) {
+                    const QString sas = KtRootSasHex(fp);
+                    const QString desc = UiSettings::Tr(
+                        QStringLiteral("请通过可信渠道核对指纹/安全码后再继续。"),
+                        QStringLiteral("Verify the fingerprint/SAS via a trusted channel before continuing."));
+                    QString input;
+                    if (PromptTrustWithSas(nullptr,
+                                           UiSettings::Tr(QStringLiteral("验证 KT 根公钥"),
+                                                          QStringLiteral("Verify KT root pubkey")),
+                                           desc,
+                                           fp,
+                                           sas,
+                                           input)) {
+                        QString writeErr;
+                        if (WriteKtRootPath(configPath_, pick, writeErr)) {
+                            inited_ = core_.Init(configPath_.toStdString());
+                            ktApplied = inited_;
+                        } else {
+                            QMessageBox::warning(nullptr,
+                                                 UiSettings::Tr(QStringLiteral("写入失败"),
+                                                                QStringLiteral("Write failed")),
+                                                 writeErr);
+                        }
+                    }
+                } else {
+                    QMessageBox::warning(nullptr,
+                                         UiSettings::Tr(QStringLiteral("无效公钥"),
+                                                        QStringLiteral("Invalid pubkey")),
+                                         fpErr);
+                }
+            }
+            if (!ktApplied) {
+                promptedKtRoot_ = false;
+            }
+        }
+    }
     return inited_;
 }
 

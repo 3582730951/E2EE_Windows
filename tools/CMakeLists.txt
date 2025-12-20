@@ -31,3 +31,22 @@ endif()
 if(MSVC)
   target_compile_options(mi_e2ee_kt_keygen PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
+
+add_executable(mi_e2ee_kt_pubinfo
+    kt_pubinfo.cpp
+    ../third_party/qrcodegen/qrcodegen.cpp
+)
+
+target_include_directories(mi_e2ee_kt_pubinfo PRIVATE
+    ../server/include
+    ../third_party/qrcodegen
+)
+target_link_libraries(mi_e2ee_kt_pubinfo PRIVATE mi_crypto mi_e2ee_build_flags)
+
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_kt_pubinfo)
+endif()
+
+if(MSVC)
+  target_compile_options(mi_e2ee_kt_pubinfo PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()

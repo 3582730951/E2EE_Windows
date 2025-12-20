@@ -10,7 +10,48 @@ env:
   BUILD_TYPE: Release
 
 jobs:
+  kt-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+
+      - name: Configure kt keygen
+        run: |
+          cmake -S server -B build/kt-keys \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DMI_E2EE_ENABLE_MYSQL=OFF \
+            -DMI_E2EE_ENABLE_TCP_SERVER=OFF
+
+      - name: Build kt tools
+        run: |
+          cmake --build build/kt-keys --target mi_e2ee_kt_keygen
+          cmake --build build/kt-keys --target mi_e2ee_kt_pubinfo
+
+      - name: Generate kt keys
+        run: |
+          mkdir -p build/kt-keys/kt_keys
+          ./build/kt-keys/tools/mi_e2ee_kt_keygen --out-dir build/kt-keys/kt_keys --force
+          ./build/kt-keys/tools/mi_e2ee_kt_pubinfo --in build/kt-keys/kt_keys/kt_root_pub.bin \
+            --qr-svg build/kt-keys/kt_keys/kt_root_pub_qr.svg
+
+      - name: Upload kt keys
+        uses: actions/upload-artifact@v4
+        with:
+          name: kt-keys
+          path: build/kt-keys/kt_keys
+
   server-linux:
+    needs: kt-keys
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,12 +81,23 @@ jobs:
       - name: Test server
         run: ctest --output-on-failure --test-dir build/server-${{ matrix.mode }}
 
+      - name: Download kt keys
+        uses: actions/download-artifact@v4
+        with:
+          name: kt-keys
+          path: kt-keys
+
       - name: Package server
         run: |
           mkdir -p artifacts/server-${{ matrix.mode }}
+          mkdir -p artifacts/server-${{ matrix.mode }}/offline_store
           cp build/server-${{ matrix.mode }}/mi_e2ee_server artifacts/server-${{ matrix.mode }}/
+          cp build/server-${{ matrix.mode }}/tools/mi_e2ee_kt_pubinfo artifacts/server-${{ matrix.mode }}/
           cp server/config.example.ini artifacts/server-${{ matrix.mode }}/config.example.ini
           cp build/server-${{ matrix.mode }}/test_user.txt artifacts/server-${{ matrix.mode }}/test_user.txt
+          cp kt-keys/kt_signing_key.bin artifacts/server-${{ matrix.mode }}/offline_store/
+          cp kt-keys/kt_root_pub.bin artifacts/server-${{ matrix.mode }}/
+          cp kt-keys/kt_root_pub_qr.svg artifacts/server-${{ matrix.mode }}/
           tar -czf server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz -C artifacts server-${{ matrix.mode }}
 
       - name: Upload server artifact
@@ -55,6 +107,7 @@ jobs:
           path: server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz
 
   server-windows:
+    needs: kt-keys
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -116,13 +169,24 @@ jobs:
       - name: Build server
         run: cmake --build build/server-win
 
+      - name: Download kt keys
+        uses: actions/download-artifact@v4
+        with:
+          name: kt-keys
+          path: kt-keys
+
       - name: Package server (Windows)
         run: |
           New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
+          New-Item -ItemType Directory -Force artifacts/server-win/offline_store | Out-Null
           Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
+          Copy-Item build/server-win/tools/mi_e2ee_kt_pubinfo.exe artifacts/server-win/ -ErrorAction SilentlyContinue
           Copy-Item build/server-win/*.dll artifacts/server-win/ -ErrorAction SilentlyContinue
           Copy-Item server/config.example.ini artifacts/server-win/config.example.ini -ErrorAction SilentlyContinue
           Copy-Item server/mi_e2ee_server.pfx artifacts/server-win/ -ErrorAction SilentlyContinue
+          Copy-Item kt-keys/kt_signing_key.bin artifacts/server-win/offline_store/ -ErrorAction Stop
+          Copy-Item kt-keys/kt_root_pub.bin artifacts/server-win/ -ErrorAction Stop
+          Copy-Item kt-keys/kt_root_pub_qr.svg artifacts/server-win/ -ErrorAction SilentlyContinue
           @"
           [mode]
           mode=1  # 0=mysql, 1=demo
@@ -152,6 +216,7 @@ jobs:
           path: server-win-${{ env.BUILD_TYPE }}.zip
 
   client-windows:
+    needs: kt-keys
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -194,6 +259,17 @@ jobs:
       - name: Build client
         run: cmake --build build/client
 
+      - name: Build kt tools
+        run: |
+          cmake --build build/client --target mi_e2ee_kt_keygen
+          cmake --build build/client --target mi_e2ee_kt_pubinfo
+
+      - name: Download kt keys
+        uses: actions/download-artifact@v4
+        with:
+          name: kt-keys
+          path: kt-keys
+
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
@@ -215,12 +291,18 @@ jobs:
           if (Test-Path $iconSrc) {
             Copy-Item "$iconSrc/*.svg" $dist -Force -ErrorAction SilentlyContinue
           }
+          Copy-Item kt-keys/kt_root_pub.bin $dist -Force -ErrorAction Stop
+          Copy-Item kt-keys/kt_root_pub_qr.svg $dist -Force -ErrorAction SilentlyContinue
+          Copy-Item build/client/server_build/tools/mi_e2ee_kt_pubinfo.exe $dist -Force -ErrorAction SilentlyContinue
           @"
           [client]
           server_ip=127.0.0.1
           server_port=9000
           use_tls=1
           trust_store=server_trust.ini
+          [kt]
+          require_signature=1
+          root_pubkey_path=kt_root_pub.bin
           "@ | Set-Content -Encoding ASCII (Join-Path $dist "client_config.ini")
           Copy-Item (Join-Path $dist "client_config.ini") (Join-Path $dist "config.ini") -Force
 

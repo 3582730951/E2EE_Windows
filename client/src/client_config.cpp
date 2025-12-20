@@ -236,8 +236,7 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   if (out_cfg.kt.require_signature &&
       out_cfg.kt.root_pubkey_hex.empty() &&
       out_cfg.kt.root_pubkey_path.empty()) {
-    error = "kt root_pubkey missing";
-    return false;
+    // Allow bootstrap; ClientCore will resolve or report a detailed error.
   }
   if (out_cfg.proxy.type == ProxyType::kSocks5 &&
       (out_cfg.proxy.host.empty() || out_cfg.proxy.port == 0)) {
