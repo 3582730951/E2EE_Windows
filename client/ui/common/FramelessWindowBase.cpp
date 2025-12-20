@@ -30,9 +30,9 @@ FramelessWindowBase::FramelessWindowBase(QWidget *parent)
     if (m_embedded) {
         outerLayout->setContentsMargins(0, 0, 0, 0);
     } else {
-        const int shadowBlur = 18;
-        const int shadowOffsetY = 8;
-        const int shadowPad = 4;
+        const int shadowBlur = 0;
+        const int shadowOffsetY = 0;
+        const int shadowPad = 0;
         outerLayout->setContentsMargins(shadowBlur + shadowPad,
                                         qMax(0, shadowBlur - shadowOffsetY) + shadowPad,
                                         shadowBlur + shadowPad,
@@ -179,7 +179,7 @@ void FramelessWindowBase::paintEvent(QPaintEvent *event) {
         return;
     }
 
-    const int shadowSize = 20;
+    const int shadowSize = 0;
     const QPointF offset(0.0, 6.0);
     const qreal radius = Theme::kWindowRadius;
     QColor base(0, 0, 0, 150);
@@ -187,6 +187,9 @@ void FramelessWindowBase::paintEvent(QPaintEvent *event) {
         base.setAlpha(110);
     }
 
+    if (shadowSize <= 0) {
+        return;
+    }
     for (int i = shadowSize; i >= 1; --i) {
         const qreal t = static_cast<qreal>(i) / static_cast<qreal>(shadowSize);
         QColor c = base;

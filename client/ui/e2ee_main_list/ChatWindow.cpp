@@ -883,6 +883,7 @@ void ChatWindow::buildUi() {
                        QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
         btn->setToolTip(tip);
         connect(btn, &QAbstractButton::clicked, this, std::move(onClick));
+        titleActionButtons_.push_back(btn);
         titleLayout->addWidget(btn);
     };
 
@@ -1552,6 +1553,18 @@ void ChatWindow::updateEmptyPrompt() {
 
 void ChatWindow::updateConversationUiState() {
     const bool hasConversation = !conversationId_.trimmed().isEmpty();
+
+    if (titleLabel_) {
+        titleLabel_->setVisible(hasConversation);
+    }
+    if (presenceLabel_) {
+        presenceLabel_->setVisible(hasConversation && presenceLabel_->isVisible());
+    }
+    for (auto *btn : titleActionButtons_) {
+        if (btn) {
+            btn->setVisible(hasConversation);
+        }
+    }
 
     if (composer_) {
         composer_->setVisible(hasConversation);

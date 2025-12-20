@@ -102,6 +102,7 @@ private:
     bool embeddedMode_{false};
     QLabel *titleLabel_{nullptr};
     QLabel *presenceLabel_{nullptr};
+    QVector<IconButton *> titleActionButtons_;
     IconButton *windowDownBtn_{nullptr};
     IconButton *windowMinBtn_{nullptr};
     IconButton *windowCloseBtn_{nullptr};
