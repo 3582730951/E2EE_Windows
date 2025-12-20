@@ -29,6 +29,7 @@
 #include <QNetworkRequest>
 #include <QPainter>
 #include <QPixmap>
+#include <QPalette>
 #include <QLinearGradient>
 #include <QRegularExpression>
 #include <QSlider>
@@ -200,6 +201,39 @@ QPixmap EmptyChatIcon(int size) {
     for (int i = 0; i < 3; ++i) {
         p.drawEllipse(QPointF(startX + i * gap, cy), dotR, dotR);
     }
+
+    return pm;
+}
+
+QPixmap ChatWallpaperTile(int size) {
+    const int s = qMax(160, size);
+    QPixmap pm(s, s);
+    const QColor base = Theme::uiWindowBg();
+    pm.fill(base);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    QColor accent = Theme::uiAccentBlue();
+    accent.setAlpha(18);
+    QColor accent2 = Theme::uiSelectedBg();
+    accent2.setAlpha(22);
+    QColor line = Theme::uiBorder();
+    line.setAlpha(18);
+
+    p.setPen(Qt::NoPen);
+    p.setBrush(accent);
+    p.drawEllipse(QPointF(s * 0.22, s * 0.18), s * 0.06, s * 0.06);
+    p.drawEllipse(QPointF(s * 0.76, s * 0.32), s * 0.08, s * 0.08);
+
+    p.setBrush(accent2);
+    p.drawRoundedRect(QRectF(s * 0.12, s * 0.58, s * 0.22, s * 0.12), 12, 12);
+    p.drawRoundedRect(QRectF(s * 0.58, s * 0.62, s * 0.26, s * 0.12), 12, 12);
+
+    QPen pen(line);
+    pen.setWidthF(1.0);
+    p.setPen(pen);
+    p.drawLine(QPointF(s * 0.08, s * 0.42), QPointF(s * 0.92, s * 0.42));
+    p.drawLine(QPointF(s * 0.2, s * 0.78), QPointF(s * 0.84, s * 0.78));
 
     return pm;
 }
@@ -767,6 +801,17 @@ IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
     return btn;
 }
 
+IconButton *accentIconSvg(const QString &svgPath, QWidget *parent) {
+    auto *btn = new IconButton(QString(), parent);
+    btn->setFixedSize(34, 34);
+    btn->setSvgIcon(svgPath, 16);
+    btn->setRound(true);
+    const QColor base = Theme::uiAccentBlue();
+    btn->setColors(Qt::white, Qt::white, Qt::white,
+                   base, base.lighter(110), base.darker(115));
+    return btn;
+}
+
 QPushButton *outlineButton(const QString &text, QWidget *parent) {
     auto *btn = new QPushButton(text, parent);
     btn->setFixedSize(82, 32);
@@ -855,25 +900,33 @@ void ChatWindow::buildUi() {
     titleLayout->setSpacing(8);
 
     titleIcon_ = new QLabel(titleBar);
-    titleIcon_->setFixedSize(16, 16);
+    titleIcon_->setFixedSize(20, 20);
     titleIcon_->setAlignment(Qt::AlignCenter);
     titleIcon_->setVisible(false);
     titleLayout->addWidget(titleIcon_);
+
+    auto *titleTextWrap = new QWidget(titleBar);
+    auto *titleTextLayout = new QVBoxLayout(titleTextWrap);
+    titleTextLayout->setContentsMargins(0, 0, 0, 0);
+    titleTextLayout->setSpacing(0);
 
     titleLabel_ = new QLabel(UiSettings::Tr(QStringLiteral("会话"),
                                             QStringLiteral("Chat")),
                              titleBar);
     titleLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 600;")
                                    .arg(ChatTokens::textMain().name()));
-    titleLayout->addWidget(titleLabel_);
+    titleTextLayout->addWidget(titleLabel_);
+
     presenceLabel_ = new QLabel(titleBar);
     presenceLabel_->setVisible(false);
     presenceLabel_->setTextFormat(Qt::PlainText);
-    presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 11px; font-weight: 600;")
-                                      .arg(Theme::accentGreen().name()));
-    presenceLabel_->setText(UiSettings::Tr(QStringLiteral("在线"),
-                                           QStringLiteral("Online")));
-    titleLayout->addWidget(presenceLabel_);
+    presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                      .arg(ChatTokens::textMuted().name()));
+    presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
+                                           QStringLiteral("Status off")));
+    titleTextLayout->addWidget(presenceLabel_);
+
+    titleLayout->addWidget(titleTextWrap);
     titleLayout->addStretch();
 
     auto addTitleAction = [&](const QString &svg, const QString &tip, std::function<void()> onClick) {
@@ -948,8 +1001,7 @@ void ChatWindow::buildUi() {
     bodyLayout->setSpacing(0);
 
     auto *messageArea = new QWidget(body);
-    messageArea->setStyleSheet(QStringLiteral("background: %1;")
-                                   .arg(ChatTokens::windowBg().name()));
+    messageArea->setStyleSheet(QString());
     messageArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     auto *msgLayout = new QVBoxLayout(messageArea);
     msgLayout->setContentsMargins(6, 6, 6, 0);
@@ -1082,6 +1134,16 @@ void ChatWindow::buildUi() {
             "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }")
             .arg(Theme::uiScrollBarHandle().name(),
                  Theme::uiScrollBarHandleHover().name()));
+    const QPixmap wallpaper = ChatWallpaperTile(240);
+    messageArea->setAutoFillBackground(true);
+    QPalette areaPal = messageArea->palette();
+    areaPal.setBrush(QPalette::Window, QBrush(wallpaper));
+    messageArea->setPalette(areaPal);
+    messageView_->viewport()->setAutoFillBackground(true);
+    QPalette viewPal = messageView_->viewport()->palette();
+    viewPal.setBrush(QPalette::Base, QBrush(wallpaper));
+    viewPal.setBrush(QPalette::Window, QBrush(wallpaper));
+    messageView_->viewport()->setPalette(viewPal);
     messageView_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(messageView_, &QListView::customContextMenuRequested, this, &ChatWindow::showMessageMenu);
     connect(messageModel_, &QAbstractItemModel::modelReset, this, [this]() { updateEmptyState(); });
@@ -1182,57 +1244,7 @@ void ChatWindow::buildUi() {
     composer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *composerLayout = new QVBoxLayout(composer_);
     composerLayout->setContentsMargins(10, 6, 10, 8);
-    composerLayout->setSpacing(6);
-
-    auto *toolsRow = new QHBoxLayout();
-    toolsRow->setSpacing(6);
-    emojiBtn_ = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
-    emojiBtn_->setFocusPolicy(Qt::NoFocus);
-    emojiBtn_->setToolTip(UiSettings::Tr(QStringLiteral("表情"), QStringLiteral("Emoji")));
-    connect(emojiBtn_, &QAbstractButton::clicked, this, &ChatWindow::showEmojiPicker);
-    toolsRow->addWidget(emojiBtn_);
-
-    auto *fileBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/file.svg"), composer_);
-    fileBtn->setFocusPolicy(Qt::NoFocus);
-    fileBtn->setToolTip(UiSettings::Tr(QStringLiteral("文件"), QStringLiteral("File")));
-    connect(fileBtn, &QAbstractButton::clicked, this, &ChatWindow::sendFilePlaceholder);
-    toolsRow->addWidget(fileBtn);
-
-    auto *imageBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/image.svg"), composer_);
-    imageBtn->setFocusPolicy(Qt::NoFocus);
-    imageBtn->setToolTip(UiSettings::Tr(QStringLiteral("图片"), QStringLiteral("Image")));
-    connect(imageBtn, &QAbstractButton::clicked, this, &ChatWindow::sendImagePlaceholder);
-    toolsRow->addWidget(imageBtn);
-
-    auto *voiceBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/mic.svg"), composer_);
-    voiceBtn->setFocusPolicy(Qt::NoFocus);
-    voiceBtn->setToolTip(UiSettings::Tr(QStringLiteral("语音"), QStringLiteral("Audio")));
-    connect(voiceBtn, &QAbstractButton::clicked, this, &ChatWindow::sendVoicePlaceholder);
-    toolsRow->addWidget(voiceBtn);
-
-    auto *videoBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/video.svg"), composer_);
-    videoBtn->setFocusPolicy(Qt::NoFocus);
-    videoBtn->setToolTip(UiSettings::Tr(QStringLiteral("视频"), QStringLiteral("Video")));
-    connect(videoBtn, &QAbstractButton::clicked, this, &ChatWindow::sendVideoPlaceholder);
-    toolsRow->addWidget(videoBtn);
-
-    auto *moreBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), composer_);
-    moreBtn->setFocusPolicy(Qt::NoFocus);
-    moreBtn->setToolTip(UiSettings::Tr(QStringLiteral("更多"), QStringLiteral("More")));
-    connect(moreBtn, &QAbstractButton::clicked, this, [this, moreBtn]() {
-        if (sendMenu_) {
-            sendMenu_->exec(moreBtn->mapToGlobal(QPoint(0, moreBtn->height())));
-        }
-    });
-    toolsRow->addWidget(moreBtn);
-    toolsRow->addStretch();
-    auto *clock = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/clock.svg"), composer_);
-    clock->setFocusPolicy(Qt::NoFocus);
-    clock->setToolTip(UiSettings::Tr(QStringLiteral("导出证据包"),
-                                     QStringLiteral("Export evidence")));
-    connect(clock, &QAbstractButton::clicked, this, &ChatWindow::exportEvidencePackage);
-    toolsRow->addWidget(clock);
-    composerLayout->addLayout(toolsRow);
+    composerLayout->setSpacing(4);
 
     replyBar_ = new QWidget(composer_);
     replyBar_->setVisible(false);
@@ -1269,6 +1281,41 @@ void ChatWindow::buildUi() {
         UiSettings::Tr(QStringLiteral("对方正在输入..."), QStringLiteral("Typing...")));
     composerLayout->addWidget(typingLabel_);
 
+    auto *inputRow = new QHBoxLayout();
+    inputRow->setSpacing(8);
+
+    auto *attachBtn = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/paperclip.svg"), composer_);
+    attachBtn->setFocusPolicy(Qt::NoFocus);
+    attachBtn->setToolTip(UiSettings::Tr(QStringLiteral("附件"), QStringLiteral("Attachments")));
+    inputRow->addWidget(attachBtn);
+
+    attachMenu_ = new QMenu(attachBtn);
+    UiStyle::ApplyMenuStyle(*attachMenu_);
+    QAction *sendImageAction = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("图片"), QStringLiteral("Photo")));
+    connect(sendImageAction, &QAction::triggered, this, &ChatWindow::sendImagePlaceholder);
+    QAction *sendVideoAction = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("视频"), QStringLiteral("Video")));
+    connect(sendVideoAction, &QAction::triggered, this, &ChatWindow::sendVideoPlaceholder);
+    QAction *sendFileAction = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("文件"), QStringLiteral("Document")));
+    connect(sendFileAction, &QAction::triggered, this, &ChatWindow::sendFilePlaceholder);
+    QAction *sendVoiceAction = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("语音"), QStringLiteral("Voice")));
+    connect(sendVoiceAction, &QAction::triggered, this, &ChatWindow::sendVoicePlaceholder);
+    attachMenu_->addSeparator();
+    sendLocationAction_ = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("位置"), QStringLiteral("Location")));
+    connect(sendLocationAction_, &QAction::triggered, this, &ChatWindow::sendLocationPlaceholder);
+    sendCardAction_ = attachMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("名片"), QStringLiteral("Contact card")));
+    connect(sendCardAction_, &QAction::triggered, this, &ChatWindow::sendContactCardPlaceholder);
+    connect(attachBtn, &QAbstractButton::clicked, this, [this, attachBtn]() {
+        if (attachMenu_) {
+            attachMenu_->exec(attachBtn->mapToGlobal(QPoint(0, attachBtn->height())));
+        }
+    });
+
     inputEdit_ = new QPlainTextEdit(composer_);
     inputEdit_->setPlaceholderText(
         UiSettings::Tr(QStringLiteral("输入消息..."), QStringLiteral("Type a message...")));
@@ -1276,17 +1323,35 @@ void ChatWindow::buildUi() {
     inputEdit_->setStyleSheet(
         QStringLiteral(
             "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 12px; "
-            "color: %3; padding: 8px 10px; font-size: 12px; }"
+            "color: %3; padding: 6px 10px; font-size: 12px; }"
             "QPlainTextEdit:focus { border-color: %4; }")
             .arg(Theme::uiInputBg().name(),
                  Theme::uiInputBorder().name(),
                  Theme::uiTextMain().name(),
                  Theme::uiAccentBlue().name()));
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    inputEdit_->setMinimumHeight(88);
-    inputEdit_->setMaximumHeight(120);
+    inputEdit_->setMinimumHeight(40);
+    inputEdit_->setMaximumHeight(72);
     inputEdit_->installEventFilter(this);
-    composerLayout->addWidget(inputEdit_);
+    inputRow->addWidget(inputEdit_, 1);
+
+    emojiBtn_ = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
+    emojiBtn_->setFocusPolicy(Qt::NoFocus);
+    emojiBtn_->setToolTip(UiSettings::Tr(QStringLiteral("表情"), QStringLiteral("Emoji")));
+    connect(emojiBtn_, &QAbstractButton::clicked, this, &ChatWindow::showEmojiPicker);
+    inputRow->addWidget(emojiBtn_);
+
+    auto *sendMore = toolIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), composer_);
+    sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多"), QStringLiteral("More")));
+    sendMore->setFocusPolicy(Qt::NoFocus);
+    inputRow->addWidget(sendMore);
+
+    auto *sendBtn = accentIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/send.svg"), composer_);
+    sendBtn->setToolTip(UiSettings::Tr(QStringLiteral("发送"), QStringLiteral("Send")));
+    connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMessage);
+    inputRow->addWidget(sendBtn);
+
+    composerLayout->addLayout(inputRow);
 
     typingStopSendTimer_ = new QTimer(this);
     typingStopSendTimer_->setSingleShot(true);
@@ -1360,48 +1425,12 @@ void ChatWindow::buildUi() {
         }
     });
 
-    auto *sendRow = new QHBoxLayout();
-    sendRow->setSpacing(6);
-    sendRow->addStretch(1);
-
-    auto *closeBtnAction =
-        outlineButton(UiSettings::Tr(QStringLiteral("关闭"), QStringLiteral("Close")),
-                      composer_);
-    connect(closeBtnAction, &QPushButton::clicked, this, &QWidget::close);
-    closeBtnAction->setVisible(!embeddedMode_);
-    auto *sendBtn = primaryButton(UiSettings::Tr(QStringLiteral("发送"), QStringLiteral("Send")),
-                                  composer_);
-    connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMessage);
-    auto *sendMore = new IconButton(QString(), composer_);
-    sendMore->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), 12);
-    sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多发送选项"),
-                                        QStringLiteral("More actions")));
-    sendMore->setFocusPolicy(Qt::NoFocus);
-    sendMore->setFixedSize(24, 28);
-    sendMore->setColors(Theme::uiTextMain(), Theme::uiTextMain(), Theme::uiTextMain(),
-                        ChatTokens::accentBlue(), ChatTokens::accentBlue().lighter(110),
-                        ChatTokens::accentBlue().darker(115));
     sendMenu_ = new QMenu(sendMore);
     UiStyle::ApplyMenuStyle(*sendMenu_);
-    QAction *sendFileAction = sendMenu_->addAction(
-        UiSettings::Tr(QStringLiteral("发送文件"), QStringLiteral("Send file")));
-    connect(sendFileAction, &QAction::triggered, this, &ChatWindow::sendFilePlaceholder);
-    QAction *sendVoiceAction = sendMenu_->addAction(
-        UiSettings::Tr(QStringLiteral("发送语音"), QStringLiteral("Send voice")));
-    connect(sendVoiceAction, &QAction::triggered, this, &ChatWindow::sendVoicePlaceholder);
-    QAction *sendVideoAction = sendMenu_->addAction(
-        UiSettings::Tr(QStringLiteral("发送视频"), QStringLiteral("Send video")));
-    connect(sendVideoAction, &QAction::triggered, this, &ChatWindow::sendVideoPlaceholder);
     sendStickerAction_ = sendMenu_->addAction(
         UiSettings::Tr(QStringLiteral("发送贴纸..."), QStringLiteral("Send sticker...")));
     connect(sendStickerAction_, &QAction::triggered, this, &ChatWindow::sendStickerPlaceholder);
     sendMenu_->addSeparator();
-    sendLocationAction_ = sendMenu_->addAction(
-        UiSettings::Tr(QStringLiteral("发送位置"), QStringLiteral("Send location")));
-    connect(sendLocationAction_, &QAction::triggered, this, &ChatWindow::sendLocationPlaceholder);
-    sendCardAction_ = sendMenu_->addAction(
-        UiSettings::Tr(QStringLiteral("发送名片"), QStringLiteral("Send contact card")));
-    connect(sendCardAction_, &QAction::triggered, this, &ChatWindow::sendContactCardPlaceholder);
     readReceiptAction_ = sendMenu_->addAction(UiSettings::Tr(
         QStringLiteral("发送已读回执（默认关闭）"),
         QStringLiteral("Send read receipts (default off)")));
@@ -1431,14 +1460,12 @@ void ChatWindow::buildUi() {
         if (presenceHideTimer_) {
             presenceHideTimer_->stop();
         }
-        if (presenceLabel_) {
-            presenceLabel_->setVisible(false);
-        }
         if (!presencePingTimer_) {
             return;
         }
         presencePingTimer_->stop();
         if (!on || isGroup_ || !backend_ || conversationId_.trimmed().isEmpty()) {
+            setPresenceIndicator(false);
             return;
         }
         presencePingTimer_->setInterval(30000);
@@ -1448,6 +1475,7 @@ void ChatWindow::buildUi() {
         }
         QString err;
         backend_->sendPresence(conversationId_, true, err);
+        setPresenceIndicator(true);
     });
     exportEvidenceAction_ = sendMenu_->addAction(QStringLiteral("导出举报证据包..."));
     connect(exportEvidenceAction_, &QAction::triggered, this, &ChatWindow::exportEvidencePackage);
@@ -1487,11 +1515,6 @@ void ChatWindow::buildUi() {
             sendMenu_->exec(sendMore->mapToGlobal(QPoint(0, sendMore->height())));
         }
     });
-    sendRow->addWidget(closeBtnAction, 0, Qt::AlignRight);
-    sendRow->addWidget(sendBtn, 0, Qt::AlignRight);
-    sendRow->addWidget(sendMore, 0, Qt::AlignRight);
-    composerLayout->addLayout(sendRow);
-
     setTabOrder(messageView_, inputEdit_);
     setTabOrder(inputEdit_, sendBtn);
 
@@ -1562,7 +1585,7 @@ void ChatWindow::updateConversationUiState() {
         titleIcon_->setVisible(hasConversation && isGroup_);
     }
     if (presenceLabel_) {
-        presenceLabel_->setVisible(hasConversation && presenceLabel_->isVisible());
+        presenceLabel_->setVisible(hasConversation);
     }
     for (auto *btn : titleActionButtons_) {
         if (btn) {
@@ -1870,7 +1893,7 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
     if (titleIcon_) {
         if (isGroup_) {
             titleIcon_->setPixmap(UiIcons::TintedSvg(
-                QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), 12, ChatTokens::textMuted()));
+                QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), 14, ChatTokens::textMuted()));
         } else {
             titleIcon_->setPixmap(QPixmap());
         }
@@ -1904,7 +1927,16 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
         presenceHideTimer_->stop();
     }
     if (presenceLabel_) {
-        presenceLabel_->setVisible(false);
+        if (isGroup_) {
+            presenceLabel_->setText(UiSettings::Tr(QStringLiteral("群聊"),
+                                                   QStringLiteral("Group chat")));
+        } else {
+            presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
+                                                   QStringLiteral("Status off")));
+        }
+        presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                          .arg(ChatTokens::textMuted().name()));
+        presenceLabel_->setVisible(!conversationId_.trimmed().isEmpty());
     }
 
     updateEmptyPrompt();
@@ -2275,11 +2307,18 @@ void ChatWindow::setPresenceIndicator(bool online) {
         if (presenceHideTimer_) {
             presenceHideTimer_->stop();
         }
-        presenceLabel_->setVisible(false);
+        presenceLabel_->setText(UiSettings::Tr(QStringLiteral("状态未开启"),
+                                               QStringLiteral("Status off")));
+        presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                          .arg(ChatTokens::textMuted().name()));
+        presenceLabel_->setVisible(true);
         return;
     }
     if (online) {
-        presenceLabel_->setText(QStringLiteral("在线"));
+        presenceLabel_->setText(UiSettings::Tr(QStringLiteral("在线"),
+                                               QStringLiteral("Online")));
+        presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                          .arg(Theme::accentGreen().name()));
         presenceLabel_->setVisible(true);
         if (presenceHideTimer_) {
             presenceHideTimer_->start(75000);
@@ -2289,7 +2328,11 @@ void ChatWindow::setPresenceIndicator(bool online) {
     if (presenceHideTimer_) {
         presenceHideTimer_->stop();
     }
-    presenceLabel_->setVisible(false);
+    presenceLabel_->setText(UiSettings::Tr(QStringLiteral("离线"),
+                                           QStringLiteral("Offline")));
+    presenceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                      .arg(ChatTokens::textMuted().name()));
+    presenceLabel_->setVisible(true);
 }
 
 bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {

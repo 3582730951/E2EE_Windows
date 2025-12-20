@@ -110,6 +110,9 @@ private:
     IconButton *navSettingsBtn_{nullptr};
     IconButton *navMenuBtn_{nullptr};
     QMenu *appMenu_{nullptr};
+    QAction *modeAllAction_{nullptr};
+    QAction *modePinnedAction_{nullptr};
+    QAction *modeGroupsAction_{nullptr};
     ConversationListMode listMode_{ConversationListMode::All};
     QSet<QString> pinnedIds_;
     QHash<QString, QString> pendingFriendRequests_;

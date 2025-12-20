@@ -83,7 +83,7 @@ struct Tokens {
     static QColor badgeGrey() { return Theme::uiBadgeGrey(); }
     static QColor accentBlue() { return Theme::uiAccentBlue(); }
     static int sidebarWidth() { return 64; }
-    static int rowHeight() { return 64; }
+    static int rowHeight() { return 56; }
     static int radius() { return 12; }
 };
 
@@ -271,7 +271,7 @@ public:
         const bool isGroup = index.data(IsGroupRole).toBool();
 
         // Avatar
-        const int avatarSize = 40;
+        const int avatarSize = 34;
         const int avatarTop = r.top() + (r.height() - avatarSize) / 2;
         QRect avatarRect = QRect(r.left() + 12, avatarTop, avatarSize, avatarSize);
         painter->setBrush(avatarColorFor(title));
@@ -280,14 +280,14 @@ public:
 
         // Text area
         int textLeft = avatarRect.right() + 10;
-        const int rightReserve = 70;
-        QRect titleRect(textLeft, avatarRect.top(), r.width() - textLeft - rightReserve, 18);
-        QRect previewRect(textLeft, titleRect.bottom() + 2, r.width() - textLeft - rightReserve, 16);
+        const int rightReserve = 64;
+        QRect titleRect(textLeft, avatarRect.top(), r.width() - textLeft - rightReserve, 16);
+        QRect previewRect(textLeft, titleRect.bottom() + 2, r.width() - textLeft - rightReserve, 13);
 
-        QFont titleFont = Theme::defaultFont(13, QFont::DemiBold);
+        QFont titleFont = Theme::defaultFont(12, QFont::DemiBold);
         painter->setFont(titleFont);
         painter->setPen(Tokens::textMain());
-        const int groupIconSize = 12;
+        const int groupIconSize = 11;
         const int groupGap = 6;
         const int titleMax = isGroup ? (titleRect.width() - groupIconSize - groupGap)
                                      : titleRect.width();
@@ -305,7 +305,7 @@ public:
         }
 
         // Preview with optional tag highlight
-        QFont previewFont = Theme::defaultFont(11, QFont::Normal);
+        QFont previewFont = Theme::defaultFont(10, QFont::Normal);
         painter->setFont(previewFont);
         int x = previewRect.left();
         if (hasTag) {
@@ -333,10 +333,10 @@ public:
         }
 
         // Time
-        QFont timeFont = Theme::defaultFont(10, QFont::Normal);
+        QFont timeFont = Theme::defaultFont(9, QFont::Normal);
         painter->setFont(timeFont);
         painter->setPen(Tokens::textMuted());
-        QRect timeRect(r.right() - 56, avatarRect.top() + 1, 52, 14);
+        QRect timeRect(r.right() - 52, avatarRect.top(), 48, 12);
         painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, time);
 
         // Pin indicator
@@ -350,11 +350,11 @@ public:
         // Badge
         if (unread > 0) {
             QString badgeText = unread > 99 ? QStringLiteral("99+") : QString::number(unread);
-            QFont badgeFont = Theme::defaultFont(10, QFont::DemiBold);
+            QFont badgeFont = Theme::defaultFont(9, QFont::DemiBold);
             painter->setFont(badgeFont);
             QRect badgeRect = painter->fontMetrics().boundingRect(badgeText);
             badgeRect.adjust(0, 0, 8, 4);
-            badgeRect.moveTo(r.right() - badgeRect.width() - 12, previewRect.top() + 1);
+            badgeRect.moveTo(r.right() - badgeRect.width() - 12, previewRect.top());
             painter->setBrush(greyBadge ? Tokens::badgeGrey() : Tokens::badgeRed());
             painter->setPen(Qt::NoPen);
             painter->drawRoundedRect(badgeRect, badgeRect.height() / 2.0, badgeRect.height() / 2.0);
@@ -482,110 +482,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
 
-    // Left sidebar
-    auto *sidebar = new QWidget(body);
-    sidebar->setFixedWidth(Tokens::sidebarWidth());
-    sidebar->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::sidebarBg().name()));
-    auto *sideLayout = new QVBoxLayout(sidebar);
-    sideLayout->setContentsMargins(8, 10, 8, 10);
-    sideLayout->setSpacing(12);
-
-    auto *brandMark = new QLabel(QStringLiteral("E2EE"), sidebar);
-    brandMark->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    brandMark->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
-                                 .arg(Tokens::textMain().name()));
-    sideLayout->addWidget(brandMark, 0, Qt::AlignLeft);
-
-    navBellBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), sidebar, false);
-    navBellBtn_->setFixedSize(28, 28);
-    navBellBtn_->setToolTip(UiSettings::Tr(QStringLiteral("通知中心"), QStringLiteral("Notifications")));
-    navBellBtn_->setAccessibleName(navBellBtn_->toolTip());
-    sideLayout->addWidget(navBellBtn_, 0, Qt::AlignLeft);
-    connect(navBellBtn_, &QPushButton::clicked, this, &MainListWindow::handleNotificationCenter);
-
-    auto *avatar = new QLabel(sidebar);
-    avatar->setFixedSize(40, 40);
-    avatar->setStyleSheet(QStringLiteral("background: %1; border-radius: 20px;")
-                              .arg(Tokens::accentBlue().name()));
-    sideLayout->addWidget(avatar, 0, Qt::AlignLeft);
-
-    navAllBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/chat.svg"), sidebar, true);
-    navAllBtn_->setToolTip(UiSettings::Tr(QStringLiteral("会话"), QStringLiteral("Chats")));
-    navAllBtn_->setAccessibleName(navAllBtn_->toolTip());
-    sideLayout->addWidget(navAllBtn_, 0, Qt::AlignLeft);
-    connect(navAllBtn_, &QPushButton::clicked, this, [this]() {
-        setConversationListMode(ConversationListMode::All);
-    });
-
-    navPinnedBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/star.svg"), sidebar, false);
-    navPinnedBtn_->setToolTip(UiSettings::Tr(QStringLiteral("置顶"), QStringLiteral("Pinned")));
-    navPinnedBtn_->setAccessibleName(navPinnedBtn_->toolTip());
-    sideLayout->addWidget(navPinnedBtn_, 0, Qt::AlignLeft);
-    connect(navPinnedBtn_, &QPushButton::clicked, this, [this]() {
-        setConversationListMode(ConversationListMode::PinnedOnly);
-    });
-
-    navGroupsBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/group.svg"), sidebar, false);
-    navGroupsBtn_->setToolTip(UiSettings::Tr(QStringLiteral("群聊"), QStringLiteral("Groups")));
-    navGroupsBtn_->setAccessibleName(navGroupsBtn_->toolTip());
-    sideLayout->addWidget(navGroupsBtn_, 0, Qt::AlignLeft);
-    connect(navGroupsBtn_, &QPushButton::clicked, this, [this]() {
-        setConversationListMode(ConversationListMode::GroupsOnly);
-    });
-
-    navFilesBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/file-upload.svg"), sidebar, false);
-    navFilesBtn_->setToolTip(UiSettings::Tr(QStringLiteral("共享文件"), QStringLiteral("Shared files")));
-    navFilesBtn_->setAccessibleName(navFilesBtn_->toolTip());
-    sideLayout->addWidget(navFilesBtn_, 0, Qt::AlignLeft);
-    connect(navFilesBtn_, &QPushButton::clicked, this, [this]() {
-        if (!backend_ || !model_) {
-            Toast::Show(this,
-                        UiSettings::Tr(QStringLiteral("未连接后端"),
-                                       QStringLiteral("Backend is offline")),
-                        Toast::Level::Warning);
-            return;
-        }
-        const QString id = embeddedConvId_.trimmed();
-        if (id.isEmpty() || id.startsWith(QStringLiteral("__"))) {
-            Toast::Show(this,
-                        UiSettings::Tr(QStringLiteral("请先选择一个会话"),
-                                       QStringLiteral("Select a chat first")),
-                        Toast::Level::Info);
-            return;
-        }
-        auto *item = findItemById(id);
-        if (!item) {
-            Toast::Show(this,
-                        UiSettings::Tr(QStringLiteral("会话不存在"),
-                                       QStringLiteral("Chat not found")),
-                        Toast::Level::Warning);
-            return;
-        }
-        ConversationDetailsDialog dlg(backend_,
-                                      id,
-                                      item->data(TitleRole).toString(),
-                                      item->data(IsGroupRole).toBool(),
-                                      this);
-        dlg.setStartPage(ConversationDetailsDialog::StartPage::Files);
-        dlg.exec();
-    });
-
-    navSettingsBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), sidebar, false);
-    navSettingsBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 19);
-    navSettingsBtn_->setPadding(3);
-    navSettingsBtn_->setToolTip(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
-    navSettingsBtn_->setAccessibleName(navSettingsBtn_->toolTip());
-    sideLayout->addWidget(navSettingsBtn_, 0, Qt::AlignLeft);
-    connect(navSettingsBtn_, &QPushButton::clicked, this, &MainListWindow::handleSettings);
-    sideLayout->addStretch();
-
-    navMenuBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), sidebar, false);
-    navMenuBtn_->setToolTip(UiSettings::Tr(QStringLiteral("菜单"), QStringLiteral("Menu")));
-    navMenuBtn_->setAccessibleName(navMenuBtn_->toolTip());
-    sideLayout->addWidget(navMenuBtn_, 0, Qt::AlignLeft | Qt::AlignBottom);
-    connect(navMenuBtn_, &QPushButton::clicked, this, [this]() { showAppMenu(); });
-
-    // Right main area
+    // Main area
     auto *mainArea = new QWidget(body);
     mainArea->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::windowBg().name()));
     auto *mainLayout2 = new QVBoxLayout(mainArea);
@@ -596,7 +493,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     searchRow->setSpacing(6);
 
     auto *searchBox = new QFrame(mainArea);
-    searchBox->setFixedHeight(34);
+    searchBox->setFixedHeight(32);
     searchBox->setStyleSheet(
         QStringLiteral(
             "QFrame { background: %1; border-radius: 17px; border: 1px solid %2; }"
@@ -641,7 +538,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     auto *plusBtn = new IconButton(QString(), mainArea);
     plusBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/plus.svg"), 16);
     plusBtn->setFocusPolicy(Qt::NoFocus);
-    plusBtn->setFixedSize(34, 34);
+    plusBtn->setFixedSize(32, 32);
     plusBtn->setRound(true);
     plusBtn->setColors(Tokens::textMain(), Tokens::textMain(), Tokens::textMain(),
                        Tokens::searchBg(), Tokens::hoverBg(), Tokens::selectedBg());
@@ -680,7 +577,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     listView_->setFrameShape(QFrame::NoFrame);
     listView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     listView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    listView_->setSpacing(2);
+    listView_->setSpacing(1);
     listView_->setUniformItemSizes(true);
     listView_->setSelectionMode(QAbstractItemView::SingleSelection);
     listView_->setStyleSheet(
@@ -1019,14 +916,65 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         QStringLiteral("QSplitter::handle { background: %1; }")
             .arg(Theme::uiBorder().name()));
 
-    auto *listPanel = new QWidget(splitter);
+    auto *leftPane = new QWidget(splitter);
+    auto *leftLayout = new QHBoxLayout(leftPane);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(0);
+
+    auto *sideBar = new QWidget(leftPane);
+    sideBar->setFixedWidth(56);
+    sideBar->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::sidebarBg().name()));
+    auto *sideLayout = new QVBoxLayout(sideBar);
+    sideLayout->setContentsMargins(8, 10, 8, 10);
+    sideLayout->setSpacing(10);
+
+    navMenuBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), sideBar, false);
+    navMenuBtn_->setFixedSize(32, 32);
+    navMenuBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/more.svg"), 16);
+    navMenuBtn_->setToolTip(UiSettings::Tr(QStringLiteral("菜单"), QStringLiteral("Menu")));
+    navMenuBtn_->setAccessibleName(navMenuBtn_->toolTip());
+    connect(navMenuBtn_, &QPushButton::clicked, this, [this]() { showAppMenu(); });
+    sideLayout->addWidget(navMenuBtn_, 0, Qt::AlignHCenter);
+
+    auto *avatarMini = new QLabel(sideBar);
+    avatarMini->setFixedSize(32, 32);
+    avatarMini->setStyleSheet(QStringLiteral("background: %1; border-radius: 16px;")
+                                  .arg(Tokens::accentBlue().name()));
+    sideLayout->addWidget(avatarMini, 0, Qt::AlignHCenter);
+
+    sideLayout->addSpacing(4);
+
+    navBellBtn_ = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), sideBar, false);
+    navBellBtn_->setFixedSize(30, 30);
+    navBellBtn_->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), 16);
+    navBellBtn_->setToolTip(UiSettings::Tr(QStringLiteral("通知中心"), QStringLiteral("Notifications")));
+    navBellBtn_->setAccessibleName(navBellBtn_->toolTip());
+    connect(navBellBtn_, &QPushButton::clicked, this, &MainListWindow::handleNotificationCenter);
+    sideLayout->addWidget(navBellBtn_, 0, Qt::AlignHCenter);
+
+    sideLayout->addStretch();
+
+    auto *settingsBtn = navButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), sideBar, false);
+    settingsBtn->setFixedSize(30, 30);
+    settingsBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/settings.svg"), 16);
+    settingsBtn->setToolTip(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
+    settingsBtn->setAccessibleName(settingsBtn->toolTip());
+    connect(settingsBtn, &QPushButton::clicked, this, &MainListWindow::handleSettings);
+    sideLayout->addWidget(settingsBtn, 0, Qt::AlignHCenter);
+
+    leftLayout->addWidget(sideBar);
+
+    auto *listPanel = new QWidget(leftPane);
+    listPanel->setStyleSheet(QStringLiteral("background: %1;").arg(Tokens::panelBg().name()));
     auto *listPanelLayout = new QVBoxLayout(listPanel);
-    listPanelLayout->setContentsMargins(0, 0, 0, 0);
+    listPanelLayout->setContentsMargins(10, 10, 10, 10);
     listPanelLayout->setSpacing(8);
     listPanelLayout->addLayout(searchRow);
-    listView_->setMinimumWidth(320);
+    listView_->setMinimumWidth(300);
     listPanelLayout->addWidget(listView_, 1);
-    splitter->addWidget(listPanel);
+
+    leftLayout->addWidget(listPanel, 1);
+    splitter->addWidget(leftPane);
 
     embeddedChat_ = new ChatWindow(backend_, splitter);
     embeddedChat_->setEmbeddedMode(true);
@@ -1038,11 +986,10 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     splitter->addWidget(embeddedChat_);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
-    splitter->setSizes(QList<int>{360, 800});
+    splitter->setSizes(QList<int>{380, 800});
 
     mainLayout2->addWidget(splitter, 1);
 
-    bodyLayout->addWidget(sidebar);
     bodyLayout->addWidget(mainArea, 1);
 
     rootLayout->addWidget(body);
@@ -1517,6 +1464,17 @@ void MainListWindow::showAppMenu() {
         appMenu_ = new QMenu(this);
         UiStyle::ApplyMenuStyle(*appMenu_);
 
+        modeAllAction_ = appMenu_->addAction(
+            UiSettings::Tr(QStringLiteral("全部会话"), QStringLiteral("All chats")));
+        modeAllAction_->setCheckable(true);
+        modePinnedAction_ = appMenu_->addAction(
+            UiSettings::Tr(QStringLiteral("置顶会话"), QStringLiteral("Pinned")));
+        modePinnedAction_->setCheckable(true);
+        modeGroupsAction_ = appMenu_->addAction(
+            UiSettings::Tr(QStringLiteral("群聊"), QStringLiteral("Groups")));
+        modeGroupsAction_->setCheckable(true);
+        appMenu_->addSeparator();
+
         QAction *notify =
             appMenu_->addAction(UiSettings::Tr(QStringLiteral("通知中心"),
                                               QStringLiteral("Notifications")));
@@ -1532,6 +1490,15 @@ void MainListWindow::showAppMenu() {
             appMenu_->addAction(UiSettings::Tr(QStringLiteral("退出"),
                                               QStringLiteral("Exit")));
 
+        connect(modeAllAction_, &QAction::triggered, this, [this]() {
+            setConversationListMode(ConversationListMode::All);
+        });
+        connect(modePinnedAction_, &QAction::triggered, this, [this]() {
+            setConversationListMode(ConversationListMode::PinnedOnly);
+        });
+        connect(modeGroupsAction_, &QAction::triggered, this, [this]() {
+            setConversationListMode(ConversationListMode::GroupsOnly);
+        });
         connect(notify, &QAction::triggered, this, &MainListWindow::handleNotificationCenter);
         connect(settings, &QAction::triggered, this, &MainListWindow::handleSettings);
         connect(deviceMgr, &QAction::triggered, this, &MainListWindow::handleDeviceManager);
@@ -1543,6 +1510,16 @@ void MainListWindow::showAppMenu() {
                                                     QStringLiteral("MI E2EE Client (Qt UI)")));
         });
         connect(exit, &QAction::triggered, this, [this]() { close(); });
+    }
+
+    if (modeAllAction_) {
+        modeAllAction_->setChecked(listMode_ == ConversationListMode::All);
+    }
+    if (modePinnedAction_) {
+        modePinnedAction_->setChecked(listMode_ == ConversationListMode::PinnedOnly);
+    }
+    if (modeGroupsAction_) {
+        modeGroupsAction_->setChecked(listMode_ == ConversationListMode::GroupsOnly);
     }
 
     const QPoint anchor = navMenuBtn_ ? navMenuBtn_->mapToGlobal(QPoint(0, navMenuBtn_->height()))

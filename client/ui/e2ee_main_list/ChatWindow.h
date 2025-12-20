@@ -132,6 +132,7 @@ private:
     QWidget *replyBar_{nullptr};
     QLabel *replyLabel_{nullptr};
     QLabel *typingLabel_{nullptr};
+    QMenu *attachMenu_{nullptr};
     QMenu *sendMenu_{nullptr};
     QAction *sendLocationAction_{nullptr};
     QAction *sendCardAction_{nullptr};

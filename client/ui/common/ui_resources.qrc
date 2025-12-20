@@ -21,6 +21,7 @@
         <file alias="icons/minimize.svg">../icons/minimize.svg</file>
         <file alias="icons/plus.svg">../icons/plus.svg</file>
         <file alias="icons/phone.svg">../icons/phone.svg</file>
+        <file alias="icons/paperclip.svg">../icons/paperclip.svg</file>
         <file alias="icons/search.svg">../icons/search.svg</file>
         <file alias="icons/settings.svg">../icons/settings.svg</file>
         <file alias="icons/star.svg">../icons/star.svg</file>

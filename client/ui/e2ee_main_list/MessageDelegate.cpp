@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QPainter>
+#include <QPainterPath>
 #include <QFontMetrics>
 #include <QFileInfo>
 #include <QTextLayout>
@@ -241,6 +242,31 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
     layout.endLayout();
     return QSize(width, height);
 }
+
+QPainterPath BubblePath(const QRect &bubbleRect, bool outgoing) {
+    QPainterPath path;
+    path.setFillRule(Qt::WindingFill);
+    path.addRoundedRect(QRectF(bubbleRect), BubbleTokens::radius(), BubbleTokens::radius());
+
+    const qreal tailW = 8.0;
+    const qreal tailH = 10.0;
+    const qreal tailOffset =
+        qMin<qreal>(18.0, static_cast<qreal>(bubbleRect.height()) * 0.45);
+    const qreal tailY = bubbleRect.bottom() - tailOffset;
+
+    QPolygonF tail;
+    if (outgoing) {
+        tail << QPointF(bubbleRect.right(), tailY)
+             << QPointF(bubbleRect.right() + tailW, tailY + tailH * 0.5)
+             << QPointF(bubbleRect.right(), tailY + tailH);
+    } else {
+        tail << QPointF(bubbleRect.left(), tailY)
+             << QPointF(bubbleRect.left() - tailW, tailY + tailH * 0.5)
+             << QPointF(bubbleRect.left(), tailY + tailH);
+    }
+    path.addPolygon(tail);
+    return path;
+}
 }  // namespace
 
 MessageDelegate::MessageDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
@@ -319,8 +345,21 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     if (type == MessageItem::Type::TimeDivider) {
         QFont f = Theme::defaultFont(10);
         painter->setFont(f);
+        const QString text = index.data(MessageModel::TextRole).toString();
+        QFontMetrics fm(f);
+        const int padX = 12;
+        const int padY = 4;
+        const int pillW = fm.horizontalAdvance(text) + padX * 2;
+        const int pillH = fm.height() + padY * 2;
+        QRect pillRect(0, 0, pillW, pillH);
+        pillRect.moveCenter(r.center());
+        QColor pillBg = Theme::uiSelectedBg();
+        pillBg.setAlpha(170);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(pillBg);
+        painter->drawRoundedRect(pillRect, pillH / 2.0, pillH / 2.0);
         painter->setPen(BubbleTokens::timeText());
-        painter->drawText(r, Qt::AlignCenter, index.data(MessageModel::TextRole).toString());
+        painter->drawText(pillRect, Qt::AlignCenter, text);
         painter->restore();
         return;
     }
@@ -435,7 +474,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     // Bubble background
     painter->setBrush(outgoing ? BubbleTokens::bgOutgoing() : BubbleTokens::bgIncoming());
     painter->setPen(Qt::NoPen);
-    painter->drawRoundedRect(bubbleRect, BubbleTokens::radius(), BubbleTokens::radius());
+    painter->drawPath(BubblePath(bubbleRect, outgoing));
 
     const QColor textColor = outgoing ? BubbleTokens::textOutgoing() : BubbleTokens::textIncoming();
     QColor metaColor = outgoing ? BubbleTokens::timeTextOutgoing() : BubbleTokens::timeText();
