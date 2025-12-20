@@ -1,4 +1,5 @@
 #include "BackendAdapter.h"
+#include "TrustPromptDialog.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -19,6 +20,7 @@
 #include <filesystem>
 
 #include "../common/UiSettings.h"
+#include "key_transparency.h"
 
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
 
