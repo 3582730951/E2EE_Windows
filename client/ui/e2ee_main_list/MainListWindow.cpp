@@ -26,8 +26,6 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 #include <QSet>
-#include <QGuiApplication>
-#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
 #include <QGraphicsOpacityEffect>
@@ -40,6 +38,7 @@
 #include <memory>
 
 #include "../common/IconButton.h"
+#include "../common/SecureClipboard.h"
 #include "../common/SettingsDialog.h"
 #include "../common/Theme.h"
 #include "../common/UiIcons.h"
@@ -759,9 +758,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                 return;
             }
             if (picked == copyId) {
-                if (auto *cb = QGuiApplication::clipboard()) {
-                    cb->setText(id);
-                }
+                SecureClipboard::SetText(id);
                 QMessageBox::information(this, QStringLiteral("群聊"), QStringLiteral("群 ID 已复制"));
                 return;
             }
@@ -1197,9 +1194,7 @@ void MainListWindow::handleNotificationCenter() {
                 }
 
                 if (action == NotificationCenterDialog::GroupInviteAction::CopyId) {
-                    if (auto *cb = QGuiApplication::clipboard()) {
-                        cb->setText(gid);
-                    }
+                    SecureClipboard::SetText(gid);
                     Toast::Show(&dlg,
                                 UiSettings::Tr(QStringLiteral("群 ID 已复制"),
                                                QStringLiteral("Group ID copied")),
@@ -1998,9 +1993,7 @@ void MainListWindow::handleCreateGroup() {
         return;
     }
 
-    if (auto *cb = QGuiApplication::clipboard()) {
-        cb->setText(groupId);
-    }
+    SecureClipboard::SetText(groupId);
 
     int rowIndex = -1;
     for (int i = 0; i < model_->rowCount(); ++i) {
@@ -2475,9 +2468,7 @@ void MainListWindow::handleDeviceManager() {
         if (selected.isEmpty()) {
             return;
         }
-        if (auto *cb = QGuiApplication::clipboard()) {
-            cb->setText(selected);
-        }
+        SecureClipboard::SetText(selected);
         QMessageBox::information(this, QStringLiteral("设备管理"), QStringLiteral("已复制"));
     });
 

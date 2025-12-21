@@ -1,12 +1,19 @@
 #include <QApplication>
+#include <QGuiApplication>
 
+#include "common/SecureClipboard.h"
 #include "widgets/list_window.h"
 #include "widgets/login_dialog.h"
 #include "widgets/main_window.h"
 #include "widgets/theme.h"
 
 int main(int argc, char* argv[]) {
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
+    SecureClipboard::Install(app);
     auto palette = mi::client::ui::widgets::DefaultPalette();
     app.setStyleSheet(mi::client::ui::widgets::BuildGlobalStyleSheet(palette));
 

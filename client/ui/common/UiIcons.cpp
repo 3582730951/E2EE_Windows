@@ -85,7 +85,7 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color, qr
     const int logicalSize = qMax(1, size);
     const int pixelSize =
         qMax(1, static_cast<int>(std::ceil(logicalSize * effectiveDpr)));
-    const qreal renderSize = pixelSize / effectiveDpr;
+    const qreal logicalExtent = pixelSize / effectiveDpr;
     static QHash<QString, QPixmap> cache;
     const QString key =
         resolvedPath + QStringLiteral(":") + QString::number(size) + QStringLiteral(":") +
@@ -106,6 +106,7 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color, qr
     if (!renderer.isValid()) {
         return {};
     }
+    renderer.setAspectRatioMode(Qt::KeepAspectRatio);
     QPixmap pm(pixelSize, pixelSize);
     pm.setDevicePixelRatio(effectiveDpr);
     pm.fill(Qt::transparent);
@@ -113,14 +114,17 @@ QPixmap TintedSvg(const QString &resourcePath, int size, const QColor &color, qr
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        const qreal padRatio =
-            logicalSize <= 20 ? 0.04 : (logicalSize <= 28 ? 0.03 : 0.02);
-        const qreal pad = qMax(1.0, logicalSize * padRatio);
-        const qreal side = qMax<qreal>(1.0, logicalSize - pad * 2.0);
-        const qreal extra = qMax<qreal>(0.0, (renderSize - logicalSize) * 0.5);
-        renderer.render(&p, QRectF(extra + pad, extra + pad, side, side));
+        const QRectF targetRect(0.0, 0.0, logicalExtent, logicalExtent);
+        QSizeF viewSize = renderer.viewBoxF().size();
+        QSizeF renderSize = targetRect.size();
+        if (!viewSize.isEmpty()) {
+            renderSize = viewSize.scaled(targetRect.size(), Qt::KeepAspectRatio);
+        }
+        const qreal x = (logicalExtent - renderSize.width()) * 0.5;
+        const qreal y = (logicalExtent - renderSize.height()) * 0.5;
+        renderer.render(&p, QRectF(x, y, renderSize.width(), renderSize.height()));
         p.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        p.fillRect(pm.rect(), color);
+        p.fillRect(targetRect, color);
     }
     cache.insert(key, pm);
     return pm;

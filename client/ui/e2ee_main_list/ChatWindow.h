@@ -2,7 +2,6 @@
 #pragma once
 
 #include <QListWidget>
-#include <QPlainTextEdit>
 #include <QPointer>
 #include <QListView>
 #include <QMenu>
@@ -22,6 +21,7 @@ class QLabel;
 class QLineEdit;
 class IconButton;
 class EmojiPickerDialog;
+class ChatInputEdit;
 
 class ChatWindow : public FramelessWindowBase {
     Q_OBJECT
@@ -90,6 +90,7 @@ private:
     void goToSearchResult(int index);
     void stepSearchResult(int delta);
     void clearSearchState();
+    void updateInputHeight();
     void sendFilePlaceholder();
     void sendImagePlaceholder();
     void sendVoicePlaceholder();
@@ -129,7 +130,7 @@ private:
     QVector<int> searchMatchRows_;
     int searchMatchIndex_{-1};
     QWidget *composer_{nullptr};
-    QPlainTextEdit *inputEdit_{nullptr};
+    ChatInputEdit *inputEdit_{nullptr};
     IconButton *emojiBtn_{nullptr};
     EmojiPickerDialog *emojiPicker_{nullptr};
     QWidget *replyBar_{nullptr};

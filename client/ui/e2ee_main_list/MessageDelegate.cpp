@@ -9,6 +9,9 @@
 #include <QFileInfo>
 #include <QTextLayout>
 #include <QLinearGradient>
+#include <QVector>
+
+#include <cmath>
 
 #include "../common/Theme.h"
 #include "../common/UiIcons.h"
@@ -227,7 +230,11 @@ QPixmap StickerPixmap(const QString &stickerId, int size) {
 }
 
 QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
+    const int safeWidth = qMax(1, maxWidth);
     QTextLayout layout(text, font);
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(option);
     layout.beginLayout();
     int height = 0;
     int width = 0;
@@ -236,13 +243,45 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
         if (!line.isValid()) {
             break;
         }
-        line.setLineWidth(maxWidth);
+        line.setLineWidth(safeWidth);
         line.setPosition(QPointF(0, height));
-        height += line.height();
-        width = qMax(width, static_cast<int>(line.naturalTextWidth()));
+        height += static_cast<int>(std::ceil(line.height()));
+        width = qMax(width, static_cast<int>(std::ceil(line.naturalTextWidth())));
     }
     layout.endLayout();
     return QSize(width, height);
+}
+
+void DrawWrappedText(QPainter *painter, const QRect &rect, const QString &text, const QFont &font,
+                     const QColor &color) {
+    const int safeWidth = qMax(1, rect.width());
+    QTextLayout layout(text, font);
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(option);
+    layout.beginLayout();
+    qreal y = 0.0;
+    QVector<QTextLine> lines;
+    while (true) {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(safeWidth);
+        line.setPosition(QPointF(0, y));
+        y += line.height();
+        lines.push_back(line);
+    }
+    layout.endLayout();
+
+    painter->save();
+    painter->setPen(color);
+    painter->setFont(font);
+    const QPointF origin(rect.topLeft());
+    for (const auto &line : lines) {
+        line.draw(painter, origin + QPointF(0.0, line.y()));
+    }
+    painter->restore();
 }
 
 bool IsEmojiBase(uint32_t cp) {
@@ -740,7 +779,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         if (emojiOnly) {
             painter->drawText(textRect, Qt::AlignCenter, text);
         } else {
-            painter->drawText(textRect, Qt::TextWordWrap, text);
+            DrawWrappedText(painter, textRect, text, textFont, textColor);
         }
     }
 

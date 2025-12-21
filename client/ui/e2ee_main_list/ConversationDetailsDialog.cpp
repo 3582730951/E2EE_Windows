@@ -3,11 +3,9 @@
 #include <algorithm>
 
 #include <QButtonGroup>
-#include <QClipboard>
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFrame>
-#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -19,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include "../common/Theme.h"
+#include "../common/SecureClipboard.h"
 #include "../common/Toast.h"
 #include "../common/UiSettings.h"
 #include "BackendAdapter.h"
@@ -153,9 +152,7 @@ void ConversationDetailsDialog::buildUi() {
         if (conversationId_.isEmpty()) {
             return;
         }
-        if (auto *cb = QGuiApplication::clipboard()) {
-            cb->setText(conversationId_);
-        }
+        SecureClipboard::SetText(conversationId_);
         Toast::Show(this,
                     UiSettings::Tr(QStringLiteral("已复制"), QStringLiteral("Copied")),
                     Toast::Level::Info);
@@ -492,4 +489,3 @@ void ConversationDetailsDialog::saveSelectedFile() {
                 UiSettings::Tr(QStringLiteral("开始保存…"), QStringLiteral("Saving…")),
                 Toast::Level::Info);
 }
-

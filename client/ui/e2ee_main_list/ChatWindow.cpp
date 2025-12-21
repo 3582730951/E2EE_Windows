@@ -37,6 +37,7 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QPropertyAnimation>
+#include <QTextOption>
 
 #if defined(MI_UI_HAS_QT_MULTIMEDIA)
 #include <QAudioOutput>
@@ -49,7 +50,6 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QToolButton>
-#include <QClipboard>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QDateTime>
@@ -62,11 +62,13 @@
 #include <memory>
 
 #include "../common/IconButton.h"
+#include "../common/ChatInputEdit.h"
 #include "../common/Theme.h"
 #include "../common/UiIcons.h"
 #include "../common/UiSettings.h"
 #include "../common/UiStyle.h"
 #include "../common/Toast.h"
+#include "../common/SecureClipboard.h"
 #include "BackendAdapter.h"
 #include "ConversationDetailsDialog.h"
 #include "EmojiPickerDialog.h"
@@ -477,7 +479,7 @@ void ShowLinkPreviewDialog(QWidget *parent, const QUrl &url) {
     QObject::connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::close);
     QObject::connect(btnOpen, &QPushButton::clicked, dlg, [url]() { QDesktopServices::openUrl(url); });
     QObject::connect(btnCopy, &QPushButton::clicked, dlg,
-                     [url]() { QGuiApplication::clipboard()->setText(url.toString(QUrl::FullyDecoded)); });
+                     [url]() { SecureClipboard::SetText(url.toString(QUrl::FullyDecoded)); });
 
     root->addWidget(urlLabel);
     root->addWidget(statusLabel);
@@ -1241,21 +1243,12 @@ void ChatWindow::buildUi() {
     msgLayout->addWidget(messageStack_, 1);
     bodyLayout->addWidget(messageArea, 1);
 
-    // Divider
-    auto *divider = new QWidget(body);
-    divider->setFixedHeight(1);
-    divider->setStyleSheet(QStringLiteral("background: %1;").arg(ChatTokens::border().name()));
-    bodyLayout->addWidget(divider);
-
     // Composer
     composer_ = new QWidget(body);
-    composer_->setStyleSheet(
-        QStringLiteral("background: %1; border-top: 1px solid %2;")
-            .arg(ChatTokens::panelBg().name(),
-                 ChatTokens::border().name()));
+    composer_->setStyleSheet(QStringLiteral("background: transparent;"));
     composer_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *composerLayout = new QVBoxLayout(composer_);
-    composerLayout->setContentsMargins(10, 6, 10, 8);
+    composerLayout->setContentsMargins(12, 4, 12, 6);
     composerLayout->setSpacing(4);
 
     replyBar_ = new QWidget(composer_);
@@ -1328,7 +1321,7 @@ void ChatWindow::buildUi() {
         }
     });
 
-    inputEdit_ = new QPlainTextEdit(composer_);
+    inputEdit_ = new ChatInputEdit(composer_);
     inputEdit_->setPlaceholderText(
         UiSettings::Tr(QStringLiteral("输入消息..."), QStringLiteral("Type a message...")));
     inputEdit_->setTabChangesFocus(true);
@@ -1341,10 +1334,15 @@ void ChatWindow::buildUi() {
                  Theme::uiInputBorder().name(),
                  Theme::uiTextMain().name(),
                  Theme::uiAccentBlue().name()));
+    inputEdit_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    inputEdit_->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     inputEdit_->setMinimumHeight(36);
-    inputEdit_->setMaximumHeight(64);
+    inputEdit_->setMaximumHeight(140);
+    inputEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    inputEdit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->installEventFilter(this);
+    updateInputHeight();
     inputRow->addWidget(inputEdit_, 1);
 
     emojiBtn_ = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/emoji.svg"), composer_);
@@ -1352,11 +1350,6 @@ void ChatWindow::buildUi() {
     emojiBtn_->setToolTip(UiSettings::Tr(QStringLiteral("表情"), QStringLiteral("Emoji")));
     connect(emojiBtn_, &QAbstractButton::clicked, this, &ChatWindow::showEmojiPicker);
     inputRow->addWidget(emojiBtn_);
-
-    auto *sendMore = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/chevron-down.svg"), composer_);
-    sendMore->setToolTip(UiSettings::Tr(QStringLiteral("更多"), QStringLiteral("More")));
-    sendMore->setFocusPolicy(Qt::NoFocus);
-    inputRow->addWidget(sendMore);
 
     auto *sendBtn = accentIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/send.svg"), composer_);
     sendBtn->setToolTip(UiSettings::Tr(QStringLiteral("发送"), QStringLiteral("Send")));
@@ -1408,6 +1401,7 @@ void ChatWindow::buildUi() {
     });
 
     connect(inputEdit_, &QPlainTextEdit::textChanged, this, [this]() {
+        updateInputHeight();
         if (isGroup_ || !backend_ || conversationId_.trimmed().isEmpty() ||
             !typingAction_ || !typingAction_->isChecked() || isStealthActive()) {
             return;
@@ -1437,7 +1431,7 @@ void ChatWindow::buildUi() {
         }
     });
 
-    sendMenu_ = new QMenu(sendMore);
+    sendMenu_ = new QMenu(sendBtn);
     UiStyle::ApplyMenuStyle(*sendMenu_);
     sendStickerAction_ = sendMenu_->addAction(
         UiSettings::Tr(QStringLiteral("发送贴纸..."), QStringLiteral("Send sticker...")));
@@ -1557,9 +1551,10 @@ void ChatWindow::buildUi() {
     if (exportEvidenceAction_) {
         exportEvidenceAction_->setEnabled(false);
     }
-    connect(sendMore, &QAbstractButton::clicked, this, [this, sendMore]() {
+    sendBtn->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(sendBtn, &QWidget::customContextMenuRequested, this, [this, sendBtn]() {
         if (sendMenu_) {
-            sendMenu_->exec(sendMore->mapToGlobal(QPoint(0, sendMore->height())));
+            sendMenu_->exec(sendBtn->mapToGlobal(QPoint(sendBtn->width() / 2, 0)));
         }
     });
     setTabOrder(messageView_, inputEdit_);
@@ -1683,6 +1678,21 @@ void ChatWindow::updateConversationUiState() {
 
     if (!hasConversation) {
         setSearchActive(false);
+    }
+}
+
+void ChatWindow::updateInputHeight() {
+    if (!inputEdit_) {
+        return;
+    }
+    const qreal docHeight = inputEdit_->document()->size().height();
+    const int padding = 12;
+    constexpr int kMinHeight = 36;
+    constexpr int kMaxHeight = 140;
+    const int target =
+        qBound(kMinHeight, static_cast<int>(std::ceil(docHeight)) + padding, kMaxHeight);
+    if (inputEdit_->height() != target) {
+        inputEdit_->setFixedHeight(target);
     }
 }
 
@@ -1956,6 +1966,7 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
     clearNewMessagePill();
     if (inputEdit_ && previousConvId != conversationId_) {
         inputEdit_->clear();
+        updateInputHeight();
     }
     lastMessageInsertMs_ = 0;
     refreshFileTransferAnimation();
@@ -2427,6 +2438,9 @@ bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {
     if (messageView_ && obj == messageView_->viewport() && event->type() == QEvent::Resize) {
         updateNewMessagePillGeometry();
     }
+    if (inputEdit_ && obj == inputEdit_ && event->type() == QEvent::Resize) {
+        updateInputHeight();
+    }
     if (obj == searchEdit_ && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
         if (ke->key() == Qt::Key_Escape) {
@@ -2457,6 +2471,11 @@ bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
         if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
+            if (auto *edit = qobject_cast<ChatInputEdit *>(inputEdit_)) {
+                if (edit->isComposing()) {
+                    return false;
+                }
+            }
             if (ke->modifiers().testFlag(Qt::ShiftModifier)) {
                 // New line with Shift+Enter
                 return false;
@@ -2557,6 +2576,7 @@ void ChatWindow::sendMessage() {
     }
 
     inputEdit_->clear();
+    updateInputHeight();
 
     const auto status = ok ? MessageItem::Status::Sent
                            : MessageItem::Status::Pending;
@@ -3393,11 +3413,11 @@ void ChatWindow::showMessageMenu(const QPoint &pos) {
     }
     QAction *picked = menu.exec(messageView_->viewport()->mapToGlobal(pos));
     if (picked == copyText) {
-        QGuiApplication::clipboard()->setText(isSticker ? stickerId : text);
+        SecureClipboard::SetText(isSticker ? stickerId : text);
         return;
     }
     if (picked == copyMessageId) {
-        QGuiApplication::clipboard()->setText(messageId);
+        SecureClipboard::SetText(messageId);
         return;
     }
     if (picked == replyAction) {
@@ -3416,13 +3436,13 @@ void ChatWindow::showMessageMenu(const QPoint &pos) {
         return;
     }
     if (picked == copyCoords) {
-        QGuiApplication::clipboard()->setText(QStringLiteral("%1,%2")
-                                                  .arg(mapLat, 0, 'f', 7)
-                                                  .arg(mapLon, 0, 'f', 7));
+        SecureClipboard::SetText(QStringLiteral("%1,%2")
+                                     .arg(mapLat, 0, 'f', 7)
+                                     .arg(mapLon, 0, 'f', 7));
         return;
     }
     if (picked == copyCard) {
-        QGuiApplication::clipboard()->setText(cardUsername);
+        SecureClipboard::SetText(cardUsername);
         return;
     }
     if (picked == openLink) {

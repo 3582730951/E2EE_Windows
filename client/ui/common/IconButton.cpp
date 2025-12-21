@@ -97,6 +97,9 @@ void IconButton::paintEvent(QPaintEvent *event) {
     }
 
     QRect r = rect().adjusted(m_padding, m_padding, -m_padding, -m_padding);
+    if (r.width() <= 0 || r.height() <= 0) {
+        return;
+    }
     if (bg.alpha() > 0) {
         const int radius = m_round ? qMin(r.width(), r.height()) / 2 : 6;
         painter.setBrush(bg);
@@ -106,9 +109,10 @@ void IconButton::paintEvent(QPaintEvent *event) {
 
     painter.setPen(fg);
     if (!m_svgPath.isEmpty()) {
-        const int side = qMin(qMin(r.width(), r.height()), m_svgSize);
+        const int side = qMax(1, qMin(qMin(r.width(), r.height()), m_svgSize));
         const QRect iconRect(r.center().x() - side / 2, r.center().y() - side / 2, side, side);
-        painter.drawPixmap(iconRect, UiIcons::TintedSvg(m_svgPath, side, fg, devicePixelRatioF()));
+        const qreal dpr = painter.device() ? painter.device()->devicePixelRatioF() : devicePixelRatioF();
+        painter.drawPixmap(iconRect, UiIcons::TintedSvg(m_svgPath, side, fg, dpr));
     } else {
         painter.drawText(r, Qt::AlignCenter, m_glyph);
     }

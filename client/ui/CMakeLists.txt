@@ -13,9 +13,13 @@ find_package(Qt6 QUIET COMPONENTS Multimedia MultimediaWidgets)
 set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(UI_COMMON_SOURCES
+    common/ChatInputEdit.cpp
+    common/ChatInputEdit.h
     common/FramelessWindowBase.cpp
     common/IconButton.cpp
     common/OverlayWidget.cpp
+    common/SecureClipboard.cpp
+    common/SecureClipboard.h
     common/Toast.cpp
     common/Theme.cpp
     common/UiIcons.cpp
