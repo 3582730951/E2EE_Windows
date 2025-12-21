@@ -1009,6 +1009,14 @@ void ChatInputEdit::setInputMode(InputMode mode) {
     }
 }
 
+void ChatInputEdit::setInputViewportMargins(int left, int top, int right, int bottom) {
+    setViewportMargins(left, top, right, bottom);
+}
+
+QMargins ChatInputEdit::inputViewportMargins() const {
+    return viewportMargins();
+}
+
 void ChatInputEdit::setImeEnabled(bool enabled) {
     if (imeEnabled_ == enabled) {
         return;

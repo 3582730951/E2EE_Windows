@@ -1,6 +1,7 @@
 // Pinyin-capable input edit for chat composer.
 #pragma once
 
+#include <QMargins>
 #include <QPlainTextEdit>
 
 class ChatInputEdit : public QPlainTextEdit {
@@ -23,6 +24,8 @@ public:
     InputMode inputMode() const;
     bool isChineseMode() const;
     void setInputMode(InputMode mode);
+    void setInputViewportMargins(int left, int top, int right, int bottom);
+    QMargins inputViewportMargins() const;
 
 signals:
     void inputModeChanged(bool chinese);

@@ -1352,8 +1352,8 @@ void ChatWindow::buildUi() {
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     inputEdit_->setMinimumHeight(kComposerInputMinHeight);
     inputEdit_->setMaximumHeight(kComposerInputMaxHeight);
-    inputEdit_->setViewportMargins(kComposerInputPaddingH, kComposerInputPaddingV,
-                                   kComposerInputPaddingH, kComposerInputPaddingV);
+    inputEdit_->setInputViewportMargins(kComposerInputPaddingH, kComposerInputPaddingV,
+                                        kComposerInputPaddingH, kComposerInputPaddingV);
     inputEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->document()->setDocumentMargin(0.0);
@@ -1706,7 +1706,7 @@ void ChatWindow::updateInputHeight() {
         return;
     }
     const int viewportWidth = qMax(1, inputEdit_->viewport()->width());
-    const QMargins margins = inputEdit_->viewportMargins();
+    const QMargins margins = inputEdit_->inputViewportMargins();
     const int textWidth = qMax(1, viewportWidth);
     QTextDocument *doc = inputEdit_->document();
     doc->setTextWidth(textWidth);
