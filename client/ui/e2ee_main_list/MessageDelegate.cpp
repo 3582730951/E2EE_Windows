@@ -83,6 +83,8 @@ bool LooksLikeVideoFile(const QString &nameOrPath) {
 
 enum class FileKind { Generic = 0, Image = 1, Audio = 2, Video = 3 };
 
+bool HasWhitespace(const QString &text);
+
 FileKind DetectFileKind(const QString &nameOrPath) {
     if (LooksLikeImageFile(nameOrPath)) {
         return FileKind::Image;
