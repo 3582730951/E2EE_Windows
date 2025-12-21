@@ -54,6 +54,20 @@
     },
     {
       "type": "file",
+      "name": "phrase-pinyin-data-abbr",
+      "version": "0.19.0",
+      "licenses": [
+        { "license": { "id": "MIT" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "96150ce1eba7bc729e704a387bc41a364196434a177e9bc952c56332769d8464" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/ime_pinyin_short.dat" }
+      ]
+    },
+    {
+      "type": "file",
       "name": "word-list",
       "version": "snapshot",
       "licenses": [

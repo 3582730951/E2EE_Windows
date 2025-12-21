@@ -28,6 +28,7 @@
         <file alias="icons/video.svg">../icons/video.svg</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
+        <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>
         <file alias="ime/english.dat">../data/ime_english.dat</file>
     </qresource>
 </RCC>

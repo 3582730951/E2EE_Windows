@@ -34,8 +34,15 @@ struct PinyinEntry {
     const char *candidates;
 };
 
+struct AbbrBoostEntry {
+    const char *key;
+    const char *candidate;
+};
+
 constexpr int kMaxPinyinCandidatesPerKey = 5;
+constexpr int kMaxAbbrInputLength = 6;
 constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
+constexpr const char kPinyinAbbrDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin_short.dat";
 constexpr const char kEnglishDictResourcePath[] = ":/mi/e2ee/ui/ime/english.dat";
 
 static const PinyinEntry kPinyinDict[] = {
@@ -529,6 +536,13 @@ static const PinyinEntry kPinyinDict[] = {
     {"cuowu", u8"\u9519\u8bef"},
 };
 
+static const AbbrBoostEntry kPinyinAbbrBoost[] = {
+    {"mt", u8"\u660e\u5929"},
+    {"jt", u8"\u4eca\u5929"},
+    {"zmy", u8"\u600e\u4e48\u6837"},
+    {"jtzmy", u8"\u4eca\u5929\u600e\u4e48\u6837"},
+};
+
 QStringList SplitCandidates(const char *raw) {
     QStringList list;
     if (!raw || !*raw) {
@@ -558,10 +572,14 @@ struct PinyinIndex {
     QVector<QString> keys;
     QSet<QString> keySet;
     int maxKeyLength{0};
+    QHash<QString, QStringList> abbrDict;
+    QVector<QString> abbrKeys;
 };
 
-bool LoadPinyinDictFromResource(QHash<QString, QStringList> &dict, int *maxKeyLength) {
-    QFile file(QString::fromLatin1(kPinyinDictResourcePath));
+bool LoadPinyinDictFromResource(const char *resourcePath,
+                                QHash<QString, QStringList> &dict,
+                                int *maxKeyLength) {
+    QFile file(QString::fromLatin1(resourcePath));
     if (!file.open(QIODevice::ReadOnly)) {
         return false;
     }
@@ -599,15 +617,31 @@ bool LoadPinyinDictFromResource(QHash<QString, QStringList> &dict, int *maxKeyLe
     return !dict.isEmpty();
 }
 
+void ApplyAbbrBoost(QHash<QString, QStringList> &dict) {
+    for (const auto &entry : kPinyinAbbrBoost) {
+        const QString key = QString::fromLatin1(entry.key);
+        const QString candidate = QString::fromUtf8(entry.candidate);
+        auto &list = dict[key];
+        list.removeAll(candidate);
+        list.push_front(candidate);
+        while (list.size() > kMaxPinyinCandidatesPerKey) {
+            list.removeLast();
+        }
+    }
+}
+
 PinyinIndex BuildPinyinIndex() {
     PinyinIndex index;
-    if (!LoadPinyinDictFromResource(index.dict, &index.maxKeyLength)) {
+    if (!LoadPinyinDictFromResource(kPinyinDictResourcePath, index.dict,
+                                    &index.maxKeyLength)) {
         for (const auto &entry : kPinyinDict) {
             const QString key = QString::fromLatin1(entry.key);
             index.dict.insert(key, SplitCandidates(entry.candidates));
             index.maxKeyLength = qMax(index.maxKeyLength, key.size());
         }
     }
+    LoadPinyinDictFromResource(kPinyinAbbrDictResourcePath, index.abbrDict, nullptr);
+    ApplyAbbrBoost(index.abbrDict);
     index.keys.reserve(index.dict.size());
     for (auto it = index.dict.constBegin(); it != index.dict.constEnd(); ++it) {
         index.keys.push_back(it.key());
@@ -615,6 +649,11 @@ PinyinIndex BuildPinyinIndex() {
         index.maxKeyLength = qMax(index.maxKeyLength, it.key().size());
     }
     std::sort(index.keys.begin(), index.keys.end());
+    index.abbrKeys.reserve(index.abbrDict.size());
+    for (auto it = index.abbrDict.constBegin(); it != index.abbrDict.constEnd(); ++it) {
+        index.abbrKeys.push_back(it.key());
+    }
+    std::sort(index.abbrKeys.begin(), index.abbrKeys.end());
     return index;
 }
 
@@ -633,6 +672,14 @@ const QVector<QString> &PinyinKeys() {
 
 const QSet<QString> &PinyinKeySet() {
     return GetPinyinIndex().keySet;
+}
+
+const QHash<QString, QStringList> &PinyinAbbrDict() {
+    return GetPinyinIndex().abbrDict;
+}
+
+const QVector<QString> &PinyinAbbrKeys() {
+    return GetPinyinIndex().abbrKeys;
 }
 
 int PinyinMaxKeyLength() {
@@ -833,16 +880,45 @@ QString SegmentFallback(const QString &pinyin) {
     return chunks.join(QString());
 }
 
+bool HasPrefix(const QVector<QString> &keys, const QString &prefix) {
+    if (prefix.isEmpty()) {
+        return false;
+    }
+    auto it = std::lower_bound(keys.begin(), keys.end(), prefix);
+    return it != keys.end() && it->startsWith(prefix);
+}
+
+void AppendCandidate(QStringList &list, const QString &candidate) {
+    if (candidate.isEmpty() || list.contains(candidate)) {
+        return;
+    }
+    list.push_back(candidate);
+}
+
 QStringList BuildCandidates(const QString &pinyin) {
     const auto &dict = PinyinDict();
+    const auto &abbrDict = PinyinAbbrDict();
     QStringList list;
     const auto it = dict.constFind(pinyin);
     if (it != dict.constEnd()) {
         list = it.value();
     }
     const QString fallback = SegmentFallback(pinyin);
-    if (!fallback.isEmpty() && !list.contains(fallback)) {
-        list.push_back(fallback);
+    if (!fallback.isEmpty()) {
+        AppendCandidate(list, fallback);
+    }
+    const bool allowAbbr = pinyin.size() <= kMaxAbbrInputLength;
+    const bool hasFullPrefix = HasPrefix(PinyinKeys(), pinyin);
+    if (allowAbbr && !hasFullPrefix) {
+        const auto abbrIt = abbrDict.constFind(pinyin);
+        if (abbrIt != abbrDict.constEnd()) {
+            for (const auto &cand : abbrIt.value()) {
+                AppendCandidate(list, cand);
+                if (list.size() >= 5) {
+                    break;
+                }
+            }
+        }
     }
     if (!pinyin.isEmpty() && list.size() < 5) {
         const auto &keys = PinyinKeys();
@@ -859,9 +935,28 @@ QStringList BuildCandidates(const QString &pinyin) {
                 continue;
             }
             const QString &cand = hit.value().front();
-            if (!list.contains(cand)) {
-                list.push_back(cand);
+            AppendCandidate(list, cand);
+            if (list.size() >= 5) {
+                break;
             }
+        }
+    }
+    if (allowAbbr && !hasFullPrefix && list.size() < 5) {
+        const auto &abbrKeys = PinyinAbbrKeys();
+        auto it = std::lower_bound(abbrKeys.begin(), abbrKeys.end(), pinyin);
+        for (; it != abbrKeys.end(); ++it) {
+            if (!it->startsWith(pinyin)) {
+                break;
+            }
+            if (*it == pinyin) {
+                continue;
+            }
+            const auto hit = abbrDict.constFind(*it);
+            if (hit == abbrDict.constEnd() || hit.value().isEmpty()) {
+                continue;
+            }
+            const QString &cand = hit.value().front();
+            AppendCandidate(list, cand);
             if (list.size() >= 5) {
                 break;
             }
@@ -1279,10 +1374,6 @@ void ChatInputEdit::updateCandidates() {
     candidates_ = BuildCandidates(composition_);
     if (candidateIndex_ >= candidates_.size()) {
         candidateIndex_ = 0;
-    }
-    if (candidates_.size() == 1 && candidates_.front() != composition_) {
-        commitCandidate(0);
-        return;
     }
     showPopup();
     if (popup_) {
