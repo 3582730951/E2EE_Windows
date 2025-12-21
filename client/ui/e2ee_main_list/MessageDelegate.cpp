@@ -240,7 +240,8 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
                                            : QTextOption::WrapAnywhere);
     layout.setTextOption(option);
     layout.beginLayout();
-    int height = 0;
+    const QFontMetrics fm(font);
+    qreal y = 0.0;
     int width = 0;
     while (true) {
         QTextLine line = layout.createLine();
@@ -248,15 +249,17 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
             break;
         }
         line.setLineWidth(safeWidth);
-        line.setPosition(QPointF(0, height));
-        height += static_cast<int>(std::ceil(line.height()));
+        const qreal leading = qMax<qreal>(0.0, fm.lineSpacing() - fm.height());
+        const qreal step = qMax<qreal>(1.0, line.height() - leading * 0.5);
+        line.setPosition(QPointF(0.0, y));
+        y += step;
         const int lineWidth =
             qMin(safeWidth, static_cast<int>(std::ceil(line.naturalTextWidth())));
         width = qMax(width, lineWidth);
     }
     layout.endLayout();
     width = qMin(width, safeWidth);
-    return QSize(width, height);
+    return QSize(width, static_cast<int>(std::ceil(y)));
 }
 
 void DrawWrappedText(QPainter *painter, const QRect &rect, const QString &text, const QFont &font,
@@ -268,6 +271,7 @@ void DrawWrappedText(QPainter *painter, const QRect &rect, const QString &text, 
                                            : QTextOption::WrapAnywhere);
     layout.setTextOption(option);
     layout.beginLayout();
+    const QFontMetrics fm(font);
     qreal y = 0.0;
     QVector<QTextLine> lines;
     while (true) {
@@ -276,8 +280,10 @@ void DrawWrappedText(QPainter *painter, const QRect &rect, const QString &text, 
             break;
         }
         line.setLineWidth(safeWidth);
-        line.setPosition(QPointF(0, y));
-        y += line.height();
+        const qreal leading = qMax<qreal>(0.0, fm.lineSpacing() - fm.height());
+        const qreal step = qMax<qreal>(1.0, line.height() - leading * 0.5);
+        line.setPosition(QPointF(0.0, y));
+        y += step;
         lines.push_back(line);
     }
     layout.endLayout();
@@ -667,6 +673,19 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     painter->save();
     painter->setClipPath(bubblePath);
+    const bool hasMeta = !metaText.isEmpty();
+    const int metaAvail = bubbleRect.width() - BubbleTokens::paddingH() * 2;
+    const QString metaDraw =
+        hasMeta ? QFontMetrics(metaFont).elidedText(metaText, Qt::ElideLeft, metaAvail) : QString();
+    const QRect metaRect(bubbleRect.left() + BubbleTokens::paddingH(),
+                         bubbleRect.bottom() - BubbleTokens::paddingV() - metaHeight,
+                         metaAvail,
+                         metaHeight);
+    if (hasMeta) {
+        painter->setFont(metaFont);
+        painter->setPen(metaColor);
+        painter->drawText(metaRect, Qt::AlignRight | Qt::AlignVCenter, metaDraw);
+    }
     if (isSticker) {
         const int stickerSize = 120;
         const QRect stickerRect = QRect(bubbleRect.left() + BubbleTokens::paddingH(),
@@ -809,24 +828,14 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         QRect textRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
                                              -BubbleTokens::paddingH(),
                                              -BubbleTokens::paddingV() - metaReserve);
+        painter->save();
+        painter->setClipRect(textRect, Qt::IntersectClip);
         if (emojiOnly) {
             painter->drawText(textRect, Qt::AlignCenter, text);
         } else {
             DrawWrappedText(painter, textRect, text, textFont, textColor);
         }
-    }
-
-    if (!metaText.isEmpty()) {
-        painter->setFont(metaFont);
-        painter->setPen(metaColor);
-        QFontMetrics metaFm(metaFont);
-        const int metaAvail = bubbleRect.width() - BubbleTokens::paddingH() * 2;
-        const QString metaDraw = metaFm.elidedText(metaText, Qt::ElideLeft, metaAvail);
-        QRect metaRect(bubbleRect.left() + BubbleTokens::paddingH(),
-                       bubbleRect.bottom() - BubbleTokens::paddingV() - metaHeight,
-                       metaAvail,
-                       metaHeight);
-        painter->drawText(metaRect, Qt::AlignRight | Qt::AlignVCenter, metaDraw);
+        painter->restore();
     }
     painter->restore();
 
