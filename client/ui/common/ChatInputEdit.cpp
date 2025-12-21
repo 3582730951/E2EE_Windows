@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QScreen>
 #include <QSet>
+#include <QTextBlock>
 #include <QStringConverter>
 #include <QTextCursor>
 #include <QTextLayout>

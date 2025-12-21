@@ -152,6 +152,17 @@ bool HashDirectory(const std::filesystem::path& root, std::string& out) {
   return true;
 }
 
+bool HashPath(const std::filesystem::path& path, std::string& out) {
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(path, ec) && !ec) {
+    return HashFile(path, out);
+  }
+  if (std::filesystem::is_directory(path, ec) && !ec) {
+    return HashDirectory(path, out);
+  }
+  return false;
+}
+
 void WriteJsonEscaped(std::ostream& os, const std::string& value) {
   os << '"';
   for (char ch : value) {
@@ -286,7 +297,7 @@ int main(int argc, char** argv) {
   for (const auto& entry : entries) {
     const auto dir = base_dir / entry.rel_path;
     std::string hash;
-    if (!HashDirectory(dir, hash)) {
+    if (!HashPath(dir, hash)) {
       std::cerr << "hash failed: " << dir.string() << "\n";
       return 3;
     }

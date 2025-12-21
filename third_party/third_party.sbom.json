@@ -46,7 +46,7 @@
         { "license": { "id": "MIT" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "6231DD88967733450888FA917D8BCF5E08780AA10B445CF489AA98C0CCB35F4E" }
+        { "alg": "SHA-256", "content": "6231dd88967733450888fa917d8bcf5e08780aa10b445cf489aa98c0ccb35f4e" }
       ],
       "properties": [
         { "name": "path", "value": "core/client/ui/data/ime_pinyin.dat" }
@@ -60,7 +60,7 @@
         { "license": { "id": "MIT" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "18257E34E5B70CE92548F65D359D2F249FADF8B8A2231524C1242284354AC293" }
+        { "alg": "SHA-256", "content": "18257e34e5b70ce92548f65d359d2f249fadf8b8a2231524c1242284354ac293" }
       ],
       "properties": [
         { "name": "path", "value": "core/client/ui/data/ime_english.dat" }
