@@ -41,7 +41,7 @@ struct BubbleTokens {
     static int lineSpacing() { return 6; }
 };
 
-constexpr qreal kBubbleMaxRatio = 0.72;
+constexpr qreal kBubbleMaxRatio = 0.7;
 
 QString FormatFileSize(qint64 bytes) {
     if (bytes <= 0) {
@@ -234,7 +234,8 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
     const int safeWidth = qMax(1, maxWidth);
     QTextLayout layout(text, font);
     QTextOption option;
-    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    option.setWrapMode(HasWhitespace(text) ? QTextOption::WrapAtWordBoundaryOrAnywhere
+                                           : QTextOption::WrapAnywhere);
     layout.setTextOption(option);
     layout.beginLayout();
     int height = 0;
@@ -247,9 +248,12 @@ QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
         line.setLineWidth(safeWidth);
         line.setPosition(QPointF(0, height));
         height += static_cast<int>(std::ceil(line.height()));
-        width = qMax(width, static_cast<int>(std::ceil(line.naturalTextWidth())));
+        const int lineWidth =
+            qMin(safeWidth, static_cast<int>(std::ceil(line.naturalTextWidth())));
+        width = qMax(width, lineWidth);
     }
     layout.endLayout();
+    width = qMin(width, safeWidth);
     return QSize(width, height);
 }
 
@@ -258,7 +262,8 @@ void DrawWrappedText(QPainter *painter, const QRect &rect, const QString &text, 
     const int safeWidth = qMax(1, rect.width());
     QTextLayout layout(text, font);
     QTextOption option;
-    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    option.setWrapMode(HasWhitespace(text) ? QTextOption::WrapAtWordBoundaryOrAnywhere
+                                           : QTextOption::WrapAnywhere);
     layout.setTextOption(option);
     layout.beginLayout();
     qreal y = 0.0;
@@ -331,6 +336,15 @@ bool IsEmojiOnlyText(const QString &text, int &emojiCount) {
         return false;
     }
     return emojiCount > 0 && emojiCount <= 3;
+}
+
+bool HasWhitespace(const QString &text) {
+    for (const QChar &ch : text) {
+        if (ch.isSpace()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QPainterPath BubblePath(const QRect &bubbleRect, bool outgoing) {
