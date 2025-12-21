@@ -2,6 +2,7 @@
 #include <QGuiApplication>
 
 #include "common/SecureClipboard.h"
+#include "common/UiSettings.h"
 #include "widgets/list_window.h"
 #include "widgets/login_dialog.h"
 #include "widgets/main_window.h"
@@ -14,6 +15,10 @@ int main(int argc, char* argv[]) {
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     SecureClipboard::Install(app);
+    const auto settings = UiSettings::Load();
+    if (auto *clip = SecureClipboard::instance()) {
+        clip->setSystemClipboardWriteEnabled(!settings.secureClipboard);
+    }
     auto palette = mi::client::ui::widgets::DefaultPalette();
     app.setStyleSheet(mi::client::ui::widgets::BuildGlobalStyleSheet(palette));
 

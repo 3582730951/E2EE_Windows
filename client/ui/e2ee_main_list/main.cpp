@@ -20,8 +20,11 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     SecureClipboard::Install(app);
 
-    UiSettings::Load();
+    const auto settings = UiSettings::Load();
     UiSettings::ApplyToApp(app);
+    if (auto *clip = SecureClipboard::instance()) {
+        clip->setSystemClipboardWriteEnabled(!settings.secureClipboard);
+    }
 
     BackendAdapter backend;
     backend.init();  // 尝试按默认 config.ini 初始化，失败时仍可继续尝试登录

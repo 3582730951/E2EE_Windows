@@ -39,6 +39,7 @@ private:
     QSpinBox *fontScale_{nullptr};
     QCheckBox *trayNotify_{nullptr};
     QCheckBox *trayPreview_{nullptr};
+    QCheckBox *secureClipboard_{nullptr};
 
     QString clientConfigPath_;
     QLabel *proxyPathLabel_{nullptr};

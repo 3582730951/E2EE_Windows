@@ -20,6 +20,7 @@ struct Settings {
     int fontScalePercent{100};  // 50~200
     bool trayNotifications{true};
     bool trayPreview{false};  // privacy: default off
+    bool secureClipboard{true};  // default on: internal-only clipboard
 };
 
 void InitAppMeta();

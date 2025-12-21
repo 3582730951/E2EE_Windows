@@ -63,6 +63,7 @@ Settings Load() {
     out.fontScalePercent = ClampInt(s.value(Key("ui/font_scale_percent"), 100).toInt(), 50, 200);
     out.trayNotifications = s.value(Key("ui/tray_notifications"), true).toBool();
     out.trayPreview = s.value(Key("ui/tray_preview"), false).toBool();
+    out.secureClipboard = s.value(Key("ui/secure_clipboard"), true).toBool();
     gSettings = out;
     return out;
 }
@@ -75,6 +76,7 @@ void Save(const Settings &settings) {
     s.setValue(Key("ui/font_scale_percent"), settings.fontScalePercent);
     s.setValue(Key("ui/tray_notifications"), settings.trayNotifications);
     s.setValue(Key("ui/tray_preview"), settings.trayPreview);
+    s.setValue(Key("ui/secure_clipboard"), settings.secureClipboard);
     s.sync();
 }
 

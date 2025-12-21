@@ -32,6 +32,7 @@ public:
     QString conversationId() const;
     void setEmbeddedMode(bool embedded);
     void focusMessageInput();
+    bool isChineseInputMode() const;
 
     enum class FileTransferState : int {
         None = 0,
@@ -58,6 +59,9 @@ public:
     void setPresenceEnabled(bool enabled);
     void setFileTransferState(const QString &messageId, FileTransferState state, int progress = -1);
     void setFileLocalPath(const QString &messageId, const QString &filePath);
+
+signals:
+    void inputModeChanged(bool chinese);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

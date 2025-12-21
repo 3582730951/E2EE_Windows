@@ -499,6 +499,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     });
     titleLayout->addSpacing(10);
     titleLayout->addWidget(statusBtn_);
+    titleLayout->addSpacing(12);
+    inputModeLabel_ = new QLabel(titleBar);
+    inputModeLabel_->setTextFormat(Qt::PlainText);
+    updateInputModeLabel(true);
+    titleLayout->addWidget(inputModeLabel_);
     titleLayout->addStretch();
     auto *minBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar, Tokens::textSub());
     auto *funcBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, Tokens::textSub());
@@ -1019,6 +1024,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                    UiSettings::Tr(QStringLiteral("请选择会话"),
                                                   QStringLiteral("Select a chat")),
                                    false);
+    connect(embeddedChat_, &ChatWindow::inputModeChanged, this, &MainListWindow::updateInputModeLabel);
+    updateInputModeLabel(embeddedChat_->isChineseInputMode());
     setTabOrder(listView_, embeddedChat_);
     splitter->addWidget(embeddedChat_);
     splitter->setStretchFactor(0, 0);
@@ -1402,6 +1409,17 @@ void MainListWindow::updatePresenceLabel() {
         "QToolButton { color: %1; font-size: 10px; background: transparent; border: none; }"
         "QToolButton::menu-indicator { image: none; width: 0px; }")
                                   .arg(color.name()));
+}
+
+void MainListWindow::updateInputModeLabel(bool chinese) {
+    if (!inputModeLabel_) {
+        return;
+    }
+    const QColor color = chinese ? Theme::accentGreen() : Theme::uiAccentBlue();
+    inputModeLabel_->setText(chinese ? QStringLiteral("当前输入:中")
+                                     : QStringLiteral("当前输入:英"));
+    inputModeLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                       .arg(color.name()));
 }
 
 void MainListWindow::togglePinnedForId(const QString &id) {
@@ -1942,6 +1960,7 @@ void MainListWindow::openChatForIndex(const QModelIndex &index) {
     win->setAttribute(Qt::WA_DeleteOnClose, true);
     win->setConversation(id, title, isGroup);
     win->setPresenceEnabled(presenceEnabled());
+    connect(win, &ChatWindow::inputModeChanged, this, &MainListWindow::updateInputModeLabel);
     chatWindows_[id] = win;
     connect(win, &QObject::destroyed, this, [this, id]() { chatWindows_.remove(id); });
     win->show();

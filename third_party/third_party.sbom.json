@@ -39,6 +39,34 @@
       ]
     },
     {
+      "type": "file",
+      "name": "phrase-pinyin-data",
+      "version": "0.19.0",
+      "licenses": [
+        { "license": { "id": "MIT" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "6231DD88967733450888FA917D8BCF5E08780AA10B445CF489AA98C0CCB35F4E" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/ime_pinyin.dat" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "word-list",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "MIT" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "18257E34E5B70CE92548F65D359D2F249FADF8B8A2231524C1242284354AC293" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/ime_english.dat" }
+      ]
+    },
+    {
       "type": "library",
       "name": "pqclean_mlkem768_clean",
       "version": "snapshot",

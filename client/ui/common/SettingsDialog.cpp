@@ -17,6 +17,7 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 
+#include "SecureClipboard.h"
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
     setModal(true);
@@ -73,6 +74,15 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
 
     layout->addWidget(trayNotify_);
     layout->addWidget(trayPreview_);
+
+    secureClipboard_ =
+        new QCheckBox(UiSettings::Tr(QStringLiteral("安全剪贴板（仅应用内可粘贴）"),
+                                     QStringLiteral("Secure clipboard (app-only paste)")),
+                      this);
+    secureClipboard_->setToolTip(
+        UiSettings::Tr(QStringLiteral("开启后，应用内复制不会写入系统剪贴板；仍可从外部粘贴到本应用。"),
+                       QStringLiteral("When enabled, app copies won't write to system clipboard. External paste still works.")));
+    layout->addWidget(secureClipboard_);
 
     auto *proxyGroup =
         new QGroupBox(UiSettings::Tr(QStringLiteral("代理（SOCKS5）"), QStringLiteral("Proxy (SOCKS5)")),
@@ -188,6 +198,9 @@ void SettingsDialog::loadFromCurrent() {
     trayNotify_->setChecked(s.trayNotifications);
     trayPreview_->setChecked(s.trayPreview);
     trayPreview_->setEnabled(s.trayNotifications);
+    if (secureClipboard_) {
+        secureClipboard_->setChecked(s.secureClipboard);
+    }
 
     loadProxyFromConfig();
 }
@@ -331,6 +344,9 @@ bool SettingsDialog::applyAndSave() {
     next.fontScalePercent = fontScale_->value();
     next.trayNotifications = trayNotify_->isChecked();
     next.trayPreview = trayPreview_->isChecked();
+    if (secureClipboard_) {
+        next.secureClipboard = secureClipboard_->isChecked();
+    }
 
     const bool languageChanged = next.language != prev.language;
     const bool schemeChanged = next.scheme != prev.scheme;
@@ -338,6 +354,10 @@ bool SettingsDialog::applyAndSave() {
 
     UiSettings::setCurrent(next);
     UiSettings::Save(next);
+
+    if (auto *clip = SecureClipboard::instance()) {
+        clip->setSystemClipboardWriteEnabled(!next.secureClipboard);
+    }
 
     if (qApp && fontChanged) {
         Theme::setFontScalePercent(next.fontScalePercent);

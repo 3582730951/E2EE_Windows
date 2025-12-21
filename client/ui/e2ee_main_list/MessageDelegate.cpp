@@ -638,9 +638,10 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     }
 
     // Bubble background
+    const QPainterPath bubblePath = BubblePath(bubbleRect, outgoing);
     painter->setBrush(outgoing ? BubbleTokens::bgOutgoing() : BubbleTokens::bgIncoming());
     painter->setPen(Qt::NoPen);
-    painter->drawPath(BubblePath(bubbleRect, outgoing));
+    painter->drawPath(bubblePath);
 
     const QColor textColor = outgoing ? BubbleTokens::textOutgoing() : BubbleTokens::textIncoming();
     QColor metaColor = outgoing ? BubbleTokens::timeTextOutgoing() : BubbleTokens::timeText();
@@ -648,6 +649,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         metaColor = Theme::uiDangerRed();
     }
 
+    painter->save();
+    painter->setClipPath(bubblePath);
     if (isSticker) {
         const int stickerSize = 120;
         const QRect stickerRect = QRect(bubbleRect.left() + BubbleTokens::paddingH(),
@@ -809,6 +812,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                        metaHeight);
         painter->drawText(metaRect, Qt::AlignRight | Qt::AlignVCenter, metaDraw);
     }
+    painter->restore();
 
     // Avatar
     painter->setBrush(avatarColor);

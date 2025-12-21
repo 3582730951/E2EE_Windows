@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QObject>
 #include <QString>
+#include <QtGlobal>
 
 class QApplication;
 
@@ -16,6 +17,9 @@ public:
     static void SetText(const QString &text);
     static QString GetText();
 
+    void setSystemClipboardWriteEnabled(bool enabled);
+    bool systemClipboardWriteEnabled() const;
+
     void setText(const QString &text);
     QString text() const;
     bool hasText() const;
@@ -26,12 +30,13 @@ protected:
 private:
     explicit SecureClipboard(QApplication &app);
     void clearInternal();
-    void clearSystemClipboard();
     bool handleCopy(QObject *obj, bool cut);
     bool handlePaste(QObject *obj);
     void handleAppStateChanged(Qt::ApplicationState state);
 
     QByteArray buffer_;
     bool hasData_{false};
-    bool ownsSystem_{false};
+    bool allowSystemWrite_{false};
+    qint64 lastInternalCopyMs_{0};
+    qint64 lastSystemCopyMs_{0};
 };

@@ -37,7 +37,7 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QPropertyAnimation>
-#include <QTextLayout>
+#include <QTextDocument>
 #include <QTextOption>
 
 #if defined(MI_UI_HAS_QT_MULTIMEDIA)
@@ -91,6 +91,11 @@ struct ChatTokens {
     static QColor accentGrey() { return Theme::uiBorder(); }
     static int radius() { return 16; }
 };
+
+constexpr int kComposerInputPaddingH = 10;
+constexpr int kComposerInputPaddingV = 6;
+constexpr int kComposerInputMinHeight = 36;
+constexpr int kComposerInputMaxHeight = 220;
 
 bool LooksLikeImageFile(const QString &nameOrPath) {
     const QString lower = nameOrPath.trimmed().toLower();
@@ -877,6 +882,13 @@ ChatWindow::ChatWindow(BackendAdapter *backend, QWidget *parent)
 
 QString ChatWindow::conversationId() const { return conversationId_; }
 
+bool ChatWindow::isChineseInputMode() const {
+    if (!inputEdit_) {
+        return true;
+    }
+    return inputEdit_->isChineseMode();
+}
+
 void ChatWindow::setEmbeddedMode(bool embedded) {
     embeddedMode_ = embedded;
     if (windowDownBtn_) {
@@ -1329,7 +1341,7 @@ void ChatWindow::buildUi() {
     inputEdit_->setStyleSheet(
         QStringLiteral(
             "QPlainTextEdit { background: %1; border: 1px solid %2; border-radius: 12px; "
-            "color: %3; padding: 6px 10px; font-size: 12px; }"
+            "color: %3; font-size: 12px; }"
             "QPlainTextEdit:focus { border-color: %4; }")
             .arg(Theme::uiInputBg().name(),
                  Theme::uiInputBorder().name(),
@@ -1338,11 +1350,18 @@ void ChatWindow::buildUi() {
     inputEdit_->setLineWrapMode(QPlainTextEdit::WidgetWidth);
     inputEdit_->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    inputEdit_->setMinimumHeight(36);
-    inputEdit_->setMaximumHeight(220);
+    inputEdit_->setMinimumHeight(kComposerInputMinHeight);
+    inputEdit_->setMaximumHeight(kComposerInputMaxHeight);
+    inputEdit_->setViewportMargins(kComposerInputPaddingH, kComposerInputPaddingV,
+                                   kComposerInputPaddingH, kComposerInputPaddingV);
     inputEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    inputEdit_->document()->setDocumentMargin(0.0);
     inputEdit_->installEventFilter(this);
+    connect(inputEdit_, &ChatInputEdit::inputModeChanged, this, [this](bool chinese) {
+        emit inputModeChanged(chinese);
+    });
+    emit inputModeChanged(inputEdit_->isChineseMode());
     updateInputHeight();
     inputRow->addWidget(inputEdit_, 1);
 
@@ -1687,43 +1706,23 @@ void ChatWindow::updateInputHeight() {
         return;
     }
     const int viewportWidth = qMax(1, inputEdit_->viewport()->width());
-    const int paddingH = 20;
-    const int paddingV = 12;
-    const qreal docMargin = inputEdit_->document()->documentMargin();
-    const int textWidth =
-        qMax(1, viewportWidth - paddingH - static_cast<int>(std::ceil(docMargin * 2.0)));
-    QString text = inputEdit_->toPlainText();
-    if (text.isEmpty()) {
-        text = QStringLiteral(" ");
+    const QMargins margins = inputEdit_->viewportMargins();
+    const int textWidth = qMax(1, viewportWidth);
+    QTextDocument *doc = inputEdit_->document();
+    doc->setTextWidth(textWidth);
+    qreal docHeight = doc->size().height();
+    if (inputEdit_->toPlainText().isEmpty()) {
+        docHeight = QFontMetrics(inputEdit_->font()).lineSpacing();
     }
-    QTextLayout layout(text, inputEdit_->font());
-    QTextOption option;
-    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-    layout.setTextOption(option);
-    layout.beginLayout();
-    qreal height = 0.0;
-    while (true) {
-        QTextLine line = layout.createLine();
-        if (!line.isValid()) {
-            break;
-        }
-        line.setLineWidth(textWidth);
-        line.setPosition(QPointF(0, height));
-        height += line.height();
-    }
-    layout.endLayout();
-
-    constexpr int kMinHeight = 36;
-    constexpr int kMaxHeight = 220;
     const int target =
-        qBound(kMinHeight,
-               static_cast<int>(std::ceil(height + docMargin * 2.0)) + paddingV,
-               kMaxHeight);
+        qBound(kComposerInputMinHeight,
+               static_cast<int>(std::ceil(docHeight)) + margins.top() + margins.bottom(),
+               kComposerInputMaxHeight);
     if (inputEdit_->height() != target) {
         inputEdit_->setFixedHeight(target);
         inputEdit_->updateGeometry();
     }
-    const bool atMax = (target >= kMaxHeight);
+    const bool atMax = (target >= kComposerInputMaxHeight);
     inputEdit_->setVerticalScrollBarPolicy(atMax ? Qt::ScrollBarAsNeeded
                                                   : Qt::ScrollBarAlwaysOff);
 }

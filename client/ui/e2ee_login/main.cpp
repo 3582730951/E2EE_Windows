@@ -18,8 +18,11 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     SecureClipboard::Install(app);
 
-    UiSettings::Load();
+    const auto settings = UiSettings::Load();
     UiSettings::ApplyToApp(app);
+    if (auto *clip = SecureClipboard::instance()) {
+        clip->setSystemClipboardWriteEnabled(!settings.secureClipboard);
+    }
 
     LoginWindow window;
     window.show();
