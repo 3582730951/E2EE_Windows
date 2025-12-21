@@ -206,7 +206,7 @@ QString SegmentFallback(const QString &pinyin) {
             if (i + len > n) {
                 continue;
             }
-            if (pinyin.midRef(i, len) != key) {
+            if (pinyin.mid(i, len) != key) {
                 continue;
             }
             const int j = i + len;
