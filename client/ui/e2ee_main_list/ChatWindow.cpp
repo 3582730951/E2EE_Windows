@@ -37,6 +37,7 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QPropertyAnimation>
+#include <QTextLayout>
 #include <QTextOption>
 
 #if defined(MI_UI_HAS_QT_MULTIMEDIA)
@@ -1338,7 +1339,7 @@ void ChatWindow::buildUi() {
     inputEdit_->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     inputEdit_->setMinimumHeight(36);
-    inputEdit_->setMaximumHeight(140);
+    inputEdit_->setMaximumHeight(220);
     inputEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     inputEdit_->installEventFilter(this);
@@ -1685,15 +1686,46 @@ void ChatWindow::updateInputHeight() {
     if (!inputEdit_) {
         return;
     }
-    const qreal docHeight = inputEdit_->document()->size().height();
-    const int padding = 12;
+    const int viewportWidth = qMax(1, inputEdit_->viewport()->width());
+    const int paddingH = 20;
+    const int paddingV = 12;
+    const qreal docMargin = inputEdit_->document()->documentMargin();
+    const int textWidth =
+        qMax(1, viewportWidth - paddingH - static_cast<int>(std::ceil(docMargin * 2.0)));
+    QString text = inputEdit_->toPlainText();
+    if (text.isEmpty()) {
+        text = QStringLiteral(" ");
+    }
+    QTextLayout layout(text, inputEdit_->font());
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(option);
+    layout.beginLayout();
+    qreal height = 0.0;
+    while (true) {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(textWidth);
+        line.setPosition(QPointF(0, height));
+        height += line.height();
+    }
+    layout.endLayout();
+
     constexpr int kMinHeight = 36;
-    constexpr int kMaxHeight = 140;
+    constexpr int kMaxHeight = 220;
     const int target =
-        qBound(kMinHeight, static_cast<int>(std::ceil(docHeight)) + padding, kMaxHeight);
+        qBound(kMinHeight,
+               static_cast<int>(std::ceil(height + docMargin * 2.0)) + paddingV,
+               kMaxHeight);
     if (inputEdit_->height() != target) {
         inputEdit_->setFixedHeight(target);
+        inputEdit_->updateGeometry();
     }
+    const bool atMax = (target >= kMaxHeight);
+    inputEdit_->setVerticalScrollBarPolicy(atMax ? Qt::ScrollBarAsNeeded
+                                                  : Qt::ScrollBarAlwaysOff);
 }
 
 bool ChatWindow::ensureConversationSelected() {
@@ -2472,7 +2504,7 @@ bool ChatWindow::eventFilter(QObject *obj, QEvent *event) {
         }
         if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) {
             if (auto *edit = qobject_cast<ChatInputEdit *>(inputEdit_)) {
-                if (edit->isComposing()) {
+                if (edit->isComposing() || edit->isNativeComposing()) {
                     return false;
                 }
             }
@@ -2493,6 +2525,14 @@ void ChatWindow::sendMessage() {
     }
     if (!inputEdit_) {
         return;
+    }
+    if (auto *edit = qobject_cast<ChatInputEdit *>(inputEdit_)) {
+        if (edit->isComposing()) {
+            edit->commitDefaultCandidate();
+        }
+        if (edit->isNativeComposing()) {
+            return;
+        }
     }
     const QString text = inputEdit_->toPlainText().trimmed();
     if (text.isEmpty()) {

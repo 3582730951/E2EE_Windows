@@ -4,6 +4,7 @@
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -310,11 +311,15 @@ private:
 };
 
 ChatInputEdit::ChatInputEdit(QWidget *parent) : QPlainTextEdit(parent) {
-    setAttribute(Qt::WA_InputMethodEnabled, false);
+    setAttribute(Qt::WA_InputMethodEnabled, !imeEnabled_);
 }
 
 bool ChatInputEdit::isComposing() const {
     return composing_;
+}
+
+bool ChatInputEdit::isNativeComposing() const {
+    return nativeComposing_;
 }
 
 bool ChatInputEdit::imeEnabled() const {
@@ -326,9 +331,17 @@ void ChatInputEdit::setImeEnabled(bool enabled) {
         return;
     }
     imeEnabled_ = enabled;
-    if (!imeEnabled_) {
-        cancelComposition(true);
+    nativeComposing_ = false;
+    setAttribute(Qt::WA_InputMethodEnabled, !imeEnabled_);
+    cancelComposition(true);
+}
+
+bool ChatInputEdit::commitDefaultCandidate() {
+    if (!composing_) {
+        return false;
     }
+    commitCandidate(candidateIndex_);
+    return true;
 }
 
 void ChatInputEdit::keyPressEvent(QKeyEvent *event) {
@@ -345,7 +358,9 @@ void ChatInputEdit::keyPressEvent(QKeyEvent *event) {
         QPlainTextEdit::keyPressEvent(event);
         return;
     }
-    if (event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_Space) {
+    if ((event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) ==
+            (Qt::ControlModifier | Qt::ShiftModifier) &&
+        event->key() == Qt::Key_Space) {
         handleToggleIme();
         event->accept();
         return;
@@ -356,7 +371,16 @@ void ChatInputEdit::keyPressEvent(QKeyEvent *event) {
     QPlainTextEdit::keyPressEvent(event);
 }
 
+void ChatInputEdit::inputMethodEvent(QInputMethodEvent *event) {
+    nativeComposing_ = (event && !event->preeditString().isEmpty());
+    QPlainTextEdit::inputMethodEvent(event);
+    if (!event || event->preeditString().isEmpty()) {
+        nativeComposing_ = false;
+    }
+}
+
 void ChatInputEdit::focusOutEvent(QFocusEvent *event) {
+    nativeComposing_ = false;
     cancelComposition(true);
     QPlainTextEdit::focusOutEvent(event);
 }

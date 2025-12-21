@@ -27,8 +27,8 @@ private:
     explicit SecureClipboard(QApplication &app);
     void clearInternal();
     void clearSystemClipboard();
-    void handleCopy(QObject *obj, bool cut);
-    void handlePaste(QObject *obj);
+    bool handleCopy(QObject *obj, bool cut);
+    bool handlePaste(QObject *obj);
     void handleAppStateChanged(Qt::ApplicationState state);
 
     QByteArray buffer_;

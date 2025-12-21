@@ -92,16 +92,19 @@ bool SecureClipboard::eventFilter(QObject *obj, QEvent *event) {
     if (event->type() == QEvent::KeyPress) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
         if (keyEvent->matches(QKeySequence::Copy)) {
-            handleCopy(obj, false);
-            return true;
+            if (handleCopy(obj, false)) {
+                return true;
+            }
         }
         if (keyEvent->matches(QKeySequence::Cut)) {
-            handleCopy(obj, true);
-            return true;
+            if (handleCopy(obj, true)) {
+                return true;
+            }
         }
         if (keyEvent->matches(QKeySequence::Paste)) {
-            handlePaste(obj);
-            return true;
+            if (handlePaste(obj)) {
+                return true;
+            }
         }
     }
     if (event->type() == QEvent::ContextMenu) {
@@ -181,7 +184,7 @@ void SecureClipboard::clearSystemClipboard() {
     }
 }
 
-void SecureClipboard::handleCopy(QObject *obj, bool cut) {
+bool SecureClipboard::handleCopy(QObject *obj, bool cut) {
     if (auto *line = qobject_cast<QLineEdit *>(obj)) {
         const QString selected = line->selectedText();
         if (!selected.isEmpty()) {
@@ -192,12 +195,12 @@ void SecureClipboard::handleCopy(QObject *obj, bool cut) {
                 line->insert(QString());
             }
         }
-        return;
+        return !selected.isEmpty();
     }
     if (auto *plain = qobject_cast<QPlainTextEdit *>(obj)) {
         QTextCursor cursor = plain->textCursor();
         if (!cursor.hasSelection()) {
-            return;
+            return false;
         }
         const QString selected = NormalizeSelectedText(cursor.selectedText());
         if (!selected.isEmpty()) {
@@ -206,12 +209,14 @@ void SecureClipboard::handleCopy(QObject *obj, bool cut) {
                 cursor.removeSelectedText();
                 plain->setTextCursor(cursor);
             }
+            return true;
         }
-        return;
+        return false;
     }
+    return false;
 }
 
-void SecureClipboard::handlePaste(QObject *obj) {
+bool SecureClipboard::handlePaste(QObject *obj) {
     QString content = text();
     if (content.isEmpty()) {
         if (auto *cb = QGuiApplication::clipboard()) {
@@ -219,18 +224,19 @@ void SecureClipboard::handlePaste(QObject *obj) {
         }
     }
     if (content.isEmpty()) {
-        return;
+        return false;
     }
     if (auto *line = qobject_cast<QLineEdit *>(obj)) {
         line->insert(content);
-        return;
+        return true;
     }
     if (auto *plain = qobject_cast<QPlainTextEdit *>(obj)) {
         QTextCursor cursor = plain->textCursor();
         cursor.insertText(content);
         plain->setTextCursor(cursor);
-        return;
+        return true;
     }
+    return false;
 }
 
 void SecureClipboard::handleAppStateChanged(Qt::ApplicationState state) {

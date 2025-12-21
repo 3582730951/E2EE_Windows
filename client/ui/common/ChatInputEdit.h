@@ -10,11 +10,14 @@ public:
     explicit ChatInputEdit(QWidget *parent = nullptr);
 
     bool isComposing() const;
+    bool isNativeComposing() const;
     bool imeEnabled() const;
     void setImeEnabled(bool enabled);
+    bool commitDefaultCandidate();
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+    void inputMethodEvent(QInputMethodEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -34,8 +37,9 @@ private:
     void updatePopupPosition();
     void ensurePopup();
 
-    bool imeEnabled_{true};
+    bool imeEnabled_{false};
     bool composing_{false};
+    bool nativeComposing_{false};
     QString composition_;
     QStringList candidates_;
     int candidateIndex_{0};

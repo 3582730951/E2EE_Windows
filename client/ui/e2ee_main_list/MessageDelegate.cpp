@@ -1,5 +1,6 @@
 #include "MessageDelegate.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QDateTime>
 #include <QHash>
@@ -414,7 +415,19 @@ QSize MessageDelegate::bubbleSize(const QString &text, const QFont &font, int ma
 
 QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
                                 const QModelIndex &index) const {
-    const int viewWidth = option.rect.width();
+    int viewWidth = option.rect.width();
+    if (const QWidget *widget = option.widget) {
+        if (const auto *view = qobject_cast<const QAbstractItemView *>(widget)) {
+            viewWidth = view->viewport() ? view->viewport()->width() : viewWidth;
+        } else {
+            viewWidth = widget->contentsRect().width();
+        }
+    }
+    const int contentWidth = qMax(1, viewWidth - 16);
+    const int bubbleMaxWidth =
+        qMax(1, static_cast<int>(contentWidth * kBubbleMaxRatio));
+    const int textMaxWidth =
+        qMax(1, bubbleMaxWidth - BubbleTokens::paddingH() * 2);
     auto type = static_cast<MessageItem::Type>(index.data(MessageModel::TypeRole).toInt());
     if (type == MessageItem::Type::TimeDivider) {
         return QSize(viewWidth, 30);
@@ -422,13 +435,12 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     if (type == MessageItem::Type::System) {
         QFont f = Theme::defaultFont(11);
         QSize textSize = layoutText(index.data(MessageModel::SystemTextRole).toString(), f,
-                                    static_cast<int>(viewWidth * kBubbleMaxRatio));
+                                    bubbleMaxWidth);
         return QSize(viewWidth, textSize.height() + 14);
     }
     // Text message
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height() + 2;
-    int maxBubbleWidth = static_cast<int>(viewWidth * kBubbleMaxRatio);
     const bool outgoing = index.data(MessageModel::OutgoingRole).toBool();
     const QString sender = index.data(MessageModel::SenderRole).toString();
     const bool isFile = index.data(MessageModel::IsFileRole).toBool();
@@ -461,14 +473,14 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
             QFontMetrics(title).height() + 4 + QFontMetrics(sub).height();
         const int cardH = qMax(icon, contentH);
         const int bubbleH = cardH + BubbleTokens::paddingV() * 2 + metaHeight;
-        const int bubbleW = qMax(220, qMin(maxBubbleWidth, 320));
+        const int bubbleW = qMax(220, qMin(bubbleMaxWidth, 320));
         QSize bsize(qMax(bubbleW, metaMinWidth), bubbleH);
         const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
         int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) +
                      BubbleTokens::margin();
         return QSize(viewWidth, height);
     }
-    QSize bsize = bubbleSize(text, textFont, maxBubbleWidth);
+    QSize bsize = bubbleSize(text, textFont, textMaxWidth);
     if (metaMinWidth > 0) {
         bsize.setWidth(qMax(bsize.width(), metaMinWidth));
     }
@@ -557,7 +569,9 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height();
     const int metaReserve = metaHeight + 2;
-    int maxBubbleWidth = static_cast<int>(viewWidth * kBubbleMaxRatio);
+    const int bubbleMaxWidth = qMax(1, static_cast<int>(viewWidth * kBubbleMaxRatio));
+    const int textMaxWidth =
+        qMax(1, bubbleMaxWidth - BubbleTokens::paddingH() * 2);
     const int metaMinWidth = MinBubbleWidthForMeta(metaText, metaFont);
     QSize bsize;
     if (isSticker) {
@@ -571,10 +585,10 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
             QFontMetrics(titleFont).height() + 4 + QFontMetrics(subFont).height();
         const int cardH = qMax(icon, contentH);
         const int bubbleH = cardH + BubbleTokens::paddingV() * 2 + metaReserve;
-        const int bubbleW = qMax(220, qMin(maxBubbleWidth, 320));
+        const int bubbleW = qMax(220, qMin(bubbleMaxWidth, 320));
         bsize = QSize(bubbleW, bubbleH);
     } else {
-        bsize = bubbleSize(text, textFont, maxBubbleWidth);
+        bsize = bubbleSize(text, textFont, textMaxWidth);
         bsize.setHeight(bsize.height() + metaReserve);
     }
     if (metaMinWidth > 0) {
