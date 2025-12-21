@@ -76,10 +76,10 @@ void LoginDialog::buildUi() {
         QStringLiteral(
             "#loginFrame {"
             "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2);"
-            "border: 1px solid %3;"
+            "border: none;"
             "border-radius: 20px;"
              "}")
-             .arg(frameTop.name(), frameBottom.name(), border.name()));
+             .arg(frameTop.name(), frameBottom.name()));
     outer->addWidget(frame);
 
     auto *layout = new QVBoxLayout(frame);

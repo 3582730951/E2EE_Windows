@@ -99,6 +99,8 @@ private:
     void bumpNewMessagePill(int count);
     void updateNewMessagePillGeometry();
     void refreshFileTransferAnimation();
+    bool isStealthActive() const;
+    void applyStealthState();
 
     QString conversationId_;
     bool isGroup_{false};
@@ -142,6 +144,7 @@ private:
     QAction *readReceiptAction_{nullptr};
     QAction *typingAction_{nullptr};
     QAction *presenceAction_{nullptr};
+    QAction *stealthAction_{nullptr};
     QAction *membersAction_{nullptr};
     QAction *inviteAction_{nullptr};
     QAction *leaveAction_{nullptr};
@@ -149,6 +152,7 @@ private:
     QString replyToMessageId_;
     QString replyPreview_;
     QSet<QString> readReceiptSent_;
+    QSet<QString> stealthConversations_;
     bool typingSent_{false};
     qint64 lastTypingSentMs_{0};
     qint64 lastMessageInsertMs_{0};

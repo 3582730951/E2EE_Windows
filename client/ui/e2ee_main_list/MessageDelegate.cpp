@@ -37,6 +37,8 @@ struct BubbleTokens {
     static int lineSpacing() { return 6; }
 };
 
+constexpr qreal kBubbleMaxRatio = 0.72;
+
 QString FormatFileSize(qint64 bytes) {
     if (bytes <= 0) {
         return QStringLiteral("0 B");
@@ -381,13 +383,13 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     if (type == MessageItem::Type::System) {
         QFont f = Theme::defaultFont(11);
         QSize textSize = layoutText(index.data(MessageModel::SystemTextRole).toString(), f,
-                                    static_cast<int>(viewWidth * 0.68));
+                                    static_cast<int>(viewWidth * kBubbleMaxRatio));
         return QSize(viewWidth, textSize.height() + 14);
     }
     // Text message
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height() + 2;
-    int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
+    int maxBubbleWidth = static_cast<int>(viewWidth * kBubbleMaxRatio);
     const bool outgoing = index.data(MessageModel::OutgoingRole).toBool();
     const QString sender = index.data(MessageModel::SenderRole).toString();
     const bool isFile = index.data(MessageModel::IsFileRole).toBool();
@@ -516,7 +518,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height();
     const int metaReserve = metaHeight + 2;
-    int maxBubbleWidth = static_cast<int>(viewWidth * 0.68);
+    int maxBubbleWidth = static_cast<int>(viewWidth * kBubbleMaxRatio);
     const int metaMinWidth = MinBubbleWidthForMeta(metaText, metaFont);
     QSize bsize;
     if (isSticker) {

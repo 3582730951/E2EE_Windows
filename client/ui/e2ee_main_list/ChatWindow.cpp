@@ -33,6 +33,7 @@
 #include <QLinearGradient>
 #include <QRegularExpression>
 #include <QSlider>
+#include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QPropertyAnimation>
@@ -803,8 +804,8 @@ IconButton *toolIconSvg(const QString &svgPath, QWidget *parent) {
 
 IconButton *composerIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
-    btn->setFixedSize(36, 36);
-    btn->setSvgIcon(svgPath, 16);
+    btn->setFixedSize(34, 34);
+    btn->setSvgIcon(svgPath, 14);
     btn->setPadding(2);
     btn->setColors(Theme::uiTextSub(), Theme::uiTextMain(), Theme::uiTextMain(),
                    QColor(0, 0, 0, 0), Theme::uiHoverBg(), Theme::uiSelectedBg());
@@ -813,10 +814,10 @@ IconButton *composerIconSvg(const QString &svgPath, QWidget *parent) {
 
 IconButton *accentIconSvg(const QString &svgPath, QWidget *parent) {
     auto *btn = new IconButton(QString(), parent);
-    btn->setFixedSize(40, 40);
-    btn->setSvgIcon(svgPath, 16);
+    btn->setFixedSize(34, 34);
+    btn->setSvgIcon(svgPath, 14);
     btn->setRound(true);
-    btn->setPadding(4);
+    btn->setPadding(3);
     const QColor base = Theme::uiAccentBlue();
     btn->setColors(Qt::white, Qt::white, Qt::white,
                    base, base.lighter(110), base.darker(115));
@@ -1293,7 +1294,7 @@ void ChatWindow::buildUi() {
     composerLayout->addWidget(typingLabel_);
 
     auto *inputRow = new QHBoxLayout();
-    inputRow->setSpacing(8);
+    inputRow->setSpacing(6);
 
     auto *attachBtn = composerIconSvg(QStringLiteral(":/mi/e2ee/ui/icons/paperclip.svg"), composer_);
     attachBtn->setFocusPolicy(Qt::NoFocus);
@@ -1341,8 +1342,8 @@ void ChatWindow::buildUi() {
                  Theme::uiTextMain().name(),
                  Theme::uiAccentBlue().name()));
     inputEdit_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    inputEdit_->setMinimumHeight(40);
-    inputEdit_->setMaximumHeight(72);
+    inputEdit_->setMinimumHeight(36);
+    inputEdit_->setMaximumHeight(64);
     inputEdit_->installEventFilter(this);
     inputRow->addWidget(inputEdit_, 1);
 
@@ -1368,7 +1369,7 @@ void ChatWindow::buildUi() {
     typingStopSendTimer_->setSingleShot(true);
     connect(typingStopSendTimer_, &QTimer::timeout, this, [this]() {
         if (!typingSent_ || isGroup_ || !backend_ || conversationId_.trimmed().isEmpty() ||
-            !typingAction_ || !typingAction_->isChecked()) {
+            !typingAction_ || !typingAction_->isChecked() || isStealthActive()) {
             typingSent_ = false;
             return;
         }
@@ -1396,7 +1397,7 @@ void ChatWindow::buildUi() {
     presencePingTimer_ = new QTimer(this);
     connect(presencePingTimer_, &QTimer::timeout, this, [this]() {
         if (isGroup_ || !backend_ || conversationId_.trimmed().isEmpty() ||
-            !presenceAction_ || !presenceAction_->isChecked()) {
+            !presenceAction_ || !presenceAction_->isChecked() || isStealthActive()) {
             return;
         }
         if (!isVisible() || isMinimized() || !isActiveWindow()) {
@@ -1408,7 +1409,7 @@ void ChatWindow::buildUi() {
 
     connect(inputEdit_, &QPlainTextEdit::textChanged, this, [this]() {
         if (isGroup_ || !backend_ || conversationId_.trimmed().isEmpty() ||
-            !typingAction_ || !typingAction_->isChecked()) {
+            !typingAction_ || !typingAction_->isChecked() || isStealthActive()) {
             return;
         }
         const QString content = inputEdit_->toPlainText();
@@ -1475,6 +1476,13 @@ void ChatWindow::buildUi() {
             return;
         }
         presencePingTimer_->stop();
+        if (isStealthActive()) {
+            if (!isGroup_ && backend_ && !conversationId_.trimmed().isEmpty()) {
+                QString err;
+                backend_->sendPresence(conversationId_, false, err);
+            }
+            return;
+        }
         if (!on || isGroup_ || !backend_ || conversationId_.trimmed().isEmpty()) {
             if (!isGroup_ && backend_ && !conversationId_.trimmed().isEmpty()) {
                 QString err;
@@ -1491,6 +1499,30 @@ void ChatWindow::buildUi() {
         QString err;
         backend_->sendPresence(conversationId_, true, err);
         setPresenceIndicator(true);
+    });
+    stealthAction_ = sendMenu_->addAction(
+        UiSettings::Tr(QStringLiteral("对该好友隐身"),
+                       QStringLiteral("Stealth for this chat")));
+    stealthAction_->setCheckable(true);
+    stealthAction_->setChecked(false);
+    stealthAction_->setToolTip(
+        UiSettings::Tr(QStringLiteral("不发送已读/输入/在线状态"),
+                       QStringLiteral("Hide read receipts, typing, and presence")));
+    connect(stealthAction_, &QAction::toggled, this, [this](bool on) {
+        const QString convId = conversationId_.trimmed();
+        if (convId.isEmpty() || isGroup_) {
+            if (stealthAction_) {
+                const QSignalBlocker blocker(stealthAction_);
+                stealthAction_->setChecked(false);
+            }
+            return;
+        }
+        if (on) {
+            stealthConversations_.insert(convId);
+        } else {
+            stealthConversations_.remove(convId);
+        }
+        applyStealthState();
     });
     exportEvidenceAction_ = sendMenu_->addAction(QStringLiteral("导出举报证据包..."));
     connect(exportEvidenceAction_, &QAction::triggered, this, &ChatWindow::exportEvidencePackage);
@@ -1647,6 +1679,7 @@ void ChatWindow::updateConversationUiState() {
     if (presenceAction_) {
         presenceAction_->setEnabled(hasConversation && !isGroup_);
     }
+    applyStealthState();
 
     if (!hasConversation) {
         setSearchActive(false);
@@ -2182,7 +2215,7 @@ void ChatWindow::appendIncomingMessage(const QString &sender, const QString &mes
         messageModel_->appendTextMessage(conversationId_, false, text, time, messageId,
                                          MessageItem::Status::Sent, sender);
     }
-    if (!isGroup_ && readReceiptAction_ && readReceiptAction_->isChecked() &&
+    if (!isGroup_ && !isStealthActive() && readReceiptAction_ && readReceiptAction_->isChecked() &&
         backend_ && !messageId.trimmed().isEmpty()) {
         if (!readReceiptSent_.contains(messageId)) {
             readReceiptSent_.insert(messageId);
@@ -2196,13 +2229,59 @@ void ChatWindow::appendIncomingSticker(const QString &sender, const QString &mes
                                       const QString &stickerId, const QDateTime &time) {
     messageModel_->appendStickerMessage(conversationId_, false, stickerId, time, messageId,
                                         MessageItem::Status::Sent, sender);
-    if (!isGroup_ && readReceiptAction_ && readReceiptAction_->isChecked() &&
+    if (!isGroup_ && !isStealthActive() && readReceiptAction_ && readReceiptAction_->isChecked() &&
         backend_ && !messageId.trimmed().isEmpty()) {
         if (!readReceiptSent_.contains(messageId)) {
             readReceiptSent_.insert(messageId);
             QString ignore;
             backend_->sendReadReceipt(conversationId_, messageId, ignore);
         }
+    }
+}
+
+bool ChatWindow::isStealthActive() const {
+    const QString convId = conversationId_.trimmed();
+    return !convId.isEmpty() && !isGroup_ && stealthConversations_.contains(convId);
+}
+
+void ChatWindow::applyStealthState() {
+    const QString convId = conversationId_.trimmed();
+    const bool hasConversation = !convId.isEmpty();
+    const bool allowStealth = hasConversation && !isGroup_;
+    const bool stealth = allowStealth && stealthConversations_.contains(convId);
+
+    if (stealthAction_) {
+        const QSignalBlocker blocker(stealthAction_);
+        stealthAction_->setEnabled(allowStealth);
+        stealthAction_->setChecked(stealth);
+    }
+    if (readReceiptAction_) {
+        readReceiptAction_->setEnabled(allowStealth && !stealth);
+    }
+    if (typingAction_) {
+        typingAction_->setEnabled(allowStealth && !stealth);
+    }
+    if (presenceAction_) {
+        presenceAction_->setEnabled(allowStealth && !stealth);
+    }
+    if (!stealth) {
+        return;
+    }
+
+    if (typingStopSendTimer_) {
+        typingStopSendTimer_->stop();
+    }
+    if (typingSent_ && backend_) {
+        QString err;
+        backend_->sendTyping(convId, false, err);
+        typingSent_ = false;
+    }
+    if (presencePingTimer_) {
+        presencePingTimer_->stop();
+    }
+    if (backend_) {
+        QString err;
+        backend_->sendPresence(convId, false, err);
     }
 }
 
