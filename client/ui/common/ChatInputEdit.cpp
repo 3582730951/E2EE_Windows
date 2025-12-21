@@ -40,7 +40,7 @@ struct AbbrBoostEntry {
 };
 
 constexpr int kMaxPinyinCandidatesPerKey = 5;
-constexpr int kMaxAbbrInputLength = 6;
+constexpr int kMaxAbbrInputLength = 10;
 constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
 constexpr const char kPinyinAbbrDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin_short.dat";
 constexpr const char kEnglishDictResourcePath[] = ":/mi/e2ee/ui/ime/english.dat";
@@ -880,14 +880,6 @@ QString SegmentFallback(const QString &pinyin) {
     return chunks.join(QString());
 }
 
-bool HasPrefix(const QVector<QString> &keys, const QString &prefix) {
-    if (prefix.isEmpty()) {
-        return false;
-    }
-    auto it = std::lower_bound(keys.begin(), keys.end(), prefix);
-    return it != keys.end() && it->startsWith(prefix);
-}
-
 void AppendCandidate(QStringList &list, const QString &candidate) {
     if (candidate.isEmpty() || list.contains(candidate)) {
         return;
@@ -903,13 +895,8 @@ QStringList BuildCandidates(const QString &pinyin) {
     if (it != dict.constEnd()) {
         list = it.value();
     }
-    const QString fallback = SegmentFallback(pinyin);
-    if (!fallback.isEmpty()) {
-        AppendCandidate(list, fallback);
-    }
     const bool allowAbbr = pinyin.size() <= kMaxAbbrInputLength;
-    const bool hasFullPrefix = HasPrefix(PinyinKeys(), pinyin);
-    if (allowAbbr && !hasFullPrefix) {
+    if (allowAbbr) {
         const auto abbrIt = abbrDict.constFind(pinyin);
         if (abbrIt != abbrDict.constEnd()) {
             for (const auto &cand : abbrIt.value()) {
@@ -919,6 +906,10 @@ QStringList BuildCandidates(const QString &pinyin) {
                 }
             }
         }
+    }
+    const QString fallback = SegmentFallback(pinyin);
+    if (!fallback.isEmpty()) {
+        AppendCandidate(list, fallback);
     }
     if (!pinyin.isEmpty() && list.size() < 5) {
         const auto &keys = PinyinKeys();
@@ -941,7 +932,7 @@ QStringList BuildCandidates(const QString &pinyin) {
             }
         }
     }
-    if (allowAbbr && !hasFullPrefix && list.size() < 5) {
+    if (allowAbbr && list.size() < 5) {
         const auto &abbrKeys = PinyinAbbrKeys();
         auto it = std::lower_bound(abbrKeys.begin(), abbrKeys.end(), pinyin);
         for (; it != abbrKeys.end(); ++it) {

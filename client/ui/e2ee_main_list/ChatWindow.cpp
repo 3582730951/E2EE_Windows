@@ -97,6 +97,15 @@ constexpr int kComposerInputPaddingV = 6;
 constexpr int kComposerInputMinHeight = 36;
 constexpr int kComposerInputMaxHeight = 220;
 
+bool HasWhitespace(const QString &text) {
+    for (const QChar &ch : text) {
+        if (ch.isSpace()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool LooksLikeImageFile(const QString &nameOrPath) {
     const QString lower = nameOrPath.trimmed().toLower();
     return lower.endsWith(QStringLiteral(".png")) || lower.endsWith(QStringLiteral(".jpg")) ||
@@ -1709,9 +1718,14 @@ void ChatWindow::updateInputHeight() {
     const QMargins margins = inputEdit_->inputViewportMargins();
     const int textWidth = qMax(1, viewportWidth);
     QTextDocument *doc = inputEdit_->document();
+    const QString text = inputEdit_->toPlainText();
+    QTextOption option = doc->defaultTextOption();
+    option.setWrapMode(HasWhitespace(text) ? QTextOption::WrapAtWordBoundaryOrAnywhere
+                                           : QTextOption::WrapAnywhere);
+    doc->setDefaultTextOption(option);
     doc->setTextWidth(textWidth);
     qreal docHeight = doc->size().height();
-    if (inputEdit_->toPlainText().isEmpty()) {
+    if (text.isEmpty()) {
         docHeight = QFontMetrics(inputEdit_->font()).lineSpacing();
     }
     const int target =
