@@ -282,12 +282,17 @@ jobs:
         run: |
           cmake --build build/client --target mi_e2ee_kt_keygen
           cmake --build build/client --target mi_e2ee_kt_pubinfo
+          cmake --build build/client --target mi_e2ee_third_party_audit
 
       - name: Download kt keys
         uses: actions/download-artifact@v4
         with:
           name: kt-keys
           path: kt-keys
+
+      - name: Verify third-party lock
+        run: |
+          .\build\client\server_build\tools\mi_e2ee_third_party_audit.exe --lock third_party/third_party.lock --verify
 
       - name: Deploy Qt runtime
         run: |
