@@ -1058,6 +1058,11 @@ ChatInputEdit::ChatInputEdit(QWidget *parent) : QPlainTextEdit(parent) {
             updateEnglishSuggestions();
         }
     });
+#if defined(MI_UI_ENABLE_RIME)
+    if (imeEnabled_ && inputMode_ == InputMode::Chinese) {
+        ensureImeSession();
+    }
+#endif
 }
 
 ChatInputEdit::~ChatInputEdit() {
@@ -1080,6 +1085,10 @@ bool ChatInputEdit::isNativeComposing() const {
 
 bool ChatInputEdit::imeEnabled() const {
     return imeEnabled_;
+}
+
+bool ChatInputEdit::usesThirdPartyIme() const {
+    return usingThirdParty_;
 }
 
 ChatInputEdit::InputMode ChatInputEdit::inputMode() const {
@@ -1243,6 +1252,9 @@ void ChatInputEdit::applyInputMode(InputMode mode) {
     cancelEnglishSuggestions();
     if (imeEnabled_ && inputMode_ == InputMode::English) {
         updateEnglishSuggestions();
+    }
+    if (imeEnabled_ && inputMode_ == InputMode::Chinese) {
+        ensureImeSession();
     }
     emit inputModeChanged(inputMode_ == InputMode::Chinese);
 }
@@ -1494,6 +1506,11 @@ void ChatInputEdit::commitCandidate(int index) {
     cursor.insertText(candidate);
     cursor.endEditBlock();
     setTextCursor(cursor);
+#if defined(MI_UI_ENABLE_RIME)
+    if (usingThirdParty_ && imeSession_) {
+        ImePluginLoader::instance().commitCandidate(imeSession_, safeIndex);
+    }
+#endif
     composing_ = false;
     composition_.clear();
     candidates_.clear();
@@ -1523,6 +1540,11 @@ void ChatInputEdit::cancelComposition(bool keepText) {
     composition_.clear();
     candidates_.clear();
     compLength_ = 0;
+#if defined(MI_UI_ENABLE_RIME)
+    if (usingThirdParty_ && imeSession_) {
+        ImePluginLoader::instance().clearComposition(imeSession_);
+    }
+#endif
     hidePopup();
 }
 
@@ -1536,6 +1558,11 @@ void ChatInputEdit::ensureImeSession() {
 #if defined(MI_UI_ENABLE_RIME)
     if (!imeSession_) {
         imeSession_ = ImePluginLoader::instance().createSession();
+    }
+    const bool active = (imeSession_ != nullptr) && ImePluginLoader::instance().available();
+    if (usingThirdParty_ != active) {
+        usingThirdParty_ = active;
+        emit imeSourceChanged(usingThirdParty_);
     }
 #endif
 }

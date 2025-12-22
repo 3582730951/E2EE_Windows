@@ -33,6 +33,7 @@ public:
     void setEmbeddedMode(bool embedded);
     void focusMessageInput();
     bool isChineseInputMode() const;
+    bool isThirdPartyImeActive() const;
 
     enum class FileTransferState : int {
         None = 0,
@@ -62,6 +63,7 @@ public:
 
 signals:
     void inputModeChanged(bool chinese);
+    void imeSourceChanged(bool thirdParty);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

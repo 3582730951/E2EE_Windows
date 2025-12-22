@@ -44,6 +44,7 @@ private slots:
     void handleNotificationCenter();
     void handleSearchTextChanged(const QString &text);
     void updateInputModeLabel(bool chinese);
+    void updateImeSourceLabel(bool thirdParty);
     void handleIncomingMessage(const QString &convId, bool isGroup, const QString &sender,
                                const QString &messageId, const QString &text, bool isFile, qint64 fileSize);
     void handleIncomingSticker(const QString &convId, const QString &sender,
@@ -116,6 +117,7 @@ private:
     BackendAdapter *backend_{nullptr};
     QToolButton *statusBtn_{nullptr};
     QLabel *inputModeLabel_{nullptr};
+    QLabel *imeSourceLabel_{nullptr};
     QMenu *statusMenu_{nullptr};
     QActionGroup *statusGroup_{nullptr};
     QAction *statusOnlineAction_{nullptr};

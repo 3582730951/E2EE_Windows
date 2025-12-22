@@ -14,6 +14,8 @@ public:
     void *createSession();
     void destroySession(void *session);
     QStringList queryCandidates(void *session, const QString &input, int maxCandidates);
+    bool commitCandidate(void *session, int index);
+    void clearComposition(void *session);
 
 private:
     ImePluginLoader();
@@ -37,6 +39,8 @@ private:
     using CreateSessionFn = void *(*)();
     using DestroySessionFn = void (*)(void *);
     using GetCandidatesFn = int (*)(void *, const char *, char *, size_t, int);
+    using CommitCandidateFn = bool (*)(void *, int);
+    using ClearCompositionFn = void (*)(void *);
 
     ApiVersionFn apiVersion_{nullptr};
     InitializeFn initialize_{nullptr};
@@ -44,6 +48,8 @@ private:
     CreateSessionFn createSession_{nullptr};
     DestroySessionFn destroySession_{nullptr};
     GetCandidatesFn getCandidates_{nullptr};
+    CommitCandidateFn commitCandidate_{nullptr};
+    ClearCompositionFn clearComposition_{nullptr};
 
     QByteArray sharedDirBytes_;
     QByteArray userDirBytes_;

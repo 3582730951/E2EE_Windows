@@ -262,4 +262,36 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
     }
     return written;
 }
+
+MI_IME_EXPORT bool MiImeCommitCandidate(void *session, int index) {
+    if (!gApi || !session || index < 0) {
+        return false;
+    }
+    const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
+    Bool selected = False;
+    if (gApi->select_candidate_on_current_page) {
+        selected = gApi->select_candidate_on_current_page(id, static_cast<size_t>(index));
+    } else if (gApi->select_candidate) {
+        selected = gApi->select_candidate(id, static_cast<size_t>(index));
+    }
+    if (!selected) {
+        return false;
+    }
+    Bool committed = False;
+    if (gApi->commit_composition) {
+        committed = gApi->commit_composition(id);
+    }
+    if (gApi->clear_composition) {
+        gApi->clear_composition(id);
+    }
+    return committed == True;
+}
+
+MI_IME_EXPORT void MiImeClearComposition(void *session) {
+    if (!gApi || !session || !gApi->clear_composition) {
+        return;
+    }
+    const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
+    gApi->clear_composition(id);
+}
 }  // extern "C"

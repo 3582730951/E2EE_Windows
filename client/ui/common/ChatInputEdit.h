@@ -19,6 +19,7 @@ public:
     bool isComposing() const;
     bool isNativeComposing() const;
     bool imeEnabled() const;
+    bool usesThirdPartyIme() const;
     void setImeEnabled(bool enabled);
     bool commitDefaultCandidate();
     InputMode inputMode() const;
@@ -29,6 +30,7 @@ public:
 
 signals:
     void inputModeChanged(bool chinese);
+    void imeSourceChanged(bool thirdParty);
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
@@ -79,4 +81,5 @@ private:
     int englishLength_{0};
     CandidatePopup *popup_{nullptr};
     void *imeSession_{nullptr};
+    bool usingThirdParty_{false};
 };

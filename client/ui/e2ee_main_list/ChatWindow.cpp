@@ -898,6 +898,13 @@ bool ChatWindow::isChineseInputMode() const {
     return inputEdit_->isChineseMode();
 }
 
+bool ChatWindow::isThirdPartyImeActive() const {
+    if (!inputEdit_) {
+        return false;
+    }
+    return inputEdit_->usesThirdPartyIme();
+}
+
 void ChatWindow::setEmbeddedMode(bool embedded) {
     embeddedMode_ = embedded;
     if (windowDownBtn_) {
@@ -1370,7 +1377,11 @@ void ChatWindow::buildUi() {
     connect(inputEdit_, &ChatInputEdit::inputModeChanged, this, [this](bool chinese) {
         emit inputModeChanged(chinese);
     });
+    connect(inputEdit_, &ChatInputEdit::imeSourceChanged, this, [this](bool thirdParty) {
+        emit imeSourceChanged(thirdParty);
+    });
     emit inputModeChanged(inputEdit_->isChineseMode());
+    emit imeSourceChanged(inputEdit_->usesThirdPartyIme());
     updateInputHeight();
     inputRow->addWidget(inputEdit_, 1);
 

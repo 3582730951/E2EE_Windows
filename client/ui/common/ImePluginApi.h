@@ -13,7 +13,7 @@
 #define MI_IME_EXPORT
 #endif
 
-constexpr int kMiImeApiVersion = 1;
+constexpr int kMiImeApiVersion = 2;
 
 extern "C" {
 MI_IME_EXPORT int MiImeApiVersion();
@@ -26,4 +26,6 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
                                      char *out_buffer,
                                      size_t out_size,
                                      int max_candidates);
+MI_IME_EXPORT bool MiImeCommitCandidate(void *session, int index);
+MI_IME_EXPORT void MiImeClearComposition(void *session);
 }

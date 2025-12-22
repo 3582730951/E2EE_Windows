@@ -57,6 +57,8 @@ void ImePluginLoader::reset() {
     createSession_ = nullptr;
     destroySession_ = nullptr;
     getCandidates_ = nullptr;
+    commitCandidate_ = nullptr;
+    clearComposition_ = nullptr;
     sharedDirBytes_.clear();
     userDirBytes_.clear();
 }
@@ -89,8 +91,10 @@ bool ImePluginLoader::ensureLoaded() {
     createSession_ = reinterpret_cast<CreateSessionFn>(library_->resolve("MiImeCreateSession"));
     destroySession_ = reinterpret_cast<DestroySessionFn>(library_->resolve("MiImeDestroySession"));
     getCandidates_ = reinterpret_cast<GetCandidatesFn>(library_->resolve("MiImeGetCandidates"));
+    commitCandidate_ = reinterpret_cast<CommitCandidateFn>(library_->resolve("MiImeCommitCandidate"));
+    clearComposition_ = reinterpret_cast<ClearCompositionFn>(library_->resolve("MiImeClearComposition"));
     if (!apiVersion_ || !initialize_ || !shutdown_ || !createSession_ ||
-        !destroySession_ || !getCandidates_) {
+        !destroySession_ || !getCandidates_ || !commitCandidate_ || !clearComposition_) {
         reset();
         return false;
     }
@@ -163,6 +167,20 @@ QStringList ImePluginLoader::queryCandidates(void *session,
         items = items.mid(0, maxCandidates);
     }
     return items;
+}
+
+bool ImePluginLoader::commitCandidate(void *session, int index) {
+    if (!ensureInitialized() || !session || !commitCandidate_) {
+        return false;
+    }
+    return commitCandidate_(session, index);
+}
+
+void ImePluginLoader::clearComposition(void *session) {
+    if (!ensureInitialized() || !session || !clearComposition_) {
+        return;
+    }
+    clearComposition_(session);
 }
 
 bool ImePluginLoader::copyResourceIfMissing(const QString &resourcePath,

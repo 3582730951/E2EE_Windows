@@ -504,6 +504,11 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     inputModeLabel_->setTextFormat(Qt::PlainText);
     updateInputModeLabel(true);
     titleLayout->addWidget(inputModeLabel_);
+    titleLayout->addSpacing(8);
+    imeSourceLabel_ = new QLabel(titleBar);
+    imeSourceLabel_->setTextFormat(Qt::PlainText);
+    updateImeSourceLabel(false);
+    titleLayout->addWidget(imeSourceLabel_);
     titleLayout->addStretch();
     auto *minBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/minimize.svg"), titleBar, Tokens::textSub());
     auto *funcBtn = titleButtonSvg(QStringLiteral(":/mi/e2ee/ui/icons/maximize.svg"), titleBar, Tokens::textSub());
@@ -1026,6 +1031,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                    false);
     connect(embeddedChat_, &ChatWindow::inputModeChanged, this, &MainListWindow::updateInputModeLabel);
     updateInputModeLabel(embeddedChat_->isChineseInputMode());
+    connect(embeddedChat_, &ChatWindow::imeSourceChanged, this, &MainListWindow::updateImeSourceLabel);
+    updateImeSourceLabel(embeddedChat_->isThirdPartyImeActive());
     setTabOrder(listView_, embeddedChat_);
     splitter->addWidget(embeddedChat_);
     splitter->setStretchFactor(0, 0);
@@ -1419,6 +1426,17 @@ void MainListWindow::updateInputModeLabel(bool chinese) {
     inputModeLabel_->setText(chinese ? QStringLiteral("当前输入:中")
                                      : QStringLiteral("当前输入:英"));
     inputModeLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
+                                        .arg(color.name()));
+}
+
+void MainListWindow::updateImeSourceLabel(bool thirdParty) {
+    if (!imeSourceLabel_) {
+        return;
+    }
+    const QColor color = thirdParty ? Theme::accentGreen() : Theme::uiTextMuted();
+    imeSourceLabel_->setText(thirdParty ? QStringLiteral("输入法使用:第三方库")
+                                        : QStringLiteral("输入法使用:内置库"));
+    imeSourceLabel_->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;")
                                        .arg(color.name()));
 }
 
