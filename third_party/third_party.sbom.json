@@ -96,6 +96,202 @@
     },
     {
       "type": "file",
+      "name": "rime-luna-pinyin-schema",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "df48caa2901ca04d79978af926c79b118b3e6e5b5cf97b9d8c9b9d67d748a744" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/luna_pinyin.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-luna-pinyin-mi-schema",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "dce04063d8852f38cace49ad7643e038d6a3a8380f83c3040b7c40f3602e263a" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/mi_pinyin.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-prelude-default",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "b9de0cd87b77c4a594f35e5882713bdf7451e48f43d5acf7f0ca5013c5b2d7c2" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/default.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-prelude-key-bindings",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "5c484257cccbab899bc874dfeb9257ce7190c99fee3abc33321767c8dac56af9" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/key_bindings.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-prelude-punctuation",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "d6f89592149098f0a2d0ed3e5c83f49adb6226cdf1d967b0bc0d293f4e5c496a" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/punctuation.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-prelude-symbols",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "f12ee3a61bb9739c29fe6ba12890c5c9c50ca38f63ce9c85e1a16e223ae0b04f" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/symbols.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-stroke-schema",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "06f680cf7c9d9a69948681ee25e9f6aeccfde4d8d590f93e179d4c4b3caee879" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/stroke.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-stroke-dict",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "e897ed2e3d1da8d6e6a347310165374bebf36b9710afd789f5e31abb4da0fe76" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/stroke.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-dict",
+      "version": "2024-11-27",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "5914ec2eb9b2fbd4c175a7cc3c59410fd17d3ace3a3164b45be4cb65ca2d344f" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-cn-8105",
+      "version": "2025-12-01",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "1f4669905d71fa192b26e1a254b03b4c314366bd1228c6a88dd5e4bf7e0a33dd" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/8105.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-cn-base",
+      "version": "2025-12-13",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "9e835d7b87449948e0008dd53a7b153cb7d1986fecab35cb394dd4f718e1468d" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/base.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-cn-ext",
+      "version": "2025-12-13",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "dbcd39d01092e4a9ecf6764bd8a9d9180406a99e8190b27cec8cc07cecf5b781" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/ext.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-cn-tencent",
+      "version": "2025-12-13",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "e3d119a4e067a31cc15d07ea3fcfc66ba8c19d10d15c882ad8292c7c34618e22" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/tencent.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-cn-others",
+      "version": "2025-12-13",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "63b1fff42199b973b652cd47d65cd0fb55964cc8e7f3fcd9a31a3c04096c1466" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/others.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
       "name": "librime",
       "version": "snapshot",
       "licenses": [

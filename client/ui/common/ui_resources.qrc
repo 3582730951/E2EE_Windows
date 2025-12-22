@@ -31,8 +31,20 @@
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>
         <file alias="ime/english.dat">../data/ime_english.dat</file>
         <file alias="ime/rime/default.yaml">../data/rime/default.yaml</file>
+        <file alias="ime/rime/key_bindings.yaml">../data/rime/key_bindings.yaml</file>
+        <file alias="ime/rime/punctuation.yaml">../data/rime/punctuation.yaml</file>
+        <file alias="ime/rime/symbols.yaml">../data/rime/symbols.yaml</file>
         <file alias="ime/rime/pinyin.yaml">../data/rime/pinyin.yaml</file>
         <file alias="ime/rime/luna_pinyin.dict.yaml">../data/rime/luna_pinyin.dict.yaml</file>
+        <file alias="ime/rime/luna_pinyin.schema.yaml">../data/rime/luna_pinyin.schema.yaml</file>
+        <file alias="ime/rime/stroke.schema.yaml">../data/rime/stroke.schema.yaml</file>
+        <file alias="ime/rime/stroke.dict.yaml">../data/rime/stroke.dict.yaml</file>
         <file alias="ime/rime/mi_pinyin.schema.yaml">../data/rime/mi_pinyin.schema.yaml</file>
+        <file alias="ime/rime/rime_ice.dict.yaml">../data/rime/rime_ice.dict.yaml</file>
+        <file alias="ime/rime/cn_dicts/8105.dict.yaml">../data/rime/cn_dicts/8105.dict.yaml</file>
+        <file alias="ime/rime/cn_dicts/base.dict.yaml">../data/rime/cn_dicts/base.dict.yaml</file>
+        <file alias="ime/rime/cn_dicts/ext.dict.yaml">../data/rime/cn_dicts/ext.dict.yaml</file>
+        <file alias="ime/rime/cn_dicts/tencent.dict.yaml">../data/rime/cn_dicts/tencent.dict.yaml</file>
+        <file alias="ime/rime/cn_dicts/others.dict.yaml">../data/rime/cn_dicts/others.dict.yaml</file>
     </qresource>
 </RCC>

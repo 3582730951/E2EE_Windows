@@ -1,40 +1,20 @@
+# Rime schema
+# encoding: utf-8
+
+__include: luna_pinyin.schema:/
+
 schema:
   schema_id: mi_pinyin
-  name: MI Pinyin
-  version: "1.0"
-
-switches:
-  - name: ascii_mode
-    reset: 0
-    states: [ CN, EN ]
-
-engine:
-  processors:
-    - ascii_composer
-    - speller
-    - selector
-    - navigator
-    - express_editor
-  segmentors:
-    - ascii_segmentor
-    - matcher
-    - abc_segmentor
-    - fallback_segmentor
-  translators:
-    - script_translator
-
-speller:
-  alphabet: zyxwvutsrqponmlkjihgfedcba
-  delimiter: " '"
-  algebra:
-    __patch:
-      - pinyin:/abbreviation
-      - pinyin:/spelling_correction
-      - pinyin:/key_correction
+  name: 米拼音
+  version: '1.1'
+  description: |
+    基于朙月拼音，挂载雾凇词库，默认启用简拼/联想/整句。
 
 translator:
-  dictionary: luna_pinyin
-  enable_user_dict: true
-  enable_sentence: true
+  dictionary: rime_ice
   enable_completion: true
-  initial_quality: 1
+  enable_sentence: true
+  enable_user_dict: true
+  enable_word_completion: true
+  initial_quality: 1.25
+  sentence_over_completion: true

@@ -26,7 +26,7 @@ private:
     bool ensureLoaded();
     bool ensureInitialized();
     bool ensureRimeData(QString &sharedDir, QString &userDir);
-    bool copyResourceIfMissing(const QString &resourcePath, const QString &targetPath);
+    bool copyResourceIfMissing(const QString &resourcePath, const QString &targetPath, bool overwrite = false);
     void reset();
 
     class QLibrary *library_{nullptr};

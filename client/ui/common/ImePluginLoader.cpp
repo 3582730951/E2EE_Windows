@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QLibrary>
 #include <QStandardPaths>
 
@@ -184,9 +185,16 @@ void ImePluginLoader::clearComposition(void *session) {
 }
 
 bool ImePluginLoader::copyResourceIfMissing(const QString &resourcePath,
-                                            const QString &targetPath) {
-    if (QFile::exists(targetPath)) {
+                                            const QString &targetPath,
+                                            bool overwrite) {
+    if (!overwrite && QFile::exists(targetPath)) {
         return true;
+    }
+    const QFileInfo targetInfo(targetPath);
+    if (!targetInfo.dir().exists()) {
+        if (!QDir().mkpath(targetInfo.path())) {
+            return false;
+        }
     }
     QFile in(resourcePath);
     if (!in.exists()) {
@@ -196,7 +204,7 @@ bool ImePluginLoader::copyResourceIfMissing(const QString &resourcePath,
         return false;
     }
     QFile out(targetPath);
-    if (!out.open(QIODevice::WriteOnly)) {
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         return false;
     }
     const QByteArray data = in.readAll();
@@ -219,13 +227,34 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
     if (!QDir().mkpath(sharedDir) || !QDir().mkpath(userDir)) {
         return false;
     }
-    const QStringList files = {
+    const QStringList forcedFiles = {
         QStringLiteral("default.yaml"),
-        QStringLiteral("pinyin.yaml"),
-        QStringLiteral("luna_pinyin.dict.yaml"),
+        QStringLiteral("key_bindings.yaml"),
+        QStringLiteral("punctuation.yaml"),
+        QStringLiteral("symbols.yaml"),
+        QStringLiteral("luna_pinyin.schema.yaml"),
+        QStringLiteral("stroke.schema.yaml"),
         QStringLiteral("mi_pinyin.schema.yaml"),
     };
-    for (const auto &file : files) {
+    for (const auto &file : forcedFiles) {
+        const QString src = RimeResourcePath(file);
+        const QString dst = sharedDir + QLatin1Char('/') + file;
+        if (!copyResourceIfMissing(src, dst, true)) {
+            return false;
+        }
+    }
+    const QStringList optionalFiles = {
+        QStringLiteral("pinyin.yaml"),
+        QStringLiteral("luna_pinyin.dict.yaml"),
+        QStringLiteral("stroke.dict.yaml"),
+        QStringLiteral("rime_ice.dict.yaml"),
+        QStringLiteral("cn_dicts/8105.dict.yaml"),
+        QStringLiteral("cn_dicts/base.dict.yaml"),
+        QStringLiteral("cn_dicts/ext.dict.yaml"),
+        QStringLiteral("cn_dicts/tencent.dict.yaml"),
+        QStringLiteral("cn_dicts/others.dict.yaml"),
+    };
+    for (const auto &file : optionalFiles) {
         const QString src = RimeResourcePath(file);
         const QString dst = sharedDir + QLatin1Char('/') + file;
         if (!copyResourceIfMissing(src, dst)) {
