@@ -221,8 +221,28 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
         }
         return 0;
     }
-    if (!gApi->set_input || !gApi->set_input(id, input)) {
-        return 0;
+    bool fed = false;
+    if (gApi->process_key) {
+        if (gApi->clear_composition) {
+            gApi->clear_composition(id);
+        }
+        fed = true;
+        for (const unsigned char *p = reinterpret_cast<const unsigned char *>(input);
+             *p != '\0';
+             ++p) {
+            if (!gApi->process_key(id, static_cast<int>(*p), 0)) {
+                fed = false;
+                break;
+            }
+        }
+    }
+    if (!fed) {
+        if (gApi->clear_composition) {
+            gApi->clear_composition(id);
+        }
+        if (!gApi->set_input || !gApi->set_input(id, input)) {
+            return 0;
+        }
     }
     RIME_STRUCT(RimeContext, ctx);
     if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
