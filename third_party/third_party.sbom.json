@@ -68,6 +68,48 @@
     },
     {
       "type": "file",
+      "name": "rime-luna-pinyin-yaml",
+      "version": "2024.02.10",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "38405bbec72fa9056c892f02ced8a6979ea3256a85484492d25586ad128f3ef4" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/luna_pinyin.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-luna-pinyin-config",
+      "version": "2024.02.10",
+      "licenses": [
+        { "license": { "id": "LGPL-3.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "22915339d6505d8911edd929b055145235eb4f66ee6d4dbdedb832e31be40c35" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/pinyin.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "librime",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "BSD-3-Clause" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/ime_rime/third_party/rime_api.h" }
+      ]
+    },
+    {
+      "type": "file",
       "name": "word-list",
       "version": "snapshot",
       "licenses": [

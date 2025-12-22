@@ -5,4 +5,7 @@ pqclean_mlkem768_clean|snapshot|unknown|pqclean_mlkem768_clean|9a9ed8cce6732c75a
 pqclean_mldsa65_clean|snapshot|unknown|pqclean_mldsa65_clean|00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd
 rime-luna-pinyin|2024.02.10|LGPL-3.0|../client/ui/data/ime_pinyin.dat|405355580591bc45e7973aa69937e9044ad579ef1d2b99394570387e2f84807b
 rime-luna-pinyin-abbr|2024.02.10|LGPL-3.0|../client/ui/data/ime_pinyin_short.dat|6bc56357ace03f1e7c8f58a9e030ec061da63bc4a136b911a912c8e3a633822b
+rime-luna-pinyin-yaml|2024.02.10|LGPL-3.0|../client/ui/data/rime/luna_pinyin.dict.yaml|38405bbec72fa9056c892f02ced8a6979ea3256a85484492d25586ad128f3ef4
+rime-luna-pinyin-config|2024.02.10|LGPL-3.0|../client/ui/data/rime/pinyin.yaml|22915339d6505d8911edd929b055145235eb4f66ee6d4dbdedb832e31be40c35
+librime|snapshot|BSD-3-Clause|../client/ui/ime_rime/third_party/rime_api.h|6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424
 word-list|snapshot|MIT|../client/ui/data/ime_english.dat|18257e34e5b70ce92548f65d359d2f249fadf8b8a2231524c1242284354ac293

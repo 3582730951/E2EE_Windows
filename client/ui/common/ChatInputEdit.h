@@ -58,6 +58,7 @@ private:
     void hidePopup();
     void updatePopupPosition();
     void ensurePopup();
+    void ensureImeSession();
 
     bool imeEnabled_{true};
     bool composing_{false};
@@ -77,4 +78,5 @@ private:
     int englishStart_{0};
     int englishLength_{0};
     CandidatePopup *popup_{nullptr};
+    void *imeSession_{nullptr};
 };

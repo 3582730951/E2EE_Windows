@@ -20,6 +20,7 @@
 
 #include <algorithm>
 
+#include "ImePluginLoader.h"
 #include "Theme.h"
 
 namespace {
@@ -1061,6 +1062,12 @@ ChatInputEdit::ChatInputEdit(QWidget *parent) : QPlainTextEdit(parent) {
 
 ChatInputEdit::~ChatInputEdit() {
     gInputEdits.remove(this);
+#if defined(MI_UI_ENABLE_RIME)
+    if (imeSession_) {
+        ImePluginLoader::instance().destroySession(imeSession_);
+        imeSession_ = nullptr;
+    }
+#endif
 }
 
 bool ChatInputEdit::isComposing() const {
@@ -1362,7 +1369,22 @@ void ChatInputEdit::updateCompositionText() {
 }
 
 void ChatInputEdit::updateCandidates() {
-    candidates_ = BuildCandidates(composition_);
+    QStringList next = BuildCandidates(composition_);
+#if defined(MI_UI_ENABLE_RIME)
+    if (!composition_.isEmpty()) {
+        ensureImeSession();
+        if (imeSession_) {
+            const QStringList rime =
+                ImePluginLoader::instance().queryCandidates(imeSession_,
+                                                           composition_,
+                                                           kMaxPinyinCandidatesPerKey);
+            if (!rime.isEmpty()) {
+                next = rime;
+            }
+        }
+    }
+#endif
+    candidates_ = next;
     if (candidateIndex_ >= candidates_.size()) {
         candidateIndex_ = 0;
     }
@@ -1508,6 +1530,14 @@ void ChatInputEdit::ensurePopup() {
     if (!popup_) {
         popup_ = new CandidatePopup(this);
     }
+}
+
+void ChatInputEdit::ensureImeSession() {
+#if defined(MI_UI_ENABLE_RIME)
+    if (!imeSession_) {
+        imeSession_ = ImePluginLoader::instance().createSession();
+    }
+#endif
 }
 
 void ChatInputEdit::showPopup() {

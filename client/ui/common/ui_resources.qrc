@@ -30,5 +30,9 @@
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>
         <file alias="ime/english.dat">../data/ime_english.dat</file>
+        <file alias="ime/rime/default.yaml">../data/rime/default.yaml</file>
+        <file alias="ime/rime/pinyin.yaml">../data/rime/pinyin.yaml</file>
+        <file alias="ime/rime/luna_pinyin.dict.yaml">../data/rime/luna_pinyin.dict.yaml</file>
+        <file alias="ime/rime/mi_pinyin.schema.yaml">../data/rime/mi_pinyin.schema.yaml</file>
     </qresource>
 </RCC>

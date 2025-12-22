@@ -17,6 +17,9 @@ set(UI_COMMON_SOURCES
     common/ChatInputEdit.h
     common/FramelessWindowBase.cpp
     common/IconButton.cpp
+    common/ImePluginApi.h
+    common/ImePluginLoader.cpp
+    common/ImePluginLoader.h
     common/OverlayWidget.cpp
     common/SecureClipboard.cpp
     common/SecureClipboard.h
@@ -35,6 +38,12 @@ target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets Qt6::Svg)
 target_compile_definitions(mi_ui_common PUBLIC
     UI_REF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/ref"
 )
+
+option(MI_UI_ENABLE_RIME "Enable librime IME plugin" ON)
+if(MI_UI_ENABLE_RIME)
+    target_compile_definitions(mi_ui_common PUBLIC MI_UI_ENABLE_RIME)
+    add_subdirectory(ime_rime)
+endif()
 
 function(copy_ref_images target_name)
     set(REF_DIR "${UI_ROOT}/../assets/ref")
@@ -63,6 +72,14 @@ function(add_ui_executable target_name)
     add_executable(${target_name} ${ARGN})
     target_link_libraries(${target_name} PRIVATE mi_ui_common Qt6::Widgets)
     copy_ref_images(${target_name})
+    if(TARGET mi_ime_rime)
+        add_dependencies(${target_name} mi_ime_rime)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:mi_ime_rime>"
+                "$<TARGET_FILE_DIR:${target_name}>/$<TARGET_FILE_NAME:mi_ime_rime>"
+        )
+    endif()
     if (COMMAND mi_copy_msvc_runtime)
         mi_copy_msvc_runtime(${target_name})
     endif()

@@ -1,0 +1,4 @@
+config_version: "1.0"
+
+schema_list:
+  - schema: mi_pinyin
