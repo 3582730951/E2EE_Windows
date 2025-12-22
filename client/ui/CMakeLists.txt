@@ -79,6 +79,16 @@ function(add_ui_executable target_name)
                 "$<TARGET_FILE:mi_ime_rime>"
                 "$<TARGET_FILE_DIR:${target_name}>/$<TARGET_FILE_NAME:mi_ime_rime>"
         )
+        if(MI_UI_RIME_DOWNLOAD AND WIN32)
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND}
+                    -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:${target_name}>
+                    -DRIME_VERSION=${MI_UI_RIME_VERSION}
+                    -DRIME_ASSET=${MI_UI_RIME_ASSET}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/ime_rime/FetchRime.cmake
+                COMMENT "Fetching librime runtime for ${target_name}"
+            )
+        endif()
     endif()
     if (COMMAND mi_copy_msvc_runtime)
         mi_copy_msvc_runtime(${target_name})

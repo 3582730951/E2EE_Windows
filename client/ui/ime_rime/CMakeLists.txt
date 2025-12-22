@@ -14,3 +14,17 @@ target_include_directories(mi_ime_rime PRIVATE
 )
 
 target_compile_definitions(mi_ime_rime PRIVATE MI_IME_PLUGIN_BUILD)
+
+option(MI_UI_RIME_DOWNLOAD "Download librime runtime when building UI" ON)
+set(MI_UI_RIME_VERSION "1.15.0" CACHE STRING "librime runtime version")
+set(MI_UI_RIME_ASSET "rime-75bc43a-Windows-msvc-x64.7z" CACHE STRING "librime runtime asset")
+if(MI_UI_RIME_DOWNLOAD AND WIN32)
+    add_custom_command(TARGET mi_ime_rime POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:mi_ime_rime>
+            -DRIME_VERSION=${MI_UI_RIME_VERSION}
+            -DRIME_ASSET=${MI_UI_RIME_ASSET}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/FetchRime.cmake
+        COMMENT "Fetching librime runtime"
+    )
+endif()
