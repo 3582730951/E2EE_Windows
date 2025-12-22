@@ -254,7 +254,7 @@ jobs:
 
       - name: Configure client (UI on)
         run: |
-          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
+          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DBUILD_TESTING=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
 
       - name: Build client
         run: cmake --build build/client
