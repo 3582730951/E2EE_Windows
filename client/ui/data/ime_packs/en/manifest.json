@@ -1,0 +1,19 @@
+{
+  "id": "en",
+  "name": "en",
+  "version": "1.0.0",
+  "engine_api": 1,
+  "language": "en",
+  "backend": "internal",
+  "dictionaries": [
+    {
+      "id": "english_basic",
+      "type": "english",
+      "format": "wordlist",
+      "resource": ":/mi/e2ee/ui/ime/english.dat",
+      "target": "english.dict"
+    }
+  ],
+  "rules": [],
+  "lm": []
+}

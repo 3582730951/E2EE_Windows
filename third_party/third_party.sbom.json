@@ -116,7 +116,7 @@
         { "license": { "id": "LGPL-3.0" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "dce04063d8852f38cace49ad7643e038d6a3a8380f83c3040b7c40f3602e263a" }
+        { "alg": "SHA-256", "content": "d2c29baac0449415f7bbc47e0fd8c5e59d1f09b3b346ad388f4cf8952260bbbd" }
       ],
       "properties": [
         { "name": "path", "value": "core/client/ui/data/rime/mi_pinyin.schema.yaml" }
@@ -130,7 +130,7 @@
         { "license": { "id": "LGPL-3.0" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "b9de0cd87b77c4a594f35e5882713bdf7451e48f43d5acf7f0ca5013c5b2d7c2" }
+        { "alg": "SHA-256", "content": "2c24e980fae4daa2c535178ef049dcf5ba1021e26fb61a2ee5a1331c18919015" }
       ],
       "properties": [
         { "name": "path", "value": "core/client/ui/data/rime/default.yaml" }
@@ -218,6 +218,104 @@
       ],
       "properties": [
         { "name": "path", "value": "core/client/ui/data/rime/rime_ice.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-schema",
+      "version": "2025-11-02",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "801d59da3d786921f8b21951b9b9b99797ad63a444a66f3d9ca5cd46b949de85" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-custom",
+      "version": "local",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "db327d1987ef3cc4a9dd64773c781a9b8873225a100827ff6d80457fbb51f061" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.custom.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-symbols-v",
+      "version": "2024-12-19",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "6cf79d99403087150681e47817ec59f224c1a3cabc073feb919994089a27da7e" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/symbols_v.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-melt-eng-schema",
+      "version": "2023-10-17",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "be2cf9f196e23e65d678a8a240d3d705db0328949b7745a28b89e881e936a10b" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/melt_eng.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-melt-eng-dict",
+      "version": "2023-10-17",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "e23bd4ea294d5e04e7b50fbd160fb253e489f44f28c2b8911af276d96db04973" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/melt_eng.dict.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-radical-pinyin-schema",
+      "version": "2.0.0",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "4f080d704dbc092b848dc7a260006ff8c8319b56554643db7c886163f1398998" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/radical_pinyin.schema.yaml" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "rime-ice-radical-pinyin-dict",
+      "version": "2.0.0",
+      "licenses": [
+        { "license": { "id": "GPL-3.0-only" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "acc03e2e26d89082e580f8516e66b9553587b3866586a681dc9a833a975698fc" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/client/ui/data/rime/radical_pinyin.dict.yaml" }
       ]
     },
     {

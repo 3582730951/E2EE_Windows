@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -26,6 +28,30 @@ using LibHandle = void *;
 LibHandle gRimeLib = nullptr;
 RimeApi *gApi = nullptr;
 bool gInitialized = false;
+std::string gPreferredSchema;
+
+bool HasCompiledData(const std::string &user_dir) {
+    if (user_dir.empty()) {
+        return false;
+    }
+    std::error_code ec;
+    const std::filesystem::path root(user_dir);
+    if (!std::filesystem::exists(root, ec)) {
+        return false;
+    }
+    for (auto it = std::filesystem::recursive_directory_iterator(root, ec),
+              end = std::filesystem::recursive_directory_iterator();
+         it != end && !ec;
+         it.increment(ec)) {
+        if (!it->is_regular_file(ec)) {
+            continue;
+        }
+        if (it->path().extension() == ".bin") {
+            return true;
+        }
+    }
+    return false;
+}
 
 std::string GetModuleDir() {
 #if defined(_WIN32)
@@ -133,6 +159,28 @@ bool LoadRime() {
     }
     return true;
 }
+
+std::string LoadPreferredSchema(const char *user_dir) {
+    if (!user_dir || !*user_dir) {
+        return {};
+    }
+    std::filesystem::path path(user_dir);
+    path /= "ime_schema.txt";
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return {};
+    }
+    std::ifstream in(path, std::ios::in | std::ios::binary);
+    if (!in.is_open()) {
+        return {};
+    }
+    std::string schema;
+    std::getline(in, schema);
+    while (!schema.empty() && (schema.back() == '\r' || schema.back() == '\n' || schema.back() == ' ')) {
+        schema.pop_back();
+    }
+    return schema;
+}
 }  // namespace
 
 extern "C" {
@@ -160,9 +208,22 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
     traits.min_log_level = 2;
     traits.log_dir = "";
     gApi->setup(&traits);
+    if (gApi->deployer_initialize) {
+        gApi->deployer_initialize(&traits);
+    }
     gApi->initialize(&traits);
-    gApi->deploy();
-    gApi->join_maintenance_thread();
+    const bool needsDeploy = !HasCompiledData(user_dir);
+    bool maintenanceStarted = false;
+    if (gApi->start_maintenance) {
+        maintenanceStarted = gApi->start_maintenance(needsDeploy ? True : False) == True;
+        if (maintenanceStarted && gApi->join_maintenance_thread) {
+            gApi->join_maintenance_thread();
+        }
+    }
+    if (!maintenanceStarted && gApi->deploy) {
+        gApi->deploy();
+    }
+    gPreferredSchema = LoadPreferredSchema(user_dir);
     gInitialized = true;
     return true;
 }
@@ -191,7 +252,13 @@ MI_IME_EXPORT void *MiImeCreateSession() {
         return nullptr;
     }
     if (gApi->select_schema) {
-        gApi->select_schema(session, "mi_pinyin");
+        if (!gPreferredSchema.empty()) {
+            if (!gApi->select_schema(session, gPreferredSchema.c_str())) {
+                gApi->select_schema(session, "rime_ice");
+            }
+        } else if (!gApi->select_schema(session, "rime_ice")) {
+            gApi->select_schema(session, "mi_pinyin");
+        }
     }
     return reinterpret_cast<void *>(static_cast<uintptr_t>(session));
 }
@@ -215,6 +282,9 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
     }
     out_buffer[0] = '\0';
     const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
+    if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
+        return 0;
+    }
     if (*input == '\0') {
         if (gApi->clear_composition) {
             gApi->clear_composition(id);
@@ -309,6 +379,37 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
         }
     }
     return written;
+}
+
+MI_IME_EXPORT int MiImeGetPreedit(void *session, char *out_buffer, size_t out_size) {
+    if (!gApi || !session || !out_buffer || out_size == 0) {
+        return 0;
+    }
+    out_buffer[0] = '\0';
+    const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
+    RIME_STRUCT(RimeContext, ctx);
+    if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
+        return 0;
+    }
+    const char *preedit = ctx.composition.preedit;
+    if (!preedit || !*preedit) {
+        if (gApi->free_context) {
+            gApi->free_context(&ctx);
+        }
+        return 0;
+    }
+    size_t len = std::strlen(preedit);
+    if (len >= out_size) {
+        len = out_size - 1;
+    }
+    if (len > 0) {
+        std::memcpy(out_buffer, preedit, len);
+        out_buffer[len] = '\0';
+    }
+    if (gApi->free_context) {
+        gApi->free_context(&ctx);
+    }
+    return static_cast<int>(len);
 }
 
 MI_IME_EXPORT bool MiImeCommitCandidate(void *session, int index) {

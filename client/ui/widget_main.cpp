@@ -8,6 +8,9 @@
 #include "widgets/theme.h"
 
 int main(int argc, char* argv[]) {
+    QCoreApplication::setOrganizationName(QStringLiteral("mi_e2ee"));
+    QCoreApplication::setOrganizationDomain(QStringLiteral("mi.e2ee"));
+    QCoreApplication::setApplicationName(QStringLiteral("mi_e2ee_ui"));
     QApplication app(argc, argv);
     SecureClipboard::Install(app);
     const auto settings = UiSettings::Load();

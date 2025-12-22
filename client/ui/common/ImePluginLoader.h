@@ -14,6 +14,7 @@ public:
     void *createSession();
     void destroySession(void *session);
     QStringList queryCandidates(void *session, const QString &input, int maxCandidates);
+    QString queryPreedit(void *session);
     bool commitCandidate(void *session, int index);
     void clearComposition(void *session);
 
@@ -27,6 +28,7 @@ private:
     bool ensureInitialized();
     bool ensureRimeData(QString &sharedDir, QString &userDir);
     bool copyResourceIfMissing(const QString &resourcePath, const QString &targetPath, bool overwrite = false);
+    bool copyFileIfPresent(const QString &sourcePath, const QString &targetPath, bool overwrite = false);
     void reset();
 
     class QLibrary *library_{nullptr};
@@ -39,6 +41,7 @@ private:
     using CreateSessionFn = void *(*)();
     using DestroySessionFn = void (*)(void *);
     using GetCandidatesFn = int (*)(void *, const char *, char *, size_t, int);
+    using GetPreeditFn = int (*)(void *, char *, size_t);
     using CommitCandidateFn = bool (*)(void *, int);
     using ClearCompositionFn = void (*)(void *);
 
@@ -48,6 +51,7 @@ private:
     CreateSessionFn createSession_{nullptr};
     DestroySessionFn destroySession_{nullptr};
     GetCandidatesFn getCandidates_{nullptr};
+    GetPreeditFn getPreedit_{nullptr};
     CommitCandidateFn commitCandidate_{nullptr};
     ClearCompositionFn clearComposition_{nullptr};
 

@@ -1,0 +1,28 @@
+{
+  "id": "zh_cn",
+  "name": "zh_CN",
+  "version": "1.0.0",
+  "engine_api": 1,
+  "language": "zh-CN",
+  "backend": "rime",
+  "default_schema": "rime_ice",
+  "dictionaries": [
+    {
+      "id": "custom_phrase",
+      "type": "custom_phrase",
+      "format": "tsv",
+      "path": "dictionaries/custom_phrase.dict",
+      "target": "custom_phrase.txt"
+    }
+  ],
+  "rules": [
+    {
+      "id": "rime_ice_patch",
+      "format": "rime_patch",
+      "resource": ":/mi/e2ee/ui/ime/rime/rime_ice.custom.yaml",
+      "target": "rime_ice.custom.yaml",
+      "scope": "user"
+    }
+  ],
+  "lm": []
+}

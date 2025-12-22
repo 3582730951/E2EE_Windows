@@ -18,6 +18,8 @@ set(UI_COMMON_SOURCES
     common/FramelessWindowBase.cpp
     common/IconButton.cpp
     common/ImePluginApi.h
+    common/ImeLanguagePackManager.cpp
+    common/ImeLanguagePackManager.h
     common/ImePluginLoader.cpp
     common/ImePluginLoader.h
     common/OverlayWidget.cpp
@@ -85,6 +87,9 @@ function(add_ui_executable target_name)
                     -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:${target_name}>
                     -DRIME_VERSION=${MI_UI_RIME_VERSION}
                     -DRIME_ASSET=${MI_UI_RIME_ASSET}
+                    -DRIME_WITH_LUA=${MI_UI_RIME_WITH_LUA}
+                    -DRIME_WEASEL_VERSION=${MI_UI_RIME_WEASEL_VERSION}
+                    -DRIME_WEASEL_ASSET=${MI_UI_RIME_WEASEL_ASSET}
                     -P ${UI_ROOT}/ime_rime/FetchRime.cmake
                 COMMENT "Fetching librime runtime for ${target_name}"
             )

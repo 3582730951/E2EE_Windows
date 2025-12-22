@@ -6,8 +6,10 @@
 #include <QFileInfo>
 #include <QLibrary>
 #include <QStandardPaths>
+#include <QtGlobal>
 
 #include "ImePluginApi.h"
+#include "ImeLanguagePackManager.h"
 
 namespace {
 QString PluginFileName() {
@@ -60,6 +62,7 @@ void ImePluginLoader::reset() {
     getCandidates_ = nullptr;
     commitCandidate_ = nullptr;
     clearComposition_ = nullptr;
+    getPreedit_ = nullptr;
     sharedDirBytes_.clear();
     userDirBytes_.clear();
 }
@@ -92,10 +95,12 @@ bool ImePluginLoader::ensureLoaded() {
     createSession_ = reinterpret_cast<CreateSessionFn>(library_->resolve("MiImeCreateSession"));
     destroySession_ = reinterpret_cast<DestroySessionFn>(library_->resolve("MiImeDestroySession"));
     getCandidates_ = reinterpret_cast<GetCandidatesFn>(library_->resolve("MiImeGetCandidates"));
+    getPreedit_ = reinterpret_cast<GetPreeditFn>(library_->resolve("MiImeGetPreedit"));
     commitCandidate_ = reinterpret_cast<CommitCandidateFn>(library_->resolve("MiImeCommitCandidate"));
     clearComposition_ = reinterpret_cast<ClearCompositionFn>(library_->resolve("MiImeClearComposition"));
     if (!apiVersion_ || !initialize_ || !shutdown_ || !createSession_ ||
-        !destroySession_ || !getCandidates_ || !commitCandidate_ || !clearComposition_) {
+        !destroySession_ || !getCandidates_ || !getPreedit_ || !commitCandidate_ ||
+        !clearComposition_) {
         reset();
         return false;
     }
@@ -170,6 +175,20 @@ QStringList ImePluginLoader::queryCandidates(void *session,
     return items;
 }
 
+QString ImePluginLoader::queryPreedit(void *session) {
+    if (!ensureInitialized() || !session || !getPreedit_) {
+        return {};
+    }
+    QByteArray buffer;
+    buffer.resize(512);
+    buffer.fill(0);
+    const int count = getPreedit_(session, buffer.data(), static_cast<size_t>(buffer.size()));
+    if (count <= 0) {
+        return {};
+    }
+    return QString::fromUtf8(buffer.constData());
+}
+
 bool ImePluginLoader::commitCandidate(void *session, int index) {
     if (!ensureInitialized() || !session || !commitCandidate_) {
         return false;
@@ -217,8 +236,44 @@ bool ImePluginLoader::copyResourceIfMissing(const QString &resourcePath,
     return true;
 }
 
+bool ImePluginLoader::copyFileIfPresent(const QString &sourcePath,
+                                        const QString &targetPath,
+                                        bool overwrite) {
+    if (!overwrite && QFile::exists(targetPath)) {
+        return true;
+    }
+    if (!QFile::exists(sourcePath)) {
+        return true;
+    }
+    const QFileInfo targetInfo(targetPath);
+    if (!targetInfo.dir().exists()) {
+        if (!QDir().mkpath(targetInfo.path())) {
+            return false;
+        }
+    }
+    QFile in(sourcePath);
+    if (!in.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    QFile out(targetPath);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    const QByteArray data = in.readAll();
+    if (data.isEmpty()) {
+        return false;
+    }
+    if (out.write(data) != data.size()) {
+        return false;
+    }
+    return true;
+}
+
 bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
-    QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString base = qEnvironmentVariable("MI_E2EE_IME_DIR");
+    if (base.isEmpty()) {
+        base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    }
     if (base.isEmpty()) {
         base = QDir::homePath() + QStringLiteral("/.mi_e2ee");
     }
@@ -235,6 +290,39 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
         QStringLiteral("luna_pinyin.schema.yaml"),
         QStringLiteral("stroke.schema.yaml"),
         QStringLiteral("mi_pinyin.schema.yaml"),
+        QStringLiteral("rime_ice.schema.yaml"),
+        QStringLiteral("melt_eng.schema.yaml"),
+        QStringLiteral("radical_pinyin.schema.yaml"),
+        QStringLiteral("symbols_v.yaml"),
+        QStringLiteral("opencc/emoji.json"),
+        QStringLiteral("lua/autocap_filter.lua"),
+        QStringLiteral("lua/calc_translator.lua"),
+        QStringLiteral("lua/cn_en_spacer.lua"),
+        QStringLiteral("lua/corrector.lua"),
+        QStringLiteral("lua/date_translator.lua"),
+        QStringLiteral("lua/debuger.lua"),
+        QStringLiteral("lua/en_spacer.lua"),
+        QStringLiteral("lua/force_gc.lua"),
+        QStringLiteral("lua/is_in_user_dict.lua"),
+        QStringLiteral("lua/long_word_filter.lua"),
+        QStringLiteral("lua/lunar.lua"),
+        QStringLiteral("lua/number_translator.lua"),
+        QStringLiteral("lua/pin_cand_filter.lua"),
+        QStringLiteral("lua/reduce_english_filter.lua"),
+        QStringLiteral("lua/search.lua"),
+        QStringLiteral("lua/select_character.lua"),
+        QStringLiteral("lua/t9_preedit.lua"),
+        QStringLiteral("lua/unicode.lua"),
+        QStringLiteral("lua/uuid.lua"),
+        QStringLiteral("lua/v_filter.lua"),
+        QStringLiteral("lua/cold_word_drop/drop_words.lua"),
+        QStringLiteral("lua/cold_word_drop/filter.lua"),
+        QStringLiteral("lua/cold_word_drop/hide_words.lua"),
+        QStringLiteral("lua/cold_word_drop/logger.lua"),
+        QStringLiteral("lua/cold_word_drop/metatable.lua"),
+        QStringLiteral("lua/cold_word_drop/processor.lua"),
+        QStringLiteral("lua/cold_word_drop/reduce_freq_words.lua"),
+        QStringLiteral("lua/cold_word_drop/string.lua"),
     };
     for (const auto &file : forcedFiles) {
         const QString src = RimeResourcePath(file);
@@ -249,16 +337,57 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
         QStringLiteral("stroke.dict.yaml"),
         QStringLiteral("rime_ice.dict.yaml"),
         QStringLiteral("cn_dicts/8105.dict.yaml"),
+        QStringLiteral("cn_dicts/41448.dict.yaml"),
         QStringLiteral("cn_dicts/base.dict.yaml"),
         QStringLiteral("cn_dicts/ext.dict.yaml"),
         QStringLiteral("cn_dicts/tencent.dict.yaml"),
         QStringLiteral("cn_dicts/others.dict.yaml"),
+        QStringLiteral("en_dicts/en.dict.yaml"),
+        QStringLiteral("en_dicts/en_ext.dict.yaml"),
+        QStringLiteral("melt_eng.dict.yaml"),
+        QStringLiteral("radical_pinyin.dict.yaml"),
     };
     for (const auto &file : optionalFiles) {
         const QString src = RimeResourcePath(file);
         const QString dst = sharedDir + QLatin1Char('/') + file;
         if (!copyResourceIfMissing(src, dst)) {
             return false;
+        }
+    }
+    const QStringList userFiles = {
+        QStringLiteral("rime_ice.custom.yaml"),
+    };
+    for (const auto &file : userFiles) {
+        const QString src = RimeResourcePath(file);
+        const QString dst = userDir + QLatin1Char('/') + file;
+        if (!copyResourceIfMissing(src, dst)) {
+            return false;
+        }
+    }
+    if (!ImeLanguagePackManager::instance().applyRimePack(sharedDir, userDir)) {
+        return false;
+    }
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList openccSearchDirs = {
+        appDir + QStringLiteral("/opencc"),
+        appDir + QStringLiteral("/data/opencc"),
+        appDir + QStringLiteral("/rime/opencc"),
+    };
+    const QStringList openccRuntimeFiles = {
+        QStringLiteral("emoji.txt"),
+        QStringLiteral("others.txt"),
+    };
+    for (const auto &file : openccRuntimeFiles) {
+        const QString dst = sharedDir + QStringLiteral("/opencc/") + file;
+        for (const auto &dir : openccSearchDirs) {
+            const QString src = dir + QLatin1Char('/') + file;
+            if (!QFile::exists(src)) {
+                continue;
+            }
+            if (!copyFileIfPresent(src, dst, true)) {
+                return false;
+            }
+            break;
         }
     }
     return true;

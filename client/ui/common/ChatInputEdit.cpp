@@ -21,6 +21,7 @@
 #include <algorithm>
 
 #include "ImePluginLoader.h"
+#include "ImeLanguagePackManager.h"
 #include "Theme.h"
 
 namespace {
@@ -765,8 +766,8 @@ struct EnglishIndex {
     QHash<QChar, QVector<QString>> buckets;
 };
 
-bool LoadEnglishDictFromResource(QVector<QString> &dict) {
-    QFile file(QString::fromLatin1(kEnglishDictResourcePath));
+bool LoadEnglishDictFromFile(const QString &path, QVector<QString> &dict) {
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         return false;
     }
@@ -789,7 +790,11 @@ bool LoadEnglishDictFromResource(QVector<QString> &dict) {
 
 EnglishIndex BuildEnglishIndex() {
     EnglishIndex index;
-    if (!LoadEnglishDictFromResource(index.words)) {
+    const QString customPath = ImeLanguagePackManager::instance().englishDictPath();
+    if (!customPath.isEmpty() && LoadEnglishDictFromFile(customPath, index.words)) {
+        // Loaded from language pack.
+    } else if (!LoadEnglishDictFromFile(QString::fromLatin1(kEnglishDictResourcePath),
+                                         index.words)) {
         index.words.reserve(static_cast<int>(sizeof(kEnglishDict) / sizeof(kEnglishDict[0])));
         for (const auto &entry : kEnglishDict) {
             index.words.push_back(QString::fromLatin1(entry.word));
@@ -1381,7 +1386,8 @@ void ChatInputEdit::updateCompositionText() {
 }
 
 void ChatInputEdit::updateCandidates() {
-    QStringList next = BuildCandidates(composition_);
+    QStringList next;
+    QString displayPreedit = composition_;
 #if defined(MI_UI_ENABLE_RIME)
     if (!composition_.isEmpty()) {
         ensureImeSession();
@@ -1392,17 +1398,24 @@ void ChatInputEdit::updateCandidates() {
                                                            kMaxPinyinCandidatesPerKey);
             if (!rime.isEmpty()) {
                 next = rime;
+                const QString preedit = ImePluginLoader::instance().queryPreedit(imeSession_);
+                if (!preedit.isEmpty()) {
+                    displayPreedit = preedit;
+                }
             }
         }
     }
 #endif
+    if (next.isEmpty()) {
+        next = BuildCandidates(composition_);
+    }
     candidates_ = next;
     if (candidateIndex_ >= candidates_.size()) {
         candidateIndex_ = 0;
     }
     showPopup();
     if (popup_) {
-        popup_->setCandidates(composition_, candidates_, candidateIndex_);
+        popup_->setCandidates(displayPreedit, candidates_, candidateIndex_);
     }
     updatePopupPosition();
 }

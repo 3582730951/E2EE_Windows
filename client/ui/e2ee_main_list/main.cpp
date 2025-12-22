@@ -17,6 +17,9 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+    QCoreApplication::setOrganizationName(QStringLiteral("mi_e2ee"));
+    QCoreApplication::setOrganizationDomain(QStringLiteral("mi.e2ee"));
+    QCoreApplication::setApplicationName(QStringLiteral("mi_e2ee_ui"));
     QApplication app(argc, argv);
     SecureClipboard::Install(app);
 
