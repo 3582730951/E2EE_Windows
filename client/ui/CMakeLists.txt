@@ -85,7 +85,7 @@ function(add_ui_executable target_name)
                     -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:${target_name}>
                     -DRIME_VERSION=${MI_UI_RIME_VERSION}
                     -DRIME_ASSET=${MI_UI_RIME_ASSET}
-                    -P ${CMAKE_CURRENT_SOURCE_DIR}/ime_rime/FetchRime.cmake
+                    -P ${UI_ROOT}/ime_rime/FetchRime.cmake
                 COMMENT "Fetching librime runtime for ${target_name}"
             )
         endif()
