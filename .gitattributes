@@ -1,0 +1,8 @@
+# Normalize third-party sources for stable audit hashes.
+third_party/** text eol=lf
+client/ui/ime_rime/third_party/** text eol=lf
+client/ui/data/rime/** text eol=lf
+client/ui/data/ime_packs/** text eol=lf
+
+# Binary IME data files should never be line-ending converted.
+client/ui/data/*.dat binary
