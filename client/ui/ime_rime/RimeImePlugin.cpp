@@ -244,22 +244,17 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
             return 0;
         }
     }
-    RIME_STRUCT(RimeContext, ctx);
-    if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
-        return 0;
-    }
-    const int total = std::min(ctx.menu.num_candidates, max_candidates);
     size_t remaining = out_size;
     char *cursor = out_buffer;
     int written = 0;
-    for (int i = 0; i < total; ++i) {
-        const char *cand = ctx.menu.candidates[i].text;
+
+    auto appendCandidate = [&](const char *cand) -> bool {
         if (!cand || !*cand) {
-            continue;
+            return true;
         }
         if (written > 0) {
             if (remaining <= 1) {
-                break;
+                return false;
             }
             *cursor++ = '\n';
             remaining--;
@@ -269,16 +264,43 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
             len = remaining - 1;
         }
         if (len == 0) {
-            break;
+            return false;
         }
         std::memcpy(cursor, cand, len);
         cursor += len;
         remaining -= len;
         *cursor = '\0';
         written++;
+        return written < max_candidates;
+    };
+
+    if (gApi->candidate_list_begin && gApi->candidate_list_next &&
+        gApi->candidate_list_end) {
+        RimeCandidateListIterator iter;
+        if (gApi->candidate_list_begin(id, &iter)) {
+            while (written < max_candidates && gApi->candidate_list_next(&iter)) {
+                if (!appendCandidate(iter.candidate.text)) {
+                    break;
+                }
+            }
+            gApi->candidate_list_end(&iter);
+        }
     }
-    if (gApi->free_context) {
-        gApi->free_context(&ctx);
+
+    if (written == 0) {
+        RIME_STRUCT(RimeContext, ctx);
+        if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
+            return 0;
+        }
+        const int total = std::min(ctx.menu.num_candidates, max_candidates);
+        for (int i = 0; i < total; ++i) {
+            if (!appendCandidate(ctx.menu.candidates[i].text)) {
+                break;
+            }
+        }
+        if (gApi->free_context) {
+            gApi->free_context(&ctx);
+        }
     }
     return written;
 }
