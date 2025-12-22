@@ -222,7 +222,13 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
         return 0;
     }
     bool fed = false;
-    if (gApi->process_key) {
+    if (gApi->simulate_key_sequence) {
+        if (gApi->clear_composition) {
+            gApi->clear_composition(id);
+        }
+        fed = gApi->simulate_key_sequence(id, input) == True;
+    }
+    if (!fed && gApi->process_key) {
         if (gApi->clear_composition) {
             gApi->clear_composition(id);
         }
