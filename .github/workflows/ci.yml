@@ -23,6 +23,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake
+      - name: Set parallel build level
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> $GITHUB_ENV
 
       - name: Configure kt keygen
         run: |
@@ -67,6 +69,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake libmysqlclient-dev
+      - name: Set parallel build level
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> $GITHUB_ENV
 
       - name: Configure server
         run: |
@@ -128,6 +132,10 @@ jobs:
         shell: pwsh
         run: |
           choco install -y ninja cmake mariadb
+      - name: Set parallel build level
+        shell: pwsh
+        run: |
+          "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $Env:GITHUB_ENV -Append
 
       - name: Locate MySQL client (from MariaDB)
         shell: pwsh
@@ -229,6 +237,10 @@ jobs:
         shell: pwsh
         run: |
           choco install -y ninja cmake
+      - name: Set parallel build level
+        shell: pwsh
+        run: |
+          "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $Env:GITHUB_ENV -Append
 
       - name: Install Qt (MinGW)
         uses: jurplel/install-qt-action@v4
