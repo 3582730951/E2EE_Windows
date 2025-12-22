@@ -15,8 +15,7 @@ if(MI_E2EE_PGO_INSTRUMENT AND MI_E2EE_PGO_USE)
 endif()
 
 if(MSVC AND MI_E2EE_ENABLE_ASAN AND (MI_E2EE_ENABLE_LTO OR MI_E2EE_PGO_INSTRUMENT OR MI_E2EE_PGO_USE))
-  message(WARNING "MSVC ASAN is incompatible with LTO/PGO; disabling ASAN for this build")
-  set(MI_E2EE_ENABLE_ASAN OFF CACHE BOOL "Enable AddressSanitizer" FORCE)
+  message(FATAL_ERROR "MSVC ASAN is incompatible with LTO/PGO; disable ASAN or disable LTO/PGO")
 endif()
 
 if(MI_E2EE_ENABLE_LTO)

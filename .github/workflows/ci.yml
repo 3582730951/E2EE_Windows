@@ -82,6 +82,9 @@ jobs:
       - name: Build server
         run: cmake --build build/server-${{ matrix.mode }}
 
+      - name: Verify third-party lock
+        run: ./build/server-${{ matrix.mode }}/tools/mi_e2ee_third_party_audit --lock third_party/third_party.lock --verify
+
       - name: Test server
         run: ctest --output-on-failure --test-dir build/server-${{ matrix.mode }}
 
@@ -176,6 +179,10 @@ jobs:
 
       - name: Build server
         run: cmake --build build/server-win
+
+      - name: Verify third-party lock
+        run: |
+          .\build\server-win\tools\mi_e2ee_third_party_audit.exe --lock third_party/third_party.lock --verify
 
       - name: Download kt keys
         uses: actions/download-artifact@v4
