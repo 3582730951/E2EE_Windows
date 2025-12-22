@@ -150,8 +150,7 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
     if (!LoadRime()) {
         return false;
     }
-    RimeTraits traits;
-    RIME_STRUCT_INIT(RimeTraits, traits);
+    RIME_STRUCT(RimeTraits, traits);
     traits.shared_data_dir = shared_dir;
     traits.user_data_dir = user_dir;
     traits.distribution_name = "mi_e2ee";
@@ -225,8 +224,7 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
     if (!gApi->set_input || !gApi->set_input(id, input)) {
         return 0;
     }
-    RimeContext ctx;
-    RIME_STRUCT_INIT(RimeContext, ctx);
+    RIME_STRUCT(RimeContext, ctx);
     if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
         return 0;
     }
