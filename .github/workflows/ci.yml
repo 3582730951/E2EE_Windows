@@ -278,6 +278,10 @@ jobs:
       - name: Build client
         run: cmake --build build/client
 
+      - name: Fetch Rime runtime
+        run: |
+          cmake -DRIME_OUTPUT_DIR=build/client/ui/e2ee_main_list -DRIME_WITH_LUA=ON -DRIME_CACHE_DIR=build/client/rime_cache -DRIME_DOWNLOAD_TIMEOUT=600 -DRIME_DOWNLOAD_RETRIES=2 -P client/ui/ime_rime/FetchRime.cmake
+
       - name: Build kt tools
         run: |
           cmake --build build/client --target mi_e2ee_kt_keygen
