@@ -175,7 +175,7 @@ jobs:
 
       - name: Configure server (Release, TCP on, MySQL on)
         run: |
-          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=ON -DMI_E2EE_ENABLE_TCP_SERVER=ON -DMYSQL_INCLUDE_DIR="$Env:MYSQL_INCLUDE_DIR" -DMYSQL_CLIENT_LIB="$Env:MYSQL_CLIENT_LIB"
+          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=ON -DMI_E2EE_ENABLE_TCP_SERVER=ON -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DMYSQL_INCLUDE_DIR="$Env:MYSQL_INCLUDE_DIR" -DMYSQL_CLIENT_LIB="$Env:MYSQL_CLIENT_LIB"
 
       - name: Build server
         run: cmake --build build/server-win
@@ -273,7 +273,7 @@ jobs:
 
       - name: Configure client (UI on)
         run: |
-          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DBUILD_TESTING=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
+          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DBUILD_TESTING=OFF -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
 
       - name: Build client
         run: cmake --build build/client
