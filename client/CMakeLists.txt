@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(MI_E2EE_BUILD_UI "Build Qt Quick UI demo" ON)
+option(MI_E2EE_BUILD_DEMO_CLIENT "Build demo client CLI" ON)
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
@@ -92,14 +93,16 @@ if(WIN32)
   target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt)
 endif()
 
-add_executable(mi_e2ee_client
-    demo_client.cpp
-)
+if(MI_E2EE_BUILD_DEMO_CLIENT)
+  add_executable(mi_e2ee_client
+      demo_client.cpp
+  )
 
-target_include_directories(mi_e2ee_client PRIVATE include)
-target_link_libraries(mi_e2ee_client PRIVATE mi_e2ee_client_core)
-if (COMMAND mi_copy_msvc_runtime)
-  mi_copy_msvc_runtime(mi_e2ee_client)
+  target_include_directories(mi_e2ee_client PRIVATE include)
+  target_link_libraries(mi_e2ee_client PRIVATE mi_e2ee_client_core)
+  if (COMMAND mi_copy_msvc_runtime)
+    mi_copy_msvc_runtime(mi_e2ee_client)
+  endif()
 endif()
 
 if(MI_E2EE_BUILD_UI)

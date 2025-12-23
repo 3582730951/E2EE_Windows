@@ -273,7 +273,7 @@ jobs:
 
       - name: Configure client (UI on)
         run: |
-          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DBUILD_TESTING=OFF -DMI_E2EE_ENABLE_LTO=OFF -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
+          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DBUILD_TESTING=OFF -DMI_E2EE_ENABLE_LTO=OFF -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
 
       - name: Build client
         run: cmake --build build/client
