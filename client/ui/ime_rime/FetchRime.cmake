@@ -139,8 +139,9 @@ if(RIME_WITH_LUA)
 
     set(_weasel_extract_dir "${_cache_dir}/weasel_extract")
     file(MAKE_DIRECTORY "${_weasel_extract_dir}")
+    file(TO_NATIVE_PATH "${_weasel_extract_dir}" _weasel_extract_dir_native)
     execute_process(
-        COMMAND "${_seven_zip_exe}" x -y -aos "${_weasel_archive}" -o"${_weasel_extract_dir}"
+        COMMAND "${_seven_zip_exe}" x -y -aos "${_weasel_archive}" "-o${_weasel_extract_dir_native}"
         RESULT_VARIABLE _extract_result
         TIMEOUT "${RIME_EXTRACT_TIMEOUT}"
     )
