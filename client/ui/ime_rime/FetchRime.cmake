@@ -11,6 +11,7 @@ set(RIME_DOWNLOAD_TIMEOUT "600" CACHE STRING "Download timeout in seconds")
 set(RIME_DOWNLOAD_RETRIES "2" CACHE STRING "Retry count for downloads")
 set(RIME_CACHE_DIR "" CACHE PATH "Optional cache directory for downloads")
 set(RIME_EXTRACT_DIR "" CACHE PATH "Optional extract directory for archives")
+set(RIME_EXTRACT_TIMEOUT "600" CACHE STRING "Timeout in seconds for extraction steps")
 
 set(_cache_dir "${CMAKE_BINARY_DIR}/rime_download")
 if(DEFINED RIME_CACHE_DIR AND NOT RIME_CACHE_DIR STREQUAL "")
@@ -105,24 +106,34 @@ if(RIME_WITH_LUA)
         endif()
     endif()
 
-    set(_seven_zip_msi "${_cache_dir}/7zip.msi")
-    set(_seven_zip_root "${_cache_dir}/7zip")
-    set(_seven_zip_exe "${_seven_zip_root}/Files/7-Zip/7z.exe")
-    if(NOT EXISTS "${_seven_zip_exe}")
+    set(_seven_zip_exe "")
+    find_program(_seven_zip_exe NAMES 7z 7z.exe)
+    if(NOT _seven_zip_exe)
+        if(EXISTS "C:/Program Files/7-Zip/7z.exe")
+            set(_seven_zip_exe "C:/Program Files/7-Zip/7z.exe")
+        elseif(EXISTS "C:/Program Files (x86)/7-Zip/7z.exe")
+            set(_seven_zip_exe "C:/Program Files (x86)/7-Zip/7z.exe")
+        endif()
+    endif()
+
+    if(NOT _seven_zip_exe)
+        set(_seven_zip_msi "${_cache_dir}/7zip.msi")
+        set(_seven_zip_root "${_cache_dir}/7zip")
+        set(_seven_zip_exe "${_seven_zip_root}/Files/7-Zip/7z.exe")
         file(MAKE_DIRECTORY "${_seven_zip_root}")
         if(NOT EXISTS "${_seven_zip_msi}")
             download_with_retry("https://www.7-zip.org/a/7z2401-x64.msi" "${_seven_zip_msi}" "7-Zip MSI" _zip_ok)
             if(NOT _zip_ok)
-                return()
+                message(FATAL_ERROR "Failed to download 7-Zip MSI")
             endif()
         endif()
         execute_process(
             COMMAND msiexec /a "${_seven_zip_msi}" /qn TARGETDIR="${_seven_zip_root}"
             RESULT_VARIABLE _msi_result
+            TIMEOUT "${RIME_EXTRACT_TIMEOUT}"
         )
         if(NOT _msi_result EQUAL 0 OR NOT EXISTS "${_seven_zip_exe}")
-            message(WARNING "Failed to extract 7-Zip CLI from ${_seven_zip_msi}")
-            return()
+            message(FATAL_ERROR "Failed to extract 7-Zip CLI from ${_seven_zip_msi}")
         endif()
     endif()
 
@@ -131,10 +142,10 @@ if(RIME_WITH_LUA)
     execute_process(
         COMMAND "${_seven_zip_exe}" x -y -aos "${_weasel_archive}" -o"${_weasel_extract_dir}"
         RESULT_VARIABLE _extract_result
+        TIMEOUT "${RIME_EXTRACT_TIMEOUT}"
     )
     if(NOT _extract_result EQUAL 0)
-        message(WARNING "Failed to extract Weasel runtime from ${_weasel_archive}")
-        return()
+        message(FATAL_ERROR "Failed to extract Weasel runtime from ${_weasel_archive}")
     endif()
 
     file(GLOB_RECURSE _rime_candidates "${_weasel_extract_dir}/rime.dll")

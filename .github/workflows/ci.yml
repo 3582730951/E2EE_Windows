@@ -243,7 +243,7 @@ jobs:
       - name: Install build tools
         shell: pwsh
         run: |
-          choco install -y ninja cmake
+          choco install -y ninja cmake 7zip
       - name: Set parallel build level
         shell: pwsh
         run: |
