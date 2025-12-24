@@ -30,6 +30,8 @@ set(UI_COMMON_SOURCES
     common/UiIcons.cpp
     common/UiSettings.cpp
     common/UiStyle.cpp
+    common/UiRuntimePaths.cpp
+    common/UiRuntimePaths.h
     common/SettingsDialog.cpp
     common/ui_resources.qrc
 )
@@ -101,14 +103,16 @@ function(add_ui_executable target_name)
     if(TARGET mi_ime_rime)
         add_dependencies(${target_name} mi_ime_rime)
         add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:${target_name}>/runtime"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_FILE:mi_ime_rime>"
-                "$<TARGET_FILE_DIR:${target_name}>/$<TARGET_FILE_NAME:mi_ime_rime>"
+                "$<TARGET_FILE_DIR:${target_name}>/runtime/$<TARGET_FILE_NAME:mi_ime_rime>"
         )
         if(MI_UI_RIME_DOWNLOAD AND WIN32)
             add_custom_command(TARGET ${target_name} POST_BUILD
                 COMMAND ${CMAKE_COMMAND}
-                    -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:${target_name}>
+                    -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:${target_name}>/runtime
                     -DRIME_VERSION=${MI_UI_RIME_VERSION}
                     -DRIME_ASSET=${MI_UI_RIME_ASSET}
                     -DRIME_WITH_LUA=${MI_UI_RIME_WITH_LUA}

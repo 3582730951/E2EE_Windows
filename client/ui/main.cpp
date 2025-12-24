@@ -2,6 +2,7 @@
 #include <QGuiApplication>
 
 #include "common/SecureClipboard.h"
+#include "common/UiRuntimePaths.h"
 #include "common/UiSettings.h"
 #include "widgets/list_window.h"
 #include "widgets/login_dialog.h"
@@ -9,6 +10,7 @@
 #include "widgets/theme.h"
 
 int main(int argc, char* argv[]) {
+    UiRuntimePaths::Prepare(argv[0]);
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(

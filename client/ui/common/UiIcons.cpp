@@ -29,8 +29,11 @@ static QString ResolveSvgPath(const QString &resourcePath) {
     if (trimmed.isEmpty()) {
         return {};
     }
+    const bool isQtResource =
+        trimmed.startsWith(QStringLiteral(":/")) ||
+        trimmed.startsWith(QStringLiteral("qrc:/"));
     const QFileInfo info(trimmed);
-    if (info.isAbsolute() && QFile::exists(trimmed)) {
+    if (!isQtResource && info.isAbsolute() && QFile::exists(trimmed)) {
         return trimmed;
     }
     const QString fileName = info.fileName();

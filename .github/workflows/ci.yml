@@ -280,7 +280,7 @@ jobs:
 
       - name: Fetch Rime runtime
         run: |
-          cmake -DRIME_OUTPUT_DIR=build/client/ui/e2ee_main_list -DRIME_WITH_LUA=ON -DRIME_CACHE_DIR=build/client/rime_cache -DRIME_DOWNLOAD_TIMEOUT=600 -DRIME_DOWNLOAD_RETRIES=2 -P client/ui/ime_rime/FetchRime.cmake
+          cmake -DRIME_OUTPUT_DIR=build/client/ui/e2ee_main_list/runtime -DRIME_WITH_LUA=ON -DRIME_CACHE_DIR=build/client/rime_cache -DRIME_DOWNLOAD_TIMEOUT=600 -DRIME_DOWNLOAD_RETRIES=2 -P client/ui/ime_rime/FetchRime.cmake
 
       - name: Build kt tools
         run: |
@@ -304,24 +304,69 @@ jobs:
           $exe = "build/client/ui/e2ee_main_list/e2ee_main_list.exe"
           $exeDir = Split-Path -Parent $exe
           $dist = "build/client/ui/dist"
+          $runtime = Join-Path $dist "runtime"
+          $pluginRoot = Join-Path $runtime "plugins"
+          $iconDir = Join-Path $dist "icon"
+          $configDir = Join-Path $dist "config"
+          $databaseDir = Join-Path $dist "database"
           if (!(Test-Path $exe)) {
             Write-Error "main ui exe not found at $exe"
             exit 1
           }
           New-Item -ItemType Directory -Force $dist | Out-Null
+          New-Item -ItemType Directory -Force $runtime | Out-Null
+          New-Item -ItemType Directory -Force $pluginRoot | Out-Null
+          New-Item -ItemType Directory -Force $iconDir | Out-Null
+          New-Item -ItemType Directory -Force $configDir | Out-Null
+          New-Item -ItemType Directory -Force $databaseDir | Out-Null
           Copy-Item $exe (Join-Path $dist "mi_e2ee.exe") -Force
           # Bundle MSVC runtime next to the executable to avoid loading an older system CRT.
           if (Test-Path $exeDir) {
             Copy-Item "$exeDir/*.dll" $dist -Force -ErrorAction SilentlyContinue
           }
           & "$qtbin/windeployqt.exe" "--dir" $dist (Join-Path $dist "mi_e2ee.exe")
+          $pluginDirs = @(
+            "platforms",
+            "imageformats",
+            "styles",
+            "iconengines",
+            "sqldrivers",
+            "tls",
+            "networkinformation",
+            "platforminputcontexts",
+            "bearer",
+            "generic"
+          )
+          foreach ($dir in $pluginDirs) {
+            $src = Join-Path $dist $dir
+            if (Test-Path $src) {
+              $dst = Join-Path $pluginRoot $dir
+              if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+              Move-Item $src $dst
+            }
+          }
+          $translations = Join-Path $dist "translations"
+          if (Test-Path $translations) {
+            $dst = Join-Path $runtime "translations"
+            if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+            Move-Item $translations $dst
+          }
+          $rimeRuntime = Join-Path $exeDir "runtime"
+          if (Test-Path $rimeRuntime) {
+            Copy-Item "$rimeRuntime/*" $runtime -Recurse -Force -ErrorAction SilentlyContinue
+          }
           $iconSrc = "client/ui/icons"
           if (Test-Path $iconSrc) {
-            Copy-Item "$iconSrc/*.svg" $dist -Force -ErrorAction SilentlyContinue
+            Copy-Item "$iconSrc/*.svg" $iconDir -Force -ErrorAction SilentlyContinue
           }
-          Copy-Item kt-keys/kt_root_pub.bin $dist -Force -ErrorAction Stop
-          Copy-Item kt-keys/kt_root_pub_qr.svg $dist -Force -ErrorAction SilentlyContinue
-          Copy-Item build/client/server_build/tools/mi_e2ee_kt_pubinfo.exe $dist -Force -ErrorAction SilentlyContinue
+          Copy-Item kt-keys/kt_root_pub.bin $databaseDir -Force -ErrorAction Stop
+          Copy-Item kt-keys/kt_root_pub_qr.svg $databaseDir -Force -ErrorAction SilentlyContinue
+          $toolSrc = "build/client/server_build/tools/mi_e2ee_kt_pubinfo.exe"
+          if (Test-Path $toolSrc) {
+            $toolDir = Join-Path $runtime "tools"
+            New-Item -ItemType Directory -Force $toolDir | Out-Null
+            Copy-Item $toolSrc $toolDir -Force -ErrorAction SilentlyContinue
+          }
           @"
           [client]
           server_ip=127.0.0.1
@@ -330,9 +375,9 @@ jobs:
           trust_store=server_trust.ini
           [kt]
           require_signature=1
-          root_pubkey_path=kt_root_pub.bin
-          "@ | Set-Content -Encoding ASCII (Join-Path $dist "client_config.ini")
-          Copy-Item (Join-Path $dist "client_config.ini") (Join-Path $dist "config.ini") -Force
+          root_pubkey_path=../database/kt_root_pub.bin
+          "@ | Set-Content -Encoding ASCII (Join-Path $configDir "client_config.ini")
+          Copy-Item (Join-Path $configDir "client_config.ini") (Join-Path $configDir "config.ini") -Force
 
       - name: Package client UI
         run: |

@@ -1,6 +1,7 @@
 #include <QApplication>
 
 #include "common/SecureClipboard.h"
+#include "common/UiRuntimePaths.h"
 #include "common/UiSettings.h"
 #include "widgets/list_window.h"
 #include "widgets/login_dialog.h"
@@ -8,6 +9,7 @@
 #include "widgets/theme.h"
 
 int main(int argc, char* argv[]) {
+    UiRuntimePaths::Prepare(argv[0]);
     QCoreApplication::setOrganizationName(QStringLiteral("mi_e2ee"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("mi.e2ee"));
     QCoreApplication::setApplicationName(QStringLiteral("mi_e2ee_ui"));

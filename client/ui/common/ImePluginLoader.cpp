@@ -81,10 +81,24 @@ bool ImePluginLoader::ensureLoaded() {
         library_ = new QLibrary();
     }
     const QString appDir = QCoreApplication::applicationDirPath();
-    const QString pluginPath = appDir + QLatin1Char('/') + PluginFileName();
-    library_->setFileName(pluginPath);
+    const QString runtimeDir = appDir.isEmpty()
+        ? QString()
+        : QDir(appDir).filePath(QStringLiteral("runtime"));
+    const QStringList candidatePaths = {
+        runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(PluginFileName()),
+        appDir.isEmpty() ? QString() : QDir(appDir).filePath(PluginFileName()),
+    };
     library_->setLoadHints(QLibrary::ResolveAllSymbolsHint);
-    if (!library_->load()) {
+    for (const auto &path : candidatePaths) {
+        if (path.isEmpty()) {
+            continue;
+        }
+        library_->setFileName(path);
+        if (library_->load()) {
+            break;
+        }
+    }
+    if (!library_->isLoaded()) {
         library_->setFileName(QStringLiteral("mi_ime_rime"));
         library_->load();
     }
@@ -391,11 +405,18 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
         return false;
     }
     const QString appDir = QCoreApplication::applicationDirPath();
-    const QStringList openccSearchDirs = {
-        appDir + QStringLiteral("/opencc"),
-        appDir + QStringLiteral("/data/opencc"),
-        appDir + QStringLiteral("/rime/opencc"),
-    };
+    const QString runtimeDir = appDir.isEmpty()
+        ? QString()
+        : QDir(appDir).filePath(QStringLiteral("runtime"));
+    QStringList openccSearchDirs;
+    if (!runtimeDir.isEmpty()) {
+        openccSearchDirs << (runtimeDir + QStringLiteral("/opencc"))
+                         << (runtimeDir + QStringLiteral("/data/opencc"))
+                         << (runtimeDir + QStringLiteral("/rime/opencc"));
+    }
+    openccSearchDirs << (appDir + QStringLiteral("/opencc"))
+                     << (appDir + QStringLiteral("/data/opencc"))
+                     << (appDir + QStringLiteral("/rime/opencc"));
     const QString openccDestDir = sharedDir + QStringLiteral("/opencc");
     QDir().mkpath(openccDestDir);
     const QStringList openccFilters = {
