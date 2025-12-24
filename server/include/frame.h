@@ -59,7 +59,11 @@ enum class FrameType : std::uint16_t {
   kE2eeFileUploadChunk = 44,
   kE2eeFileUploadFinish = 45,
   kE2eeFileDownloadStart = 46,
-  kE2eeFileDownloadChunk = 47
+  kE2eeFileDownloadChunk = 47,
+  kFriendSync = 48,
+  kGroupSenderKeySend = 49,
+  kMediaPush = 50,
+  kMediaPull = 51
 };
 
 struct Frame {

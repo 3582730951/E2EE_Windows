@@ -1,7 +1,9 @@
 #include "frame_router.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "protocol.h"
@@ -9,6 +11,16 @@
 namespace mi::server {
 
 namespace {
+
+bool ReadFixed16(const std::vector<std::uint8_t>& data, std::size_t& offset,
+                 std::array<std::uint8_t, 16>& out) {
+  if (offset + out.size() > data.size()) {
+    return false;
+  }
+  std::memcpy(out.data(), data.data() + offset, out.size());
+  offset += out.size();
+  return true;
+}
 
 std::vector<std::uint8_t> EncodeLoginResp(const LoginResponse& resp) {
   std::vector<std::uint8_t> out;
@@ -195,6 +207,25 @@ std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
   return out;
 }
 
+std::vector<std::uint8_t> EncodeFriendSyncResp(const FriendSyncResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteUint32(resp.version, out);
+    out.push_back(resp.changed ? 1 : 0);
+    if (resp.changed) {
+      proto::WriteUint32(static_cast<std::uint32_t>(resp.friends.size()), out);
+      for (const auto& e : resp.friends) {
+        proto::WriteString(e.username, out);
+        proto::WriteString(e.remark, out);
+      }
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
 std::vector<std::uint8_t> EncodeFriendAddResp(const FriendAddResponse& resp) {
   std::vector<std::uint8_t> out;
   out.push_back(resp.success ? 1 : 0);
@@ -353,12 +384,46 @@ std::vector<std::uint8_t> EncodePrivateSendResp(const PrivateSendResponse& resp)
   return out;
 }
 
+std::vector<std::uint8_t> EncodeGroupSenderKeySendResp(
+    const GroupSenderKeySendResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
 std::vector<std::uint8_t> EncodePrivatePullResp(const PrivatePullResponse& resp) {
   std::vector<std::uint8_t> out;
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
     for (const auto& e : resp.messages) {
+      proto::WriteString(e.sender, out);
+      proto::WriteBytes(e.payload, out);
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeMediaPushResp(const MediaPushResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeMediaPullResp(const MediaPullResponse& resp) {
+  std::vector<std::uint8_t> out;
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteUint32(static_cast<std::uint32_t>(resp.packets.size()), out);
+    for (const auto& e : resp.packets) {
       proto::WriteString(e.sender, out);
       proto::WriteBytes(e.payload, out);
     }
@@ -812,6 +877,19 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       out.payload = EncodeFriendListResp(resp);
       return true;
     }
+    case FrameType::kFriendSync: {
+      if (token.empty()) {
+        return false;
+      }
+      std::uint32_t last_version = 0;
+      if (!proto::ReadUint32(in.payload, offset, last_version) ||
+          offset != in.payload.size()) {
+        return false;
+      }
+      auto resp = api_->SyncFriends(token, last_version);
+      out.payload = EncodeFriendSyncResp(resp);
+      return true;
+    }
     case FrameType::kFriendAdd: {
       if (token.empty()) {
         return false;
@@ -986,12 +1064,66 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       out.payload = EncodePrivateSendResp(resp);
       return true;
     }
+    case FrameType::kGroupSenderKeySend: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadString(in.payload, offset, s1) ||
+          !proto::ReadString(in.payload, offset, s2)) {
+        return false;
+      }
+      std::vector<std::uint8_t> payload;
+      if (!proto::ReadBytes(in.payload, offset, payload) ||
+          offset != in.payload.size()) {
+        return false;
+      }
+      auto resp = api_->SendGroupSenderKey(token, s1, s2, std::move(payload));
+      out.payload = EncodeGroupSenderKeySendResp(resp);
+      return true;
+    }
     case FrameType::kPrivatePull: {
       if (token.empty()) {
         return false;
       }
       auto resp = api_->PullPrivate(token);
       out.payload = EncodePrivatePullResp(resp);
+      return true;
+    }
+    case FrameType::kMediaPush: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadString(in.payload, offset, s1)) {
+        return false;
+      }
+      std::array<std::uint8_t, 16> call_id{};
+      if (!ReadFixed16(in.payload, offset, call_id)) {
+        return false;
+      }
+      std::vector<std::uint8_t> payload;
+      if (!proto::ReadBytes(in.payload, offset, payload) ||
+          offset != in.payload.size()) {
+        return false;
+      }
+      auto resp = api_->PushMedia(token, s1, call_id, std::move(payload));
+      out.payload = EncodeMediaPushResp(resp);
+      return true;
+    }
+    case FrameType::kMediaPull: {
+      if (token.empty()) {
+        return false;
+      }
+      std::array<std::uint8_t, 16> call_id{};
+      std::uint32_t max_packets = 0;
+      std::uint32_t wait_ms = 0;
+      if (!ReadFixed16(in.payload, offset, call_id) ||
+          !proto::ReadUint32(in.payload, offset, max_packets) ||
+          !proto::ReadUint32(in.payload, offset, wait_ms) ||
+          offset != in.payload.size()) {
+        return false;
+      }
+      auto resp = api_->PullMedia(token, call_id, max_packets, wait_ms);
+      out.payload = EncodeMediaPullResp(resp);
       return true;
     }
     case FrameType::kGroupCipherSend: {

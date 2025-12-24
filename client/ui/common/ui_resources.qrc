@@ -26,6 +26,8 @@
         <file alias="icons/settings.svg">../icons/settings.svg</file>
         <file alias="icons/star.svg">../icons/star.svg</file>
         <file alias="icons/video.svg">../icons/video.svg</file>
+        <file alias="qml/Main.qml">../qml/Main.qml</file>
+        <file alias="qml/Style.qml">../qml/Style.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>

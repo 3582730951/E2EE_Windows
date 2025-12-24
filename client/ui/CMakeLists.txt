@@ -7,7 +7,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Quick Qml QuickControls2)
 find_package(Qt6 QUIET COMPONENTS Multimedia MultimediaWidgets)
 
 set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -15,6 +15,8 @@ set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(UI_COMMON_SOURCES
     common/ChatInputEdit.cpp
     common/ChatInputEdit.h
+    common/EmojiPackManager.cpp
+    common/EmojiPackManager.h
     common/FramelessWindowBase.cpp
     common/IconButton.cpp
     common/ImePluginApi.h
@@ -132,6 +134,16 @@ add_subdirectory(e2ee_login)
 add_subdirectory(e2ee_main_list)
 add_subdirectory(e2ee_group_chat)
 add_subdirectory(e2ee_chat_empty)
+
+add_executable(mi_e2ee_client_ui
+    qml_main.cpp
+    quick_client.cpp
+)
+target_link_libraries(mi_e2ee_client_ui PRIVATE mi_ui_common mi_e2ee_client_core
+    Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+if (COMMAND mi_copy_msvc_runtime)
+    mi_copy_msvc_runtime(mi_e2ee_client_ui)
+endif()
 
 if(WIN32)
     add_executable(mi_e2ee_launcher WIN32 launcher/UiLauncher.cpp)

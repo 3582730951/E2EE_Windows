@@ -10,6 +10,7 @@
 #include "group_manager.h"
 #include "frame.h"
 #include "frame_router.h"
+#include "media_relay.h"
 #include "offline_storage.h"
 #include "secure_channel.h"
 #include "session_manager.h"
@@ -38,6 +39,7 @@ class ServerApp {
   const SessionManager* sessions() const { return sessions_.get(); }
   OfflineStorage* offline_storage() { return offline_storage_.get(); }
   OfflineQueue* offline_queue() { return offline_queue_.get(); }
+  MediaRelay* media_relay() { return media_relay_.get(); }
 
  private:
   ServerConfig config_;
@@ -47,6 +49,7 @@ class ServerApp {
   std::unique_ptr<GroupDirectory> directory_;
   std::unique_ptr<OfflineStorage> offline_storage_;
   std::unique_ptr<OfflineQueue> offline_queue_;
+  std::unique_ptr<MediaRelay> media_relay_;
   std::unique_ptr<ApiService> api_;
   std::unique_ptr<FrameRouter> router_;
   std::chrono::steady_clock::time_point last_cleanup_{};

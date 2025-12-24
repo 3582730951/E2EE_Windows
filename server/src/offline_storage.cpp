@@ -1,6 +1,7 @@
 #include "offline_storage.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <random>
@@ -60,6 +61,18 @@ std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> RandomLegacyNonce() {
   std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> nonce{};
   (void)FillRandom(nonce.data(), nonce.size());
   return nonce;
+}
+
+bool IsValidFileId(const std::string& file_id) {
+  if (file_id.size() != 32) {
+    return false;
+  }
+  for (unsigned char c : file_id) {
+    if (!std::isxdigit(c)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void DeriveBlock(const std::array<std::uint8_t, 32>& key,
@@ -145,6 +158,9 @@ PutResult OfflineStorage::Put(const std::string& owner,
   std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     result.error = "open file failed";
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
     return result;
   }
   ofs.write(reinterpret_cast<const char*>(kOfflineFileMagic.data()),
@@ -439,6 +455,10 @@ BlobDownloadStartResult OfflineStorage::BeginBlobDownload(
     result.error = "owner empty";
     return result;
   }
+  if (!IsValidFileId(file_id)) {
+    result.error = "invalid file id";
+    return result;
+  }
   if (file_id.empty()) {
     result.error = "file id empty";
     return result;
@@ -494,6 +514,10 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
   BlobDownloadChunkResult result;
   if (owner.empty()) {
     result.error = "owner empty";
+    return result;
+  }
+  if (!IsValidFileId(file_id)) {
+    result.error = "invalid file id";
     return result;
   }
   if (file_id.empty() || download_id.empty()) {
@@ -588,6 +612,10 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
 std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     const std::string& file_id, const std::array<std::uint8_t, 32>& file_key,
     bool wipe_after_read, std::string& error) {
+  if (!IsValidFileId(file_id)) {
+    error = "invalid file id";
+    return std::nullopt;
+  }
   const auto path = ResolvePath(file_id);
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
@@ -719,6 +747,10 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
 
 std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
     const std::string& file_id, bool wipe_after_read, std::string& error) {
+  if (!IsValidFileId(file_id)) {
+    error = "invalid file id";
+    return std::nullopt;
+  }
   const auto path = ResolvePath(file_id);
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
@@ -745,6 +777,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
 
 std::optional<StoredFileMeta> OfflineStorage::Meta(
     const std::string& file_id) const {
+  if (!IsValidFileId(file_id)) {
+    return std::nullopt;
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = metadata_.find(file_id);
   if (it == metadata_.end()) {
@@ -886,18 +921,23 @@ bool OfflineStorage::LoadEraseKey(const std::filesystem::path& data_path,
     error = "key path invalid";
     return false;
   }
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(*key_path, ec);
+  if (ec || size != erase_key.size()) {
+    error = "erase key invalid";
+    return false;
+  }
   std::ifstream ifs(*key_path, std::ios::binary);
   if (!ifs) {
     error = "erase key not found";
     return false;
   }
-  std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(ifs)),
-                                  std::istreambuf_iterator<char>());
-  if (bytes.size() != erase_key.size()) {
+  ifs.read(reinterpret_cast<char*>(erase_key.data()),
+           static_cast<std::streamsize>(erase_key.size()));
+  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(erase_key.size())) {
     error = "erase key invalid";
     return false;
   }
-  std::memcpy(erase_key.data(), bytes.data(), erase_key.size());
   return true;
 }
 

@@ -18,6 +18,7 @@
 #include "group_manager.h"
 #include "group_directory.h"
 #include "key_transparency.h"
+#include "media_relay.h"
 #include "offline_storage.h"
 #include "session_manager.h"
 
@@ -187,6 +188,14 @@ struct FriendListResponse {
   std::string error;
 };
 
+struct FriendSyncResponse {
+  bool success{false};
+  bool changed{false};
+  std::uint32_t version{0};
+  std::vector<FriendListResponse::Entry> friends;
+  std::string error;
+};
+
 struct FriendAddResponse {
   bool success{false};
   std::string error;
@@ -264,6 +273,11 @@ struct PrivateSendResponse {
   std::string error;
 };
 
+struct GroupSenderKeySendResponse {
+  bool success{false};
+  std::string error;
+};
+
 struct PrivatePullResponse {
   bool success{false};
   struct Entry {
@@ -271,6 +285,21 @@ struct PrivatePullResponse {
     std::vector<std::uint8_t> payload;
   };
   std::vector<Entry> messages;
+  std::string error;
+};
+
+struct MediaPushResponse {
+  bool success{false};
+  std::string error;
+};
+
+struct MediaPullResponse {
+  bool success{false};
+  struct Entry {
+    std::string sender;
+    std::vector<std::uint8_t> payload;
+  };
+  std::vector<Entry> packets;
   std::string error;
 };
 
@@ -344,6 +373,7 @@ class ApiService {
              GroupDirectory* directory = nullptr,
              OfflineStorage* storage = nullptr,
              OfflineQueue* queue = nullptr,
+             MediaRelay* media_relay = nullptr,
              std::uint32_t group_threshold = 10000,
              std::optional<MySqlConfig> friend_mysql = std::nullopt,
              std::filesystem::path kt_dir = {},
@@ -429,6 +459,8 @@ class ApiService {
   OfflinePullResponse PullOffline(const std::string& token);
 
   FriendListResponse ListFriends(const std::string& token);
+  FriendSyncResponse SyncFriends(const std::string& token,
+                                 std::uint32_t last_version);
 
   FriendAddResponse AddFriend(const std::string& token,
                               const std::string& friend_username,
@@ -471,7 +503,21 @@ class ApiService {
                                   const std::string& recipient,
                                   std::vector<std::uint8_t> payload);
 
+  GroupSenderKeySendResponse SendGroupSenderKey(
+      const std::string& token, const std::string& group_id,
+      const std::string& recipient, std::vector<std::uint8_t> payload);
+
   PrivatePullResponse PullPrivate(const std::string& token);
+
+  MediaPushResponse PushMedia(const std::string& token,
+                              const std::string& recipient,
+                              const std::array<std::uint8_t, 16>& call_id,
+                              std::vector<std::uint8_t> payload);
+
+  MediaPullResponse PullMedia(const std::string& token,
+                              const std::array<std::uint8_t, 16>& call_id,
+                              std::uint32_t max_packets,
+                              std::uint32_t wait_ms);
 
   GroupCipherSendResponse SendGroupCipher(const std::string& token,
                                           const std::string& group_id,
@@ -568,6 +614,9 @@ class ApiService {
                      std::optional<Session>& out_session,
                      std::string& out_error);
   bool SignKtSth(KeyTransparencySth& sth, std::string& out_error);
+  FriendListResponse ListFriendsInternal(const Session& session);
+  std::uint32_t CurrentFriendVersionLocked(const std::string& username) const;
+  void BumpFriendVersionLocked(const std::string& username);
 
   struct PendingFriendRequest {
     std::string requester_remark;
@@ -579,6 +628,7 @@ class ApiService {
   GroupDirectory* directory_;
   OfflineStorage* storage_;
   OfflineQueue* queue_;
+  MediaRelay* media_relay_;
   std::uint32_t group_threshold_;
   std::optional<MySqlConfig> friend_mysql_;
 
@@ -592,6 +642,7 @@ class ApiService {
   std::unordered_map<std::string,
                      std::unordered_map<std::string, std::string>>
       friend_remarks_;
+  std::unordered_map<std::string, std::uint32_t> friend_versions_;
   std::unordered_map<std::string,
                      std::unordered_map<std::string, PendingFriendRequest>>
       friend_requests_by_target_;

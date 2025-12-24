@@ -82,6 +82,11 @@ class Engine {
                          const std::string& fingerprint_hex,
                          std::string& error);
 
+  bool DeriveMediaRoot(const std::string& peer_username,
+                       const std::array<std::uint8_t, 16>& call_id,
+                       std::array<std::uint8_t, 32>& out_media_root,
+                       std::string& error);
+
  private:
    static constexpr std::uint8_t kIdentityVersion = 4;
    static constexpr std::uint8_t kProtocolVersion = 5;

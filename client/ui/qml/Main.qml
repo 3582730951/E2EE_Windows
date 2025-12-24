@@ -2,86 +2,129 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import mi.e2ee.ui 1.0 as UI
 
 ApplicationWindow {
     id: root
-    width: 1100
-    height: 700
+    width: 1180
+    height: 760
+    minimumWidth: 980
+    minimumHeight: 640
     visible: true
     title: qsTr("MI E2EE Client")
-    color: UI.Style.bgDark
-    property color accent: UI.Style.accent
-    font.family: UI.Style.fontFamily
+    color: "#0b1018"
+    font.family: "Microsoft YaHei UI"
+
+    property string activeConvId: ""
+    property bool activeIsGroup: false
+    property string statusText: ""
 
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#0e141f" }
-            GradientStop { position: 1.0; color: "#0a0e15" }
+            GradientStop { position: 0.0; color: "#0b1018" }
+            GradientStop { position: 1.0; color: "#0e1624" }
         }
     }
 
-    ListModel { id: logModel }
-    ListModel {
-        id: groupModel
-        ListElement { name: "全局公告"; status: "online" }
-        ListElement { name: "安全群"; status: "online" }
-        ListElement { name: "工作群"; status: "offline" }
-    }
-    ListModel {
-        id: messageModel
-        ListElement { sender: "sys"; text: "欢迎来到 MI E2EE Client"; time: "09:30:00" }
-        ListElement { sender: "sys"; text: "请选择群组并尝试发送触发消息"; time: "09:30:05" }
-    }
+    ListModel { id: friendModel }
+    ListModel { id: groupModel }
+    ListModel { id: requestModel }
+    ListModel { id: messageModel }
+    ListModel { id: stickerModel }
 
     FileDialog {
         id: fileDialog
-        title: qsTr("选择要上传的文件")
+        title: qsTr("选择要发送的文件")
         nameFilters: ["All Files (*)"]
         onAccepted: {
-            var g = groupList.currentIndex >=0 ? groupModel.get(groupList.currentIndex).name : qsTr("未命名群")
-            if (clientBridge.dummySendFile(g, fileDialog.fileUrl)) {
-                var t = Qt.formatTime(new Date(), "hh:mm:ss")
-                logModel.append({ time: t, msg: qsTr("文件已投递: ") + g })
-                messageModel.append({ sender: "sys", text: qsTr("文件上传 -> ") + g, time: t })
+            if (activeConvId.length > 0) {
+                clientBridge.sendFile(activeConvId, fileDialog.selectedFile, activeIsGroup)
+            }
+        }
+    }
+
+    Popup {
+        id: stickerPopup
+        width: 360
+        height: 280
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: "#101b2a"; radius: 12; border.color: "#1d2a3f" }
+        onOpened: refreshStickerModel()
+
+        GridView {
+            anchors.fill: parent
+            anchors.margins: 12
+            cellWidth: 72
+            cellHeight: 72
+            model: stickerModel
+            delegate: Rectangle {
+                width: 64; height: 64; radius: 10
+                color: "#132034"
+                border.color: "#1f2e47"
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (activeConvId.length > 0) {
+                            clientBridge.sendSticker(activeConvId, model.id, activeIsGroup)
+                            stickerPopup.close()
+                        }
+                    }
+                }
+                AnimatedImage {
+                    anchors.centerIn: parent
+                    width: 48; height: 48
+                    source: model.path
+                    playing: model.animated
+                    visible: model.animated
+                }
+                Image {
+                    anchors.centerIn: parent
+                    width: 48; height: 48
+                    source: model.path
+                    visible: !model.animated
+                }
             }
         }
     }
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 24
+        anchors.margins: 20
         spacing: 16
 
-        // 左侧侧边栏
+        // Left panel
         Rectangle {
-            Layout.preferredWidth: 260
+            Layout.preferredWidth: 280
             Layout.fillHeight: true
-            radius: 14
-            color: "#0f1520"
-            border.color: "#1b2434"
+            radius: 16
+            color: "#0f1623"
+            border.color: "#1c2738"
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 16
                 spacing: 12
 
-                Label { text: qsTr("账户"); color: "#a4c8ff"; font.pixelSize: 16; font.family: "Microsoft YaHei" }
+                Label { text: qsTr("MI E2EE"); font.pixelSize: 20; color: "#cfe2ff" }
+
+                Rectangle { height: 1; Layout.fillWidth: true; color: "#1f2b3d" }
+
                 TextField {
-                    id: username
+                    id: usernameField
                     placeholderText: qsTr("用户名")
-                    color: "white"
+                    color: "#e6efff"
                     Layout.fillWidth: true
-                    background: Rectangle { color: "#0f1520"; radius: 8; border.color: "#1f2b3d" }
+                    background: Rectangle { color: "#111a28"; radius: 8; border.color: "#1f2b3d" }
                 }
                 TextField {
-                    id: password
+                    id: passwordField
                     placeholderText: qsTr("密码")
                     echoMode: TextInput.Password
-                    color: "white"
+                    color: "#e6efff"
                     Layout.fillWidth: true
-                    background: Rectangle { color: "#0f1520"; radius: 8; border.color: "#1f2b3d" }
+                    background: Rectangle { color: "#111a28"; radius: 8; border.color: "#1f2b3d" }
                 }
                 Button {
                     Layout.fillWidth: true
@@ -89,361 +132,463 @@ ApplicationWindow {
                         if (clientBridge.loggedIn) {
                             clientBridge.logout()
                         } else {
-                            clientBridge.login(username.text, password.text)
+                            clientBridge.login(usernameField.text, passwordField.text)
                         }
                     }
-                    contentItem: Row {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 8
-                        Image { source: clientBridge.loggedIn ? "qrc:/qt/qml/mi/e2ee/ui/icons/logout.svg" : "qrc:/qt/qml/mi/e2ee/ui/icons/login.svg"; width: 20; height: 20 }
-                        Text { text: clientBridge.loggedIn ? qsTr("退出") : qsTr("登录"); color: "white"; verticalAlignment: Text.AlignVCenter }
+                    contentItem: Text {
+                        text: clientBridge.loggedIn ? qsTr("退出") : qsTr("登录")
+                        color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                     }
-                    background: Rectangle { radius: 8; color: clientBridge.loggedIn ? "#d95c5c" : root.accent }
+                    background: Rectangle {
+                        radius: 8
+                        color: clientBridge.loggedIn ? "#cf5a5a" : "#2f6bff"
+                    }
                 }
 
-                Rectangle { height: 1; color: "#1f2b3d"; Layout.fillWidth: true }
+                Rectangle { height: 1; Layout.fillWidth: true; color: "#1f2b3d" }
 
-                Label { text: qsTr("群组"); color: "#a4c8ff"; font.pixelSize: 16; font.family: "Microsoft YaHei" }
-                TextField {
-                    id: groupId
-                    placeholderText: qsTr("群组 ID")
-                    color: "white"
+                RowLayout {
                     Layout.fillWidth: true
-                    background: Rectangle { color: "#0f1520"; radius: 8; border.color: "#1f2b3d" }
+                    spacing: 8
+                    TextField {
+                        id: friendAddField
+                        placeholderText: qsTr("添加好友")
+                        color: "#e6efff"
+                        Layout.fillWidth: true
+                        background: Rectangle { color: "#111a28"; radius: 8; border.color: "#1f2b3d" }
+                    }
+                    Button {
+                        text: qsTr("发送")
+                        onClicked: clientBridge.sendFriendRequest(friendAddField.text, "")
+                        background: Rectangle { radius: 8; color: "#2f6bff" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
                 }
-                Button {
+
+                TabBar {
+                    id: listTabs
                     Layout.fillWidth: true
-                    onClicked: {
-                        if (clientBridge.joinGroup(groupId.text)) {
-                            var exists = false
-                            for (var i = 0; i < groupModel.count; ++i) {
-                                if (groupModel.get(i).name === groupId.text) { exists = true; break; }
-                            }
-                            if (!exists && groupId.text.length > 0) {
-                                groupModel.append({ name: groupId.text, status: "online" })
-                            }
-                        } else {
-                            var t = Qt.formatTime(new Date(), "hh:mm:ss")
-                            logModel.append({ time: t, msg: qsTr("加入群失败: ") + groupId.text })
-                        }
-                    }
-                    contentItem: Row {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 8
-                        Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/group.svg"; width: 20; height: 20 }
-                        Text { text: qsTr("加入群"); color: "white"; verticalAlignment: Text.AlignVCenter }
-                    }
-                    background: Rectangle { radius: 8; color: root.accent }
+                    TabButton { text: qsTr("好友") }
+                    TabButton { text: qsTr("群聊") }
                 }
 
-                Rectangle { height: 1; color: "#1f2b3d"; Layout.fillWidth: true }
-
-                Label { text: qsTr("离线/文件"); color: "#a4c8ff"; font.pixelSize: 16; font.family: "Microsoft YaHei" }
-                Button {
-                    enabled: true
+                StackLayout {
                     Layout.fillWidth: true
-                    onClicked: fileDialog.open()
-                    contentItem: Row {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 8
-                        Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/file-upload.svg"; width: 20; height: 20 }
-                        Text { text: qsTr("文件上传（占位）"); color: "white"; verticalAlignment: Text.AlignVCenter }
-                    }
-                    background: Rectangle { radius: 8; color: root.accent }
-                }
-                Button {
-                    enabled: true
-                    Layout.fillWidth: true
-                    onClicked: {
-                        var g = groupList.currentIndex >=0 ? groupModel.get(groupList.currentIndex).name : qsTr("未命名群")
-                        var msgs = clientBridge.pullOfflineDummy(g)
-                        var t = Qt.formatTime(new Date(), "hh:mm:ss")
-                        logModel.append({ time: t, msg: qsTr("离线拉取占位: ") + g + qsTr(" 条数=") + msgs.length })
-                        for (var i = 0; i < msgs.length; ++i) {
-                            messageModel.append({ sender: "peer", text: qsTr("离线: ") + msgs[i], time: t })
-                        }
-                    }
-                    contentItem: Row {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 8
-                        Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/offline.svg"; width: 20; height: 20 }
-                        Text { text: qsTr("拉取离线（占位）"); color: "white"; verticalAlignment: Text.AlignVCenter }
-                    }
-                    background: Rectangle { radius: 8; color: "#22324d" }
-                }
-            }
-        }
-
-        // 右侧区域：群列表 + 聊天/状态
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: 14
-            color: "#101726"
-            border.color: "#1b2434"
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 12
-                spacing: 12
-
-                // 群列表
-                Rectangle {
-                    Layout.preferredWidth: 220
                     Layout.fillHeight: true
-                    radius: 10
-                    color: "#0f1520"
-                    border.color: "#1f2b3d"
+                    currentIndex: listTabs.currentIndex
 
+                    // Friends list
                     ListView {
-                        id: groupList
-                        anchors.fill: parent
-                        model: groupModel
+                        id: friendList
                         clip: true
+                        model: friendModel
                         delegate: Rectangle {
                             width: ListView.view.width
-                            height: 52
-                            color: ListView.isCurrentItem ? "#1b2a42" : "transparent"
-                            border.color: "#1f2b3d"
-                            Row {
+                            height: 46
+                            radius: 8
+                            color: ListView.isCurrentItem ? "#1a2a44" : "transparent"
+                            RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: 10
+                                anchors.margins: 8
                                 spacing: 10
+                                Rectangle { width: 8; height: 8; radius: 4; color: "#65d6a6" }
+                                Text { text: model.name; color: "#e6efff"; Layout.fillWidth: true }
                                 Rectangle {
-                                    width: 12; height: 12; radius: 6
-                                    color: status === "online" ? "#6ddf89" : "#b0b7c6"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                Text {
-                                    text: name
-                                    color: "#e9f2ff"
-                                    font.pixelSize: 14
-                                    verticalAlignment: Text.AlignVCenter
+                                    visible: model.unread > 0
+                                    radius: 8
+                                    color: "#ff6b6b"
+                                    implicitWidth: 24
+                                    implicitHeight: 18
+                                    Text { anchors.centerIn: parent; text: model.unread; color: "white"; font.pixelSize: 10 }
                                 }
                             }
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: groupList.currentIndex = index
+                                onClicked: {
+                                    friendList.currentIndex = index
+                                    activeConvId = model.id
+                                    activeIsGroup = false
+                                    loadConversation()
+                                }
                             }
                         }
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                        Component.onCompleted: currentIndex = groupModel.count > 0 ? 0 : -1
                     }
-                }
 
-                // 聊天区
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 12
-
-                    // 顶部状态栏
-                    RowLayout {
-                        spacing: 12
-                        Layout.fillWidth: true
-                        Rectangle {
-                            radius: 8; color: "#0f1520"; border.color: "#1f2b3d"
-                            Layout.fillWidth: true; Layout.preferredHeight: 40
+                    // Group list
+                    ListView {
+                        id: groupList
+                        clip: true
+                        model: groupModel
+                        delegate: Rectangle {
+                            width: ListView.view.width
+                            height: 46
+                            radius: 8
+                            color: ListView.isCurrentItem ? "#1a2a44" : "transparent"
                             RowLayout {
-                                anchors.fill: parent; anchors.margins: 10; spacing: 10
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 10
+                                Rectangle { width: 8; height: 8; radius: 4; color: "#6aa9ff" }
+                                Text { text: model.name; color: "#e6efff"; Layout.fillWidth: true }
                                 Rectangle {
-                                    width: 10; height: 10; radius: 5
-                                    color: clientBridge.loggedIn ? "#6ddf89" : "#d95c5c"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                Label {
-                                    text: qsTr("当前群: ") + (groupList.currentIndex >= 0 ? groupModel.get(groupList.currentIndex).name : qsTr("未选择"))
-                                    color: "#a4c8ff"; elide: Text.ElideRight; Layout.fillWidth: true; font.family: "Microsoft YaHei"
-                                }
-                                Label { text: qsTr("Token: ") + clientBridge.token; color: "#a4c8ff"; elide: Text.ElideRight; Layout.fillWidth: true; font.family: "Microsoft YaHei" }
-                                Label { id: statusLabel; text: ""; color: "#9edb8b"; font.family: "Microsoft YaHei" }
-                            }
-                        }
-                        Rectangle {
-                            radius: 8; color: "#0f1520"; border.color: "#1f2b3d"
-                            Layout.preferredWidth: 260; Layout.preferredHeight: 40
-                            RowLayout { anchors.fill: parent; anchors.margins: 10; spacing: 8
-                                Label { text: qsTr("轮换阈值"); color: "#9fb6d8" }
-                                SpinBox {
-                                    id: threshold
-                                    from: 0; to: 100000; value: 10000; editable: true
-                                    Layout.fillWidth: true
-                                    palette.text: "white"
+                                    visible: model.unread > 0
+                                    radius: 8
+                                    color: "#ff6b6b"
+                                    implicitWidth: 24
+                                    implicitHeight: 18
+                                    Text { anchors.centerIn: parent; text: model.unread; color: "white"; font.pixelSize: 10 }
                                 }
                             }
-                        }
-                        Button {
-                            text: qsTr("触发发送")
-                            onClicked: {
-                                clientBridge.sendGroupMessage(groupId.text, threshold.value)
-                                var g = groupId.text.length > 0 ? groupId.text : (groupList.currentIndex >=0 ? groupModel.get(groupList.currentIndex).name : "未命名群")
-                                messageModel.append({ sender: "me", text: qsTr("发送触发/阈值=") + threshold.value + " (" + g + ")", time: Qt.formatTime(new Date(), "hh:mm:ss") })
-                            }
-                            contentItem: Row {
+                            MouseArea {
                                 anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 8
-                                Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/send.svg"; width: 18; height: 18 }
-                                Text { text: parent.text; color: "white"; verticalAlignment: Text.AlignVCenter }
+                                onClicked: {
+                                    groupList.currentIndex = index
+                                    activeConvId = model.id
+                                    activeIsGroup = true
+                                    loadConversation()
+                                }
                             }
-                            background: Rectangle { radius: 8; color: root.accent }
-                        }
-                        Button {
-                            text: qsTr("清理日志")
-                            onClicked: {
-                                logModel.clear()
-                            }
-                            contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            background: Rectangle { radius: 8; color: "#22324d" }
-                        }
-                        Button {
-                            text: qsTr("模拟收到")
-                            onClicked: {
-                                var g = groupList.currentIndex >=0 ? groupModel.get(groupList.currentIndex).name : qsTr("未命名群")
-                                var t = Qt.formatTime(new Date(), "hh:mm:ss")
-                                var sample = qsTr("来自群「") + g + qsTr("」的演示消息")
-                                messageModel.append({ sender: "peer", text: sample, time: t })
-                                logModel.append({ time: t, msg: qsTr("模拟收到消息: ") + g })
-                            }
-                            contentItem: Row {
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 8
-                                Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/offline.svg"; width: 18; height: 18 }
-                                Text { text: parent.text; color: "white"; verticalAlignment: Text.AlignVCenter }
-                            }
-                            background: Rectangle { radius: 8; color: "#22324d" }
-                        }
-                        Button {
-                            text: qsTr("关于")
-                            onClicked: {
-                                var t = Qt.formatTime(new Date(), "hh:mm:ss")
-                                var info = clientBridge.serverInfo() + " / " + clientBridge.version()
-                                logModel.append({ time: t, msg: qsTr("关于: ") + info })
-                                messageModel.append({ sender: "sys", text: info, time: t })
-                            }
-                            contentItem: Row {
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 8
-                                Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/group.svg"; width: 18; height: 18 }
-                                Text { text: parent.text; color: "white"; verticalAlignment: Text.AlignVCenter }
-                            }
-                            background: Rectangle { radius: 8; color: "#22324d" }
-                        }
-                        Button {
-                            text: qsTr("清空聊天")
-                            onClicked: {
-                                messageModel.clear()
-                                clientBridge.clearMessages()
-                            }
-                            contentItem: Row {
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 8
-                                Image { source: "qrc:/qt/qml/mi/e2ee/ui/icons/logout.svg"; width: 18; height: 18 }
-                                Text { text: parent.text; color: "white"; verticalAlignment: Text.AlignVCenter }
-                            }
-                            background: Rectangle { radius: 8; color: "#22324d" }
                         }
                     }
-
-                    // 输入区
-                    RowLayout {
-                        spacing: 8
-                        Layout.fillWidth: true
-                TextField {
-                    id: messageInput
-                    placeholderText: qsTr("输入消息（本地展示，后端仍走触发/轮换路径）")
-                    color: "#e9f2ff"
-                    Layout.fillWidth: true
-                    background: Rectangle { color: "#0f1520"; radius: 10; border.color: "#1f2b3d" }
                 }
-                        Button {
-                            text: qsTr("发送消息")
-                            onClicked: {
-                                if (messageInput.text.length === 0) return
-                                var g = groupList.currentIndex >=0 ? groupModel.get(groupList.currentIndex).name : qsTr("未命名群")
-                                messageModel.append({ sender: "me", text: messageInput.text + " (" + g + ")", time: Qt.formatTime(new Date(), "hh:mm:ss") })
-                                clientBridge.sendGroupMessage(g, threshold.value)
-                                messageInput.text = ""
-                            }
-                            contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            background: Rectangle { radius: 8; color: root.accent }
+
+                Rectangle { height: 1; Layout.fillWidth: true; color: "#1f2b3d" }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    TextField {
+                        id: groupJoinField
+                        placeholderText: qsTr("群组 ID")
+                        color: "#e6efff"
+                        Layout.fillWidth: true
+                        background: Rectangle { color: "#111a28"; radius: 8; border.color: "#1f2b3d" }
+                    }
+                    Button {
+                        text: qsTr("加入")
+                        onClicked: clientBridge.joinGroup(groupJoinField.text)
+                        background: Rectangle { radius: 8; color: "#2f6bff" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                }
+
+                Button {
+                    Layout.fillWidth: true
+                    text: qsTr("创建群聊")
+                    onClicked: {
+                        var id = clientBridge.createGroup()
+                        if (id.length > 0) {
+                            groupJoinField.text = id
                         }
                     }
+                    background: Rectangle { radius: 8; color: "#20406b" }
+                    contentItem: Text { text: parent.text; color: "white" }
+                }
 
-                    // 消息列表
+                Rectangle { height: 1; Layout.fillWidth: true; color: "#1f2b3d" }
+
+                Label { text: qsTr("好友请求"); color: "#9fb6d8" }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 110
+                    model: requestModel
+                    delegate: RowLayout {
+                        width: ListView.view.width
+                        spacing: 8
+                        Text { text: model.username; color: "#e6efff"; Layout.fillWidth: true }
+                        Button {
+                            text: qsTr("同意")
+                            onClicked: clientBridge.respondFriendRequest(model.username, true)
+                            background: Rectangle { radius: 6; color: "#2f6bff" }
+                            contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 12 }
+                        }
+                        Button {
+                            text: qsTr("拒绝")
+                            onClicked: clientBridge.respondFriendRequest(model.username, false)
+                            background: Rectangle { radius: 6; color: "#2c3646" }
+                            contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 12 }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Right panel
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            radius: 16
+            color: "#0f1623"
+            border.color: "#1c2738"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 12
+
+                // Top bar
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
                     Rectangle {
-                        radius: 10
-                        color: "#0f1520"
-                        border.color: "#1f2b3d"
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-
-                        ListView {
+                        Layout.preferredHeight: 44
+                        radius: 10
+                        color: "#121c2b"
+                        border.color: "#1f2b3d"
+                        RowLayout {
                             anchors.fill: parent
                             anchors.margins: 10
-                            clip: true
-                            model: messageModel
-                            id: messageList
-                            onCountChanged: positionViewAtEnd()
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                            delegate: Item {
-                                width: ListView.view.width
-                                height: bubbleRow.implicitHeight + 12
-                                Row {
-                                    id: bubbleRow
-                                    anchors.left: sender === "me" ? undefined : parent.left
-                                    anchors.right: sender === "me" ? parent.right : undefined
-                                    anchors.margins: 6
-                                    spacing: 8
-                                    layoutDirection: sender === "me" ? Qt.RightToLeft : Qt.LeftToRight
-                                    Rectangle {
-                                        width: 32; height: 32; radius: 16
-                                        color: sender === "me" ? "#5bd0ff" : "#7aa0c8"
-                                        anchors.verticalCenter: bubble.verticalCenter
-                                        opacity: 0.0
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                        Component.onCompleted: opacity = 1.0
-                                        Text { anchors.centerIn: parent; text: sender === "me" ? qsTr("Me") : qsTr("S"); color: "#0f1520"; font.bold: true }
-                                    }
-                                    Rectangle {
-                                        id: bubble
-                                        radius: 10
-                                        color: sender === "me" ? "#162f4a" : "#22324d"
-                                        border.color: "#1f2b3d"
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        opacity: 0.0
-                                        Behavior on opacity { NumberAnimation { duration: 220 } }
-                                        Component.onCompleted: opacity = 1.0
-                                        Column {
-                                            padding: 10
-                                            spacing: 4
-                                            Text { text: text; color: "#e9f2ff"; wrapMode: Text.WordWrap; width: 520 }
-                                            Text { text: time; color: "#7aa0c8"; font.pixelSize: 11 }
+                            spacing: 10
+                            Rectangle { width: 10; height: 10; radius: 5; color: clientBridge.loggedIn ? "#6ddf89" : "#d95c5c" }
+                            Text {
+                                text: activeConvId.length > 0 ? (activeIsGroup ? qsTr("群聊: ") : qsTr("好友: ")) + activeConvId : qsTr("未选择会话")
+                                color: "#cfe2ff"; Layout.fillWidth: true
+                            }
+                            Text { text: statusText; color: "#9edb8b" }
+                        }
+                    }
+                    Button {
+                        text: qsTr("语音")
+                        enabled: activeConvId.length > 0 && !activeIsGroup
+                        onClicked: clientBridge.startVoiceCall(activeConvId)
+                        background: Rectangle { radius: 8; color: "#2f6bff" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                    Button {
+                        text: qsTr("视频")
+                        enabled: activeConvId.length > 0 && !activeIsGroup
+                        onClicked: clientBridge.startVideoCall(activeConvId)
+                        background: Rectangle { radius: 8; color: "#2f6bff" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                    Button {
+                        text: qsTr("挂断")
+                        enabled: clientBridge.activeCallId.length > 0
+                        onClicked: clientBridge.endCall()
+                        background: Rectangle { radius: 8; color: "#cf5a5a" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                }
+
+                // Message list
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 12
+                    color: "#101a28"
+                    border.color: "#1f2b3d"
+
+                    ListView {
+                        id: messageList
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        model: messageModel
+                        clip: true
+                        spacing: 8
+                        onCountChanged: positionViewAtEnd()
+                        delegate: Item {
+                            width: ListView.view.width
+                            height: bubble.implicitHeight + 8
+                            Row {
+                                anchors.left: outgoing ? undefined : parent.left
+                                anchors.right: outgoing ? parent.right : undefined
+                                spacing: 8
+                                layoutDirection: outgoing ? Qt.RightToLeft : Qt.LeftToRight
+                                Rectangle {
+                                    id: bubble
+                                    radius: 10
+                                    color: outgoing ? "#1c3658" : "#1f2b3d"
+                                    border.color: "#2b3a50"
+                                    Column {
+                                        padding: 10
+                                        spacing: 6
+                                        Text { text: sender; color: "#7aa0c8"; visible: isGroup && !outgoing }
+                                        Text {
+                                            text: (kind === "text" || kind === "notice" || kind === "system") ? text : ""
+                                            color: "#e9f2ff"
+                                            wrapMode: Text.WordWrap
+                                            visible: kind === "text" || kind === "notice" || kind === "system"
+                                            width: 520
                                         }
+                                        Row {
+                                            spacing: 8
+                                            visible: kind === "file"
+                                            Text { text: qsTr("文件: ") + fileName; color: "#e9f2ff" }
+                                            Text { text: Math.round(fileSize / 1024) + " KB"; color: "#7aa0c8" }
+                                        }
+                                        Item {
+                                            visible: kind === "sticker"
+                                            width: 96; height: 96
+                                            AnimatedImage {
+                                                anchors.centerIn: parent
+                                                width: 92; height: 92
+                                                source: stickerUrl
+                                                playing: stickerAnimated
+                                                visible: stickerAnimated
+                                            }
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 92; height: 92
+                                                source: stickerUrl
+                                                visible: !stickerAnimated
+                                            }
+                                        }
+                                        Row {
+                                            spacing: 8
+                                            visible: kind === "group_invite"
+                                            Text { text: qsTr("群聊邀请"); color: "#e9f2ff" }
+                                            Button {
+                                                text: qsTr("加入")
+                                                onClicked: clientBridge.joinGroup(convId)
+                                                background: Rectangle { radius: 6; color: "#2f6bff" }
+                                                contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 12 }
+                                            }
+                                        }
+                                        Row {
+                                            spacing: 8
+                                            visible: kind === "call_invite"
+                                            Text { text: video ? qsTr("视频通话邀请") : qsTr("语音通话邀请"); color: "#e9f2ff" }
+                                            Button {
+                                                text: qsTr("加入")
+                                                visible: !outgoing
+                                                onClicked: clientBridge.joinCall(sender, callId, video)
+                                                background: Rectangle { radius: 6; color: "#2f6bff" }
+                                                contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 12 }
+                                            }
+                                        }
+                                        Text { text: time; color: "#7aa0c8"; font.pixelSize: 10 }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+
+                // Input
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    TextField {
+                        id: messageInput
+                        placeholderText: qsTr("输入消息")
+                        color: "#e6efff"
+                        Layout.fillWidth: true
+                        background: Rectangle { color: "#111a28"; radius: 10; border.color: "#1f2b3d" }
+                    }
+                    Button {
+                        text: qsTr("😀")
+                        onClicked: stickerPopup.open()
+                        background: Rectangle { radius: 8; color: "#22324d" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                    Button {
+                        text: qsTr("附件")
+                        onClicked: fileDialog.open()
+                        background: Rectangle { radius: 8; color: "#22324d" }
+                        contentItem: Text { text: parent.text; color: "white" }
+                    }
+                    Button {
+                        text: qsTr("发送")
+                        onClicked: {
+                            if (activeConvId.length === 0) return
+                            clientBridge.sendText(activeConvId, messageInput.text, activeIsGroup)
+                            messageInput.text = ""
+                        }
+                        background: Rectangle { radius: 8; color: "#2f6bff" }
+                        contentItem: Text { text: parent.text; color: "white" }
                     }
                 }
             }
         }
     }
 
+    function refreshStickerModel() {
+        stickerModel.clear()
+        var items = clientBridge.stickerItems()
+        for (var i = 0; i < items.length; ++i) {
+            stickerModel.append(items[i])
+        }
+    }
+
+    function refreshFriendModel() {
+        friendModel.clear()
+        var items = clientBridge.friends
+        for (var i = 0; i < items.length; ++i) {
+            friendModel.append({ id: items[i].username, name: items[i].remark.length > 0 ? items[i].remark : items[i].username, unread: 0 })
+        }
+    }
+
+    function refreshGroupModel() {
+        groupModel.clear()
+        var items = clientBridge.groups
+        for (var i = 0; i < items.length; ++i) {
+            groupModel.append({ id: items[i].id, name: items[i].name, unread: items[i].unread })
+        }
+    }
+
+    function refreshRequestModel() {
+        requestModel.clear()
+        var items = clientBridge.friendRequests
+        for (var i = 0; i < items.length; ++i) {
+            requestModel.append({ username: items[i].username, remark: items[i].remark })
+        }
+    }
+
+    function loadConversation() {
+        messageModel.clear()
+        if (activeConvId.length === 0) {
+            return
+        }
+        var history = clientBridge.loadHistory(activeConvId, activeIsGroup)
+        for (var i = 0; i < history.length; ++i) {
+            messageModel.append(history[i])
+        }
+        clearUnread(activeConvId, activeIsGroup)
+    }
+
+    function clearUnread(convId, isGroup) {
+        var model = isGroup ? groupModel : friendModel
+        for (var i = 0; i < model.count; ++i) {
+            if (model.get(i).id === convId) {
+                model.setProperty(i, "unread", 0)
+                break
+            }
+        }
+    }
+
+    function incrementUnread(convId, isGroup) {
+        var model = isGroup ? groupModel : friendModel
+        for (var i = 0; i < model.count; ++i) {
+            if (model.get(i).id === convId) {
+                model.setProperty(i, "unread", model.get(i).unread + 1)
+                return
+            }
+        }
+        if (isGroup) {
+            groupModel.append({ id: convId, name: convId, unread: 1 })
+        }
+    }
+
+    Component.onCompleted: {
+        clientBridge.init("")
+        refreshFriendModel()
+        refreshGroupModel()
+        refreshRequestModel()
+    }
+
     Connections {
         target: clientBridge
-        function onStatus(message) {
-            statusLabel.text = message
-            var t = Qt.formatTime(new Date(), "hh:mm:ss")
-            logModel.append({ time: t, msg: message })
-            messageModel.append({ sender: "sys", text: message, time: t })
+        function onStatus(message) { statusText = message }
+        function onFriendsChanged() { refreshFriendModel() }
+        function onGroupsChanged() { refreshGroupModel() }
+        function onFriendRequestsChanged() { refreshRequestModel() }
+        function onMessageEvent(message) {
+            if (message.convId === activeConvId && message.isGroup === activeIsGroup) {
+                messageModel.append(message)
+            } else {
+                incrementUnread(message.convId, message.isGroup)
+            }
         }
     }
 }

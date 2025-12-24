@@ -183,6 +183,25 @@ if(MSVC)
   else()
     set(MI_MSVC_ASAN_DLLS "" CACHE INTERNAL "MSVC ASAN runtime DLLs")
   endif()
+
+  if(MI_E2EE_PGO_INSTRUMENT)
+    set(_pgo_dll_dirs)
+    file(GLOB _pgo_dll_dirs LIST_DIRECTORIES true
+         "${_msvc_root}/*/bin/Hostx64/x64")
+    list(SORT _pgo_dll_dirs)
+    list(REVERSE _pgo_dll_dirs)
+    set(MI_MSVC_PGO_DLLS "" CACHE INTERNAL "MSVC PGO runtime DLLs")
+    foreach(_pgo_dir IN LISTS _pgo_dll_dirs)
+      file(GLOB _pgo_dlls "${_pgo_dir}/pgort140.dll")
+      if(_pgo_dlls)
+        set(MI_MSVC_PGO_DLLS "${_pgo_dlls}" CACHE INTERNAL "MSVC PGO runtime DLLs")
+        message(STATUS "Using MSVC PGO runtime from ${_pgo_dir}")
+        break()
+      endif()
+    endforeach()
+  else()
+    set(MI_MSVC_PGO_DLLS "" CACHE INTERNAL "MSVC PGO runtime DLLs")
+  endif()
  endif()
 
 function(mi_copy_msvc_runtime target_name)
@@ -198,10 +217,17 @@ function(mi_copy_msvc_runtime target_name)
               ${MI_MSVC_ASAN_DLLS}
               $<TARGET_FILE_DIR:${target_name}>)
   endif()
+  if(MSVC AND MI_E2EE_PGO_INSTRUMENT AND MI_MSVC_PGO_DLLS)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              ${MI_MSVC_PGO_DLLS}
+              $<TARGET_FILE_DIR:${target_name}>)
+  endif()
 endfunction()
 
 add_library(shard_secure STATIC
     ../shard/secure_types.cpp
+    ../shard/media_frame.cpp
 )
 target_include_directories(shard_secure PUBLIC ../shard)
 target_link_libraries(shard_secure PUBLIC mi_e2ee_build_flags)
@@ -227,6 +253,7 @@ add_library(mi_e2ee_core STATIC
     src/group_directory.cpp
     src/frame.cpp
     src/offline_storage.cpp
+    src/media_relay.cpp
     src/api_service.cpp
     src/protocol.cpp
     src/frame_router.cpp

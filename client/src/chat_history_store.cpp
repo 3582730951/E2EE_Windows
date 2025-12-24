@@ -33,6 +33,7 @@ constexpr std::uint8_t kMessageKindEnvelope = 1;
 constexpr std::uint8_t kMessageKindSystem = 2;
 
 constexpr std::size_t kMaxRecordCipherLen = 2u * 1024u * 1024u;
+constexpr std::size_t kMaxHistoryKeyFileBytes = 64u * 1024u;
 
 bool IsAllZero(const std::uint8_t* data, std::size_t len) {
   if (!data || len == 0) {
@@ -182,6 +183,26 @@ bool ChatHistoryStore::EnsureKeyLoaded(std::string& error) {
     return false;
   }
 
+  std::error_code ec;
+  if (std::filesystem::exists(key_path_, ec)) {
+    if (ec) {
+      error = "history key path error";
+      return false;
+    }
+    const auto size = std::filesystem::file_size(key_path_, ec);
+    if (ec) {
+      error = "history key size stat failed";
+      return false;
+    }
+    if (size > kMaxHistoryKeyFileBytes) {
+      error = "history key too large";
+      return false;
+    }
+  } else if (ec) {
+    error = "history key path error";
+    return false;
+  }
+
   std::vector<std::uint8_t> bytes;
   {
     std::ifstream f(key_path_, std::ios::binary);
@@ -257,8 +278,8 @@ bool ChatHistoryStore::EnsureKeyLoaded(std::string& error) {
   out_bytes = std::move(wrapped);
 #endif
 
-  std::error_code ec;
-  std::filesystem::create_directories(user_dir_, ec);
+  std::error_code ec2;
+  std::filesystem::create_directories(user_dir_, ec2);
   const auto tmp = key_path_.string() + ".tmp";
   {
     std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
@@ -271,13 +292,13 @@ bool ChatHistoryStore::EnsureKeyLoaded(std::string& error) {
     out.close();
     if (!out) {
       error = "history key write failed";
-      std::filesystem::remove(tmp, ec);
+      std::filesystem::remove(tmp, ec2);
       return false;
     }
   }
-  std::filesystem::rename(tmp, key_path_, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
+  std::filesystem::rename(tmp, key_path_, ec2);
+  if (ec2) {
+    std::filesystem::remove(tmp, ec2);
     error = "history key write failed";
     return false;
   }

@@ -3,6 +3,7 @@
 #ifdef __cplusplus
 
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -397,6 +398,9 @@ char *shard_secure_string_clone(shard_secure_string *handle,
   }
   try {
     const std::string plain = handle->impl.get();
+    if (plain.size() > (std::numeric_limits<size_t>::max)() - 1) {
+      return nullptr;
+    }
     char *buf = static_cast<char *>(std::malloc(plain.size() + 1));
     if (!buf) {
       return nullptr;

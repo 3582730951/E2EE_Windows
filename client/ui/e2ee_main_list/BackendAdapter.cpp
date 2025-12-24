@@ -283,6 +283,19 @@ bool IsNonRetryableSendError(const QString &coreErr) {
     }
     return false;
 }
+
+QVector<BackendAdapter::FriendEntry> ToFriendEntries(
+    const std::vector<mi::client::ClientCore::FriendEntry> &friends) {
+    QVector<BackendAdapter::FriendEntry> out;
+    out.reserve(static_cast<int>(friends.size()));
+    for (const auto &f : friends) {
+        BackendAdapter::FriendEntry e;
+        e.username = QString::fromStdString(f.username);
+        e.remark = QString::fromStdString(f.remark);
+        out.push_back(std::move(e));
+    }
+    return out;
+}
 }  // namespace
 
 bool BackendAdapter::init(const QString &configPath) {
@@ -413,6 +426,9 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
                         if (core_.Login(account.trimmed().toStdString(), password.toStdString())) {
                             loggedIn_ = true;
                             currentUser_ = account.trimmed();
+                            lastFriends_.clear();
+                            friendSyncForced_.store(true);
+                            lastFriendSyncAtMs_.store(0);
                             err.clear();
                             online_ = true;
                             startPolling(basePollIntervalMs_);
@@ -442,6 +458,9 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
     }
     loggedIn_ = true;
     currentUser_ = account.trimmed();
+    lastFriends_.clear();
+    friendSyncForced_.store(true);
+    lastFriendSyncAtMs_.store(0);
     err.clear();
     online_ = true;
     startPolling(basePollIntervalMs_);
@@ -555,6 +574,9 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
 
             self->loggedIn_ = true;
             self->currentUser_ = acc;
+            self->lastFriends_.clear();
+            self->friendSyncForced_.store(true);
+            self->lastFriendSyncAtMs_.store(0);
             self->online_ = true;
             self->startPolling(self->basePollIntervalMs_);
             emit self->loginFinished(true, QString());
@@ -719,13 +741,8 @@ QVector<BackendAdapter::FriendEntry> BackendAdapter::listFriends(QString &err) {
         return out;
     }
     const auto friends = core_.ListFriends();
-    out.reserve(static_cast<int>(friends.size()));
-    for (const auto &f : friends) {
-        FriendEntry e;
-        e.username = QString::fromStdString(f.username);
-        e.remark = QString::fromStdString(f.remark);
-        out.push_back(std::move(e));
-    }
+    out = ToFriendEntries(friends);
+    lastFriends_ = out;
     err.clear();
     return out;
 }
@@ -752,26 +769,29 @@ void BackendAdapter::requestFriendList() {
         if (!self) {
             return;
         }
-        const auto friends = self->core_.ListFriends();
-        const std::string coreErr = self->core_.last_error();
-        QMetaObject::invokeMethod(self, [self, friends, coreErr]() {
+        std::vector<mi::client::ClientCore::FriendEntry> friends;
+        bool changed = false;
+        const bool ok = self->core_.SyncFriends(friends, changed);
+        const std::string coreErr = ok ? std::string() : self->core_.last_error();
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        self->lastFriendSyncAtMs_.store(now);
+        self->friendSyncForced_.store(false);
+        QMetaObject::invokeMethod(self, [self, friends = std::move(friends), coreErr, ok, changed]() mutable {
             if (!self) {
                 return;
-            }
-
-            QVector<BackendAdapter::FriendEntry> out;
-            out.reserve(static_cast<int>(friends.size()));
-            for (const auto &f : friends) {
-                BackendAdapter::FriendEntry e;
-                e.username = QString::fromStdString(f.username);
-                e.remark = QString::fromStdString(f.remark);
-                out.push_back(std::move(e));
             }
 
             const QString err =
                 coreErr.empty() ? QString() : QString::fromStdString(coreErr).trimmed();
             self->coreWorkActive_.store(false);
-            emit self->friendListLoaded(out, err);
+            if (!ok && self->lastFriends_.isEmpty()) {
+                emit self->friendListLoaded({}, err);
+                return;
+            }
+            if (ok && changed) {
+                self->lastFriends_ = ToFriendEntries(friends);
+            }
+            emit self->friendListLoaded(self->lastFriends_, err);
         }, Qt::QueuedConnection);
     }).detach();
 }
@@ -793,6 +813,7 @@ bool BackendAdapter::addFriend(const QString &account, const QString &remark, QS
         err = QStringLiteral("添加好友失败：账号不存在或服务器异常");
         return false;
     }
+    friendSyncForced_.store(true);
     err.clear();
     return true;
 }
@@ -858,6 +879,9 @@ bool BackendAdapter::respondFriendRequest(const QString &requester, bool accept,
         err = coreErr.empty() ? QStringLiteral("处理好友申请失败") : QString::fromStdString(coreErr);
         return false;
     }
+    if (accept) {
+        friendSyncForced_.store(true);
+    }
     err.clear();
     return true;
 }
@@ -880,6 +904,7 @@ bool BackendAdapter::deleteFriend(const QString &account, QString &err) {
         err = coreErr.empty() ? QStringLiteral("删除好友失败") : QString::fromStdString(coreErr);
         return false;
     }
+    friendSyncForced_.store(true);
     err.clear();
     return true;
 }
@@ -902,6 +927,9 @@ bool BackendAdapter::setUserBlocked(const QString &account, bool blocked, QStrin
         err = coreErr.empty() ? QStringLiteral("操作失败") : QString::fromStdString(coreErr);
         return false;
     }
+    if (blocked) {
+        friendSyncForced_.store(true);
+    }
     err.clear();
     return true;
 }
@@ -923,6 +951,7 @@ bool BackendAdapter::setFriendRemark(const QString &account, const QString &rema
         err = QStringLiteral("备注更新失败：账号不存在或服务器异常");
         return false;
     }
+    friendSyncForced_.store(true);
     err.clear();
     return true;
 }
@@ -2259,6 +2288,7 @@ void BackendAdapter::cancelDevicePairing() {
 
 void BackendAdapter::startPolling(int intervalMs) {
     basePollIntervalMs_ = intervalMs;
+    friendSyncIntervalMs_ = intervalMs;
     if (!pollTimer_) {
         pollTimer_ = std::make_unique<QTimer>(this);
         connect(pollTimer_.get(), &QTimer::timeout, this, &BackendAdapter::pollMessages);
@@ -2475,12 +2505,35 @@ void BackendAdapter::pollMessages() {
         }
         auto events = self->core_.PollChat();
         auto reqs = self->core_.ListFriendRequests();
+        std::vector<mi::client::ClientCore::FriendEntry> syncedFriends;
+        bool syncChanged = false;
+        std::string syncErr;
+        bool didSync = false;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const qint64 last = self->lastFriendSyncAtMs_.load();
+        const bool force = self->friendSyncForced_.load();
+        if (force || (last == 0) || (now - last >= self->friendSyncIntervalMs_)) {
+            didSync = true;
+            if (!self->core_.SyncFriends(syncedFriends, syncChanged)) {
+                syncErr = self->core_.last_error();
+            }
+            self->lastFriendSyncAtMs_.store(now);
+            self->friendSyncForced_.store(false);
+        }
 
-        QMetaObject::invokeMethod(self, [self, events = std::move(events), reqs = std::move(reqs)]() mutable {
+        QMetaObject::invokeMethod(self, [self, events = std::move(events),
+                                         reqs = std::move(reqs),
+                                         syncedFriends = std::move(syncedFriends),
+                                         syncChanged, syncErr, didSync]() mutable {
             if (!self) {
                 return;
             }
             self->handlePollResult(std::move(events), std::move(reqs));
+            if (didSync) {
+                const QString err =
+                    syncErr.empty() ? QString() : QString::fromStdString(syncErr).trimmed();
+                self->applyFriendSync(syncedFriends, syncChanged, err, false);
+            }
         }, Qt::QueuedConnection);
     }).detach();
 }
@@ -2697,4 +2750,23 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
     }
 
     pollingSuspended_ = prevSuspend;
+}
+
+void BackendAdapter::applyFriendSync(
+    const std::vector<mi::client::ClientCore::FriendEntry> &friends,
+    bool changed, const QString &err, bool emitEvenIfUnchanged) {
+    if (!err.isEmpty()) {
+        if (emitEvenIfUnchanged && lastFriends_.isEmpty()) {
+            emit friendListLoaded({}, err);
+        }
+        return;
+    }
+    if (changed) {
+        lastFriends_ = ToFriendEntries(friends);
+        emit friendListLoaded(lastFriends_, QString());
+        return;
+    }
+    if (emitEvenIfUnchanged) {
+        emit friendListLoaded(lastFriends_, QString());
+    }
 }

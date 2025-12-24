@@ -76,15 +76,31 @@ bool ReadFileBytes(const std::filesystem::path& path,
     error = "kt signing key path empty";
     return false;
   }
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) {
+    error = ec ? "kt signing key path error" : "kt signing key not found";
+    return false;
+  }
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error = "kt signing key size stat failed";
+    return false;
+  }
+  if (size != kKtSthSigSecretKeyBytes) {
+    error = "kt signing key size invalid";
+    return false;
+  }
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
     error = "kt signing key not found";
     return false;
   }
-  out.assign(std::istreambuf_iterator<char>(ifs),
-             std::istreambuf_iterator<char>());
-  if (out.empty()) {
-    error = "kt signing key empty";
+  out.resize(static_cast<std::size_t>(size));
+  ifs.read(reinterpret_cast<char*>(out.data()),
+           static_cast<std::streamsize>(out.size()));
+  if (!ifs) {
+    out.clear();
+    error = "kt signing key read failed";
     return false;
   }
   return true;
@@ -93,7 +109,8 @@ bool ReadFileBytes(const std::filesystem::path& path,
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupDirectory* directory, OfflineStorage* storage,
-                       OfflineQueue* queue, std::uint32_t group_threshold,
+                       OfflineQueue* queue, MediaRelay* media_relay,
+                       std::uint32_t group_threshold,
                        std::optional<MySqlConfig> friend_mysql,
                        std::filesystem::path kt_dir,
                        std::filesystem::path kt_signing_key)
@@ -102,6 +119,7 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
       directory_(directory),
       storage_(storage),
       queue_(queue),
+      media_relay_(media_relay),
       group_threshold_(group_threshold == 0 ? 10000 : group_threshold),
       friend_mysql_(std::move(friend_mysql)),
       rl_global_unauth_(30.0, 10.0),
@@ -1158,16 +1176,28 @@ OfflinePullResponse ApiService::PullOffline(const std::string& token) {
   return resp;
 }
 
-FriendListResponse ApiService::ListFriends(const std::string& token) {
+std::uint32_t ApiService::CurrentFriendVersionLocked(
+    const std::string& username) const {
+  const auto it = friend_versions_.find(username);
+  if (it == friend_versions_.end()) {
+    return 0;
+  }
+  return it->second;
+}
+
+void ApiService::BumpFriendVersionLocked(const std::string& username) {
+  auto& ver = friend_versions_[username];
+  if (ver == 0xFFFFFFFFu) {
+    ver = 1;
+  } else {
+    ++ver;
+  }
+}
+
+FriendListResponse ApiService::ListFriendsInternal(const Session& sess) {
   FriendListResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
-    return resp;
-  }
-  std::optional<Session> sess;
-  std::string rl_error;
-  if (!RateLimitAuth("friend_list", token, sess, rl_error)) {
-    resp.error = rl_error;
     return resp;
   }
 
@@ -1229,9 +1259,9 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
     MYSQL_BIND bind_param[1];
     std::memset(bind_param, 0, sizeof(bind_param));
     bind_param[0].buffer_type = MYSQL_TYPE_STRING;
-    bind_param[0].buffer = const_cast<char*>(sess->username.c_str());
+    bind_param[0].buffer = const_cast<char*>(sess.username.c_str());
     bind_param[0].buffer_length =
-        static_cast<unsigned long>(sess->username.size());
+        static_cast<unsigned long>(sess.username.size());
 
     if (mysql_stmt_bind_param(stmt, bind_param) != 0) {
       resp.error = "mysql_stmt_bind_param failed";
@@ -1347,10 +1377,10 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
   std::vector<FriendListResponse::Entry> out;
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
-    auto it = friends_.find(sess->username);
+    auto it = friends_.find(sess.username);
     if (it != friends_.end()) {
       out.reserve(it->second.size());
-      const auto remarks_it = friend_remarks_.find(sess->username);
+      const auto remarks_it = friend_remarks_.find(sess.username);
       for (const auto& f : it->second) {
         FriendListResponse::Entry e;
         e.username = f;
@@ -1371,6 +1401,58 @@ FriendListResponse ApiService::ListFriends(const std::string& token) {
             });
   resp.success = true;
   resp.friends = std::move(out);
+  return resp;
+}
+
+FriendListResponse ApiService::ListFriends(const std::string& token) {
+  FriendListResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("friend_list", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  return ListFriendsInternal(*sess);
+}
+
+FriendSyncResponse ApiService::SyncFriends(const std::string& token,
+                                           std::uint32_t last_version) {
+  FriendSyncResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("friend_sync", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+
+  std::uint32_t current_version = 0;
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    current_version = CurrentFriendVersionLocked(sess->username);
+  }
+  resp.version = current_version;
+  if (last_version == current_version) {
+    resp.success = true;
+    resp.changed = false;
+    return resp;
+  }
+
+  FriendListResponse list = ListFriendsInternal(*sess);
+  if (!list.success) {
+    resp.error = list.error.empty() ? "friend list failed" : list.error;
+    return resp;
+  }
+  resp.success = true;
+  resp.changed = true;
+  resp.friends = std::move(list.friends);
   return resp;
 }
 
@@ -1491,6 +1573,11 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
       resp.error = "mysql insert failed";
       return resp;
     }
+    {
+      std::lock_guard<std::mutex> lock(friends_mutex_);
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(friend_username);
+    }
     resp.success = true;
     return resp;
   }
@@ -1503,6 +1590,8 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
     if (!remark.empty()) {
       friend_remarks_[sess->username][friend_username] = remark;
     }
+    BumpFriendVersionLocked(sess->username);
+    BumpFriendVersionLocked(friend_username);
   }
   resp.success = true;
   return resp;
@@ -1690,6 +1779,10 @@ FriendRemarkResponse ApiService::SetFriendRemark(const std::string& token,
     mysql_stmt_close(stmt);
     mysql_close(conn);
 
+    {
+      std::lock_guard<std::mutex> lock(friends_mutex_);
+      BumpFriendVersionLocked(sess->username);
+    }
     resp.success = true;
     return resp;
   }
@@ -1711,6 +1804,7 @@ FriendRemarkResponse ApiService::SetFriendRemark(const std::string& token,
     } else {
       friend_remarks_[sess->username][friend_username] = remark;
     }
+    BumpFriendVersionLocked(sess->username);
   }
   resp.success = true;
   return resp;
@@ -2328,6 +2422,11 @@ FriendRequestRespondResponse ApiService::RespondFriendRequest(
       resp.error = "mysql insert failed";
       return resp;
     }
+    {
+      std::lock_guard<std::mutex> lock(friends_mutex_);
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(requester_username);
+    }
     resp.success = true;
     return resp;
   }
@@ -2356,6 +2455,8 @@ FriendRequestRespondResponse ApiService::RespondFriendRequest(
       if (!remark.empty()) {
         friend_remarks_[requester_username][sess->username] = remark;
       }
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(requester_username);
     }
   }
 
@@ -2461,6 +2562,11 @@ FriendDeleteResponse ApiService::DeleteFriend(const std::string& token,
       resp.error = "mysql delete failed";
       return resp;
     }
+    {
+      std::lock_guard<std::mutex> lock(friends_mutex_);
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(friend_username);
+    }
     resp.success = true;
     return resp;
   }
@@ -2468,13 +2574,18 @@ FriendDeleteResponse ApiService::DeleteFriend(const std::string& token,
 
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
+    bool removed = false;
     auto it = friends_.find(sess->username);
     if (it != friends_.end()) {
-      it->second.erase(friend_username);
+      if (it->second.erase(friend_username) > 0) {
+        removed = true;
+      }
     }
     auto it2 = friends_.find(friend_username);
     if (it2 != friends_.end()) {
-      it2->second.erase(sess->username);
+      if (it2->second.erase(sess->username) > 0) {
+        removed = true;
+      }
     }
     auto r = friend_remarks_.find(sess->username);
     if (r != friend_remarks_.end()) {
@@ -2483,6 +2594,10 @@ FriendDeleteResponse ApiService::DeleteFriend(const std::string& token,
     auto r2 = friend_remarks_.find(friend_username);
     if (r2 != friend_remarks_.end()) {
       r2->second.erase(sess->username);
+    }
+    if (removed) {
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(friend_username);
     }
   }
 
@@ -2667,6 +2782,11 @@ UserBlockSetResponse ApiService::SetUserBlocked(const std::string& token,
       }
     }
 
+    if (blocked) {
+      std::lock_guard<std::mutex> lock(friends_mutex_);
+      BumpFriendVersionLocked(sess->username);
+      BumpFriendVersionLocked(blocked_username);
+    }
     mysql_close(conn);
     resp.success = true;
     return resp;
@@ -2676,14 +2796,19 @@ UserBlockSetResponse ApiService::SetUserBlocked(const std::string& token,
   {
     std::lock_guard<std::mutex> lock(friends_mutex_);
     if (blocked) {
+      bool removed = false;
       blocks_[sess->username].insert(blocked_username);
       auto it = friends_.find(sess->username);
       if (it != friends_.end()) {
-        it->second.erase(blocked_username);
+        if (it->second.erase(blocked_username) > 0) {
+          removed = true;
+        }
       }
       auto it2 = friends_.find(blocked_username);
       if (it2 != friends_.end()) {
-        it2->second.erase(sess->username);
+        if (it2->second.erase(sess->username) > 0) {
+          removed = true;
+        }
       }
       auto r = friend_remarks_.find(sess->username);
       if (r != friend_remarks_.end()) {
@@ -2695,6 +2820,10 @@ UserBlockSetResponse ApiService::SetUserBlocked(const std::string& token,
       }
       friend_requests_by_target_[sess->username].erase(blocked_username);
       friend_requests_by_target_[blocked_username].erase(sess->username);
+      if (removed) {
+        BumpFriendVersionLocked(sess->username);
+        BumpFriendVersionLocked(blocked_username);
+      }
     } else {
       const auto it = blocks_.find(sess->username);
       if (it != blocks_.end()) {
@@ -3241,6 +3370,253 @@ PrivateSendResponse ApiService::SendPrivate(const std::string& token,
   }
 
   queue_->EnqueuePrivate(recipient, sess->username, std::move(payload));
+  resp.success = true;
+  return resp;
+}
+
+MediaPushResponse ApiService::PushMedia(
+    const std::string& token, const std::string& recipient,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::vector<std::uint8_t> payload) {
+  MediaPushResponse resp;
+  if (!sessions_ || !media_relay_) {
+    resp.error = "media relay unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("media_push", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (recipient.empty()) {
+    resp.error = "recipient empty";
+    return resp;
+  }
+  if (recipient == sess->username) {
+    resp.error = "invalid recipient";
+    return resp;
+  }
+  if (payload.empty()) {
+    resp.error = "payload empty";
+    return resp;
+  }
+  if (payload.size() > (512u * 1024u)) {
+    resp.error = "payload too large";
+    return resp;
+  }
+
+  {
+    std::string exists_err;
+    if (!sessions_->UserExists(recipient, exists_err)) {
+      resp.error = exists_err.empty() ? "recipient not found" : exists_err;
+      return resp;
+    }
+  }
+
+  bool blocked = false;
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    std::string block_err;
+    const bool recipient_blocks_sender =
+        IsBlockedMysql(*friend_mysql_, recipient, sess->username, block_err);
+    if (!block_err.empty()) {
+      resp.error = block_err;
+      return resp;
+    }
+    std::string block_err2;
+    const bool sender_blocks_recipient =
+        IsBlockedMysql(*friend_mysql_, sess->username, recipient, block_err2);
+    if (!block_err2.empty()) {
+      resp.error = block_err2;
+      return resp;
+    }
+    blocked = recipient_blocks_sender || sender_blocks_recipient;
+  } else {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = blocks_.find(sess->username);
+    if (it != blocks_.end() && it->second.count(recipient) != 0) {
+      blocked = true;
+    }
+    const auto it2 = blocks_.find(recipient);
+    if (it2 != blocks_.end() && it2->second.count(sess->username) != 0) {
+      blocked = true;
+    }
+  }
+#else
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = blocks_.find(sess->username);
+    if (it != blocks_.end() && it->second.count(recipient) != 0) {
+      blocked = true;
+    }
+    const auto it2 = blocks_.find(recipient);
+    if (it2 != blocks_.end() && it2->second.count(sess->username) != 0) {
+      blocked = true;
+    }
+  }
+#endif
+
+  if (blocked) {
+    resp.success = true;
+    return resp;
+  }
+
+  bool is_friend = false;
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    std::string err;
+    is_friend = AreFriendsMysql(*friend_mysql_, sess->username, recipient, err);
+    if (!err.empty()) {
+      resp.error = err;
+      return resp;
+    }
+  } else {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = friends_.find(sess->username);
+    is_friend = (it != friends_.end() && it->second.count(recipient) != 0);
+  }
+#else
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = friends_.find(sess->username);
+    is_friend = (it != friends_.end() && it->second.count(recipient) != 0);
+  }
+#endif
+
+  if (!is_friend) {
+    resp.error = "not friends";
+    return resp;
+  }
+
+  MediaRelayPacket packet;
+  packet.sender = sess->username;
+  packet.payload = std::move(payload);
+  media_relay_->Enqueue(recipient, call_id, std::move(packet));
+  resp.success = true;
+  return resp;
+}
+
+MediaPullResponse ApiService::PullMedia(const std::string& token,
+                                        const std::array<std::uint8_t, 16>& call_id,
+                                        std::uint32_t max_packets,
+                                        std::uint32_t wait_ms) {
+  MediaPullResponse resp;
+  if (!sessions_ || !media_relay_) {
+    resp.error = "media relay unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("media_pull", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (max_packets == 0) {
+    max_packets = 1;
+  } else if (max_packets > 256) {
+    max_packets = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+
+  std::vector<MediaRelayPacket> pulled;
+  media_relay_->Pull(sess->username, call_id, max_packets,
+                     std::chrono::milliseconds(wait_ms), pulled);
+  resp.success = true;
+  resp.packets.reserve(pulled.size());
+  for (auto& pkt : pulled) {
+    MediaPullResponse::Entry entry;
+    entry.sender = std::move(pkt.sender);
+    entry.payload = std::move(pkt.payload);
+    resp.packets.push_back(std::move(entry));
+  }
+  return resp;
+}
+
+GroupSenderKeySendResponse ApiService::SendGroupSenderKey(
+    const std::string& token, const std::string& group_id,
+    const std::string& recipient, std::vector<std::uint8_t> payload) {
+  GroupSenderKeySendResponse resp;
+  if (!sessions_ || !queue_ || !directory_) {
+    resp.error = "queue unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("group_sender_key_send", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (group_id.empty()) {
+    resp.error = "group id empty";
+    return resp;
+  }
+  if (recipient.empty()) {
+    resp.error = "recipient empty";
+    return resp;
+  }
+  if (!directory_->HasMember(group_id, sess->username) ||
+      !directory_->HasMember(group_id, recipient)) {
+    resp.error = "not in group";
+    return resp;
+  }
+  if (payload.empty()) {
+    resp.error = "payload empty";
+    return resp;
+  }
+  if (payload.size() > (256u * 1024u)) {
+    resp.error = "payload too large";
+    return resp;
+  }
+
+  bool blocked = false;
+#ifdef MI_E2EE_ENABLE_MYSQL
+  if (friend_mysql_.has_value()) {
+    std::string block_err;
+    const bool recipient_blocks_sender =
+        IsBlockedMysql(*friend_mysql_, recipient, sess->username, block_err);
+    if (!block_err.empty()) {
+      resp.error = block_err;
+      return resp;
+    }
+    std::string block_err2;
+    const bool sender_blocks_recipient =
+        IsBlockedMysql(*friend_mysql_, sess->username, recipient, block_err2);
+    if (!block_err2.empty()) {
+      resp.error = block_err2;
+      return resp;
+    }
+    blocked = recipient_blocks_sender || sender_blocks_recipient;
+  } else {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = blocks_.find(sess->username);
+    if (it != blocks_.end() && it->second.count(recipient) != 0) {
+      blocked = true;
+    }
+    const auto it2 = blocks_.find(recipient);
+    if (it2 != blocks_.end() && it2->second.count(sess->username) != 0) {
+      blocked = true;
+    }
+  }
+#else
+  {
+    std::lock_guard<std::mutex> lock(friends_mutex_);
+    const auto it = blocks_.find(sess->username);
+    if (it != blocks_.end() && it->second.count(recipient) != 0) {
+      blocked = true;
+    }
+    const auto it2 = blocks_.find(recipient);
+    if (it2 != blocks_.end() && it2->second.count(sess->username) != 0) {
+      blocked = true;
+    }
+  }
+#endif
+
+  if (!blocked) {
+    queue_->EnqueuePrivate(recipient, sess->username, std::move(payload));
+  }
   resp.success = true;
   return resp;
 }

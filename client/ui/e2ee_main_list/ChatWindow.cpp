@@ -64,6 +64,7 @@
 
 #include "../common/IconButton.h"
 #include "../common/ChatInputEdit.h"
+#include "../common/EmojiPackManager.h"
 #include "../common/Theme.h"
 #include "../common/UiIcons.h"
 #include "../common/UiSettings.h"
@@ -130,6 +131,10 @@ bool LooksLikeVideoFile(const QString &nameOrPath) {
 }
 
 QString StickerLabel(const QString &stickerId) {
+    const auto *item = EmojiPackManager::Instance().Find(stickerId);
+    if (item && !item->title.trimmed().isEmpty()) {
+        return item->title;
+    }
     const QString id = stickerId.trimmed().toLower();
     if (id == QStringLiteral("s1")) {
         return QStringLiteral("赞");
@@ -159,6 +164,10 @@ QString StickerLabel(const QString &stickerId) {
 }
 
 QPixmap StickerIcon(const QString &stickerId, int size) {
+    const QPixmap packPm = EmojiPackManager::Instance().StickerPixmap(stickerId, size);
+    if (!packPm.isNull()) {
+        return packPm;
+    }
     QPixmap pm(size, size);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
@@ -257,8 +266,20 @@ QPixmap ChatWallpaperTile(int size) {
 }
 
 QStringList BuiltinStickers() {
-    return {QStringLiteral("s1"), QStringLiteral("s2"), QStringLiteral("s3"), QStringLiteral("s4"),
-            QStringLiteral("s5"), QStringLiteral("s6"), QStringLiteral("s7"), QStringLiteral("s8")};
+    QStringList out;
+    const auto items = EmojiPackManager::Instance().Items();
+    out.reserve(items.size());
+    for (const auto &item : items) {
+        if (!item.id.trimmed().isEmpty()) {
+            out.push_back(item.id.trimmed());
+        }
+    }
+    if (!out.isEmpty()) {
+        return out;
+    }
+    return {QStringLiteral("s1"), QStringLiteral("s2"), QStringLiteral("s3"),
+            QStringLiteral("s4"), QStringLiteral("s5"), QStringLiteral("s6"),
+            QStringLiteral("s7"), QStringLiteral("s8")};
 }
 
 QString GroupRoleText(int role) {
@@ -2726,6 +2747,8 @@ void ChatWindow::sendStickerPlaceholder() {
         return;
     }
 
+    EmojiPackManager::Instance().Reload();
+
     QDialog dlg(this);
     dlg.setWindowTitle(UiSettings::Tr(QStringLiteral("发送贴纸"), QStringLiteral("Send Sticker")));
     dlg.setModal(true);
@@ -2751,7 +2774,7 @@ void ChatWindow::sendStickerPlaceholder() {
         auto *btn = new QToolButton(&dlg);
         btn->setIcon(QIcon(StickerIcon(sid, iconSize)));
         btn->setIconSize(QSize(iconSize, iconSize));
-        btn->setToolTip(sid);
+        btn->setToolTip(StickerLabel(sid));
         btn->setAutoRaise(true);
         btn->setStyleSheet(
             QStringLiteral(

@@ -99,6 +99,11 @@ class ClientCore {
     std::string request_id_hex;
   };
 
+  struct MediaRelayPacket {
+    std::string sender;
+    std::vector<std::uint8_t> payload;
+  };
+
   struct OutgoingChatTextMessage {
     std::string peer_username;
     std::string message_id_hex;
@@ -247,6 +252,7 @@ class ClientCore {
   std::vector<std::vector<std::uint8_t>> PullOffline();
 
   std::vector<FriendEntry> ListFriends();
+  bool SyncFriends(std::vector<FriendEntry>& out, bool& changed);
   bool AddFriend(const std::string& friend_username,
                  const std::string& remark = "");
   bool SetFriendRemark(const std::string& friend_username,
@@ -263,6 +269,19 @@ class ClientCore {
                        const std::vector<std::uint8_t>& plaintext);
   std::vector<mi::client::e2ee::PrivateMessage> PullPrivateE2ee();
   std::vector<mi::client::e2ee::PrivateMessage> DrainReadyPrivateE2ee();
+
+  bool PushMedia(const std::string& recipient,
+                 const std::array<std::uint8_t, 16>& call_id,
+                 const std::vector<std::uint8_t>& packet);
+
+  std::vector<MediaRelayPacket> PullMedia(const std::array<std::uint8_t, 16>& call_id,
+                                          std::uint32_t max_packets = 32,
+                                          std::uint32_t wait_ms = 50);
+
+  bool DeriveMediaRoot(const std::string& peer_username,
+                       const std::array<std::uint8_t, 16>& call_id,
+                       std::array<std::uint8_t, 32>& out_media_root,
+                       std::string& out_error);
 
   bool SendChatText(const std::string& peer_username,
                     const std::string& text_utf8,
@@ -422,6 +441,9 @@ class ClientCore {
                               const std::vector<std::uint8_t>& payload);
   std::vector<PendingGroupCipher> PullGroupCipherMessages();
   std::vector<PendingGroupNotice> PullGroupNoticeMessages();
+  bool SendGroupSenderKeyEnvelope(const std::string& group_id,
+                                  const std::string& peer_username,
+                                  const std::vector<std::uint8_t>& plaintext);
   bool GetPeerIdentityCached(const std::string& peer_username,
                              CachedPeerIdentity& out,
                              bool require_trust);
@@ -536,6 +558,7 @@ class ClientCore {
   mi::server::DerivedKeys keys_{};
   mi::server::SecureChannel channel_;
   std::uint64_t send_seq_{0};
+  std::mutex channel_mutex_;
 
   bool e2ee_inited_{false};
   bool prekey_published_{false};
@@ -561,6 +584,7 @@ class ClientCore {
   bool cover_traffic_enabled_{true};
   std::uint32_t cover_traffic_interval_sec_{30};
   std::chrono::steady_clock::time_point cover_traffic_last_sent_{};
+  std::uint32_t friend_sync_version_{0};
 
   std::unordered_map<std::string, CachedPeerIdentity> peer_id_cache_;
   std::unordered_map<std::string, GroupSenderKeyState> group_sender_keys_;

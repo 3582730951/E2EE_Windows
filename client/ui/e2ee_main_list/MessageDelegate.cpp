@@ -17,6 +17,7 @@
 #include "../common/Theme.h"
 #include "../common/UiIcons.h"
 #include "../common/UiSettings.h"
+#include "../common/EmojiPackManager.h"
 #include "MessageModel.h"
 
 namespace {
@@ -157,6 +158,10 @@ QString StatusText(MessageItem::Status status) {
 }
 
 QString StickerLabel(const QString &stickerId) {
+    const auto *item = EmojiPackManager::Instance().Find(stickerId);
+    if (item && !item->title.trimmed().isEmpty()) {
+        return item->title;
+    }
     const QString id = stickerId.trimmed().toLower();
     if (id == QStringLiteral("s1")) {
         return UiSettings::Tr(QStringLiteral("赞"), QStringLiteral("Like"));
@@ -187,7 +192,7 @@ QString StickerLabel(const QString &stickerId) {
                : stickerId;
 }
 
-QPixmap StickerPixmap(const QString &stickerId, int size) {
+QPixmap FallbackStickerPixmap(const QString &stickerId, int size) {
     static QHash<QString, QPixmap> cache;
     const QString key = stickerId + QStringLiteral(":") + QString::number(size);
     const auto it = cache.constFind(key);
@@ -230,6 +235,29 @@ QPixmap StickerPixmap(const QString &stickerId, int size) {
     p.end();
     cache.insert(key, pm);
     return pm;
+}
+
+QPixmap StickerPixmap(const QString &stickerId, int size, const QWidget *widget) {
+    QWidget *viewport = nullptr;
+    if (widget) {
+        if (const auto *view = qobject_cast<const QAbstractItemView *>(widget)) {
+            viewport = view->viewport();
+        } else {
+            viewport = const_cast<QWidget *>(widget);
+        }
+    }
+    if (QMovie *movie =
+            EmojiPackManager::Instance().StickerMovie(stickerId, size, viewport)) {
+        const QPixmap frame = movie->currentPixmap();
+        if (!frame.isNull()) {
+            return frame;
+        }
+    }
+    const QPixmap packPm = EmojiPackManager::Instance().StickerPixmap(stickerId, size);
+    if (!packPm.isNull()) {
+        return packPm;
+    }
+    return FallbackStickerPixmap(stickerId, size);
 }
 
 QSize layoutText(const QString &text, const QFont &font, int maxWidth) {
@@ -692,7 +720,7 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                                         bubbleRect.top() + BubbleTokens::paddingV(),
                                         stickerSize,
                                         stickerSize);
-        painter->drawPixmap(stickerRect, StickerPixmap(stickerId, stickerSize));
+        painter->drawPixmap(stickerRect, StickerPixmap(stickerId, stickerSize, option.widget));
     } else if (isFile) {
         const QRect contentRect = bubbleRect.adjusted(BubbleTokens::paddingH(), BubbleTokens::paddingV(),
                                                       -BubbleTokens::paddingH(),

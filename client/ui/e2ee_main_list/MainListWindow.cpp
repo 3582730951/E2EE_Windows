@@ -34,6 +34,7 @@
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QHash>
 
 #include <memory>
 
@@ -676,21 +677,69 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                         return;
                     }
 
+                    QSet<QString> friendIds;
+                    friendIds.reserve(friends.size());
+                    for (const auto &f : friends) {
+                        const QString id = f.username.trimmed();
+                        if (!id.isEmpty()) {
+                            friendIds.insert(id);
+                        }
+                    }
+
                     for (int i = model_->rowCount() - 1; i >= 0; --i) {
-                        const QString id = model_->item(i)->data(IdRole).toString();
+                        auto *item = model_->item(i);
+                        if (!item) {
+                            continue;
+                        }
+                        const QString id = item->data(IdRole).toString();
+                        if (id == QStringLiteral("__loading__") ||
+                            id == QStringLiteral("__placeholder__")) {
+                            model_->removeRow(i);
+                            continue;
+                        }
                         if (id.startsWith(QStringLiteral("__"))) {
+                            continue;
+                        }
+                        const bool isGroup = item->data(IsGroupRole).toBool();
+                        if (!isGroup && !friendIds.contains(id)) {
                             model_->removeRow(i);
                         }
                     }
 
-                    if (!friends.isEmpty()) {
-                        for (const auto &f : friends) {
-                            addRow(f.username, f.displayName(),
+                    QHash<QString, int> friendRows;
+                    for (int i = 0; i < model_->rowCount(); ++i) {
+                        auto *item = model_->item(i);
+                        if (!item) {
+                            continue;
+                        }
+                        const QString id = item->data(IdRole).toString();
+                        if (id.startsWith(QStringLiteral("__"))) {
+                            continue;
+                        }
+                        if (!item->data(IsGroupRole).toBool()) {
+                            friendRows.insert(id, i);
+                        }
+                    }
+
+                    for (const auto &f : friends) {
+                        const QString id = f.username.trimmed();
+                        if (id.isEmpty()) {
+                            continue;
+                        }
+                        const auto it = friendRows.constFind(id);
+                        if (it == friendRows.constEnd()) {
+                            addRow(id, f.displayName(),
                                    UiSettings::Tr(QStringLiteral("点击开始聊天"),
                                                  QStringLiteral("Click to chat")),
                                    QString(), 0, true, false, false);
+                        } else if (auto *item = model_->item(it.value())) {
+                            item->setData(f.displayName(), TitleRole);
+                            item->setData(false, IsGroupRole);
+                            item->setData(pinnedIds_.contains(id), PinnedRole);
                         }
-                    } else {
+                    }
+
+                    if (friends.isEmpty()) {
                         const QString tip = loadErr.trimmed().isEmpty()
                                                 ? UiSettings::Tr(QStringLiteral("点击右上角 + 添加好友"),
                                                                 QStringLiteral("Use + to add friends"))
@@ -701,7 +750,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                QString(), 0, true, false, false);
                     }
 
-                     updateModePlaceholder();
+                    updateModePlaceholder();
                  });
         addRow(QStringLiteral("__loading__"),
                UiSettings::Tr(QStringLiteral("加载中"), QStringLiteral("Loading")),

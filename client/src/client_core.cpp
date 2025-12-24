@@ -66,6 +66,8 @@ namespace {
 
 constexpr std::size_t kMaxOpaqueMessageBytes = 16 * 1024;
 constexpr std::size_t kMaxOpaqueSessionKeyBytes = 1024;
+constexpr std::size_t kKtRootPubkeyBytes = mi::server::kKtSthSigPublicKeyBytes;
+constexpr std::size_t kMaxDeviceSyncKeyFileBytes = 64u * 1024u;
 
 std::string Trim(const std::string& input) {
   const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
@@ -211,15 +213,31 @@ bool ReadFileBytes(const std::filesystem::path& path,
     error = "kt root pubkey path empty";
     return false;
   }
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) {
+    error = ec ? "kt root pubkey path error" : "kt root pubkey not found";
+    return false;
+  }
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error = "kt root pubkey size stat failed";
+    return false;
+  }
+  if (size != kKtRootPubkeyBytes) {
+    error = "kt root pubkey size invalid";
+    return false;
+  }
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
     error = "kt root pubkey not found";
     return false;
   }
-  out.assign(std::istreambuf_iterator<char>(ifs),
-             std::istreambuf_iterator<char>());
-  if (out.empty()) {
-    error = "kt root pubkey empty";
+  out.resize(static_cast<std::size_t>(size));
+  ifs.read(reinterpret_cast<char*>(out.data()),
+           static_cast<std::streamsize>(out.size()));
+  if (!ifs) {
+    out.clear();
+    error = "kt root pubkey read failed";
     return false;
   }
   return true;
@@ -5547,6 +5565,7 @@ bool ClientCore::Login(const std::string& username,
     } else {
       history_store_.reset();
     }
+    friend_sync_version_ = 0;
     last_error_.clear();
     return true;
   }
@@ -5718,6 +5737,7 @@ bool ClientCore::Login(const std::string& username,
   } else {
     history_store_.reset();
   }
+  friend_sync_version_ = 0;
   last_error_.clear();
   return true;
 }
@@ -5753,6 +5773,7 @@ bool ClientCore::Logout() {
   chat_seen_order_.clear();
   history_store_.reset();
   cover_traffic_last_sent_ = {};
+  friend_sync_version_ = 0;
   last_error_.clear();
   return true;
 }
@@ -5950,6 +5971,26 @@ bool ClientCore::LoadDeviceSyncKey() {
   }
   if (device_sync_key_path_.empty()) {
     last_error_ = "device sync key path empty";
+    return false;
+  }
+
+  std::error_code ec;
+  if (std::filesystem::exists(device_sync_key_path_, ec)) {
+    if (ec) {
+      last_error_ = "device sync key path error";
+      return false;
+    }
+    const auto size = std::filesystem::file_size(device_sync_key_path_, ec);
+    if (ec) {
+      last_error_ = "device sync key size stat failed";
+      return false;
+    }
+    if (size > kMaxDeviceSyncKeyFileBytes) {
+      last_error_ = "device sync key too large";
+      return false;
+    }
+  } else if (ec) {
+    last_error_ = "device sync key path error";
     return false;
   }
 
@@ -6844,7 +6885,8 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
         continue;
       }
       const std::string saved_err = last_error_;
-      if (!SendPrivateE2ee(m, dist_envelope) && first_error.empty()) {
+      if (!SendGroupSenderKeyEnvelope(group_id, m, dist_envelope) &&
+          first_error.empty()) {
         first_error = last_error_;
       }
       last_error_ = saved_err;
@@ -6864,7 +6906,7 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
     pending.last_sent = now;
     for (const auto& m : pending.pending_members) {
       const std::string saved_err = last_error_;
-      SendPrivateE2ee(m, pending.envelope);
+      SendGroupSenderKeyEnvelope(pending.group_id, m, pending.envelope);
       last_error_ = saved_err;
     }
   }
@@ -6892,7 +6934,7 @@ void ClientCore::ResendPendingSenderKeyDistributions() {
     pending.last_sent = now;
     for (const auto& member : pending.pending_members) {
       const std::string saved_err = last_error_;
-      SendPrivateE2ee(member, pending.envelope);
+      SendGroupSenderKeyEnvelope(pending.group_id, member, pending.envelope);
       last_error_ = saved_err;
     }
     ++it;
@@ -8940,6 +8982,70 @@ std::vector<ClientCore::FriendEntry> ClientCore::ListFriends() {
   return out;
 }
 
+bool ClientCore::SyncFriends(std::vector<FriendEntry>& out, bool& changed) {
+  out.clear();
+  changed = false;
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteUint32(friend_sync_version_, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kFriendSync, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "friend sync failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "friend sync response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::size_t off = 1;
+    std::string server_err;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "friend sync failed" : server_err;
+    return false;
+  }
+  std::size_t off = 1;
+  std::uint32_t version = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, version) ||
+      off >= resp_payload.size()) {
+    last_error_ = "friend sync response invalid";
+    return false;
+  }
+  const bool changed_flag = (resp_payload[off++] != 0);
+  if (changed_flag) {
+    std::uint32_t count = 0;
+    if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+      last_error_ = "friend sync response invalid";
+      return false;
+    }
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      FriendEntry e;
+      if (!mi::server::proto::ReadString(resp_payload, off, e.username) ||
+          !mi::server::proto::ReadString(resp_payload, off, e.remark)) {
+        last_error_ = "friend sync response invalid";
+        out.clear();
+        return false;
+      }
+      out.push_back(std::move(e));
+    }
+  }
+  if (off != resp_payload.size()) {
+    last_error_ = "friend sync response invalid";
+    return false;
+  }
+  friend_sync_version_ = version;
+  changed = changed_flag;
+  return true;
+}
+
 bool ClientCore::AddFriend(const std::string& friend_username,
                            const std::string& remark) {
   if (!EnsureChannel()) {
@@ -9334,6 +9440,136 @@ std::vector<mi::client::e2ee::PrivateMessage> ClientCore::PullPrivateE2ee() {
   return out;
 }
 
+bool ClientCore::PushMedia(const std::string& recipient,
+                           const std::array<std::uint8_t, 16>& call_id,
+                           const std::vector<std::uint8_t>& packet) {
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  if (recipient.empty()) {
+    last_error_ = "recipient empty";
+    return false;
+  }
+  if (packet.empty()) {
+    last_error_ = "packet empty";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(recipient, plain);
+  WriteFixed16(call_id, plain);
+  mi::server::proto::WriteBytes(packet, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kMediaPush, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "media push failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "media push response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "media push failed" : server_err;
+    return false;
+  }
+  return true;
+}
+
+std::vector<ClientCore::MediaRelayPacket> ClientCore::PullMedia(
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t max_packets,
+    std::uint32_t wait_ms) {
+  std::vector<MediaRelayPacket> out;
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return out;
+  }
+  if (max_packets == 0) {
+    max_packets = 1;
+  } else if (max_packets > 256) {
+    max_packets = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+  std::vector<std::uint8_t> plain;
+  WriteFixed16(call_id, plain);
+  mi::server::proto::WriteUint32(max_packets, plain);
+  mi::server::proto::WriteUint32(wait_ms, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kMediaPull, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "media pull failed";
+    }
+    return out;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "media pull response empty";
+    return out;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "media pull failed" : server_err;
+    return out;
+  }
+  std::size_t off = 1;
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+    last_error_ = "media pull response invalid";
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    MediaRelayPacket packet;
+    if (!mi::server::proto::ReadString(resp_payload, off, packet.sender) ||
+        !mi::server::proto::ReadBytes(resp_payload, off, packet.payload)) {
+      last_error_ = "media pull response invalid";
+      break;
+    }
+    out.push_back(std::move(packet));
+  }
+  return out;
+}
+
+bool ClientCore::DeriveMediaRoot(
+    const std::string& peer_username,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::array<std::uint8_t, 32>& out_media_root,
+    std::string& out_error) {
+  out_error.clear();
+  last_error_.clear();
+  out_media_root.fill(0);
+  if (!EnsureE2ee()) {
+    out_error = last_error_.empty() ? "e2ee not ready" : last_error_;
+    return false;
+  }
+  if (peer_username.empty()) {
+    out_error = "peer username empty";
+    last_error_ = out_error;
+    return false;
+  }
+  if (!e2ee_.DeriveMediaRoot(peer_username, call_id, out_media_root,
+                             out_error)) {
+    if (out_error.empty()) {
+      out_error = "media root derive failed";
+    }
+    last_error_ = out_error;
+    return false;
+  }
+  return true;
+}
+
 std::vector<mi::client::e2ee::PrivateMessage> ClientCore::DrainReadyPrivateE2ee() {
   std::vector<mi::client::e2ee::PrivateMessage> out;
   last_error_.clear();
@@ -9405,6 +9641,74 @@ bool ClientCore::SendGroupCipherMessage(const std::string& group_id,
     std::string server_err;
     mi::server::proto::ReadString(resp_payload, off, server_err);
     last_error_ = server_err.empty() ? "group send failed" : server_err;
+    return false;
+  }
+  return true;
+}
+
+bool ClientCore::SendGroupSenderKeyEnvelope(
+    const std::string& group_id, const std::string& peer_username,
+    const std::vector<std::uint8_t>& plaintext) {
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  if (!EnsureE2ee()) {
+    return false;
+  }
+  if (!EnsurePreKeyPublished()) {
+    return false;
+  }
+  if (group_id.empty() || peer_username.empty()) {
+    last_error_ = "invalid params";
+    return false;
+  }
+
+  const std::vector<std::uint8_t> app_plain =
+      WrapWithGossip(plaintext, kt_tree_size_, kt_root_);
+
+  std::vector<std::uint8_t> payload;
+  std::string enc_err;
+  if (!e2ee_.EncryptToPeer(peer_username, {}, app_plain, payload, enc_err)) {
+    if (enc_err == "peer bundle missing") {
+      std::vector<std::uint8_t> peer_bundle;
+      if (!FetchPreKeyBundle(peer_username, peer_bundle)) {
+        return false;
+      }
+      if (!e2ee_.EncryptToPeer(peer_username, peer_bundle, app_plain, payload,
+                               enc_err)) {
+        last_error_ = enc_err.empty() ? "encrypt failed" : enc_err;
+        return false;
+      }
+    } else {
+      last_error_ = enc_err.empty() ? "encrypt failed" : enc_err;
+      return false;
+    }
+  }
+
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(group_id, plain);
+  mi::server::proto::WriteString(peer_username, plain);
+  mi::server::proto::WriteBytes(payload, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kGroupSenderKeySend, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "group sender key send failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "group sender key response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ =
+        server_err.empty() ? "group sender key send failed" : server_err;
     return false;
   }
   return true;

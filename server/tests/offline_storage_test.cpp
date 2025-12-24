@@ -154,7 +154,7 @@ int main() {
       return out;
     }();
 
-    const std::string file_id = "legacy";
+    const std::string file_id = "0123456789abcdef0123456789abcdef";
     const std::vector<std::uint8_t> payload = {9, 8, 7, 6, 5, 4, 3, 2, 1};
 
     auto deriveBlock = [](std::uint64_t counter,

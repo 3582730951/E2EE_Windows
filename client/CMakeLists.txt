@@ -80,6 +80,9 @@ add_library(mi_e2ee_client_core STATIC
     src/dpapi_util.cpp
     src/endpoint_hardening.cpp
     src/e2ee_engine.cpp
+    src/media_jitter_buffer.cpp
+    src/media_crypto.cpp
+    src/media_session.cpp
 )
 target_include_directories(mi_e2ee_client_core PUBLIC
     include

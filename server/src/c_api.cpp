@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <vector>
@@ -107,6 +108,9 @@ int mi_server_login(mi_server_handle* handle,
     }
     if (!sessions->Login(username, password, mi::server::TransportKind::kLocal,
                          session, error)) {
+      return 0;
+    }
+    if (session.token.size() > (std::numeric_limits<std::size_t>::max)() - 1) {
       return 0;
     }
     char* buf = static_cast<char*>(std::malloc(session.token.size() + 1));

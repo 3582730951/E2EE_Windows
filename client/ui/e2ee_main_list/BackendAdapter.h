@@ -208,6 +208,8 @@ private:
     void pollMessages();
     void handlePollResult(mi::client::ClientCore::ChatPollResult events,
                           std::vector<mi::client::ClientCore::FriendRequestEntry> friendRequests);
+    void applyFriendSync(const std::vector<mi::client::ClientCore::FriendEntry> &friends,
+                         bool changed, const QString &err, bool emitEvenIfUnchanged);
     void maybeEmitPeerTrustRequired(bool force);
     void maybeEmitServerTrustRequired(bool force);
     void maybeRetryPendingOutgoing();
@@ -244,6 +246,10 @@ private:
     std::unordered_set<std::string> seenFriendRequests_;
     std::unordered_map<std::string, std::string> groupPendingDeliveries_;
     std::vector<std::string> groupPendingOrder_;
+    QVector<FriendEntry> lastFriends_;
+    std::atomic<qint64> lastFriendSyncAtMs_{0};
+    int friendSyncIntervalMs_{2000};
+    std::atomic_bool friendSyncForced_{false};
 };
 
 Q_DECLARE_METATYPE(BackendAdapter::FriendEntry)

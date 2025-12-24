@@ -28,6 +28,7 @@ struct RustBuf {
 
 constexpr std::uint8_t kOpaqueSetupMagic[8] = {'M', 'I', 'O', 'P',
                                                'A', 'Q', 'S', '1'};
+constexpr std::size_t kMaxOpaqueSetupBytes = 64u * 1024u;
 
 extern "C" {
 int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
@@ -46,6 +47,15 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     return false;
   }
   if (exists) {
+    const auto file_size = std::filesystem::file_size(path, ec);
+    if (ec) {
+      error = "opaque setup size stat failed";
+      return false;
+    }
+    if (file_size < 12 || file_size > 12 + kMaxOpaqueSetupBytes) {
+      error = "opaque setup size invalid";
+      return false;
+    }
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
       error = "opaque setup read failed";
@@ -67,7 +77,8 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
                               (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
                               (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
                               (static_cast<std::uint32_t>(file_bytes[11]) << 24);
-    if (len == 0 || file_bytes.size() != 12 + static_cast<std::size_t>(len)) {
+    if (len == 0 || len > kMaxOpaqueSetupBytes ||
+        file_bytes.size() != 12 + static_cast<std::size_t>(len)) {
       error = "opaque setup bad length";
       return false;
     }
@@ -101,6 +112,11 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     return false;
   }
   out_setup.assign(setup_buf.ptr, setup_buf.ptr + setup_buf.len);
+  if (out_setup.size() > kMaxOpaqueSetupBytes) {
+    error = "opaque setup too large";
+    out_setup.clear();
+    return false;
+  }
 
   // Write atomically.
   const auto tmp = path.string() + ".tmp";
@@ -346,9 +362,10 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
   offline_queue_ = std::make_unique<OfflineQueue>();
+  media_relay_ = std::make_unique<MediaRelay>();
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),
                                       directory_.get(), offline_storage_.get(),
-                                      offline_queue_.get(),
+                                      offline_queue_.get(), media_relay_.get(),
                                       config_.server.group_rotation_threshold,
                                       config_.mode == AuthMode::kMySQL
                                           ? std::optional<MySqlConfig>(
@@ -374,6 +391,9 @@ bool ServerApp::RunOnce(std::string& error) {
     }
     if (offline_queue_) {
       offline_queue_->CleanupExpired();
+    }
+    if (media_relay_) {
+      media_relay_->Cleanup();
     }
     last_cleanup_ = now;
   }

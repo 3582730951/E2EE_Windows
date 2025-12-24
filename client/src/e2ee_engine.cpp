@@ -100,6 +100,7 @@ bool RandomUint32(std::uint32_t& out) {
 constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
 constexpr std::size_t kPadHeaderBytes = 8;
 constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048, 4096, 8192, 16384};
+constexpr std::size_t kMaxIdentityFileBytes = 512 * 1024;
 
 std::size_t SelectPadTarget(std::size_t min_len) {
   for (const auto bucket : kPadBuckets) {
@@ -292,10 +293,28 @@ bool ReadAll(const std::filesystem::path& path, std::vector<std::uint8_t>& out,
              std::string& error) {
   error.clear();
   out.clear();
-  std::ifstream f(path, std::ios::binary);
-  if (!f) {
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) {
+    if (ec) {
+      error = "identity path error";
+    }
     return false;
   }
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error = "identity size stat failed";
+    return false;
+  }
+  if (size > kMaxIdentityFileBytes) {
+    error = "identity file too large";
+    return false;
+  }
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    error = "identity open failed";
+    return false;
+  }
+  out.reserve(static_cast<std::size_t>(size));
   out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
   return true;
 }
@@ -888,6 +907,10 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
   std::vector<std::uint8_t> bytes;
   std::string read_err;
   const bool exists = ReadAll(identity_path_, bytes, read_err);
+  if (!exists && !read_err.empty()) {
+    error = read_err;
+    return false;
+  }
   bool need_save = false;
   bool migrate_protection = false;
   if (exists) {
@@ -2331,6 +2354,40 @@ bool Engine::EnsurePeerTrusted(const std::string& peer_username,
                                const std::string& fingerprint_hex,
                                std::string& error) {
   return CheckTrustedForSend(peer_username, fingerprint_hex, error);
+}
+
+bool Engine::DeriveMediaRoot(
+    const std::string& peer_username,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::array<std::uint8_t, 32>& out_media_root,
+    std::string& error) {
+  error.clear();
+  out_media_root.fill(0);
+  if (peer_username.empty()) {
+    error = "peer empty";
+    return false;
+  }
+  const auto it = sessions_.find(peer_username);
+  if (it == sessions_.end()) {
+    error = "no session";
+    return false;
+  }
+  if (!CheckTrustedForSend(peer_username, it->second.peer_fingerprint_hex, error)) {
+    return false;
+  }
+  std::vector<std::uint8_t> buf;
+  if (!HkdfSha256(it->second.rk.data(), it->second.rk.size(),
+                  call_id.data(), call_id.size(),
+                  "mi_e2ee_media_root_v1", buf, out_media_root.size())) {
+    error = "media root hkdf failed";
+    return false;
+  }
+  if (buf.size() != out_media_root.size()) {
+    error = "media root size invalid";
+    return false;
+  }
+  std::memcpy(out_media_root.data(), buf.data(), out_media_root.size());
+  return true;
 }
 
 }  // namespace mi::client::e2ee

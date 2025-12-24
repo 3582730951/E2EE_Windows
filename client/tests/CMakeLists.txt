@@ -8,3 +8,14 @@ if (COMMAND mi_copy_msvc_runtime)
 endif()
 
 add_test(NAME e2ee_engine_test COMMAND e2ee_engine_test)
+
+add_executable(media_crypto_test
+    media_crypto_test.cpp
+)
+
+target_link_libraries(media_crypto_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(media_crypto_test)
+endif()
+
+add_test(NAME media_crypto_test COMMAND media_crypto_test)
