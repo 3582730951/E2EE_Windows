@@ -414,7 +414,10 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
     if (!appRoot.isEmpty()) {
         openccSearchDirs << (appRoot + QStringLiteral("/opencc"))
                          << (appRoot + QStringLiteral("/data/opencc"))
-                         << (appRoot + QStringLiteral("/rime/opencc"));
+                         << (appRoot + QStringLiteral("/rime/opencc"))
+                         << (appRoot + QStringLiteral("/database/opencc"))
+                         << (appRoot + QStringLiteral("/database/data/opencc"))
+                         << (appRoot + QStringLiteral("/database/rime/opencc"));
     }
     const QString openccDestDir = sharedDir + QStringLiteral("/opencc");
     QDir().mkpath(openccDestDir);

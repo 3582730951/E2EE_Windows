@@ -52,12 +52,18 @@ QString ResolveRuntimeDir(const QString &appDir) {
         return {};
     }
     QDir dir(appDir);
-    if (dir.dirName().compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
+    const QString leaf = dir.dirName();
+    if (leaf.compare(QStringLiteral("dll"), Qt::CaseInsensitive) == 0 ||
+        leaf.compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
         return dir.absolutePath();
     }
     const QString rootDir = ResolveAppRoot(appDir);
     if (rootDir.isEmpty()) {
         return {};
+    }
+    const QString dllDir = QDir(rootDir).filePath(QStringLiteral("dll"));
+    if (QDir(dllDir).exists()) {
+        return dllDir;
     }
     return QDir(rootDir).filePath(QStringLiteral("runtime"));
 }
@@ -75,8 +81,12 @@ void Prepare(const char *argv0) {
     if (runtimeDir.isEmpty()) {
         return;
     }
-    const QString pluginDir = runtimeDir + QStringLiteral("/plugins");
-    const QString platformDir = pluginDir + QStringLiteral("/platforms");
+    const QString pluginRoot =
+        QDir(runtimeDir + QStringLiteral("/plugins")).exists()
+            ? runtimeDir + QStringLiteral("/plugins")
+            : runtimeDir;
+    const QString platformDir = pluginRoot + QStringLiteral("/platforms");
+    const QString qmlDir = runtimeDir + QStringLiteral("/qml");
 
 #ifdef _WIN32
     if (QDir(runtimeDir).exists()) {
@@ -84,11 +94,17 @@ void Prepare(const char *argv0) {
     }
 #endif
 
-    if (QDir(pluginDir).exists() && qEnvironmentVariableIsEmpty("QT_PLUGIN_PATH")) {
-        qputenv("QT_PLUGIN_PATH", pluginDir.toUtf8());
+    if (QDir(pluginRoot).exists() && qEnvironmentVariableIsEmpty("QT_PLUGIN_PATH")) {
+        qputenv("QT_PLUGIN_PATH", pluginRoot.toUtf8());
     }
     if (QDir(platformDir).exists() && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM_PLUGIN_PATH")) {
         qputenv("QT_QPA_PLATFORM_PLUGIN_PATH", platformDir.toUtf8());
+    }
+    if (QDir(qmlDir).exists() && qEnvironmentVariableIsEmpty("QML2_IMPORT_PATH")) {
+        qputenv("QML2_IMPORT_PATH", qmlDir.toUtf8());
+    }
+    if (QDir(qmlDir).exists() && qEnvironmentVariableIsEmpty("QML_IMPORT_PATH")) {
+        qputenv("QML_IMPORT_PATH", qmlDir.toUtf8());
     }
 }
 

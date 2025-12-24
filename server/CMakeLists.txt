@@ -285,6 +285,16 @@ target_include_directories(mi_e2ee_server PRIVATE include ../shard)
 target_link_libraries(mi_e2ee_server PRIVATE mi_e2ee_core)
 mi_copy_msvc_runtime(mi_e2ee_server)
 
+if(WIN32)
+  add_executable(mi_e2ee_server_launcher
+      src/server_launcher.cpp
+  )
+  if(MSVC)
+    set_property(TARGET mi_e2ee_server_launcher PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+endif()
+
 # Generate demo auth user sample into build and output directories.
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/test_user.txt" [=[# Demo auth user table (mode=1).
 # Format: username:password per line.

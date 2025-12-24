@@ -3,6 +3,7 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <filesystem>
 
 #include "server_app.h"
 #include "network_server.h"
@@ -23,7 +24,14 @@ void LogInfo(bool enabled, const std::string& msg) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  const std::string config_path = (argc > 1) ? argv[1] : "config.ini";
+  std::string config_path;
+  if (argc > 1) {
+    config_path = argv[1];
+  } else {
+    std::error_code ec;
+    const bool has_config_dir = std::filesystem::exists("config/config.ini", ec);
+    config_path = has_config_dir ? "config/config.ini" : "config.ini";
+  }
 
   std::string error;
   mi::server::ServerApp app;

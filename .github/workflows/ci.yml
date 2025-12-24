@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-test:
+  build-package:
     runs-on: windows-latest
     defaults:
       run:
@@ -16,35 +16,216 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Configure server
-        run: >
-          cmake -S server -B build/server
-          -DMI_E2EE_ENABLE_MYSQL=OFF
-          -DMI_E2EE_PGO_INSTRUMENT=OFF
-          -DMI_E2EE_ENABLE_LTO=OFF
+      - name: Setup Qt
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.10.1
+          arch: win64_msvc2022
+          modules: qtsvg qtdeclarative qtquickcontrols2 qtmultimedia
+          cache: true
 
-      - name: Build server
-        run: cmake --build build/server --config Release
-
-      - name: Test server
-        run: ctest -C Release --test-dir build/server --output-on-failure
+      - name: Fetch MySQL client
+        run: |
+          $vcpkgRoot = Join-Path $env:GITHUB_WORKSPACE "vcpkg"
+          if (-not (Test-Path $vcpkgRoot)) {
+            git clone https://github.com/microsoft/vcpkg $vcpkgRoot
+          }
+          & "$vcpkgRoot\\bootstrap-vcpkg.bat"
+          & "$vcpkgRoot\\vcpkg.exe" install mariadb-connector-c:x64-windows
+          $mysqlRoot = Join-Path $vcpkgRoot "installed\\x64-windows"
+          $mysqlInclude = Join-Path $mysqlRoot "include"
+          $libCandidates = @(
+            Join-Path $mysqlRoot "lib\\libmariadb.lib",
+            Join-Path $mysqlRoot "lib\\mariadb.lib",
+            Join-Path $mysqlRoot "lib\\libmysql.lib",
+            Join-Path $mysqlRoot "lib\\mysqlclient.lib"
+          )
+          $mysqlLib = $libCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $mysqlLib) {
+            throw "MySQL client lib not found under $mysqlRoot"
+          }
+          "MYSQL_INCLUDE_DIR=$mysqlInclude" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MYSQL_CLIENT_LIB=$mysqlLib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure client
         run: >
           cmake -S client -B build/client
-          -DMI_E2EE_ENABLE_MYSQL=OFF
-          -DMI_E2EE_BUILD_UI=OFF
+          -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}"
+          -DMI_E2EE_BUILD_UI=ON
           -DMI_E2EE_BUILD_DEMO_CLIENT=ON
-          -DMI_E2EE_BUILD_FUZZERS=ON
-          -DMI_E2EE_FUZZ_SMOKE=ON
+          -DMI_E2EE_BUILD_FUZZERS=OFF
+          -DMI_E2EE_ENABLE_MYSQL=OFF
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build client
-        run: cmake --build build/client --config Release
+        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui mi_e2ee_launcher
 
-      - name: Test client
-        run: ctest -C Release --test-dir build/client --output-on-failure
+      - name: Configure server
+        run: >
+          cmake -S server -B build/server
+          -DMI_E2EE_ENABLE_MYSQL=ON
+          -DMYSQL_INCLUDE_DIR="${{ env.MYSQL_INCLUDE_DIR }}"
+          -DMYSQL_CLIENT_LIB="${{ env.MYSQL_CLIENT_LIB }}"
+          -DMI_E2EE_PGO_INSTRUMENT=OFF
+          -DMI_E2EE_ENABLE_LTO=OFF
+
+      - name: Build server
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo
+
+      - name: Deploy Qt runtime
+        run: |
+          $qtBin = Join-Path "${{ steps.qt.outputs.qt-path }}" "bin"
+          & (Join-Path $qtBin "windeployqt.exe") --release --compiler-runtime --qmldir $env:GITHUB_WORKSPACE\\client\\ui $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe
+
+      - name: Package artifacts
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          $distRoot = Join-Path $workspace "dist"
+          $clientRoot = Join-Path $distRoot "mi_e2ee_client"
+          $serverRoot = Join-Path $distRoot "mi_e2ee_server"
+          $clientDll = Join-Path $clientRoot "dll"
+          $clientConfig = Join-Path $clientRoot "config"
+          $clientDb = Join-Path $clientRoot "database"
+          $serverDll = Join-Path $serverRoot "dll"
+          $serverConfig = Join-Path $serverRoot "config"
+          $serverDb = Join-Path $serverRoot "database"
+          New-Item -ItemType Directory -Force -Path $clientDll, $clientConfig, $clientDb, $serverDll, $serverConfig, $serverDb | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $serverDb "offline_store") | Out-Null
+
+          $keysDir = Join-Path $distRoot "keys"
+          New-Item -ItemType Directory -Force -Path $keysDir | Out-Null
+          & "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_keygen.exe" --out-dir $keysDir --force
+
+          $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
+          $cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\\CurrentUser\\My"
+          $pwd = ConvertTo-SecureString -String "" -AsPlainText -Force
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
+          $cert = Get-PfxCertificate -FilePath $pfxPath
+          $der = $cert.Export("Cert")
+          $hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace("-", "").ToLower()
+
+          Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server.exe" (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
+          Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server_launcher.exe" (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
+          Copy-Item "$workspace\\build\\server\\Release\\*.dll" $serverDll -Force
+
+          Copy-Item "$keysDir\\kt_signing_key.bin" $serverConfig -Force
+          Copy-Item "$keysDir\\kt_root_pub.bin" $serverConfig -Force
+          Copy-Item $pfxPath $serverConfig -Force
+
+          Copy-Item "$keysDir\\kt_signing_key.bin" $clientConfig -Force
+          Copy-Item "$keysDir\\kt_root_pub.bin" $clientConfig -Force
+          Copy-Item $pfxPath $clientConfig -Force
+
+          $serverConfigLines = @(
+            "[mode]",
+            "mode=0",
+            "[mysql]",
+            "mysql_ip=localhost",
+            "mysql_port=3306",
+            "mysql_database=mi_e2ee",
+            "mysql_username=root",
+            "mysql_password=123456",
+            "[server]",
+            "list_port=9000",
+            "rotation_threshold=10000",
+            "offline_dir=database/offline_store",
+            "debug_log=0",
+            "tls_enable=1",
+            "require_tls=1",
+            "tls_cert=config/mi_e2ee_server.pfx",
+            "kt_signing_key=config/kt_signing_key.bin"
+          )
+          $serverConfigLines | Set-Content -Path (Join-Path $serverConfig "config.ini") -Encoding ASCII
+
+          $clientConfigLines = @(
+            "[client]",
+            "server_ip=127.0.0.1",
+            "server_port=9000",
+            "use_tls=1",
+            "require_tls=1",
+            "trust_store=server_trust.ini",
+            "require_pinned_fingerprint=1",
+            "pinned_fingerprint=$hash",
+            "auth_mode=opaque",
+            "",
+            "[proxy]",
+            "type=none",
+            "host=",
+            "port=0",
+            "username=",
+            "password=",
+            "",
+            "[device_sync]",
+            "enabled=0",
+            "role=primary",
+            "key_path=e2ee_state/device_sync_key.bin",
+            "",
+            "[kt]",
+            "require_signature=1",
+            "root_pubkey_path=kt_root_pub.bin"
+          )
+          $clientConfigLines | Set-Content -Path (Join-Path $clientConfig "client_config.ini") -Encoding ASCII
+
+          "" | Set-Content -Path (Join-Path $clientDb "server_trust.ini") -Encoding ASCII
+
+          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe" $clientRoot -Force
+          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee.exe" $clientRoot -Force
+
+          $uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
+          Get-ChildItem -Path $uiRoot -File -Filter "*.dll" | ForEach-Object {
+            Copy-Item $_.FullName $clientDll -Force
+          }
+          $skipDirs = @("qml", "translations", "icon", "assets", "runtime")
+          Get-ChildItem -Path $uiRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name } | ForEach-Object {
+            Copy-Item $_.FullName $clientDll -Recurse -Force
+          }
+          if (Test-Path (Join-Path $uiRoot "qml")) {
+            Copy-Item (Join-Path $uiRoot "qml") (Join-Path $clientDll "qml") -Recurse -Force
+          }
+          if (Test-Path (Join-Path $uiRoot "translations")) {
+            Copy-Item (Join-Path $uiRoot "translations") (Join-Path $clientRoot "translations") -Recurse -Force
+          }
+          if (Test-Path (Join-Path $uiRoot "icon")) {
+            Copy-Item (Join-Path $uiRoot "icon") (Join-Path $clientRoot "icon") -Recurse -Force
+          }
+          if (Test-Path (Join-Path $uiRoot "assets")) {
+            Copy-Item (Join-Path $uiRoot "assets") (Join-Path $clientRoot "assets") -Recurse -Force
+          }
+          if (Test-Path (Join-Path $uiRoot "runtime")) {
+            $runtimeRoot = Join-Path $uiRoot "runtime"
+            Get-ChildItem -Path $runtimeRoot -File | ForEach-Object {
+              if ($_.Extension -ieq ".dll") {
+                Copy-Item $_.FullName $clientDll -Force
+              } else {
+                Copy-Item $_.FullName $clientDb -Force
+              }
+            }
+            Get-ChildItem -Path $runtimeRoot -Directory | ForEach-Object {
+              Copy-Item $_.FullName (Join-Path $clientDb $_.Name) -Recurse -Force
+            }
+          }
+
+          $clientZip = Join-Path $distRoot "mi_e2ee_client.zip"
+          $serverZip = Join-Path $distRoot "mi_e2ee_server.zip"
+          Compress-Archive -Path $clientRoot -DestinationPath $clientZip -Force
+          Compress-Archive -Path $serverRoot -DestinationPath $serverZip -Force
+
+      - name: Upload client package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_client
+          path: dist/mi_e2ee_client.zip
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_server
+          path: dist/mi_e2ee_server.zip

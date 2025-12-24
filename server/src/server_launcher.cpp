@@ -1,6 +1,6 @@
-// Windows launcher to bootstrap runtime DLL search paths.
 #include <windows.h>
 
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -57,54 +57,59 @@ void PrependPath(const std::wstring &dir) {
     SetEnvironmentVariableW(L"PATH", updated.c_str());
 }
 
-void SetEnvIfEmpty(const wchar_t *name, const std::wstring &value) {
-    if (value.empty()) {
-        return;
+std::wstring QuoteArg(const std::wstring &arg) {
+    if (arg.find_first_of(L" \t\"") == std::wstring::npos) {
+        return arg;
     }
-    const DWORD len = GetEnvironmentVariableW(name, nullptr, 0);
-    if (len == 0) {
-        SetEnvironmentVariableW(name, value.c_str());
+    std::wstring out;
+    out.reserve(arg.size() + 2);
+    out.push_back(L'"');
+    for (const wchar_t ch : arg) {
+        if (ch == L'"') {
+            out.append(L"\\\"");
+        } else {
+            out.push_back(ch);
+        }
     }
-}
-
-void ShowError(const std::wstring &message) {
-    MessageBoxW(nullptr, message.c_str(), L"MI E2EE", MB_OK | MB_ICONERROR);
+    out.push_back(L'"');
+    return out;
 }
 
 }  // namespace
 
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
+int wmain(int argc, wchar_t **argv) {
     const std::wstring rootDir = GetModuleDir();
     if (rootDir.empty()) {
-        ShowError(L"Failed to resolve launcher directory.");
+        std::wcerr << L"[mi_e2ee_server_launcher] failed to resolve launcher directory\n";
         return 1;
     }
+
     const std::wstring dllDir = rootDir + L"\\dll";
-    const std::wstring appExe = rootDir + L"\\mi_e2ee_client_ui.exe";
+    const std::wstring appExe = rootDir + L"\\mi_e2ee_server_app.exe";
     if (!FileExists(appExe)) {
-        ShowError(L"Missing runtime executable: " + appExe);
+        std::wcerr << L"[mi_e2ee_server_launcher] missing server binary: " << appExe << L"\n";
         return 2;
     }
+
     if (DirExists(dllDir)) {
         PrependPath(dllDir);
-        const std::wstring pluginRoot =
-            DirExists(dllDir + L"\\plugins") ? (dllDir + L"\\plugins") : dllDir;
-        const std::wstring platformDir = pluginRoot + L"\\platforms";
-        if (DirExists(pluginRoot)) {
-            SetEnvIfEmpty(L"QT_PLUGIN_PATH", pluginRoot);
-        }
-        if (DirExists(platformDir)) {
-            SetEnvIfEmpty(L"QT_QPA_PLATFORM_PLUGIN_PATH", platformDir);
-        }
     }
 
     std::wstring command = L"\"";
     command.append(appExe);
     command.append(L"\"");
-    if (cmdLine && *cmdLine) {
-        command.append(L" ");
-        command.append(cmdLine);
+    if (argc > 1) {
+        for (int i = 1; i < argc; ++i) {
+            command.append(L" ");
+            command.append(QuoteArg(argv[i] ? argv[i] : L""));
+        }
+    } else {
+        const std::wstring configPath = rootDir + L"\\config\\config.ini";
+        if (FileExists(configPath)) {
+            command.append(L" \"config\\config.ini\"");
+        }
     }
+
     std::vector<wchar_t> cmdBuffer(command.begin(), command.end());
     cmdBuffer.push_back(L'\0');
 
@@ -121,7 +126,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
                         rootDir.c_str(),
                         &startup,
                         &process)) {
-        ShowError(L"Failed to launch: " + appExe);
+        const DWORD last = GetLastError();
+        std::wcerr << L"[mi_e2ee_server_launcher] failed to launch: " << appExe
+                   << L" (error " << last << L")\n";
         return 3;
     }
     WaitForSingleObject(process.hProcess, INFINITE);

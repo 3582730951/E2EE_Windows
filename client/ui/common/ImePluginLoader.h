@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 
+class QLockFile;
+
 class ImePluginLoader {
 public:
     static ImePluginLoader &instance();
@@ -32,7 +34,6 @@ private:
     bool copyFileIfPresent(const QString &sourcePath, const QString &targetPath, bool overwrite = false);
     void reset();
 
-    class QLockFile;
     class QLibrary *library_{nullptr};
     bool loadAttempted_{false};
     bool initialized_{false};
