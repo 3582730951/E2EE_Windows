@@ -282,6 +282,20 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
 
+  std::filesystem::path config_dir;
+  if (!config_path.empty()) {
+    config_dir = std::filesystem::path(config_path).parent_path();
+    if (config_dir.empty()) {
+      config_dir = std::filesystem::current_path();
+    } else if (config_dir.is_relative()) {
+      std::error_code ec;
+      const auto cwd = std::filesystem::current_path(ec);
+      if (!cwd.empty()) {
+        config_dir = cwd / config_dir;
+      }
+    }
+  }
+
   auto storage_dir = config_.server.offline_dir.empty()
                          ? std::filesystem::current_path() / "offline_store"
                          : std::filesystem::path(config_.server.offline_dir);
@@ -304,7 +318,11 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
 
   std::filesystem::path kt_signing_key = config_.server.kt_signing_key;
   if (!kt_signing_key.is_absolute() && !kt_signing_key.empty()) {
-    kt_signing_key = storage_dir / kt_signing_key;
+    if (!config_dir.empty()) {
+      kt_signing_key = config_dir / kt_signing_key;
+    } else {
+      kt_signing_key = storage_dir / kt_signing_key;
+    }
   }
   if (kt_signing_key.empty()) {
     error = "kt_signing_key not found";

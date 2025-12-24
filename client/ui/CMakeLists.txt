@@ -141,6 +141,31 @@ add_executable(mi_e2ee_client_ui
 )
 target_link_libraries(mi_e2ee_client_ui PRIVATE mi_ui_common mi_e2ee_client_core
     Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+copy_ref_images(mi_e2ee_client_ui)
+copy_icon_assets(mi_e2ee_client_ui)
+if(TARGET mi_ime_rime)
+    add_dependencies(mi_e2ee_client_ui mi_ime_rime)
+    add_custom_command(TARGET mi_e2ee_client_ui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:mi_e2ee_client_ui>/runtime"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:mi_ime_rime>"
+            "$<TARGET_FILE_DIR:mi_e2ee_client_ui>/runtime/$<TARGET_FILE_NAME:mi_ime_rime>"
+    )
+    if(MI_UI_RIME_DOWNLOAD AND WIN32)
+        add_custom_command(TARGET mi_e2ee_client_ui POST_BUILD
+            COMMAND ${CMAKE_COMMAND}
+                -DRIME_OUTPUT_DIR=$<TARGET_FILE_DIR:mi_e2ee_client_ui>/runtime
+                -DRIME_VERSION=${MI_UI_RIME_VERSION}
+                -DRIME_ASSET=${MI_UI_RIME_ASSET}
+                -DRIME_WITH_LUA=${MI_UI_RIME_WITH_LUA}
+                -DRIME_WEASEL_VERSION=${MI_UI_RIME_WEASEL_VERSION}
+                -DRIME_WEASEL_ASSET=${MI_UI_RIME_WEASEL_ASSET}
+                -P ${UI_ROOT}/ime_rime/FetchRime.cmake
+            COMMENT "Fetching librime runtime for mi_e2ee_client_ui"
+        )
+    endif()
+endif()
 if (COMMAND mi_copy_msvc_runtime)
     mi_copy_msvc_runtime(mi_e2ee_client_ui)
 endif()

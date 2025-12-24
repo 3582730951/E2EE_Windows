@@ -1,7 +1,10 @@
 #include "OverlayWidget.h"
 
+#include <QFileInfo>
 #include <QGraphicsOpacityEffect>
 #include <QResizeEvent>
+
+#include "UiRuntimePaths.h"
 
 OverlayWidget::OverlayWidget(QWidget *parent) : QWidget(parent), m_label(new QLabel(this)) {
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
@@ -14,7 +17,20 @@ OverlayWidget::OverlayWidget(QWidget *parent) : QWidget(parent), m_label(new QLa
 
 void OverlayWidget::setOverlayImage(const QString &path) {
     m_path = path;
-    m_source = QPixmap(path);
+    QString resolved = path;
+    if (!QFileInfo::exists(resolved)) {
+        const QString name = QFileInfo(path).fileName();
+        if (!name.isEmpty()) {
+            const QString baseDir = UiRuntimePaths::AppRootDir();
+            if (!baseDir.isEmpty()) {
+                const QString candidate = baseDir + QStringLiteral("/assets/ref/") + name;
+                if (QFileInfo::exists(candidate)) {
+                    resolved = candidate;
+                }
+            }
+        }
+    }
+    m_source = QPixmap(resolved);
     refreshPixmap();
 }
 

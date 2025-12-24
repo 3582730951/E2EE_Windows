@@ -62,11 +62,12 @@ jobs:
           -DMI_E2EE_BUILD_DEMO_CLIENT=ON
           -DMI_E2EE_BUILD_FUZZERS=OFF
           -DMI_E2EE_ENABLE_MYSQL=OFF
+          -DMI_UI_RIME_DOWNLOAD=ON
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui mi_e2ee_launcher
+        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime
 
       - name: Configure server
         run: >
@@ -115,14 +116,19 @@ jobs:
           Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server.exe" (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
           Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server_launcher.exe" (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
           Copy-Item "$workspace\\build\\server\\Release\\*.dll" $serverDll -Force
+          if (Test-Path "$workspace\\build\\server\\Release\\test_user.txt") {
+            Copy-Item "$workspace\\build\\server\\Release\\test_user.txt" $serverRoot -Force
+          }
+          $serverTools = Join-Path $serverRoot "tools"
+          New-Item -ItemType Directory -Force -Path $serverTools | Out-Null
+          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_keygen.exe" $serverTools -Force
+          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_pubinfo.exe" $serverTools -Force
 
           Copy-Item "$keysDir\\kt_signing_key.bin" $serverConfig -Force
           Copy-Item "$keysDir\\kt_root_pub.bin" $serverConfig -Force
           Copy-Item $pfxPath $serverConfig -Force
 
-          Copy-Item "$keysDir\\kt_signing_key.bin" $clientConfig -Force
           Copy-Item "$keysDir\\kt_root_pub.bin" $clientConfig -Force
-          Copy-Item $pfxPath $clientConfig -Force
 
           $serverConfigLines = @(
             "[mode]",
@@ -141,7 +147,7 @@ jobs:
             "tls_enable=1",
             "require_tls=1",
             "tls_cert=config/mi_e2ee_server.pfx",
-            "kt_signing_key=config/kt_signing_key.bin"
+            "kt_signing_key=kt_signing_key.bin"
           )
           $serverConfigLines | Set-Content -Path (Join-Path $serverConfig "config.ini") -Encoding ASCII
 
@@ -199,6 +205,14 @@ jobs:
           if (Test-Path (Join-Path $uiRoot "assets")) {
             Copy-Item (Join-Path $uiRoot "assets") (Join-Path $clientRoot "assets") -Recurse -Force
           }
+          $sourceIcons = Join-Path $workspace "client\\ui\\icons"
+          if (Test-Path $sourceIcons) {
+            Copy-Item $sourceIcons (Join-Path $clientRoot "icon") -Recurse -Force
+          }
+          $sourceRef = Join-Path $workspace "client\\assets\\ref"
+          if (Test-Path $sourceRef) {
+            Copy-Item $sourceRef (Join-Path $clientRoot "assets\\ref") -Recurse -Force
+          }
           if (Test-Path (Join-Path $uiRoot "runtime")) {
             $runtimeRoot = Join-Path $uiRoot "runtime"
             Get-ChildItem -Path $runtimeRoot -File | ForEach-Object {
@@ -211,6 +225,16 @@ jobs:
             Get-ChildItem -Path $runtimeRoot -Directory | ForEach-Object {
               Copy-Item $_.FullName (Join-Path $clientDb $_.Name) -Recurse -Force
             }
+          }
+          $imeRoot = Join-Path $workspace "build\\client\\ui\\ime_rime\\Release"
+          if (Test-Path (Join-Path $imeRoot "mi_ime_rime.dll")) {
+            Copy-Item (Join-Path $imeRoot "mi_ime_rime.dll") $clientDll -Force
+          }
+          if (Test-Path (Join-Path $imeRoot "rime.dll")) {
+            Copy-Item (Join-Path $imeRoot "rime.dll") $clientDll -Force
+          }
+          if (Test-Path (Join-Path $imeRoot "opencc")) {
+            Copy-Item (Join-Path $imeRoot "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
           }
 
           $clientZip = Join-Path $distRoot "mi_e2ee_client.zip"
