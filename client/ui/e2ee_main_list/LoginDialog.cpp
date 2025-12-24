@@ -24,6 +24,7 @@
 #include "../common/IconButton.h"
 #include "../common/SettingsDialog.h"
 #include "../common/Theme.h"
+#include "../common/UiRuntimePaths.h"
 #include "../common/UiSettings.h"
 #include "../common/UiStyle.h"
 #include "../common/Toast.h"
@@ -354,8 +355,8 @@ void LoginDialog::buildUi() {
     agreeRow->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
     agreeCheck_ = new QCheckBox(accountPage_);
     const QString checkIcon = [&]() {
-        const QString appDir = QCoreApplication::applicationDirPath();
-        const QString iconPath = appDir + QStringLiteral("/icon/check.svg");
+        const QString appRoot = UiRuntimePaths::AppRootDir();
+        const QString iconPath = appRoot + QStringLiteral("/icon/check.svg");
         if (QFile::exists(iconPath)) {
             return iconPath;
         }

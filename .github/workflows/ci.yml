@@ -301,57 +301,35 @@ jobs:
       - name: Deploy Qt runtime
         run: |
           $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          $exe = "build/client/ui/e2ee_main_list/e2ee_main_list.exe"
-          $exeDir = Split-Path -Parent $exe
+          $appExe = "build/client/ui/e2ee_main_list/e2ee_main_list.exe"
+          $appExeDir = Split-Path -Parent $appExe
+          $launcherExe = "build/client/ui/mi_e2ee.exe"
           $dist = "build/client/ui/dist"
           $runtime = Join-Path $dist "runtime"
-          $pluginRoot = Join-Path $runtime "plugins"
           $iconDir = Join-Path $dist "icon"
           $configDir = Join-Path $dist "config"
           $databaseDir = Join-Path $dist "database"
-          if (!(Test-Path $exe)) {
-            Write-Error "main ui exe not found at $exe"
+          if (!(Test-Path $appExe)) {
+            Write-Error "main ui exe not found at $appExe"
+            exit 1
+          }
+          if (!(Test-Path $launcherExe)) {
+            Write-Error "launcher exe not found at $launcherExe"
             exit 1
           }
           New-Item -ItemType Directory -Force $dist | Out-Null
           New-Item -ItemType Directory -Force $runtime | Out-Null
-          New-Item -ItemType Directory -Force $pluginRoot | Out-Null
           New-Item -ItemType Directory -Force $iconDir | Out-Null
           New-Item -ItemType Directory -Force $configDir | Out-Null
           New-Item -ItemType Directory -Force $databaseDir | Out-Null
-          Copy-Item $exe (Join-Path $dist "mi_e2ee.exe") -Force
-          # Bundle MSVC runtime next to the executable to avoid loading an older system CRT.
-          if (Test-Path $exeDir) {
-            Copy-Item "$exeDir/*.dll" $dist -Force -ErrorAction SilentlyContinue
+          Copy-Item $launcherExe (Join-Path $dist "mi_e2ee.exe") -Force
+          Copy-Item $appExe (Join-Path $runtime "mi_e2ee_app.exe") -Force
+          # Bundle MSVC runtime next to the runtime executable.
+          if (Test-Path $appExeDir) {
+            Copy-Item "$appExeDir/*.dll" $runtime -Force -ErrorAction SilentlyContinue
           }
-          & "$qtbin/windeployqt.exe" "--dir" $dist (Join-Path $dist "mi_e2ee.exe")
-          $pluginDirs = @(
-            "platforms",
-            "imageformats",
-            "styles",
-            "iconengines",
-            "sqldrivers",
-            "tls",
-            "networkinformation",
-            "platforminputcontexts",
-            "bearer",
-            "generic"
-          )
-          foreach ($dir in $pluginDirs) {
-            $src = Join-Path $dist $dir
-            if (Test-Path $src) {
-              $dst = Join-Path $pluginRoot $dir
-              if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
-              Move-Item $src $dst
-            }
-          }
-          $translations = Join-Path $dist "translations"
-          if (Test-Path $translations) {
-            $dst = Join-Path $runtime "translations"
-            if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
-            Move-Item $translations $dst
-          }
-          $rimeRuntime = Join-Path $exeDir "runtime"
+          & "$qtbin/windeployqt.exe" "--dir" $runtime (Join-Path $runtime "mi_e2ee_app.exe")
+          $rimeRuntime = Join-Path $appExeDir "runtime"
           if (Test-Path $rimeRuntime) {
             Copy-Item "$rimeRuntime/*" $runtime -Recurse -Force -ErrorAction SilentlyContinue
           }

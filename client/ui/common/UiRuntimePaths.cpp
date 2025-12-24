@@ -1,6 +1,7 @@
 // Runtime path setup for bundled UI assets and plugins.
 #include "UiRuntimePaths.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QString>
@@ -33,6 +34,34 @@ QString ResolveAppDir(const char *argv0) {
     return QDir::currentPath();
 }
 
+QString ResolveAppRoot(const QString &appDir) {
+    if (appDir.isEmpty()) {
+        return {};
+    }
+    QDir dir(appDir);
+    if (dir.dirName().compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
+        if (dir.cdUp()) {
+            return dir.absolutePath();
+        }
+    }
+    return dir.absolutePath();
+}
+
+QString ResolveRuntimeDir(const QString &appDir) {
+    if (appDir.isEmpty()) {
+        return {};
+    }
+    QDir dir(appDir);
+    if (dir.dirName().compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
+        return dir.absolutePath();
+    }
+    const QString rootDir = ResolveAppRoot(appDir);
+    if (rootDir.isEmpty()) {
+        return {};
+    }
+    return QDir(rootDir).filePath(QStringLiteral("runtime"));
+}
+
 }  // namespace
 
 namespace UiRuntimePaths {
@@ -42,7 +71,10 @@ void Prepare(const char *argv0) {
     if (appDir.isEmpty()) {
         return;
     }
-    const QString runtimeDir = appDir + QStringLiteral("/runtime");
+    const QString runtimeDir = ResolveRuntimeDir(appDir);
+    if (runtimeDir.isEmpty()) {
+        return;
+    }
     const QString pluginDir = runtimeDir + QStringLiteral("/plugins");
     const QString platformDir = pluginDir + QStringLiteral("/platforms");
 
@@ -58,6 +90,14 @@ void Prepare(const char *argv0) {
     if (QDir(platformDir).exists() && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM_PLUGIN_PATH")) {
         qputenv("QT_QPA_PLATFORM_PLUGIN_PATH", platformDir.toUtf8());
     }
+}
+
+QString AppRootDir() {
+    return ResolveAppRoot(QCoreApplication::applicationDirPath());
+}
+
+QString RuntimeDir() {
+    return ResolveRuntimeDir(QCoreApplication::applicationDirPath());
 }
 
 }  // namespace UiRuntimePaths

@@ -19,6 +19,7 @@
 #include <QVBoxLayout>
 
 #include "SecureClipboard.h"
+#include "UiRuntimePaths.h"
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
     setModal(true);
@@ -223,13 +224,14 @@ QString SettingsDialog::detectConfigPath() const {
             return {};
         }
         const QFileInfo info(name);
-        const QString appDir = QCoreApplication::applicationDirPath();
-        const QString configDir = appDir + QStringLiteral("/config");
+        const QString appRoot = UiRuntimePaths::AppRootDir();
+        const QString baseDir = appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
+        const QString configDir = baseDir + QStringLiteral("/config");
         if (info.isAbsolute()) {
             return info.absoluteFilePath();
         }
         if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
-            const QString candidate = appDir + QStringLiteral("/") + name;
+            const QString candidate = baseDir + QStringLiteral("/") + name;
             if (QFile::exists(candidate)) {
                 return candidate;
             }
@@ -242,7 +244,7 @@ QString SettingsDialog::detectConfigPath() const {
         if (QFile::exists(configCandidate)) {
             return configCandidate;
         }
-        const QString appCandidate = appDir + QStringLiteral("/") + name;
+        const QString appCandidate = baseDir + QStringLiteral("/") + name;
         if (QFile::exists(appCandidate)) {
             return appCandidate;
         }

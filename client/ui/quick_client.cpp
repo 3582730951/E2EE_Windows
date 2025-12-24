@@ -6,6 +6,8 @@
 #include <utility>
 #include <fstream>
 
+#include "common/UiRuntimePaths.h"
+
 namespace mi::client::ui {
 
 namespace {
@@ -14,12 +16,13 @@ QString FindConfigFile(const QString& name) {
     return {};
   }
   const QFileInfo info(name);
-  const QString appDir = QCoreApplication::applicationDirPath();
+  const QString appRoot = UiRuntimePaths::AppRootDir();
+  const QString baseDir = appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
   if (info.isAbsolute()) {
     return QFile::exists(name) ? name : QString();
   }
   if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
-    const QString candidate = appDir + QStringLiteral("/") + name;
+    const QString candidate = baseDir + QStringLiteral("/") + name;
     if (QFile::exists(candidate)) {
       return candidate;
     }
@@ -28,11 +31,11 @@ QString FindConfigFile(const QString& name) {
     }
     return {};
   }
-  const QString in_config = appDir + QStringLiteral("/config/") + name;
+  const QString in_config = baseDir + QStringLiteral("/config/") + name;
   if (QFile::exists(in_config)) {
     return in_config;
   }
-  const QString in_app = appDir + QStringLiteral("/") + name;
+  const QString in_app = baseDir + QStringLiteral("/") + name;
   if (QFile::exists(in_app)) {
     return in_app;
   }
@@ -61,7 +64,9 @@ bool QuickClient::init(const QString& configPath) {
       config_path_ = FindConfigFile(QStringLiteral("config.ini"));
     }
     if (config_path_.isEmpty()) {
-      config_path_ = QCoreApplication::applicationDirPath() +
+      const QString appRoot = UiRuntimePaths::AppRootDir();
+      const QString baseDir = appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
+      config_path_ = baseDir +
                      QStringLiteral("/config/client_config.ini");
     }
   }

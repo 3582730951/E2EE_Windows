@@ -15,6 +15,8 @@
 #include <cmath>
 #include <mutex>
 
+#include "UiRuntimePaths.h"
+
 static void InitUiResources() {
     Q_INIT_RESOURCE(ui_resources);
 }
@@ -40,7 +42,7 @@ static QString ResolveSvgPath(const QString &resourcePath) {
     if (fileName.isEmpty()) {
         return trimmed;
     }
-    const QString baseDir = QCoreApplication::applicationDirPath();
+    const QString baseDir = UiRuntimePaths::AppRootDir();
     const QString iconDir = baseDir + QStringLiteral("/icon/") + fileName;
     if (QFile::exists(iconDir)) {
         return iconDir;

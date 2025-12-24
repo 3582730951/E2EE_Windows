@@ -8,6 +8,8 @@
 
 #include <algorithm>
 
+#include "UiRuntimePaths.h"
+
 namespace UiSettings {
 
 namespace {
@@ -45,11 +47,11 @@ int ClampInt(int value, int lo, int hi) { return std::max(lo, std::min(value, hi
 QString Key(const char *k) { return QString::fromLatin1(k); }
 
 QString SettingsFilePath() {
-    const QString appDir = QCoreApplication::applicationDirPath();
-    if (appDir.isEmpty()) {
+    const QString appRoot = UiRuntimePaths::AppRootDir();
+    if (appRoot.isEmpty()) {
         return QStringLiteral("config/ui_settings.ini");
     }
-    const QString configDir = appDir + QStringLiteral("/config");
+    const QString configDir = appRoot + QStringLiteral("/config");
     QDir().mkpath(configDir);
     return configDir + QStringLiteral("/ui_settings.ini");
 }

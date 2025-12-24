@@ -20,6 +20,7 @@
 #include <filesystem>
 
 #include "../common/UiSettings.h"
+#include "../common/UiRuntimePaths.h"
 #include "key_transparency.h"
 
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
@@ -30,13 +31,14 @@ QString ResolveConfigPath(const QString& name) {
         return {};
     }
     const QFileInfo info(name);
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QString configDir = appDir + QStringLiteral("/config");
+    const QString appRoot = UiRuntimePaths::AppRootDir();
+    const QString baseDir = appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
+    const QString configDir = baseDir + QStringLiteral("/config");
     if (info.isAbsolute()) {
         return info.absoluteFilePath();
     }
     if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
-        const QString candidate = appDir + QStringLiteral("/") + name;
+        const QString candidate = baseDir + QStringLiteral("/") + name;
         if (QFile::exists(candidate)) {
             return candidate;
         }
@@ -49,7 +51,7 @@ QString ResolveConfigPath(const QString& name) {
     if (QFile::exists(configCandidate)) {
         return configCandidate;
     }
-    const QString appCandidate = appDir + QStringLiteral("/") + name;
+    const QString appCandidate = baseDir + QStringLiteral("/") + name;
     if (QFile::exists(appCandidate)) {
         return appCandidate;
     }
