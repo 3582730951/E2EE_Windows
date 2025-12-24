@@ -216,11 +216,8 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
     bool maintenanceStarted = false;
     if (gApi->start_maintenance) {
         maintenanceStarted = gApi->start_maintenance(needsDeploy ? True : False) == True;
-        if (maintenanceStarted && gApi->join_maintenance_thread) {
-            gApi->join_maintenance_thread();
-        }
     }
-    if (!maintenanceStarted && gApi->deploy) {
+    if (!maintenanceStarted && needsDeploy && gApi->deploy) {
         gApi->deploy();
     }
     gPreferredSchema = LoadPreferredSchema(user_dir);

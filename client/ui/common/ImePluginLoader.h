@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <QByteArray>
 #include <QString>
 #include <QStringList>
@@ -31,6 +32,7 @@ private:
     bool copyFileIfPresent(const QString &sourcePath, const QString &targetPath, bool overwrite = false);
     void reset();
 
+    class QLockFile;
     class QLibrary *library_{nullptr};
     bool loadAttempted_{false};
     bool initialized_{false};
@@ -57,4 +59,5 @@ private:
 
     QByteArray sharedDirBytes_;
     QByteArray userDirBytes_;
+    std::unique_ptr<QLockFile> userLock_;
 };

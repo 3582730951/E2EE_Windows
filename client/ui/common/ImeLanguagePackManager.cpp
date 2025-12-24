@@ -1,6 +1,7 @@
 // Language pack manager implementation.
 #include "ImeLanguagePackManager.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -18,6 +19,10 @@ QString BaseDataDir() {
     const QString envRoot = qEnvironmentVariable("MI_E2EE_IME_DIR");
     if (!envRoot.isEmpty()) {
         return envRoot;
+    }
+    const QString appDir = QCoreApplication::applicationDirPath();
+    if (!appDir.isEmpty()) {
+        return QDir(appDir).filePath(QStringLiteral("database"));
     }
     QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (base.isEmpty()) {

@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLockFile>
 #include <QLibrary>
 #include <QStandardPaths>
 #include <QtGlobal>
@@ -65,6 +66,7 @@ void ImePluginLoader::reset() {
     getPreedit_ = nullptr;
     sharedDirBytes_.clear();
     userDirBytes_.clear();
+    userLock_.reset();
 }
 
 bool ImePluginLoader::ensureLoaded() {
@@ -272,6 +274,12 @@ bool ImePluginLoader::copyFileIfPresent(const QString &sourcePath,
 bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
     QString base = qEnvironmentVariable("MI_E2EE_IME_DIR");
     if (base.isEmpty()) {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        if (!appDir.isEmpty()) {
+            base = QDir(appDir).filePath(QStringLiteral("database"));
+        }
+    }
+    if (base.isEmpty()) {
         base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     }
     if (base.isEmpty()) {
@@ -281,6 +289,21 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
     userDir = base + QStringLiteral("/rime/user");
     if (!QDir().mkpath(sharedDir) || !QDir().mkpath(userDir)) {
         return false;
+    }
+    userLock_.reset(new QLockFile(userDir + QStringLiteral("/.ime.lock")));
+    userLock_->setStaleLockTime(0);
+    if (!userLock_->tryLock(0)) {
+        const QString pidSuffix = QString::number(QCoreApplication::applicationPid());
+        const QString altUserDir = userDir + QStringLiteral("_") + pidSuffix;
+        if (!QDir().mkpath(altUserDir)) {
+            return false;
+        }
+        userDir = altUserDir;
+        userLock_.reset(new QLockFile(userDir + QStringLiteral("/.ime.lock")));
+        userLock_->setStaleLockTime(0);
+        if (!userLock_->tryLock(0)) {
+            return false;
+        }
     }
     const QStringList forcedFiles = {
         QStringLiteral("default.yaml"),
@@ -373,21 +396,27 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
         appDir + QStringLiteral("/data/opencc"),
         appDir + QStringLiteral("/rime/opencc"),
     };
-    const QStringList openccRuntimeFiles = {
-        QStringLiteral("emoji.txt"),
-        QStringLiteral("others.txt"),
+    const QString openccDestDir = sharedDir + QStringLiteral("/opencc");
+    QDir().mkpath(openccDestDir);
+    const QStringList openccFilters = {
+        QStringLiteral("*.json"),
+        QStringLiteral("*.ocd2"),
+        QStringLiteral("*.txt"),
     };
-    for (const auto &file : openccRuntimeFiles) {
-        const QString dst = sharedDir + QStringLiteral("/opencc/") + file;
-        for (const auto &dir : openccSearchDirs) {
-            const QString src = dir + QLatin1Char('/') + file;
-            if (!QFile::exists(src)) {
-                continue;
-            }
-            if (!copyFileIfPresent(src, dst, true)) {
+    for (const auto &dir : openccSearchDirs) {
+        QDir source(dir);
+        if (!source.exists()) {
+            continue;
+        }
+        const QFileInfoList entries =
+            source.entryInfoList(openccFilters, QDir::Files | QDir::Readable);
+        for (const auto &entry : entries) {
+            const QString fileName = entry.fileName();
+            const QString dst = openccDestDir + QLatin1Char('/') + fileName;
+            const bool overwrite = (fileName != QStringLiteral("emoji.json"));
+            if (!copyFileIfPresent(entry.filePath(), dst, overwrite)) {
                 return false;
             }
-            break;
         }
     }
     return true;

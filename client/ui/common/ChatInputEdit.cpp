@@ -1063,11 +1063,6 @@ ChatInputEdit::ChatInputEdit(QWidget *parent) : QPlainTextEdit(parent) {
             updateEnglishSuggestions();
         }
     });
-#if defined(MI_UI_ENABLE_RIME)
-    if (imeEnabled_ && inputMode_ == InputMode::Chinese) {
-        ensureImeSession();
-    }
-#endif
 }
 
 ChatInputEdit::~ChatInputEdit() {
