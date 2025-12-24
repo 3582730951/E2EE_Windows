@@ -209,7 +209,7 @@ class ClientCore {
   ClientCore();
   ~ClientCore();
 
-  bool Init(const std::string& config_path = "config.ini");
+  bool Init(const std::string& config_path = "config/client_config.ini");
   bool Register(const std::string& username, const std::string& password);
   bool Login(const std::string& username, const std::string& password);
   bool Relogin();
@@ -528,7 +528,7 @@ class ClientCore {
   std::string pinned_server_fingerprint_;
   std::string pending_server_fingerprint_;
   std::string pending_server_pin_;
-  std::string config_path_{"config.ini"};
+  std::string config_path_{"config/client_config.ini"};
   std::string username_;
   std::string password_;
   std::string token_;

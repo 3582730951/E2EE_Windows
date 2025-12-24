@@ -2232,7 +2232,7 @@ void MainListWindow::handleDeviceManager() {
     const bool syncEnabled = backend_->deviceSyncEnabled();
     const bool isPrimary = backend_->deviceSyncIsPrimary();
     if (!syncEnabled) {
-        pairHint->setText(QStringLiteral("未启用多端同步：请在 client_config.ini 的 [device_sync] 打开 enabled=1，并设置 role=primary/linked。"));
+        pairHint->setText(QStringLiteral("未启用多端同步：请在 config/client_config.ini 的 [device_sync] 打开 enabled=1，并设置 role=primary/linked。"));
     } else {
         pairHint->setText(isPrimary ? QStringLiteral("当前为主设备：生成配对码后，在新设备输入配对码并等待确认。")
                                     : QStringLiteral("当前为从设备：输入主设备生成的配对码，等待主设备确认。"));

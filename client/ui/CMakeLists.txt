@@ -70,10 +70,34 @@ function(copy_ref_images target_name)
     endif()
 endfunction()
 
+function(copy_icon_assets target_name)
+    set(ICON_DIR "${UI_ROOT}/icons")
+    if(NOT EXISTS "${ICON_DIR}")
+        message(WARNING "icons not found at ${ICON_DIR}, skip copying")
+        return()
+    endif()
+    file(GLOB ICON_FILES "${ICON_DIR}/*.svg")
+    if(ICON_FILES)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:${target_name}>/icon"
+        )
+        foreach(icon ${ICON_FILES})
+            get_filename_component(icon_name "${icon}" NAME)
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${icon}"
+                    "$<TARGET_FILE_DIR:${target_name}>/icon/${icon_name}"
+            )
+        endforeach()
+    endif()
+endfunction()
+
 function(add_ui_executable target_name)
     add_executable(${target_name} ${ARGN})
     target_link_libraries(${target_name} PRIVATE mi_ui_common Qt6::Widgets)
     copy_ref_images(${target_name})
+    copy_icon_assets(${target_name})
     if(TARGET mi_ime_rime)
         add_dependencies(${target_name} mi_ime_rime)
         add_custom_command(TARGET ${target_name} POST_BUILD

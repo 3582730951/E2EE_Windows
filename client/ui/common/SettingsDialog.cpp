@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -222,18 +223,33 @@ QString SettingsDialog::detectConfigPath() const {
             return {};
         }
         const QFileInfo info(name);
-        if (info.isAbsolute() && QFile::exists(name)) {
-            return name;
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString configDir = appDir + QStringLiteral("/config");
+        if (info.isAbsolute()) {
+            return info.absoluteFilePath();
         }
-        if (QFile::exists(name)) {
-            return name;
-        }
-        const QString candidate =
-            QCoreApplication::applicationDirPath() + QStringLiteral("/") + name;
-        if (QFile::exists(candidate)) {
+        if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
+            const QString candidate = appDir + QStringLiteral("/") + name;
+            if (QFile::exists(candidate)) {
+                return candidate;
+            }
+            if (QFile::exists(name)) {
+                return QFileInfo(name).absoluteFilePath();
+            }
             return candidate;
         }
-        return name;
+        const QString configCandidate = configDir + QStringLiteral("/") + name;
+        if (QFile::exists(configCandidate)) {
+            return configCandidate;
+        }
+        const QString appCandidate = appDir + QStringLiteral("/") + name;
+        if (QFile::exists(appCandidate)) {
+            return appCandidate;
+        }
+        if (QFile::exists(name)) {
+            return QFileInfo(name).absoluteFilePath();
+        }
+        return configCandidate;
     };
 
     const QString p1 = resolve(QStringLiteral("client_config.ini"));
@@ -244,7 +260,7 @@ QString SettingsDialog::detectConfigPath() const {
     if (QFile::exists(p2)) {
         return p2;
     }
-    return p1.isEmpty() ? QStringLiteral("client_config.ini") : p1;
+    return p1.isEmpty() ? QStringLiteral("config/client_config.ini") : p1;
 }
 
 void SettingsDialog::loadProxyFromConfig() {
@@ -316,6 +332,10 @@ bool SettingsDialog::saveProxyToConfig(QString &outError) {
         }
     }
 
+    const QFileInfo cfgInfo(clientConfigPath_);
+    if (!cfgInfo.absolutePath().isEmpty()) {
+        QDir().mkpath(cfgInfo.absolutePath());
+    }
     QSettings cfg(clientConfigPath_, QSettings::IniFormat);
     cfg.beginGroup(QStringLiteral("proxy"));
     cfg.setValue(QStringLiteral("type"), snap.type);

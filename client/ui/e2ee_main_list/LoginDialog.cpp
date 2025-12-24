@@ -4,11 +4,13 @@
 #include <QFrame>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QFile>
 #include <QInputDialog>
 #include <QPainter>
 #include <QPushButton>
@@ -351,13 +353,19 @@ void LoginDialog::buildUi() {
     agreeRow->setSpacing(6);
     agreeRow->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
     agreeCheck_ = new QCheckBox(accountPage_);
+    const QString checkIcon = [&]() {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString iconPath = appDir + QStringLiteral("/icon/check.svg");
+        if (QFile::exists(iconPath)) {
+            return iconPath;
+        }
+        return QStringLiteral(":/mi/e2ee/ui/icons/check.svg");
+    }();
     agreeCheck_->setStyleSheet(
         QStringLiteral("QCheckBox { color: %1; }").arg(textSub.name()) +
-        "QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; }"
-        +
-        QStringLiteral("QCheckBox::indicator:checked { image: url(:/mi/e2ee/ui/icons/check.svg); "
-                       "border: 1px solid %1; background: %1; }")
-            .arg(accent.name()) +
+        "QCheckBox::indicator { width: 16px; height: 16px; border-radius: 4px; }" +
+        QStringLiteral("QCheckBox::indicator:checked { image: url(%1); border: 1px solid %2; background: %2; }")
+            .arg(checkIcon, accent.name()) +
         QStringLiteral("QCheckBox::indicator:unchecked { image: none; border: 1px solid %1; background: transparent; }")
             .arg(inputBorder.name()));
     agreeRow->addWidget(agreeCheck_, 0, Qt::AlignTop);

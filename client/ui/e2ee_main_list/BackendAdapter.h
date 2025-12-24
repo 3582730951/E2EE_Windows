@@ -228,7 +228,7 @@ private:
     std::atomic_bool fileTransferActive_{false};
     bool pollingSuspended_{false};
     QString currentUser_;
-    QString configPath_{"client_config.ini"};
+    QString configPath_{QStringLiteral("config/client_config.ini")};
     std::unique_ptr<QTimer> pollTimer_;
     int basePollIntervalMs_{2000};
     int currentPollIntervalMs_{2000};

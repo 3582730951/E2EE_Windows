@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <utility>
 #include <fstream>
 
@@ -12,13 +13,31 @@ QString FindConfigFile(const QString& name) {
   if (name.isEmpty()) {
     return {};
   }
-  const QString in_app =
-      QCoreApplication::applicationDirPath() + QStringLiteral("/") + name;
+  const QFileInfo info(name);
+  const QString appDir = QCoreApplication::applicationDirPath();
+  if (info.isAbsolute()) {
+    return QFile::exists(name) ? name : QString();
+  }
+  if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
+    const QString candidate = appDir + QStringLiteral("/") + name;
+    if (QFile::exists(candidate)) {
+      return candidate;
+    }
+    if (QFile::exists(name)) {
+      return QFileInfo(name).absoluteFilePath();
+    }
+    return {};
+  }
+  const QString in_config = appDir + QStringLiteral("/config/") + name;
+  if (QFile::exists(in_config)) {
+    return in_config;
+  }
+  const QString in_app = appDir + QStringLiteral("/") + name;
   if (QFile::exists(in_app)) {
     return in_app;
   }
   if (QFile::exists(name)) {
-    return name;
+    return QFileInfo(name).absoluteFilePath();
   }
   return {};
 }
@@ -34,12 +53,16 @@ bool QuickClient::init(const QString& configPath) {
   if (!configPath.isEmpty()) {
     config_path_ = configPath;
   } else {
-    config_path_ = FindConfigFile(QStringLiteral("client_config.ini"));
+    config_path_ = FindConfigFile(QStringLiteral("config/client_config.ini"));
+    if (config_path_.isEmpty()) {
+      config_path_ = FindConfigFile(QStringLiteral("client_config.ini"));
+    }
     if (config_path_.isEmpty()) {
       config_path_ = FindConfigFile(QStringLiteral("config.ini"));
     }
     if (config_path_.isEmpty()) {
-      config_path_ = QStringLiteral("client_config.ini");
+      config_path_ = QCoreApplication::applicationDirPath() +
+                     QStringLiteral("/config/client_config.ini");
     }
   }
   const bool ok = core_.Init(config_path_.toStdString());

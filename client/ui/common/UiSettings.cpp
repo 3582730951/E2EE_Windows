@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QLocale>
 #include <QSettings>
 
@@ -43,6 +44,16 @@ int ClampInt(int value, int lo, int hi) { return std::max(lo, std::min(value, hi
 
 QString Key(const char *k) { return QString::fromLatin1(k); }
 
+QString SettingsFilePath() {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    if (appDir.isEmpty()) {
+        return QStringLiteral("config/ui_settings.ini");
+    }
+    const QString configDir = appDir + QStringLiteral("/config");
+    QDir().mkpath(configDir);
+    return configDir + QStringLiteral("/ui_settings.ini");
+}
+
 }  // namespace
 
 void InitAppMeta() {
@@ -56,7 +67,7 @@ void InitAppMeta() {
 
 Settings Load() {
     InitAppMeta();
-    QSettings s;
+    QSettings s(SettingsFilePath(), QSettings::IniFormat);
     Settings out;
     out.language = ParseLanguage(s.value(Key("ui/language"), 0).toInt());
     out.scheme = ParseScheme(s.value(Key("ui/scheme"), static_cast<int>(Theme::Scheme::Auto)).toInt());
@@ -70,7 +81,7 @@ Settings Load() {
 
 void Save(const Settings &settings) {
     InitAppMeta();
-    QSettings s;
+    QSettings s(SettingsFilePath(), QSettings::IniFormat);
     s.setValue(Key("ui/language"), static_cast<int>(settings.language));
     s.setValue(Key("ui/scheme"), static_cast<int>(settings.scheme));
     s.setValue(Key("ui/font_scale_percent"), settings.fontScalePercent);

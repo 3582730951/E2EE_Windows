@@ -5,7 +5,7 @@ int main() {
     mi::client::security::StartEndpointHardening();
 
     mi::client::ClientCore client;
-    if (!client.Init("config.ini")) {
+    if (!client.Init("config/client_config.ini")) {
         return 1;
     }
     if (!client.Login("u", "p")) {

@@ -105,6 +105,51 @@ std::string ToLower(std::string s) {
   return s;
 }
 
+std::filesystem::path ResolveConfigDir(const std::string& config_path) {
+  std::filesystem::path cfg_path(config_path);
+  std::filesystem::path dir = cfg_path.parent_path();
+  if (dir.empty()) {
+    std::error_code ec;
+    dir = std::filesystem::current_path(ec);
+    if (dir.empty()) {
+      dir = std::filesystem::path{"."};
+    }
+    return dir;
+  }
+  if (dir.is_relative()) {
+    std::error_code ec;
+    const auto cwd = std::filesystem::current_path(ec);
+    if (!cwd.empty()) {
+      dir = cwd / dir;
+    }
+  }
+  return dir;
+}
+
+std::filesystem::path ResolveDataDir(const std::filesystem::path& config_dir) {
+  if (const char* env = std::getenv("MI_E2EE_DATA_DIR")) {
+    if (*env) {
+      return std::filesystem::path(env);
+    }
+  }
+  if (!config_dir.empty()) {
+    const std::string leaf = ToLower(config_dir.filename().string());
+    if (leaf == "config") {
+      const auto parent = config_dir.parent_path();
+      if (!parent.empty()) {
+        return parent / "database";
+      }
+    }
+    return config_dir / "database";
+  }
+  std::error_code ec;
+  auto cwd = std::filesystem::current_path(ec);
+  if (!cwd.empty()) {
+    return cwd / "database";
+  }
+  return std::filesystem::path{"database"};
+}
+
 bool IsLoopbackHost(const std::string& host) {
   const std::string h = ToLower(Trim(host));
   return h == "127.0.0.1" || h == "localhost" || h == "::1";
@@ -4786,6 +4831,8 @@ bool ClientCore::Init(const std::string& config_path) {
   std::string err;
   const bool loaded = LoadClientConfig(config_path_, cfg, err);
   remote_mode_ = loaded;
+  const std::filesystem::path config_dir = ResolveConfigDir(config_path_);
+  const std::filesystem::path data_dir = ResolveDataDir(config_dir);
   if (!loaded) {
     last_error_ = err;
     if (err == "client section missing") {
@@ -4824,7 +4871,7 @@ bool ClientCore::Init(const std::string& config_path) {
     if (!cfg.trust_store.empty()) {
       std::filesystem::path trust = cfg.trust_store;
       if (!trust.is_absolute()) {
-        trust = std::filesystem::path(config_path_).parent_path() / trust;
+        trust = data_dir / trust;
       }
       trust_store_path_ = trust.string();
       TrustEntry entry;
@@ -4865,10 +4912,9 @@ bool ClientCore::Init(const std::string& config_path) {
     e2ee_ = mi::client::e2ee::Engine{};
     e2ee_inited_ = false;
     prekey_published_ = false;
-    std::error_code ec;
-    auto base = std::filesystem::path(config_path_).parent_path();
+    std::filesystem::path base = data_dir;
     if (base.empty()) {
-      base = std::filesystem::current_path(ec);
+      base = config_dir;
     }
     if (base.empty()) {
       base = std::filesystem::path{"."};
@@ -4886,7 +4932,7 @@ bool ClientCore::Init(const std::string& config_path) {
       if (!cfg.kt.root_pubkey_path.empty()) {
         std::filesystem::path key_path = cfg.kt.root_pubkey_path;
         if (!key_path.is_absolute()) {
-          key_path = base / key_path;
+          key_path = config_dir / key_path;
         }
         std::string key_err;
         if (!ReadFileBytes(key_path, key_bytes, key_err)) {
@@ -4900,9 +4946,15 @@ bool ClientCore::Init(const std::string& config_path) {
         }
       } else {
         std::string key_err;
-        if (!TryLoadKtRootPubkeyFromLoopback(base, server_ip_, key_bytes, key_err)) {
-          last_error_ = key_err.empty() ? "kt root pubkey missing" : key_err;
-          return false;
+        if (!TryLoadKtRootPubkeyFromLoopback(config_dir, server_ip_, key_bytes, key_err)) {
+          std::string data_err;
+          if (!TryLoadKtRootPubkeyFromLoopback(data_dir, server_ip_, key_bytes, data_err)) {
+            if (data_err.empty()) {
+              data_err = key_err;
+            }
+            last_error_ = data_err.empty() ? "kt root pubkey missing" : data_err;
+            return false;
+          }
         }
       }
       if (key_bytes.size() != mi::server::kKtSthSigPublicKeyBytes) {
@@ -4912,15 +4964,15 @@ bool ClientCore::Init(const std::string& config_path) {
       kt_root_pubkey_ = std::move(key_bytes);
       kt_root_pubkey_loaded_ = true;
     }
-    if (!cfg.device_sync.key_path.empty()) {
-      std::filesystem::path kp = cfg.device_sync.key_path;
-      if (!kp.is_absolute()) {
-        kp = std::filesystem::path(config_path_).parent_path() / kp;
+      if (!cfg.device_sync.key_path.empty()) {
+        std::filesystem::path kp = cfg.device_sync.key_path;
+        if (!kp.is_absolute()) {
+          kp = data_dir / kp;
+        }
+        device_sync_key_path_ = kp;
+      } else {
+        device_sync_key_path_ = e2ee_state_dir_ / "device_sync_key.bin";
       }
-      device_sync_key_path_ = kp;
-    } else {
-      device_sync_key_path_ = e2ee_state_dir_ / "device_sync_key.bin";
-    }
     LoadKtState();
     LoadOrCreateDeviceId();
     if (device_sync_enabled_ && !LoadDeviceSyncKey()) {
@@ -4972,10 +5024,9 @@ bool ClientCore::Init(const std::string& config_path) {
   e2ee_ = mi::client::e2ee::Engine{};
   e2ee_inited_ = false;
   prekey_published_ = false;
-  std::error_code ec;
-  auto base = std::filesystem::path(config_path_).parent_path();
+  std::filesystem::path base = data_dir;
   if (base.empty()) {
-    base = std::filesystem::current_path(ec);
+    base = config_dir;
   }
   if (base.empty()) {
     base = std::filesystem::path{"."};
@@ -5721,10 +5772,11 @@ bool ClientCore::EnsureE2ee() {
     return true;
   }
   if (e2ee_state_dir_.empty()) {
-    std::error_code ec;
-    auto base = std::filesystem::path(config_path_).parent_path();
+    const auto cfg_dir = ResolveConfigDir(config_path_);
+    const auto data_dir = ResolveDataDir(cfg_dir);
+    std::filesystem::path base = data_dir;
     if (base.empty()) {
-      base = std::filesystem::current_path(ec);
+      base = cfg_dir;
     }
     if (base.empty()) {
       base = std::filesystem::path{"."};
@@ -13246,7 +13298,9 @@ bool ClientCore::TrustPendingServer(const std::string& pin) {
   if (trust_store_path_.empty()) {
     std::filesystem::path trust = "server_trust.ini";
     if (!config_path_.empty()) {
-      trust = std::filesystem::path(config_path_).parent_path() / trust;
+      const auto cfg_dir = ResolveConfigDir(config_path_);
+      const auto data_dir = ResolveDataDir(cfg_dir);
+      trust = data_dir / trust;
     }
     trust_store_path_ = trust.string();
   }

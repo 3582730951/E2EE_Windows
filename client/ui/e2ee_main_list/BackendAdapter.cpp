@@ -30,17 +30,33 @@ QString ResolveConfigPath(const QString& name) {
         return {};
     }
     const QFileInfo info(name);
-    if (info.isAbsolute() && QFile::exists(name)) {
-        return name;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString configDir = appDir + QStringLiteral("/config");
+    if (info.isAbsolute()) {
+        return info.absoluteFilePath();
     }
-    if (QFile::exists(name)) {
-        return name;
-    }
-    const QString candidate = QCoreApplication::applicationDirPath() + QStringLiteral("/") + name;
-    if (QFile::exists(candidate)) {
+    if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
+        const QString candidate = appDir + QStringLiteral("/") + name;
+        if (QFile::exists(candidate)) {
+            return candidate;
+        }
+        if (QFile::exists(name)) {
+            return QFileInfo(name).absoluteFilePath();
+        }
         return candidate;
     }
-    return name;
+    const QString configCandidate = configDir + QStringLiteral("/") + name;
+    if (QFile::exists(configCandidate)) {
+        return configCandidate;
+    }
+    const QString appCandidate = appDir + QStringLiteral("/") + name;
+    if (QFile::exists(appCandidate)) {
+        return appCandidate;
+    }
+    if (QFile::exists(name)) {
+        return QFileInfo(name).absoluteFilePath();
+    }
+    return configCandidate;
 }
 
 QString GenerateMessageIdHex() {
@@ -180,6 +196,9 @@ bool WriteKtRootPath(const QString &configPath, const QString &keyPath, QString 
     err.clear();
     const QFileInfo cfgInfo(configPath);
     const QDir cfgDir(cfgInfo.absolutePath());
+    if (!cfgInfo.absolutePath().isEmpty()) {
+        QDir().mkpath(cfgInfo.absolutePath());
+    }
     QString storePath = keyPath;
     if (!cfgInfo.absolutePath().isEmpty()) {
         storePath = cfgDir.relativeFilePath(QFileInfo(keyPath).absoluteFilePath());
@@ -203,16 +222,16 @@ QString AugmentTransportErrorHint(const QString &coreErr) {
         e == QStringLiteral("tcp request failed") ||
         e == QStringLiteral("tcp send failed")) {
         return e + UiSettings::Tr(
-                       QStringLiteral("（可能 TLS 配置不一致：服务端启用 TLS 时，请在 client_config.ini 设置 use_tls=1）"),
-                       QStringLiteral(" (possible TLS mismatch: if the server uses TLS, set use_tls=1 in client_config.ini)"));
+                       QStringLiteral("（可能 TLS 配置不一致：服务端启用 TLS 时，请在 config/client_config.ini 设置 use_tls=1）"),
+                       QStringLiteral(" (possible TLS mismatch: if the server uses TLS, set use_tls=1 in config/client_config.ini)"));
     }
     if (e == QStringLiteral("tls recv failed") ||
         e == QStringLiteral("tls request failed") ||
         e == QStringLiteral("tls handshake failed") ||
         e == QStringLiteral("tls connect failed")) {
         return e + UiSettings::Tr(
-                       QStringLiteral("（可能 TLS 配置不一致：若服务端未启用 TLS，可在 client_config.ini 设置 use_tls=0）"),
-                       QStringLiteral(" (possible TLS mismatch: if the server does not use TLS, set use_tls=0 in client_config.ini)"));
+                       QStringLiteral("（可能 TLS 配置不一致：若服务端未启用 TLS，可在 config/client_config.ini 设置 use_tls=0）"),
+                       QStringLiteral(" (possible TLS mismatch: if the server does not use TLS, set use_tls=0 in config/client_config.ini)"));
     }
     if (e.contains(QStringLiteral("mysql provider not built"), Qt::CaseInsensitive)) {
         if (e.contains(QStringLiteral("-DMI_E2EE_ENABLE_MYSQL"), Qt::CaseInsensitive) ||
@@ -226,13 +245,13 @@ QString AugmentTransportErrorHint(const QString &coreErr) {
     }
     if (e == QStringLiteral("pinned fingerprint required")) {
         return e + UiSettings::Tr(
-                       QStringLiteral("（需预置服务器指纹：在 client_config.ini 填写 pinned_fingerprint）"),
-                       QStringLiteral(" (Preloaded server pin required: set pinned_fingerprint in client_config.ini)"));
+                       QStringLiteral("（需预置服务器指纹：在 config/client_config.ini 填写 pinned_fingerprint）"),
+                       QStringLiteral(" (Preloaded server pin required: set pinned_fingerprint in config/client_config.ini)"));
     }
     if (e == QStringLiteral("server fingerprint mismatch")) {
         return e + UiSettings::Tr(
-                       QStringLiteral("（指纹不匹配：请通过可信渠道更新 client_config.ini 的 pinned_fingerprint）"),
-                       QStringLiteral(" (Fingerprint mismatch: update pinned_fingerprint in client_config.ini after out-of-band verification)"));
+                       QStringLiteral("（指纹不匹配：请通过可信渠道更新 config/client_config.ini 的 pinned_fingerprint）"),
+                       QStringLiteral(" (Fingerprint mismatch: update pinned_fingerprint in config/client_config.ini after out-of-band verification)"));
     }
     return e;
 }
@@ -273,14 +292,20 @@ bool BackendAdapter::init(const QString &configPath) {
         }
         return inited_;
     }
-    // 兼容旧版配置文件名：优先 client_config.ini，若不存在则回落 config.ini
+    // 兼容旧版配置文件名：优先 config/client_config.ini，若不存在则回落旧名
     if (!configPath.isEmpty()) {
         configPath_ = ResolveConfigPath(configPath);
+    } else if (!ResolveConfigPath(QStringLiteral("config/client_config.ini")).isEmpty() &&
+               QFile::exists(ResolveConfigPath(QStringLiteral("config/client_config.ini")))) {
+        configPath_ = ResolveConfigPath(QStringLiteral("config/client_config.ini"));
     } else if (!ResolveConfigPath(QStringLiteral("client_config.ini")).isEmpty() &&
                QFile::exists(ResolveConfigPath(QStringLiteral("client_config.ini")))) {
         configPath_ = ResolveConfigPath(QStringLiteral("client_config.ini"));
-    } else {
+    } else if (!ResolveConfigPath(QStringLiteral("config.ini")).isEmpty() &&
+               QFile::exists(ResolveConfigPath(QStringLiteral("config.ini")))) {
         configPath_ = ResolveConfigPath(QStringLiteral("config.ini"));
+    } else {
+        configPath_ = ResolveConfigPath(QStringLiteral("config/client_config.ini"));
     }
     inited_ = core_.Init(configPath_.toStdString());
     if (!inited_ && !promptedKtRoot_) {
@@ -349,7 +374,9 @@ bool BackendAdapter::ensureInited(QString &err) {
     if (!inited_) {
         if (!init(configPath_)) {
             const QString coreErr = QString::fromStdString(core_.last_error());
-            const QString pathHint = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            const QString pathHint = configPath_.isEmpty()
+                                         ? QStringLiteral("config/client_config.ini")
+                                         : configPath_;
             err = coreErr.isEmpty()
                       ? QStringLiteral("后端初始化失败（检查 %1）").arg(pathHint)
                       : QStringLiteral("后端初始化失败：%1（检查 %2）").arg(coreErr, pathHint);
@@ -438,7 +465,9 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
     }
     if (!inited_) {
         if (!init(configPath_)) {
-            const QString path = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            const QString path = configPath_.isEmpty()
+                                     ? QStringLiteral("config/client_config.ini")
+                                     : configPath_;
             const QString coreErr = QString::fromStdString(core_.last_error());
             coreWorkActive_.store(false);
             if (coreErr.isEmpty()) {
@@ -600,7 +629,9 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
     }
     if (!inited_) {
         if (!init(configPath_)) {
-            const QString path = configPath_.isEmpty() ? QStringLiteral("config.ini") : configPath_;
+            const QString path = configPath_.isEmpty()
+                                     ? QStringLiteral("config/client_config.ini")
+                                     : configPath_;
             const QString coreErr = QString::fromStdString(core_.last_error());
             coreWorkActive_.store(false);
             if (coreErr.isEmpty()) {

@@ -29,23 +29,29 @@ static QString ResolveSvgPath(const QString &resourcePath) {
     if (trimmed.isEmpty()) {
         return {};
     }
-    if (QFile::exists(trimmed)) {
+    const QFileInfo info(trimmed);
+    if (info.isAbsolute() && QFile::exists(trimmed)) {
         return trimmed;
     }
-
-    const QFileInfo info(trimmed);
     const QString fileName = info.fileName();
     if (fileName.isEmpty()) {
         return trimmed;
     }
     const QString baseDir = QCoreApplication::applicationDirPath();
+    const QString iconDir = baseDir + QStringLiteral("/icon/") + fileName;
+    if (QFile::exists(iconDir)) {
+        return iconDir;
+    }
+    const QString legacyIconsDir = baseDir + QStringLiteral("/icons/") + fileName;
+    if (QFile::exists(legacyIconsDir)) {
+        return legacyIconsDir;
+    }
     const QString sameDir = baseDir + QStringLiteral("/") + fileName;
     if (QFile::exists(sameDir)) {
         return sameDir;
     }
-    const QString iconsDir = baseDir + QStringLiteral("/icons/") + fileName;
-    if (QFile::exists(iconsDir)) {
-        return iconsDir;
+    if (QFile::exists(trimmed)) {
+        return trimmed;
     }
     return trimmed;
 }

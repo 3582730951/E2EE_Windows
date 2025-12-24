@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     }
 
     BackendAdapter backend;
-    backend.init();  // 尝试按默认 config.ini 初始化，失败时仍可继续尝试登录
+    backend.init();  // 尝试按默认 config/client_config.ini 初始化，失败时仍可继续尝试登录
 
     LoginDialog login(&backend);
     if (login.exec() != QDialog::Accepted) {

@@ -38,7 +38,7 @@ class QuickClient : public QObject {
   void status(const QString& message);
 
  private:
-  QString config_path_{"client_config.ini"};
+  QString config_path_{QStringLiteral("config/client_config.ini")};
   mi::client::ClientCore core_;
   QString token_;
 };
