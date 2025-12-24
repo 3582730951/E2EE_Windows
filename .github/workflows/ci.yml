@@ -54,6 +54,13 @@ jobs:
           "MYSQL_INCLUDE_DIR=$mysqlInclude" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MYSQL_CLIENT_LIB=$mysqlLib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Fetch Rime runtime
+        run: |
+          $rimeDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_runtime"
+          New-Item -ItemType Directory -Force -Path $rimeDir | Out-Null
+          cmake -DRIME_OUTPUT_DIR=$rimeDir -DRIME_WITH_LUA=ON -DRIME_VERSION=1.15.0 -DRIME_ASSET="rime-75bc43a-Windows-msvc-x64.7z" -DRIME_WEASEL_VERSION=0.17.4 -DRIME_WEASEL_ASSET="weasel-0.17.4.0-installer.exe" -P $env:GITHUB_WORKSPACE\\client\\ui\\ime_rime\\FetchRime.cmake
+          "RIME_RUNTIME_DIR=$rimeDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Configure client
         run: >
           cmake -S client -B build/client
@@ -62,7 +69,7 @@ jobs:
           -DMI_E2EE_BUILD_DEMO_CLIENT=ON
           -DMI_E2EE_BUILD_FUZZERS=OFF
           -DMI_E2EE_ENABLE_MYSQL=OFF
-          -DMI_UI_RIME_DOWNLOAD=ON
+          -DMI_UI_RIME_DOWNLOAD=OFF
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
 
@@ -188,6 +195,16 @@ jobs:
           $uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
           Get-ChildItem -Path $uiRoot -File -Filter "*.dll" | ForEach-Object {
             Copy-Item $_.FullName $clientDll -Force
+          }
+          $rimeRuntime = $env:RIME_RUNTIME_DIR
+          if (-not $rimeRuntime) {
+            $rimeRuntime = Join-Path $workspace "build\\rime_runtime"
+          }
+          if (Test-Path (Join-Path $rimeRuntime "rime.dll")) {
+            Copy-Item (Join-Path $rimeRuntime "rime.dll") $clientDll -Force
+          }
+          if (Test-Path (Join-Path $rimeRuntime "opencc")) {
+            Copy-Item (Join-Path $rimeRuntime "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
           }
           $skipDirs = @("qml", "translations", "icon", "assets", "runtime")
           Get-ChildItem -Path $uiRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name } | ForEach-Object {
