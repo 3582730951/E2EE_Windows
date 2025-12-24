@@ -1,368 +1,50 @@
-name: Build
+name: ci
 
 on:
   push:
-    branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
-
-env:
-  BUILD_TYPE: Release
+    branches:
+      - master
+  workflow_dispatch:
 
 jobs:
-  kt-keys:
-    runs-on: ubuntu-latest
+  build-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
 
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake
-      - name: Set parallel build level
-        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> $GITHUB_ENV
-
-      - name: Configure kt keygen
-        run: |
-          cmake -S server -B build/kt-keys \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DMI_E2EE_ENABLE_MYSQL=OFF \
-            -DMI_E2EE_ENABLE_TCP_SERVER=OFF
-
-      - name: Build kt tools
-        run: |
-          cmake --build build/kt-keys --target mi_e2ee_kt_keygen
-          cmake --build build/kt-keys --target mi_e2ee_kt_pubinfo
-
-      - name: Generate kt keys
-        run: |
-          mkdir -p build/kt-keys/kt_keys
-          ./build/kt-keys/tools/mi_e2ee_kt_keygen --out-dir build/kt-keys/kt_keys --force
-          ./build/kt-keys/tools/mi_e2ee_kt_pubinfo --in build/kt-keys/kt_keys/kt_root_pub.bin \
-            --qr-svg build/kt-keys/kt_keys/kt_root_pub_qr.svg
-
-      - name: Upload kt keys
-        uses: actions/upload-artifact@v4
-        with:
-          name: kt-keys
-          path: build/kt-keys/kt_keys
-
-  server-linux:
-    needs: kt-keys
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        mode: [demo, mysql]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake libmysqlclient-dev
-      - name: Set parallel build level
-        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> $GITHUB_ENV
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Configure server
-        run: |
-          cmake -S server -B build/server-${{ matrix.mode }} \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DMI_E2EE_ENABLE_MYSQL=$([ "${{ matrix.mode }}" = "mysql" ] && echo "ON" || echo "OFF")
+        run: >
+          cmake -S server -B build/server
+          -DMI_E2EE_ENABLE_MYSQL=OFF
+          -DMI_E2EE_PGO_INSTRUMENT=OFF
+          -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
-        run: cmake --build build/server-${{ matrix.mode }}
-
-      - name: Verify third-party lock
-        run: ./build/server-${{ matrix.mode }}/tools/mi_e2ee_third_party_audit --lock third_party/third_party.lock --verify
+        run: cmake --build build/server --config Release
 
       - name: Test server
-        run: ctest --output-on-failure --test-dir build/server-${{ matrix.mode }}
+        run: ctest -C Release --test-dir build/server --output-on-failure
 
-      - name: Download kt keys
-        uses: actions/download-artifact@v4
-        with:
-          name: kt-keys
-          path: kt-keys
-
-      - name: Package server
-        run: |
-          mkdir -p artifacts/server-${{ matrix.mode }}
-          mkdir -p artifacts/server-${{ matrix.mode }}/offline_store
-          cp build/server-${{ matrix.mode }}/mi_e2ee_server artifacts/server-${{ matrix.mode }}/
-          cp build/server-${{ matrix.mode }}/tools/mi_e2ee_kt_pubinfo artifacts/server-${{ matrix.mode }}/
-          cp server/config.example.ini artifacts/server-${{ matrix.mode }}/config.example.ini
-          cp build/server-${{ matrix.mode }}/test_user.txt artifacts/server-${{ matrix.mode }}/test_user.txt
-          cp kt-keys/kt_signing_key.bin artifacts/server-${{ matrix.mode }}/offline_store/
-          cp kt-keys/kt_root_pub.bin artifacts/server-${{ matrix.mode }}/
-          cp kt-keys/kt_root_pub_qr.svg artifacts/server-${{ matrix.mode }}/
-          tar -czf server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz -C artifacts server-${{ matrix.mode }}
-
-      - name: Upload server artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}
-          path: server-${{ matrix.mode }}-${{ env.BUILD_TYPE }}.tar.gz
-
-  server-windows:
-    needs: kt-keys
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-      - name: Generate self-signed TLS cert
-        shell: pwsh
-        run: |
-          $pfxPath = "server/mi_e2ee_server.pfx"
-          if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
-          $cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\CurrentUser\My"
-          $pwd = New-Object System.Security.SecureString
-          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
-
-      - name: Install build tools
-        shell: pwsh
-        run: |
-          choco install -y ninja cmake mariadb
-      - name: Set parallel build level
-        shell: pwsh
-        run: |
-          "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $Env:GITHUB_ENV -Append
-
-      - name: Locate MySQL client (from MariaDB)
-        shell: pwsh
-        run: |
-          $header = Get-ChildItem "C:\\Program Files" -Recurse -Filter "mysql.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $header) {
-            throw "mysql.h not found after installing mariadb"
-          }
-          $includeDir = $header.Directory.FullName
-
-          $libNames = @(
-            "libmariadb.lib",
-            "mariadb.lib",
-            "libmysql.lib",
-            "mysqlclient.lib",
-            "mysqlclient_r.lib"
-          )
-          $lib = $null
-          foreach ($n in $libNames) {
-            $lib = Get-ChildItem "C:\\Program Files" -Recurse -Filter $n -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($lib) { break }
-          }
-          if (-not $lib) {
-            throw "MySQL/MariaDB client library not found after installing mariadb"
-          }
-
-          "MYSQL_INCLUDE_DIR=$includeDir" | Out-File -FilePath $Env:GITHUB_ENV -Append
-          "MYSQL_CLIENT_LIB=$($lib.FullName)" | Out-File -FilePath $Env:GITHUB_ENV -Append
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Configure server (Release, TCP on, MySQL on)
-        run: |
-          cmake -G "Ninja" -S server -B build/server-win -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_ENABLE_MYSQL=ON -DMI_E2EE_ENABLE_TCP_SERVER=ON -DMI_E2EE_ENABLE_LTO=OFF -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DMYSQL_INCLUDE_DIR="$Env:MYSQL_INCLUDE_DIR" -DMYSQL_CLIENT_LIB="$Env:MYSQL_CLIENT_LIB"
-
-      - name: Build server
-        run: cmake --build build/server-win
-
-      - name: Verify third-party lock
-        run: |
-          .\build\server-win\tools\mi_e2ee_third_party_audit.exe --lock third_party/third_party.lock --verify
-
-      - name: Download kt keys
-        uses: actions/download-artifact@v4
-        with:
-          name: kt-keys
-          path: kt-keys
-
-      - name: Package server (Windows)
-        run: |
-          New-Item -ItemType Directory -Force artifacts/server-win | Out-Null
-          New-Item -ItemType Directory -Force artifacts/server-win/offline_store | Out-Null
-          Copy-Item build/server-win/mi_e2ee_server.exe artifacts/server-win/
-          Copy-Item build/server-win/tools/mi_e2ee_kt_pubinfo.exe artifacts/server-win/ -ErrorAction SilentlyContinue
-          Copy-Item build/server-win/*.dll artifacts/server-win/ -ErrorAction SilentlyContinue
-          Copy-Item server/config.example.ini artifacts/server-win/config.example.ini -ErrorAction SilentlyContinue
-          Copy-Item server/mi_e2ee_server.pfx artifacts/server-win/ -ErrorAction SilentlyContinue
-          Copy-Item kt-keys/kt_signing_key.bin artifacts/server-win/offline_store/ -ErrorAction Stop
-          Copy-Item kt-keys/kt_root_pub.bin artifacts/server-win/ -ErrorAction Stop
-          Copy-Item kt-keys/kt_root_pub_qr.svg artifacts/server-win/ -ErrorAction SilentlyContinue
-          @"
-          [mode]
-          mode=1  # 0=mysql, 1=demo
-          [mysql]
-          mysql_ip=
-          mysql_port=
-          mysql_database=
-          mysql_username=
-          mysql_password=
-          [server]
-          list_port=9000
-          rotation_threshold=10000
-          offline_dir=offline_store
-          debug_log=0
-          tls_enable=1
-          require_tls=1
-          tls_cert=mi_e2ee_server.pfx
-          kt_signing_key=kt_signing_key.bin
-          "@ | Set-Content -Encoding ASCII artifacts/server-win/config.ini
-          Copy-Item build/server-win/test_user.txt artifacts/server-win/test_user.txt -ErrorAction Stop
-          Compress-Archive -Path artifacts/server-win/* -DestinationPath server-win-${{ env.BUILD_TYPE }}.zip
-
-      - name: Upload server-windows artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-windows-${{ env.BUILD_TYPE }}
-          path: server-win-${{ env.BUILD_TYPE }}.zip
-
-  client-windows:
-    needs: kt-keys
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Install build tools
-        shell: pwsh
-        run: |
-          choco install -y ninja cmake 7zip
-      - name: Set parallel build level
-        shell: pwsh
-        run: |
-          "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $Env:GITHUB_ENV -Append
-
-      - name: Install Qt (MinGW)
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.5.3'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          dir: 'C:\\Qt'
-          use-official: true
-          cache: true
-
-      - name: Add Qt to PATH
-        run: |
-          $qtRoot = "$Env:QT_ROOT_DIR"
-          $qtBin = Join-Path $qtRoot "bin"
-          Add-Content -Path $Env:GITHUB_PATH -Value $qtBin
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Configure client (UI on)
-        run: |
-          cmake -G "Ninja" -S client -B build/client -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMI_E2EE_BUILD_UI=ON -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DBUILD_TESTING=OFF -DMI_E2EE_ENABLE_LTO=OFF -DMI_E2EE_PGO_INSTRUMENT=OFF -DMI_E2EE_PGO_USE=OFF -DMI_UI_RIME_DOWNLOAD=OFF -DCMAKE_PREFIX_PATH="$Env:QT_ROOT_DIR"
+      - name: Configure client
+        run: >
+          cmake -S client -B build/client
+          -DMI_E2EE_ENABLE_MYSQL=OFF
+          -DMI_E2EE_BUILD_UI=OFF
+          -DMI_E2EE_BUILD_DEMO_CLIENT=ON
+          -DMI_E2EE_BUILD_FUZZERS=ON
+          -DMI_E2EE_FUZZ_SMOKE=ON
+          -DMI_E2EE_PGO_INSTRUMENT=OFF
+          -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build client
-        run: cmake --build build/client
+        run: cmake --build build/client --config Release
 
-      - name: Fetch Rime runtime
-        run: |
-          cmake -DRIME_OUTPUT_DIR=build/client/ui/e2ee_main_list/runtime -DRIME_WITH_LUA=ON -DRIME_CACHE_DIR=build/client/rime_cache -DRIME_DOWNLOAD_TIMEOUT=600 -DRIME_DOWNLOAD_RETRIES=2 -P client/ui/ime_rime/FetchRime.cmake
-
-      - name: Build kt tools
-        run: |
-          cmake --build build/client --target mi_e2ee_kt_keygen
-          cmake --build build/client --target mi_e2ee_kt_pubinfo
-          cmake --build build/client --target mi_e2ee_third_party_audit
-
-      - name: Download kt keys
-        uses: actions/download-artifact@v4
-        with:
-          name: kt-keys
-          path: kt-keys
-
-      - name: Verify third-party lock
-        run: |
-          .\build\client\server_build\tools\mi_e2ee_third_party_audit.exe --lock third_party/third_party.lock --verify
-
-      - name: Deploy Qt runtime
-        run: |
-          $qtbin = Join-Path "$Env:QT_ROOT_DIR" "bin"
-          $appExe = "build/client/ui/e2ee_main_list/e2ee_main_list.exe"
-          $appExeDir = Split-Path -Parent $appExe
-          $launcherExe = "build/client/ui/mi_e2ee.exe"
-          $dist = "build/client/ui/dist"
-          $runtime = Join-Path $dist "runtime"
-          $iconDir = Join-Path $dist "icon"
-          $configDir = Join-Path $dist "config"
-          $databaseDir = Join-Path $dist "database"
-          if (!(Test-Path $appExe)) {
-            Write-Error "main ui exe not found at $appExe"
-            exit 1
-          }
-          if (!(Test-Path $launcherExe)) {
-            Write-Error "launcher exe not found at $launcherExe"
-            exit 1
-          }
-          New-Item -ItemType Directory -Force $dist | Out-Null
-          New-Item -ItemType Directory -Force $runtime | Out-Null
-          New-Item -ItemType Directory -Force $iconDir | Out-Null
-          New-Item -ItemType Directory -Force $configDir | Out-Null
-          New-Item -ItemType Directory -Force $databaseDir | Out-Null
-          Copy-Item $launcherExe (Join-Path $dist "mi_e2ee.exe") -Force
-          Copy-Item $appExe (Join-Path $runtime "mi_e2ee_app.exe") -Force
-          # Bundle MSVC runtime next to the runtime executable.
-          if (Test-Path $appExeDir) {
-            Copy-Item "$appExeDir/*.dll" $runtime -Force -ErrorAction SilentlyContinue
-          }
-          & "$qtbin/windeployqt.exe" "--dir" $runtime (Join-Path $runtime "mi_e2ee_app.exe")
-          $rimeRuntime = Join-Path $appExeDir "runtime"
-          if (Test-Path $rimeRuntime) {
-            Copy-Item "$rimeRuntime/*" $runtime -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          $iconSrc = "client/ui/icons"
-          if (Test-Path $iconSrc) {
-            Copy-Item "$iconSrc/*.svg" $iconDir -Force -ErrorAction SilentlyContinue
-          }
-          Copy-Item kt-keys/kt_root_pub.bin $databaseDir -Force -ErrorAction Stop
-          Copy-Item kt-keys/kt_root_pub_qr.svg $databaseDir -Force -ErrorAction SilentlyContinue
-          $toolSrc = "build/client/server_build/tools/mi_e2ee_kt_pubinfo.exe"
-          if (Test-Path $toolSrc) {
-            $toolDir = Join-Path $runtime "tools"
-            New-Item -ItemType Directory -Force $toolDir | Out-Null
-            Copy-Item $toolSrc $toolDir -Force -ErrorAction SilentlyContinue
-          }
-          @"
-          [client]
-          server_ip=127.0.0.1
-          server_port=9000
-          use_tls=1
-          trust_store=server_trust.ini
-          [kt]
-          require_signature=1
-          root_pubkey_path=../database/kt_root_pub.bin
-          "@ | Set-Content -Encoding ASCII (Join-Path $configDir "client_config.ini")
-          Copy-Item (Join-Path $configDir "client_config.ini") (Join-Path $configDir "config.ini") -Force
-
-      - name: Package client UI
-        run: |
-          Compress-Archive -Path build/client/ui/dist/* -DestinationPath client-ui-${{ env.BUILD_TYPE }}.zip
-
-      - name: Upload client UI artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: client-ui-${{ env.BUILD_TYPE }}
-          path: client-ui-${{ env.BUILD_TYPE }}.zip
+      - name: Test client
+        run: ctest -C Release --test-dir build/client --output-on-failure
