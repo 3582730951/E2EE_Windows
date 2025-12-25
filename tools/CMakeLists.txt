@@ -50,3 +50,37 @@ endif()
 if(MSVC)
   target_compile_options(mi_e2ee_kt_pubinfo PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
+
+add_executable(mi_e2ee_perf_baseline
+    perf_baseline.cpp
+)
+
+target_include_directories(mi_e2ee_perf_baseline PRIVATE ../server/include)
+target_link_libraries(mi_e2ee_perf_baseline PRIVATE mi_e2ee_core mi_e2ee_build_flags)
+
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_perf_baseline)
+endif()
+
+if(MSVC)
+  target_compile_options(mi_e2ee_perf_baseline PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+
+add_executable(mi_e2ee_ops_health_view
+    ops_health_view.cpp
+)
+
+target_include_directories(mi_e2ee_ops_health_view PRIVATE ../server/include)
+target_link_libraries(mi_e2ee_ops_health_view PRIVATE mi_e2ee_core mi_e2ee_build_flags)
+
+if (WIN32)
+  target_link_libraries(mi_e2ee_ops_health_view PRIVATE ws2_32)
+endif()
+
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_ops_health_view)
+endif()
+
+if(MSVC)
+  target_compile_options(mi_e2ee_ops_health_view PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()

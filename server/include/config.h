@@ -34,7 +34,11 @@ struct ServerSection {
   std::uint32_t max_connections_per_ip{64};
   std::uint32_t max_connection_bytes{512u * 1024u * 1024u};
   std::uint32_t max_worker_threads{0};
+  std::uint32_t max_io_threads{0};
   std::uint32_t max_pending_tasks{1024};
+#ifdef _WIN32
+  bool iocp_enable{false};
+#endif
 #ifdef _WIN32
   bool tls_enable{true};
 #else
@@ -53,6 +57,7 @@ struct ServerSection {
   };
   bool allow_legacy_login{false};
   bool secure_delete_enabled{false};
+  bool secure_delete_required{false};
   std::string secure_delete_plugin;
   std::string secure_delete_plugin_sha256;
   bool kcp_enable{false};

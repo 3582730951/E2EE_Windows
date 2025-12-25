@@ -5,13 +5,17 @@
 #include <cctype>
 #include <chrono>
 #include <cerrno>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <mutex>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -890,7 +894,128 @@ std::vector<std::uint8_t> BuildPreKeySigMessage(
 namespace {
 constexpr std::uint32_t kMaxSkip = 2000;
 constexpr std::size_t kMaxSkippedMessageKeys = 2048;
+constexpr std::size_t kMaxPqcPoolTarget = 64;
 }  // namespace
+
+class Engine::PqcKeyPool {
+ public:
+  PqcKeyPool() = default;
+  ~PqcKeyPool() { Stop(); }
+
+  void SetTarget(std::size_t target) {
+    if (target > kMaxPqcPoolTarget) {
+      target = kMaxPqcPoolTarget;
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      target_ = target;
+      if (target_ == 0) {
+        ClearLocked();
+      }
+      if (!running_ && target_ > 0) {
+        running_ = true;
+        worker_ = std::thread(&PqcKeyPool::Worker, this);
+      }
+    }
+    cv_.notify_all();
+  }
+
+  bool Acquire(std::array<std::uint8_t, kKemPublicKeyBytes>& out_pk,
+               std::array<std::uint8_t, kKemSecretKeyBytes>& out_sk) {
+    KemKeypair entry;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!pool_.empty()) {
+        entry = std::move(pool_.front());
+        pool_.pop_front();
+      }
+    }
+    if (entry.ready) {
+      out_pk = entry.pk;
+      out_sk = entry.sk;
+      crypto_wipe(entry.pk.data(), entry.pk.size());
+      crypto_wipe(entry.sk.data(), entry.sk.size());
+      cv_.notify_all();
+      return true;
+    }
+    if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(out_pk.data(),
+                                                 out_sk.data()) != 0) {
+      return false;
+    }
+    return true;
+  }
+
+  void Stop() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      running_ = false;
+      target_ = 0;
+    }
+    cv_.notify_all();
+    if (worker_.joinable()) {
+      worker_.join();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    ClearLocked();
+  }
+
+ private:
+  struct KemKeypair {
+    std::array<std::uint8_t, kKemPublicKeyBytes> pk{};
+    std::array<std::uint8_t, kKemSecretKeyBytes> sk{};
+    bool ready{false};
+  };
+
+  void ClearLocked() {
+    for (auto& entry : pool_) {
+      if (entry.ready) {
+        crypto_wipe(entry.pk.data(), entry.pk.size());
+        crypto_wipe(entry.sk.data(), entry.sk.size());
+      }
+    }
+    pool_.clear();
+  }
+
+  void Worker() {
+    for (;;) {
+      KemKeypair entry;
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [&] {
+          return !running_ || (target_ > 0 && pool_.size() < target_);
+        });
+        if (!running_) {
+          return;
+        }
+        if (pool_.size() >= target_) {
+          continue;
+        }
+      }
+      if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(entry.pk.data(),
+                                                   entry.sk.data()) != 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
+      }
+      entry.ready = true;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!running_ || target_ == 0 || pool_.size() >= target_) {
+          crypto_wipe(entry.pk.data(), entry.pk.size());
+          crypto_wipe(entry.sk.data(), entry.sk.size());
+          continue;
+        }
+        pool_.push_back(std::move(entry));
+      }
+    }
+  }
+
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::deque<KemKeypair> pool_;
+  std::size_t target_{0};
+  bool running_{false};
+  std::thread worker_;
+};
 
 std::size_t Engine::SkippedKeyIdHash::operator()(const SkippedKeyId& v) const noexcept {
   std::size_t h = 0;
@@ -905,7 +1030,7 @@ std::size_t Engine::SkippedKeyIdHash::operator()(const SkippedKeyId& v) const no
   return h;
 }
 
-Engine::Engine() = default;
+Engine::Engine() : pqc_pool_(std::make_shared<PqcKeyPool>()) {}
 Engine::~Engine() = default;
 
 void Engine::SetIdentityPolicy(IdentityPolicy policy) {
@@ -936,6 +1061,17 @@ bool Engine::Init(const std::filesystem::path& state_dir, std::string& error) {
 
 void Engine::SetLocalUsername(std::string username) {
   local_username_ = std::move(username);
+}
+
+void Engine::SetPqcPoolSize(std::size_t size) {
+  if (size > kMaxPqcPoolTarget) {
+    size = kMaxPqcPoolTarget;
+  }
+  pqc_pool_target_ = size;
+  if (!pqc_pool_) {
+    pqc_pool_ = std::make_shared<PqcKeyPool>();
+  }
+  pqc_pool_->SetTarget(pqc_pool_target_);
 }
 
 bool Engine::MaybeRotatePreKeys(bool& out_rotated, std::string& error) {
@@ -1031,10 +1167,12 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
       off += 4;
       std::memcpy(spk_sk_.data(), bytes.data() + off, 32);
 
-      if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(kem_pk_.data(), kem_sk_.data()) !=
-          0) {
-        error = "mlkem keypair failed";
-        return false;
+      {
+        std::string kem_err;
+        if (!AcquireKemKeypair(kem_pk_, kem_sk_, kem_err)) {
+          error = kem_err.empty() ? "mlkem keypair failed" : kem_err;
+          return false;
+        }
       }
 
       if (PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(id_sig_pk_.data(),
@@ -1208,10 +1346,12 @@ bool Engine::LoadOrCreateIdentity(std::string& error) {
     error = "rng failed";
     return false;
   }
-  if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(kem_pk_.data(), kem_sk_.data()) !=
-      0) {
-    error = "mlkem keypair failed";
-    return false;
+  {
+    std::string kem_err;
+    if (!AcquireKemKeypair(kem_pk_, kem_sk_, kem_err)) {
+      error = kem_err.empty() ? "mlkem keypair failed" : kem_err;
+      return false;
+    }
   }
   if (PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(id_sig_pk_.data(),
                                                 id_sig_sk_.data()) != 0) {
@@ -1329,10 +1469,12 @@ bool Engine::MaybeRotatePreKeysLocked(bool& out_rotated, std::string& error) {
 
   spk_id_ = next_spk_id;
   spk_sk_ = next_spk_sk;
-  if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(kem_pk_.data(),
-                                                kem_sk_.data()) != 0) {
-    error = "mlkem keypair failed";
-    return false;
+  {
+    std::string kem_err;
+    if (!AcquireKemKeypair(kem_pk_, kem_sk_, kem_err)) {
+      error = kem_err.empty() ? "mlkem keypair failed" : kem_err;
+      return false;
+    }
   }
 
   identity_rotated_at_ = now;
@@ -1565,8 +1707,8 @@ bool Engine::ParsePeerBundle(const std::vector<std::uint8_t>& peer_bundle,
 }
 
 bool Engine::CheckTrustedForSend(const std::string& peer_username,
-                                 const std::string& fingerprint_hex,
-                                 std::string& error) {
+                          const std::string& fingerprint_hex,
+                          std::string& error) {
   error.clear();
   auto it = trusted_peers_.find(peer_username);
   if (it == trusted_peers_.end()) {
@@ -1633,6 +1775,26 @@ bool Engine::TryDecryptWithSkippedMk(
   return true;
 }
 
+bool Engine::AcquireKemKeypair(
+    std::array<std::uint8_t, kKemPublicKeyBytes>& out_pk,
+    std::array<std::uint8_t, kKemSecretKeyBytes>& out_sk,
+    std::string& error) {
+  error.clear();
+  if (!pqc_pool_ || pqc_pool_target_ == 0) {
+    if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(out_pk.data(),
+                                                 out_sk.data()) != 0) {
+      error = "mlkem keypair failed";
+      return false;
+    }
+    return true;
+  }
+  if (!pqc_pool_->Acquire(out_pk, out_sk)) {
+    error = "mlkem keypair failed";
+    return false;
+  }
+  return true;
+}
+
 bool Engine::InitSessionAsInitiator(const std::string& peer_username,
                                     const PeerBundle& peer,
                                     std::array<std::uint8_t, kKemCiphertextBytes>& out_kem_ct,
@@ -1691,11 +1853,13 @@ bool Engine::InitSessionAsInitiator(const std::string& peer_username,
   out_session.dhs_sk = eph_sk;
   out_session.dhs_pk = eph_pk;
   out_session.dhr_pk = peer.spk_pk;
-  if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(out_session.kem_s_pk.data(),
-                                               out_session.kem_s_sk.data()) !=
-      0) {
-    error = "mlkem ratchet keypair failed";
-    return false;
+  {
+    std::string kem_err;
+    if (!AcquireKemKeypair(out_session.kem_s_pk, out_session.kem_s_sk,
+                           kem_err)) {
+      error = kem_err.empty() ? "mlkem ratchet keypair failed" : kem_err;
+      return false;
+    }
   }
   out_session.kem_r_pk = peer.kem_pk;
 
@@ -2029,10 +2193,12 @@ bool Engine::EncryptToPeer(const std::string& peer_username,
 
     std::array<std::uint8_t, kKemSecretKeyBytes> new_kem_s_sk{};
     std::array<std::uint8_t, kKemPublicKeyBytes> new_kem_s_pk{};
-    if (PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(new_kem_s_pk.data(),
-                                                 new_kem_s_sk.data()) != 0) {
-      error = "mlkem ratchet keypair failed";
-      return false;
+    {
+      std::string kem_err;
+      if (!AcquireKemKeypair(new_kem_s_pk, new_kem_s_sk, kem_err)) {
+        error = kem_err.empty() ? "mlkem ratchet keypair failed" : kem_err;
+        return false;
+      }
     }
 
     std::array<std::uint8_t, kKemSharedSecretBytes> kem_ss{};

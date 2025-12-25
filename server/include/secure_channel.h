@@ -26,6 +26,8 @@ class SecureChannel {
   bool Decrypt(const std::vector<std::uint8_t>& input,
                FrameType frame_type,
                std::vector<std::uint8_t>& out_plain);
+  bool Decrypt(const std::uint8_t* input, std::size_t len,
+               FrameType frame_type, std::vector<std::uint8_t>& out_plain);
 
  private:
   bool CanAcceptSeq(std::uint64_t seq) const;

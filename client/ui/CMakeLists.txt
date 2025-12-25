@@ -7,8 +7,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Quick Qml QuickControls2)
-find_package(Qt6 QUIET COMPONENTS Multimedia MultimediaWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Svg Quick Qml QuickControls2 Multimedia)
 
 set(UI_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -140,7 +139,7 @@ add_executable(mi_e2ee_client_ui
     quick_client.cpp
 )
 target_link_libraries(mi_e2ee_client_ui PRIVATE mi_ui_common mi_e2ee_client_core
-    Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+    Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Multimedia)
 copy_ref_images(mi_e2ee_client_ui)
 copy_icon_assets(mi_e2ee_client_ui)
 if(TARGET mi_ime_rime)

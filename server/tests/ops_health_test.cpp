@@ -74,8 +74,26 @@ int main() {
   std::uint32_t ver = 0;
   std::uint64_t uptime = 0;
   if (!ReadUint32(resp.payload, off, ver) ||
-      !ReadUint64(resp.payload, off, uptime) || ver != 2) {
+      !ReadUint64(resp.payload, off, uptime) || ver != 3) {
     return 1;
+  }
+  for (int i = 0; i < 25; ++i) {
+    std::uint64_t v = 0;
+    if (!ReadUint64(resp.payload, off, v)) {
+      return 1;
+    }
+  }
+  std::uint32_t sample_count = 0;
+  if (!ReadUint32(resp.payload, off, sample_count)) {
+    return 1;
+  }
+  for (std::uint32_t i = 0; i < sample_count; ++i) {
+    std::uint64_t v = 0;
+    if (!ReadUint64(resp.payload, off, v) ||
+        !ReadUint64(resp.payload, off, v) ||
+        !ReadUint64(resp.payload, off, v)) {
+      return 1;
+    }
   }
 
   // Wrong token should fail.

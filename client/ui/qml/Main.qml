@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtMultimedia
 
 ApplicationWindow {
     id: root
@@ -58,11 +59,19 @@ ApplicationWindow {
             anchors.margins: 12
             cellWidth: 72
             cellHeight: 72
+            cacheBuffer: 120
+            reuseItems: true
             model: stickerModel
             delegate: Rectangle {
                 width: 64; height: 64; radius: 10
                 color: "#132034"
                 border.color: "#1f2e47"
+                property bool inView: {
+                    var view = GridView.view
+                    if (!view) return true
+                    var buffer = 60
+                    return (y + height) >= view.contentY - buffer && y <= view.contentY + view.height + buffer
+                }
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
@@ -76,7 +85,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     width: 48; height: 48
                     source: model.path
-                    playing: model.animated
+                    playing: model.animated && inView
                     visible: model.animated
                 }
                 Image {
@@ -181,6 +190,8 @@ ApplicationWindow {
                     ListView {
                         id: friendList
                         clip: true
+                        cacheBuffer: 120
+                        reuseItems: true
                         model: friendModel
                         delegate: Rectangle {
                             width: ListView.view.width
@@ -218,6 +229,8 @@ ApplicationWindow {
                     ListView {
                         id: groupList
                         clip: true
+                        cacheBuffer: 120
+                        reuseItems: true
                         model: groupModel
                         delegate: Rectangle {
                             width: ListView.view.width
@@ -371,6 +384,43 @@ ApplicationWindow {
                     }
                 }
 
+                Rectangle {
+                    id: videoPanel
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: clientBridge.activeCallVideo ? 220 : 0
+                    Layout.maximumHeight: clientBridge.activeCallVideo ? 240 : 0
+                    Layout.minimumHeight: clientBridge.activeCallVideo ? 180 : 0
+                    visible: clientBridge.activeCallVideo
+                    radius: 12
+                    color: "#0b1320"
+                    border.color: "#1f2b3d"
+                    clip: true
+
+                    VideoOutput {
+                        anchors.fill: parent
+                        videoSink: clientBridge.remoteVideoSink
+                        fillMode: VideoOutput.PreserveAspectCrop
+                    }
+
+                    Rectangle {
+                        width: 160
+                        height: 90
+                        radius: 8
+                        color: "#101a28"
+                        border.color: "#2b3a50"
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 10
+                        clip: true
+
+                        VideoOutput {
+                            anchors.fill: parent
+                            videoSink: clientBridge.localVideoSink
+                            fillMode: VideoOutput.PreserveAspectFit
+                        }
+                    }
+                }
+
                 // Message list
                 Rectangle {
                     Layout.fillWidth: true
@@ -385,11 +435,20 @@ ApplicationWindow {
                         anchors.margins: 12
                         model: messageModel
                         clip: true
+                        cacheBuffer: 320
+                        reuseItems: true
                         spacing: 8
                         onCountChanged: positionViewAtEnd()
                         delegate: Item {
                             width: ListView.view.width
                             height: bubble.implicitHeight + 8
+                            property bool inView: {
+                                var view = ListView.view
+                                if (!view) return true
+                                var buffer = 240
+                                return (y + height) >= view.contentY - buffer && y <= view.contentY + view.height + buffer
+                            }
+                            visible: inView
                             Row {
                                 anchors.left: outgoing ? undefined : parent.left
                                 anchors.right: outgoing ? parent.right : undefined
@@ -400,6 +459,7 @@ ApplicationWindow {
                                     radius: 10
                                     color: outgoing ? "#1c3658" : "#1f2b3d"
                                     border.color: "#2b3a50"
+                                    layer.enabled: inView && !messageList.moving
                                     Column {
                                         padding: 10
                                         spacing: 6
@@ -424,7 +484,7 @@ ApplicationWindow {
                                                 anchors.centerIn: parent
                                                 width: 92; height: 92
                                                 source: stickerUrl
-                                                playing: stickerAnimated
+                                                playing: stickerAnimated && inView && !messageList.moving
                                                 visible: stickerAnimated
                                             }
                                             Image {

@@ -10,6 +10,8 @@
 #include <QJsonObject>
 #include <QMovie>
 #include <QSet>
+#include <QTimer>
+#include <QDateTime>
 #include <QWidget>
 
 #include "UiRuntimePaths.h"
@@ -20,6 +22,8 @@ constexpr int kMaxStickerDim = 512;
 constexpr int kMaxStickerFrames = 200;
 constexpr int kMaxStickerItems = 2048;
 constexpr int kMaxStickerPacks = 64;
+constexpr qint64 kMovieIdleMs = 1200;
+constexpr int kMovieSweepMs = 500;
 
 QSet<QString> AllowedStickerExts() {
     return {QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
@@ -56,6 +60,67 @@ QString EmojiPackManager::packRootDir() const {
 void EmojiPackManager::clearCaches() {
     pixmapCache_.clear();
     movieCache_.clear();
+    if (movieGcTimer_) {
+        movieGcTimer_->stop();
+        movieGcTimer_->deleteLater();
+        movieGcTimer_ = nullptr;
+    }
+}
+
+void EmojiPackManager::ensureMovieGcTimer() {
+    if (movieCache_.isEmpty()) {
+        return;
+    }
+    if (movieGcTimer_) {
+        if (!movieGcTimer_->isActive()) {
+            movieGcTimer_->start();
+        }
+        return;
+    }
+    QObject *parent = QCoreApplication::instance();
+    if (!parent) {
+        return;
+    }
+    movieGcTimer_ = new QTimer(parent);
+    movieGcTimer_->setInterval(kMovieSweepMs);
+    movieGcTimer_->setTimerType(Qt::CoarseTimer);
+    QObject::connect(movieGcTimer_, &QTimer::timeout, movieGcTimer_, [this]() {
+        trimInactiveMovies();
+    });
+    movieGcTimer_->start();
+}
+
+void EmojiPackManager::trimInactiveMovies() {
+    if (movieCache_.isEmpty()) {
+        if (movieGcTimer_) {
+            movieGcTimer_->stop();
+        }
+        return;
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool anyActive = false;
+    for (auto it = movieCache_.begin(); it != movieCache_.end(); ++it) {
+        auto &entry = it.value();
+        if (!entry.movie) {
+            continue;
+        }
+        const qint64 idle = now - entry.lastAccessMs;
+        if (idle > kMovieIdleMs) {
+            if (entry.movie->state() == QMovie::Running) {
+                entry.movie->setPaused(true);
+            }
+            continue;
+        }
+        anyActive = true;
+        if (entry.movie->state() == QMovie::Paused) {
+            entry.movie->setPaused(false);
+        } else if (entry.movie->state() == QMovie::NotRunning) {
+            entry.movie->start();
+        }
+    }
+    if (!anyActive && movieGcTimer_) {
+        movieGcTimer_->stop();
+    }
 }
 
 void EmojiPackManager::Reload() {
@@ -228,12 +293,21 @@ QMovie *EmojiPackManager::StickerMovie(const QString &id, int size, QWidget *vie
     const QString key = id + QStringLiteral(":") + QString::number(size);
     auto it = movieCache_.find(key);
     if (it != movieCache_.end()) {
+        it.value().lastAccessMs = QDateTime::currentMSecsSinceEpoch();
+        if (it.value().movie) {
+            if (it.value().movie->state() == QMovie::Paused) {
+                it.value().movie->setPaused(false);
+            } else if (it.value().movie->state() == QMovie::NotRunning) {
+                it.value().movie->start();
+            }
+        }
+        ensureMovieGcTimer();
         if (viewport) {
-            QObject::connect(it.value().data(), &QMovie::frameChanged,
+            QObject::connect(it.value().movie.data(), &QMovie::frameChanged,
                              viewport, qOverload<>(&QWidget::update),
                              Qt::UniqueConnection);
         }
-        return it.value().data();
+        return it.value().movie.data();
     }
 
     auto movie = QSharedPointer<QMovie>::create(item->filePath);
@@ -245,6 +319,10 @@ QMovie *EmojiPackManager::StickerMovie(const QString &id, int size, QWidget *vie
                          viewport, qOverload<>(&QWidget::update),
                          Qt::UniqueConnection);
     }
-    movieCache_.insert(key, movie);
+    MovieEntry entry;
+    entry.movie = movie;
+    entry.lastAccessMs = QDateTime::currentMSecsSinceEpoch();
+    movieCache_.insert(key, entry);
+    ensureMovieGcTimer();
     return movie.data();
 }

@@ -128,9 +128,16 @@ int main(int argc, char** argv) {
   limits.max_connections_per_ip = cfg.server.max_connections_per_ip;
   limits.max_connection_bytes = cfg.server.max_connection_bytes;
   limits.max_worker_threads = cfg.server.max_worker_threads;
+  limits.max_io_threads = cfg.server.max_io_threads;
   limits.max_pending_tasks = cfg.server.max_pending_tasks;
+#ifdef _WIN32
+  const bool iocp_enable = cfg.server.iocp_enable;
+#else
+  const bool iocp_enable = false;
+#endif
   mi::server::NetworkServer net(&listener, cfg.server.listen_port,
                                 cfg.server.tls_enable, cfg.server.tls_cert,
+                                iocp_enable,
                                 limits);
   std::string net_error;
   if (!net.Start(net_error)) {

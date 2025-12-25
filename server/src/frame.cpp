@@ -33,25 +33,35 @@ void WriteUint32Le(std::uint32_t v, std::uint8_t* out) {
 }
 }  // namespace
 
-std::vector<std::uint8_t> EncodeFrame(const Frame& frame) {
-  if (frame.payload.size() > (std::numeric_limits<std::uint32_t>::max)()) {
-    return {};
+void EncodeFrame(const FrameView& frame, std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (frame.payload_len > (std::numeric_limits<std::uint32_t>::max)()) {
+    return;
   }
-  if (frame.payload.size() > kMaxFramePayloadBytes) {
-    return {};
+  if (frame.payload_len > kMaxFramePayloadBytes) {
+    return;
   }
+  out.resize(kFrameHeaderSize + frame.payload_len);
+  WriteUint32Le(kFrameMagic, out.data());
+  WriteUint16Le(kFrameVersion, out.data() + 4);
+  WriteUint16Le(static_cast<std::uint16_t>(frame.type), out.data() + 6);
+  WriteUint32Le(static_cast<std::uint32_t>(frame.payload_len),
+                out.data() + kFrameLengthOffset);
+  if (frame.payload_len > 0) {
+    std::memcpy(out.data() + kFrameHeaderSize, frame.payload,
+                frame.payload_len);
+  }
+}
 
+void EncodeFrame(const Frame& frame, std::vector<std::uint8_t>& out) {
+  EncodeFrame(FrameView{frame.type, frame.payload.data(),
+                        frame.payload.size()},
+              out);
+}
+
+std::vector<std::uint8_t> EncodeFrame(const Frame& frame) {
   std::vector<std::uint8_t> buffer;
-  buffer.resize(kFrameHeaderSize + frame.payload.size());
-  WriteUint32Le(kFrameMagic, buffer.data());
-  WriteUint16Le(kFrameVersion, buffer.data() + 4);
-  WriteUint16Le(static_cast<std::uint16_t>(frame.type), buffer.data() + 6);
-  WriteUint32Le(static_cast<std::uint32_t>(frame.payload.size()),
-                buffer.data() + kFrameLengthOffset);
-  if (!frame.payload.empty()) {
-    std::memcpy(buffer.data() + kFrameHeaderSize, frame.payload.data(),
-                frame.payload.size());
-  }
+  EncodeFrame(frame, buffer);
   return buffer;
 }
 
@@ -90,6 +100,23 @@ bool DecodeFrame(const std::uint8_t* data, std::size_t len, Frame& out) {
   if (payload_len > 0) {
     std::memcpy(out.payload.data(), data + kFrameHeaderSize, payload_len);
   }
+  return true;
+}
+
+bool DecodeFrameView(const std::uint8_t* data, std::size_t len,
+                     FrameView& out) {
+  FrameType type;
+  std::uint32_t payload_len = 0;
+  if (!DecodeFrameHeader(data, len, type, payload_len)) {
+    return false;
+  }
+  const std::size_t total = kFrameHeaderSize + payload_len;
+  if (total > len) {
+    return false;
+  }
+  out.type = type;
+  out.payload = data + kFrameHeaderSize;
+  out.payload_len = payload_len;
   return true;
 }
 

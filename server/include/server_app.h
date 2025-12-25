@@ -30,9 +30,15 @@ class ServerApp {
 
   bool HandleFrame(const Frame& in, Frame& out, TransportKind transport,
                    std::string& error);
+  bool HandleFrameView(const FrameView& in, Frame& out, TransportKind transport,
+                       std::string& error);
   bool HandleFrameWithToken(const Frame& in, Frame& out,
                             const std::string& token, TransportKind transport,
                             std::string& error);
+  bool HandleFrameWithTokenView(const FrameView& in, Frame& out,
+                                const std::string& token,
+                                TransportKind transport,
+                                std::string& error);
 
   const ServerConfig& config() const { return config_; }
   SessionManager* sessions() { return sessions_.get(); }

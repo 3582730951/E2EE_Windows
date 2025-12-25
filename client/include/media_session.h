@@ -58,6 +58,12 @@ class MediaSession {
 
   const MediaSessionStats& stats() const { return stats_; }
   const MediaSessionConfig& config() const { return config_; }
+  const MediaJitterStats& audio_jitter_stats() const {
+    return audio_jitter_.stats();
+  }
+  const MediaJitterStats& video_jitter_stats() const {
+    return video_jitter_.stats();
+  }
 
  private:
   bool SendFrame(mi::media::StreamKind kind,

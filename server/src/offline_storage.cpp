@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #endif
 
+#include "buffer_pool.h"
 #include "crypto.h"
 #include "monocypher.h"
 
@@ -44,6 +45,11 @@ constexpr std::size_t kOfflineFileV3PrefixBytes =
 constexpr std::size_t kOfflineFileV3HeaderBytes =
     kOfflineFileV3PrefixBytes + kOfflineFileAeadNonceBytes;
 constexpr std::size_t kOfflineFileV3AdBytes = kOfflineFileV3PrefixBytes + 8;
+
+mi::shard::ByteBufferPool& OfflineStorageBufferPool() {
+  static mi::shard::ByteBufferPool pool(32, 16u * 1024u * 1024u);
+  return pool;
+}
 
 bool FillRandom(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
@@ -224,8 +230,9 @@ PutResult OfflineStorage::Put(const std::string& owner,
 
   std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
   std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
-  std::vector<std::uint8_t> cipher;
-  cipher.reserve(chunk_bytes);
+  auto& pool = OfflineStorageBufferPool();
+  mi::shard::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
+  auto& cipher = cipher_buf.get();
   std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
   std::uint64_t offset = 0;
   std::uint64_t chunk_index = 0;
@@ -802,8 +809,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
                     ad_prefix.data() + kOfflineFileMagic.size() + 1 + 4);
       std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
       std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
-      std::vector<std::uint8_t> cipher;
-      cipher.reserve(chunk_bytes);
+      auto& pool = OfflineStorageBufferPool();
+      mi::shard::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
+      auto& cipher = cipher_buf.get();
       std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
       std::uint64_t offset = 0;
       std::uint64_t chunk_index = 0;
@@ -841,9 +849,25 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     } else if (version == kOfflineFileMagicVersionV1 ||
                version == kOfflineFileMagicVersionV2) {
       ifs.clear();
-      ifs.seekg(0);
-      std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
-                                        std::istreambuf_iterator<char>());
+      ifs.seekg(0, std::ios::beg);
+      std::error_code ec2;
+      const std::uint64_t file_size2 =
+          std::filesystem::file_size(path, ec2);
+      if (ec2 || file_size2 == 0 ||
+          file_size2 > static_cast<std::uint64_t>(
+                            (std::numeric_limits<std::size_t>::max)())) {
+        error = "file truncated";
+        return std::nullopt;
+      }
+      auto& pool = OfflineStorageBufferPool();
+      mi::shard::ScopedBuffer content_buf(
+          pool, static_cast<std::size_t>(file_size2), false);
+      auto& content = content_buf.get();
+      content.resize(static_cast<std::size_t>(file_size2));
+      if (!ReadExact(ifs, content.data(), content.size())) {
+        error = "file truncated";
+        return std::nullopt;
+      }
       ifs.close();
       if (content.size() <
           (kOfflineFileHeaderBytes + kOfflineFileAeadNonceBytes +
@@ -876,7 +900,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
         return t;
       }();
 
-      std::vector<std::uint8_t> cipher(cipher_len);
+      mi::shard::ScopedBuffer cipher_buf(pool, cipher_len, false);
+      auto& cipher = cipher_buf.get();
+      cipher.resize(cipher_len);
       std::memcpy(cipher.data(),
                   content.data() + kOfflineFileHeaderBytes + nonce.size(),
                   cipher_len);
@@ -917,9 +943,25 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     }
   } else {
     ifs.clear();
-    ifs.seekg(0);
-    std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
-                                      std::istreambuf_iterator<char>());
+    ifs.seekg(0, std::ios::beg);
+    std::error_code ec2;
+    const std::uint64_t file_size2 =
+        std::filesystem::file_size(path, ec2);
+    if (ec2 || file_size2 == 0 ||
+        file_size2 > static_cast<std::uint64_t>(
+                          (std::numeric_limits<std::size_t>::max)())) {
+      error = "file truncated";
+      return std::nullopt;
+    }
+    auto& pool = OfflineStorageBufferPool();
+    mi::shard::ScopedBuffer content_buf(
+        pool, static_cast<std::size_t>(file_size2), false);
+    auto& content = content_buf.get();
+    content.resize(static_cast<std::size_t>(file_size2));
+    if (!ReadExact(ifs, content.data(), content.size())) {
+      error = "file truncated";
+      return std::nullopt;
+    }
     ifs.close();
     if (content.size() <
         (kOfflineFileLegacyNonceBytes + kOfflineFileLegacyTagBytes)) {
@@ -947,7 +989,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       return t;
     }();
 
-    std::vector<std::uint8_t> cipher(cipher_len);
+    mi::shard::ScopedBuffer cipher_buf(pool, cipher_len, false);
+    auto& cipher = cipher_buf.get();
+    cipher.resize(cipher_len);
     std::memcpy(cipher.data(), content.data() + nonce.size(), cipher_len);
 
     if (!DecryptLegacy(cipher, file_key, nonce, tag, plaintext)) {

@@ -15,6 +15,8 @@ class FrameRouter {
   //  ApiService
   bool Handle(const Frame& in, Frame& out, const std::string& token,
               TransportKind transport);
+  bool HandleView(const FrameView& in, Frame& out, const std::string& token,
+                  TransportKind transport);
 
  private:
   ApiService* api_;

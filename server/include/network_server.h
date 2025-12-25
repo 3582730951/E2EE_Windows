@@ -23,6 +23,7 @@ struct NetworkServerLimits {
   std::uint32_t max_connections_per_ip{64};
   std::uint32_t max_connection_bytes{256u * 1024u * 1024u};
   std::uint32_t max_worker_threads{0};
+  std::uint32_t max_io_threads{0};
   std::uint32_t max_pending_tasks{1024};
 };
 
@@ -31,6 +32,7 @@ class NetworkServer {
  public:
   NetworkServer(Listener* listener, std::uint16_t port, bool tls_enable = false,
                 std::string tls_cert = "mi_e2ee_server.pfx",
+                bool iocp_enable = false,
                 NetworkServerLimits limits = NetworkServerLimits{});
   ~NetworkServer();
 
@@ -43,6 +45,11 @@ class NetworkServer {
   void StopSocket();
   void StartWorkers();
   void StopWorkers();
+  void StartReactors();
+  void StopReactors();
+  bool StartIocp(std::string& error);
+  void StopIocp();
+  void AssignConnection(std::shared_ptr<Connection> conn);
   void WorkerLoop();
   bool EnqueueTask(std::function<void()> task);
   bool TryAcquireConnectionSlot(const std::string& remote_ip);
@@ -52,6 +59,8 @@ class NetworkServer {
   std::uint16_t port_{0};
   bool tls_enable_{false};
   std::string tls_cert_;
+  bool iocp_enable_{false};
+  bool use_iocp_{false};
   NetworkServerLimits limits_;
   std::atomic<bool> running_{false};
   std::thread worker_;
@@ -63,6 +72,14 @@ class NetworkServer {
   std::mutex work_mutex_;
   std::condition_variable work_cv_;
   std::deque<std::function<void()>> work_queue_;
+  struct Connection;
+  class Reactor;
+  class IocpEngine;
+  std::vector<std::unique_ptr<Reactor>> reactors_;
+#ifdef _WIN32
+  std::unique_ptr<IocpEngine> iocp_;
+#endif
+  std::atomic<std::uint32_t> next_reactor_{0};
 
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
   std::intptr_t listen_fd_{-1};

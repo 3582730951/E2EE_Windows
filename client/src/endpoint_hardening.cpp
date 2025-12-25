@@ -11,6 +11,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <tlhelp32.h>
 
 #include <cstring>
 #endif
@@ -24,6 +25,18 @@ std::atomic<bool> gStarted{false};
 #ifdef _WIN32
 
 using SetProcessMitigationPolicyFn = BOOL(WINAPI*)(int, PVOID, SIZE_T);
+using NtQueryInformationProcessFn =
+    LONG(WINAPI*)(HANDLE, int, PVOID, ULONG, PULONG);
+using NtSetInformationThreadFn =
+    LONG(WINAPI*)(HANDLE, int, PVOID, ULONG);
+using SetDefaultDllDirectoriesFn = BOOL(WINAPI*)(DWORD);
+
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
+#ifndef LOAD_LIBRARY_SEARCH_APPLICATION_DIR
+#define LOAD_LIBRARY_SEARCH_APPLICATION_DIR 0x00000200
+#endif
 
 constexpr DWORD kNoRemoteImagesFlag = 0x1u;
 constexpr DWORD kNoLowMandatoryLabelImagesFlag = 0x2u;
@@ -31,6 +44,10 @@ constexpr DWORD kPreferSystem32ImagesFlag = 0x4u;
 
 constexpr int kProcessExtensionPointDisablePolicy = 6;
 constexpr int kProcessImageLoadPolicy = 10;
+constexpr int kProcessDebugPort = 7;
+constexpr int kProcessDebugObjectHandle = 0x1e;
+constexpr int kProcessDebugFlags = 0x1f;
+constexpr int kThreadHideFromDebugger = 0x11;
 
 struct ExtensionPointDisablePolicy {
     std::uint32_t flags{0};
@@ -54,6 +71,24 @@ void ApplyBestEffortMitigations() noexcept {
 
     const auto kernel32 = GetModuleHandleW(L"kernel32.dll");
     if (!kernel32) return;
+    const auto setDefaultDllDirectories =
+        reinterpret_cast<SetDefaultDllDirectoriesFn>(
+            GetProcAddress(kernel32, "SetDefaultDllDirectories"));
+    if (setDefaultDllDirectories) {
+        setDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32 |
+                                 LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
+    }
+
+    const auto ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (ntdll) {
+        const auto setInfoThread =
+            reinterpret_cast<NtSetInformationThreadFn>(
+                GetProcAddress(ntdll, "NtSetInformationThread"));
+        if (setInfoThread) {
+            setInfoThread(GetCurrentThread(), kThreadHideFromDebugger, nullptr,
+                          0);
+        }
+    }
 
     const auto setProcessMitigationPolicy =
         reinterpret_cast<SetProcessMitigationPolicyFn>(
@@ -98,6 +133,96 @@ std::array<std::uint8_t, 32> HashText(const TextRegion& region) noexcept {
     return hash;
 }
 
+bool IsDebuggerPresentFast() noexcept {
+    if (IsDebuggerPresent()) {
+        return true;
+    }
+    BOOL remote = FALSE;
+    if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote) && remote) {
+        return true;
+    }
+    return false;
+}
+
+bool IsDebuggerPresentNt() noexcept {
+    const auto ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return false;
+    const auto query =
+        reinterpret_cast<NtQueryInformationProcessFn>(
+            GetProcAddress(ntdll, "NtQueryInformationProcess"));
+    if (!query) return false;
+
+    ULONG_PTR debug_port = 0;
+    if (query(GetCurrentProcess(), kProcessDebugPort, &debug_port,
+              sizeof(debug_port), nullptr) >= 0 &&
+        debug_port != 0) {
+        return true;
+    }
+
+    ULONG debug_flags = 0;
+    if (query(GetCurrentProcess(), kProcessDebugFlags, &debug_flags,
+              sizeof(debug_flags), nullptr) >= 0 &&
+        debug_flags == 0) {
+        return true;
+    }
+
+    HANDLE debug_object = nullptr;
+    if (query(GetCurrentProcess(), kProcessDebugObjectHandle, &debug_object,
+              sizeof(debug_object), nullptr) >= 0 &&
+        debug_object != nullptr) {
+        return true;
+    }
+
+    return false;
+}
+
+bool HasHardwareBreakpoints() noexcept {
+    const DWORD pid = GetCurrentProcessId();
+    const DWORD self_tid = GetCurrentThreadId();
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    THREADENTRY32 entry{};
+    entry.dwSize = sizeof(entry);
+    bool hit = false;
+    if (Thread32First(snapshot, &entry)) {
+        do {
+            if (entry.th32OwnerProcessID != pid ||
+                entry.th32ThreadID == self_tid) {
+                entry.dwSize = sizeof(entry);
+                continue;
+            }
+            HANDLE thread = OpenThread(
+                THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME |
+                    THREAD_QUERY_INFORMATION,
+                FALSE, entry.th32ThreadID);
+            if (!thread) {
+                entry.dwSize = sizeof(entry);
+                continue;
+            }
+            const DWORD suspend = SuspendThread(thread);
+            if (suspend != static_cast<DWORD>(-1)) {
+                CONTEXT ctx{};
+                ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+                if (GetThreadContext(thread, &ctx)) {
+                    if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3 || ctx.Dr7) {
+                        hit = true;
+                    }
+                }
+                ResumeThread(thread);
+            }
+            CloseHandle(thread);
+            if (hit) {
+                break;
+            }
+            entry.dwSize = sizeof(entry);
+        } while (Thread32Next(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return hit;
+}
+
 void TerminateFailClosed(std::uint32_t code) noexcept {
     TerminateProcess(GetCurrentProcess(), static_cast<UINT>(code));
 }
@@ -114,8 +239,21 @@ void ScanThreadMain(TextRegion region,
 }
 
 void MonitorThreadMain() noexcept {
+    if (IsDebuggerPresentFast() || IsDebuggerPresentNt() ||
+        HasHardwareBreakpoints()) {
+        TerminateFailClosed(0xE2EE0002u);
+    }
+    std::uint32_t tick = 0;
     for (;;) {
         ApplyBestEffortMitigations();
+        if (IsDebuggerPresentFast() || IsDebuggerPresentNt()) {
+            TerminateFailClosed(0xE2EE0002u);
+        }
+        if ((++tick % 3u) == 0u) {
+            if (HasHardwareBreakpoints()) {
+                TerminateFailClosed(0xE2EE0003u);
+            }
+        }
         Sleep(5000);
     }
 }

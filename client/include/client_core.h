@@ -583,6 +583,7 @@ class ClientCore {
   std::array<std::uint8_t, 32> device_sync_key_{};
   mi::client::e2ee::Engine e2ee_;
   mi::client::e2ee::IdentityPolicy identity_policy_{};
+  std::uint32_t pqc_precompute_pool_{4};
   bool cover_traffic_enabled_{true};
   std::uint32_t cover_traffic_interval_sec_{30};
   std::chrono::steady_clock::time_point cover_traffic_last_sent_{};

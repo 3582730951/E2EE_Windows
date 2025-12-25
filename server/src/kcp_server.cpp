@@ -24,6 +24,7 @@
 #include <unistd.h>
 #endif
 
+#include "crypto.h"
 #include "ikcp.h"
 
 namespace mi::server {
@@ -32,6 +33,13 @@ namespace {
 
 constexpr std::uint32_t kTickMsMin = 5;
 constexpr std::uint32_t kTickMsMax = 50;
+constexpr std::uint8_t kKcpCookieCmd = 0xFF;
+constexpr std::uint8_t kKcpCookieHello = 1;
+constexpr std::uint8_t kKcpCookieChallenge = 2;
+constexpr std::uint8_t kKcpCookieResponse = 3;
+constexpr std::uint32_t kKcpCookieWindowMs = 30000;
+constexpr std::size_t kKcpCookieBytes = 16;
+constexpr std::size_t kKcpCookiePacketBytes = 24;
 
 std::uint32_t NowMs() {
   static const auto kStart = std::chrono::steady_clock::now();
@@ -57,6 +65,91 @@ std::string IpToString(const sockaddr_storage& addr) {
 #endif
   }
   return {};
+}
+
+void WriteLe32(std::uint32_t v, std::uint8_t out[4]) {
+  out[0] = static_cast<std::uint8_t>(v & 0xFF);
+  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
+  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFF);
+  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFF);
+}
+
+std::uint32_t ReadLe32(const std::uint8_t in[4]) {
+  return static_cast<std::uint32_t>(in[0]) |
+         (static_cast<std::uint32_t>(in[1]) << 8) |
+         (static_cast<std::uint32_t>(in[2]) << 16) |
+         (static_cast<std::uint32_t>(in[3]) << 24);
+}
+
+void WriteLe64(std::uint64_t v, std::uint8_t out[8]) {
+  for (int i = 0; i < 8; ++i) {
+    out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFF);
+  }
+}
+
+struct CookiePacket {
+  std::uint32_t conv{0};
+  std::uint8_t type{0};
+  std::array<std::uint8_t, kKcpCookieBytes> cookie{};
+};
+
+bool ParseCookiePacket(const std::uint8_t* data, std::size_t len,
+                       CookiePacket& out) {
+  if (!data || len < kKcpCookiePacketBytes) {
+    return false;
+  }
+  if (data[4] != kKcpCookieCmd) {
+    return false;
+  }
+  out.conv = ReadLe32(data);
+  out.type = data[5];
+  std::memcpy(out.cookie.data(), data + 8, out.cookie.size());
+  return true;
+}
+
+void BuildCookiePacket(std::uint32_t conv, std::uint8_t type,
+                       const std::array<std::uint8_t, kKcpCookieBytes>& cookie,
+                       std::array<std::uint8_t, kKcpCookiePacketBytes>& out) {
+  WriteLe32(conv, out.data());
+  out[4] = kKcpCookieCmd;
+  out[5] = type;
+  out[6] = 0;
+  out[7] = 0;
+  std::memcpy(out.data() + 8, cookie.data(), cookie.size());
+}
+
+bool ConstantTimeEqual(const std::array<std::uint8_t, kKcpCookieBytes>& a,
+                       const std::array<std::uint8_t, kKcpCookieBytes>& b) {
+  std::uint8_t acc = 0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    acc |= static_cast<std::uint8_t>(a[i] ^ b[i]);
+  }
+  return acc == 0;
+}
+
+std::array<std::uint8_t, kKcpCookieBytes> BuildCookie(
+    const std::array<std::uint8_t, 32>& secret,
+    const sockaddr_storage& addr, socklen_t addr_len, std::uint32_t conv,
+    std::uint64_t bucket) {
+  std::vector<std::uint8_t> buf;
+  buf.reserve(secret.size() + static_cast<std::size_t>(addr_len) + 12);
+  buf.insert(buf.end(), secret.begin(), secret.end());
+  const auto* addr_bytes =
+      reinterpret_cast<const std::uint8_t*>(&addr);
+  buf.insert(buf.end(), addr_bytes,
+             addr_bytes + static_cast<std::size_t>(addr_len));
+  std::uint8_t le32[4] = {};
+  WriteLe32(conv, le32);
+  buf.insert(buf.end(), le32, le32 + sizeof(le32));
+  std::uint8_t le64[8] = {};
+  WriteLe64(bucket, le64);
+  buf.insert(buf.end(), le64, le64 + sizeof(le64));
+
+  mi::server::crypto::Sha256Digest digest;
+  mi::server::crypto::Sha256(buf.data(), buf.size(), digest);
+  std::array<std::uint8_t, kKcpCookieBytes> out{};
+  std::copy_n(digest.bytes.begin(), out.size(), out.begin());
+  return out;
 }
 
 std::string EndpointToString(const sockaddr_storage& addr) {
@@ -169,6 +262,9 @@ bool KcpServer::Start(std::string& error) {
     error = "invalid listener/port";
     return false;
   }
+  if (!InitCookieSecret(error)) {
+    return false;
+  }
   if (!StartSocket(error)) {
     return false;
   }
@@ -268,6 +364,20 @@ void KcpServer::StopSocket() {
 #endif
     sock_ = -1;
   }
+}
+
+bool KcpServer::InitCookieSecret(std::string& error) {
+  error.clear();
+  if (cookie_ready_) {
+    return true;
+  }
+  if (!mi::server::crypto::RandomBytes(cookie_secret_.data(),
+                                       cookie_secret_.size())) {
+    error = "kcp cookie rng failed";
+    return false;
+  }
+  cookie_ready_ = true;
+  return true;
 }
 
 bool KcpServer::TryAcquireConnectionSlot(const std::string& remote_ip) {
@@ -379,6 +489,46 @@ void KcpServer::Run() {
       const IUINT32 conv = ikcp_getconv(recv_buf.data());
       auto it = sessions.find(conv);
       if (it == sessions.end()) {
+        CookiePacket cookie_pkt{};
+        if (!ParseCookiePacket(recv_buf.data(), static_cast<std::size_t>(n),
+                               cookie_pkt) ||
+            cookie_pkt.conv != conv) {
+          continue;
+        }
+        if (cookie_pkt.type == kKcpCookieHello) {
+          const std::uint64_t bucket =
+              static_cast<std::uint64_t>(NowMs() / kKcpCookieWindowMs);
+          const auto cookie =
+              BuildCookie(cookie_secret_, peer_addr, peer_len, conv, bucket);
+          std::array<std::uint8_t, kKcpCookiePacketBytes> out{};
+          BuildCookiePacket(conv, kKcpCookieChallenge, cookie, out);
+#ifdef _WIN32
+          sendto(static_cast<SOCKET>(sock_),
+                 reinterpret_cast<const char*>(out.data()),
+                 static_cast<int>(out.size()), 0,
+                 reinterpret_cast<const sockaddr*>(&peer_addr), peer_len);
+#else
+          sendto(static_cast<int>(sock_), out.data(), out.size(), 0,
+                 reinterpret_cast<const sockaddr*>(&peer_addr), peer_len);
+#endif
+          continue;
+        }
+        if (cookie_pkt.type != kKcpCookieResponse) {
+          continue;
+        }
+        const std::uint64_t bucket =
+            static_cast<std::uint64_t>(NowMs() / kKcpCookieWindowMs);
+        const auto cookie_now =
+            BuildCookie(cookie_secret_, peer_addr, peer_len, conv, bucket);
+        const auto cookie_prev =
+            bucket > 0 ? BuildCookie(cookie_secret_, peer_addr, peer_len, conv,
+                                     bucket - 1)
+                       : cookie_now;
+        if (!ConstantTimeEqual(cookie_pkt.cookie, cookie_now) &&
+            !ConstantTimeEqual(cookie_pkt.cookie, cookie_prev)) {
+          continue;
+        }
+
         const std::string remote_ip = IpToString(peer_addr);
         const std::string remote_endpoint = EndpointToString(peer_addr);
         if (!TryAcquireConnectionSlot(remote_ip)) {
@@ -410,6 +560,7 @@ void KcpServer::Run() {
           sess->kcp->rx_minrto = static_cast<int>(options_.min_rto);
         }
         it = sessions.emplace(conv, std::move(sess)).first;
+        continue;
       } else {
         const std::string remote_endpoint = EndpointToString(peer_addr);
         if (!remote_endpoint.empty() &&

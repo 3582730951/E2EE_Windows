@@ -101,7 +101,7 @@ int main() {
   }
 
   {
-    const std::string path = "tmp_config_secure_delete_ok.ini";
+    const std::string path = "tmp_config_secure_delete_hash_missing.ini";
     WriteFile(path,
               "[mode]\nmode=1\n"
               "[server]\nlist_port=8000\nsecure_delete_enabled=1\n"
@@ -110,8 +110,51 @@ int main() {
     ServerConfig cfg;
     std::string err;
     bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_secure_delete_ok.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nsecure_delete_enabled=1\n"
+              "secure_delete_plugin=secure_delete_plugin.dll\n"
+              "secure_delete_plugin_sha256=0000000000000000000000000000000000000000000000000000000000000000\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
     assert(ok);
     assert(cfg.server.secure_delete_enabled);
+  }
+
+  {
+    const std::string path = "tmp_config_secure_delete_required_fail.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nsecure_delete_required=1\n"
+              "secure_delete_enabled=0\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_secure_delete_required_ok.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nsecure_delete_required=1\n"
+              "secure_delete_enabled=1\n"
+              "secure_delete_plugin=secure_delete_plugin.dll\n"
+              "secure_delete_plugin_sha256=0000000000000000000000000000000000000000000000000000000000000000\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(ok);
+    assert(cfg.server.secure_delete_required);
   }
 
   {

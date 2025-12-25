@@ -47,6 +47,10 @@ struct TrafficConfig {
   std::uint32_t cover_traffic_interval_sec{30};
 };
 
+struct PerformanceConfig {
+  std::uint32_t pqc_precompute_pool{4};
+};
+
 struct KtConfig {
   bool require_signature{true};
   std::uint32_t gossip_alert_threshold{3};
@@ -83,6 +87,7 @@ struct ClientConfig {
   DeviceSyncConfig device_sync;
   IdentityConfig identity;
   TrafficConfig traffic;
+  PerformanceConfig perf;
   KtConfig kt;
   KcpConfig kcp;
 };

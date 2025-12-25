@@ -4,6 +4,7 @@
 #include "crypto.h"
 #include "key_transparency.h"
 #include "opaque_pake.h"
+#include "path_security.h"
 
 #include <algorithm>
 #include <array>
@@ -52,9 +53,7 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
 bool CheckPathNotWorldWritable(const std::filesystem::path& path,
                                std::string& error) {
 #ifdef _WIN32
-  (void)path;
-  (void)error;
-  return true;
+  return mi::shard::security::CheckPathNotWorldWritable(path, error);
 #else
   std::error_code ec;
   const auto perms = std::filesystem::status(path, ec).permissions();
@@ -679,6 +678,7 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
               << " and kt_root_pub at " << kt_root_pub.string() << "\n";
   }
 
+  const bool require_secure_delete = config_.server.secure_delete_required;
   SecureDeleteConfig secure_delete;
   secure_delete.enabled = config_.server.secure_delete_enabled;
   if (secure_delete.enabled) {
@@ -716,7 +716,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   directory_ = std::make_unique<GroupDirectory>();
   offline_storage_ = std::make_unique<OfflineStorage>(
       storage_dir, std::chrono::hours(12), secure_delete);
-  if (secure_delete.enabled && !offline_storage_->SecureDeleteReady()) {
+  if ((secure_delete.enabled || require_secure_delete) &&
+      !offline_storage_->SecureDeleteReady()) {
     error = offline_storage_->SecureDeleteError().empty()
                 ? "secure delete plugin load failed"
                 : offline_storage_->SecureDeleteError();
@@ -764,6 +765,13 @@ bool ServerApp::RunOnce(std::string& error) {
 
 bool ServerApp::HandleFrame(const Frame& in, Frame& out,
                             TransportKind transport, std::string& error) {
+  FrameView view{in.type, in.payload.data(), in.payload.size()};
+  return HandleFrameView(view, out, transport, error);
+}
+
+bool ServerApp::HandleFrameView(const FrameView& in, Frame& out,
+                                TransportKind transport,
+                                std::string& error) {
   if (!router_) {
     error = "router not initialized";
     return false;
@@ -772,7 +780,7 @@ bool ServerApp::HandleFrame(const Frame& in, Frame& out,
     error = "legacy login disabled";
     return false;
   }
-  if (!router_->Handle(in, out, "", transport)) {
+  if (!router_->HandleView(in, out, "", transport)) {
     error = "handle frame failed";
     return false;
   }
@@ -783,11 +791,19 @@ bool ServerApp::HandleFrameWithToken(const Frame& in, Frame& out,
                                      const std::string& token,
                                      TransportKind transport,
                                      std::string& error) {
+  FrameView view{in.type, in.payload.data(), in.payload.size()};
+  return HandleFrameWithTokenView(view, out, token, transport, error);
+}
+
+bool ServerApp::HandleFrameWithTokenView(const FrameView& in, Frame& out,
+                                         const std::string& token,
+                                         TransportKind transport,
+                                         std::string& error) {
   if (!router_) {
     error = "router not initialized";
     return false;
   }
-  if (!router_->Handle(in, out, token, transport)) {
+  if (!router_->HandleView(in, out, token, transport)) {
     error = "handle frame failed";
     return false;
   }

@@ -231,6 +231,10 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
       } else if (key == "cover_traffic_interval_sec") {
         ParseUint32(val, out_cfg.traffic.cover_traffic_interval_sec);
       }
+    } else if (section == "performance") {
+      if (key == "pqc_precompute_pool") {
+        ParseUint32(val, out_cfg.perf.pqc_precompute_pool);
+      }
     } else if (section == "kt") {
       if (key == "require_signature") {
         ParseBool(val, out_cfg.kt.require_signature);
@@ -286,6 +290,11 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     error = "legacy auth disabled (set allow_legacy_login=1 to override)";
     return false;
   }
+  if (out_cfg.auth_mode == AuthMode::kLegacy &&
+      (!out_cfg.use_tls || !out_cfg.require_tls)) {
+    error = "legacy auth requires TLS (use_tls=1, require_tls=1)";
+    return false;
+  }
   if (!out_cfg.require_pinned_fingerprint) {
     if (!out_cfg.kcp.enable) {
       error = "require_pinned_fingerprint must be enabled";
@@ -298,6 +307,9 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   }
   if (out_cfg.traffic.cover_traffic_interval_sec == 0) {
     out_cfg.traffic.cover_traffic_interval_sec = 30;
+  }
+  if (out_cfg.perf.pqc_precompute_pool > 64) {
+    out_cfg.perf.pqc_precompute_pool = 64;
   }
   if (out_cfg.kt.gossip_alert_threshold == 0) {
     out_cfg.kt.gossip_alert_threshold = 3;

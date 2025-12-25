@@ -21,4 +21,12 @@ bool Listener::Process(const std::vector<std::uint8_t>& frame_bytes,
                          remote_ip, transport);
 }
 
+bool Listener::Process(const std::uint8_t* frame_bytes,
+                       std::size_t len,
+                       std::vector<std::uint8_t>& out_bytes,
+                       const std::string& remote_ip,
+                       TransportKind transport) {
+  return handler_.OnData(frame_bytes, len, out_bytes, remote_ip, transport);
+}
+
 }  // namespace mi::server

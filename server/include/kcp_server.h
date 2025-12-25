@@ -1,6 +1,7 @@
 #ifndef MI_E2EE_SERVER_KCP_SERVER_H
 #define MI_E2EE_SERVER_KCP_SERVER_H
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -42,6 +43,7 @@ class KcpServer {
   void StopSocket();
   bool TryAcquireConnectionSlot(const std::string& remote_ip);
   void ReleaseConnectionSlot(const std::string& remote_ip);
+  bool InitCookieSecret(std::string& error);
 
   Listener* listener_;
   std::uint16_t port_{0};
@@ -53,6 +55,8 @@ class KcpServer {
   std::unordered_map<std::string, std::uint32_t> connections_by_ip_;
   std::uint32_t active_connections_{0};
   std::intptr_t sock_{-1};
+  std::array<std::uint8_t, 32> cookie_secret_{};
+  bool cookie_ready_{false};
 };
 
 }  // namespace mi::server

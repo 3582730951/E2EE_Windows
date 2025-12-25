@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -39,6 +40,7 @@ class Engine {
 
   bool Init(const std::filesystem::path& state_dir, std::string& error);
   void SetLocalUsername(std::string username);
+  void SetPqcPoolSize(std::size_t size);
 
   bool MaybeRotatePreKeys(bool& out_rotated, std::string& error);
 
@@ -211,13 +213,16 @@ class Engine {
                         const std::array<std::uint8_t, kKemCiphertextBytes>& kem_ct,
                         std::string& error);
 
-   bool DecryptWithSession(Session& session, std::uint8_t msg_type,
-                           const std::vector<std::uint8_t>& header_ad,
-                           std::uint32_t n, const std::array<std::uint8_t, 24>& nonce,
-                           const std::vector<std::uint8_t>& cipher_text,
-                           const std::array<std::uint8_t, 16>& mac,
-                           std::vector<std::uint8_t>& out_plain,
-                           std::string& error);
+  bool DecryptWithSession(Session& session, std::uint8_t msg_type,
+                          const std::vector<std::uint8_t>& header_ad,
+                          std::uint32_t n, const std::array<std::uint8_t, 24>& nonce,
+                          const std::vector<std::uint8_t>& cipher_text,
+                          const std::array<std::uint8_t, 16>& mac,
+                          std::vector<std::uint8_t>& out_plain,
+                          std::string& error);
+  bool AcquireKemKeypair(std::array<std::uint8_t, kKemPublicKeyBytes>& out_pk,
+                         std::array<std::uint8_t, kKemSecretKeyBytes>& out_sk,
+                         std::string& error);
 
    std::filesystem::path state_dir_;
    std::filesystem::path identity_path_;
@@ -243,8 +248,11 @@ class Engine {
    std::unordered_map<std::string, Session> sessions_;
   std::unordered_map<std::string, std::vector<std::vector<std::uint8_t>>>
       pending_payloads_;
-  std::vector<PrivateMessage> ready_messages_;
-  IdentityPolicy identity_policy_{};
+   std::vector<PrivateMessage> ready_messages_;
+   IdentityPolicy identity_policy_{};
+  class PqcKeyPool;
+  std::shared_ptr<PqcKeyPool> pqc_pool_;
+  std::size_t pqc_pool_target_{0};
 };
 
 }  // namespace mi::client::e2ee

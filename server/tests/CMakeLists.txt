@@ -9,6 +9,17 @@ if(MSVC)
 endif()
 add_test(NAME config_test COMMAND config_test)
 
+add_executable(crypto_test
+    crypto_test.cpp
+)
+target_link_libraries(crypto_test PRIVATE mi_e2ee_core)
+target_include_directories(crypto_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(crypto_test)
+if(MSVC)
+  target_compile_options(crypto_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME crypto_test COMMAND crypto_test)
+
 add_executable(friend_test
     friend_test.cpp
 )

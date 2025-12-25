@@ -57,6 +57,7 @@ class ConnectionHandler {
 
   struct OpsMetrics {
     static constexpr std::size_t kLatencySampleCount = 1024;
+    static constexpr std::size_t kPerfSampleCount = 120;
     std::chrono::steady_clock::time_point started_at{};
     std::atomic<std::uint64_t> decode_fail{0};
     std::atomic<std::uint64_t> requests_total{0};
@@ -72,6 +73,10 @@ class ConnectionHandler {
     std::atomic<std::uint64_t> last_cpu_ticks{0};
     std::atomic<std::uint64_t> last_cpu_pct_x100{0};
     std::atomic<std::uint64_t> last_rss_bytes{0};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_ts_sec{};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_cpu_x100{};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_rss_bytes{};
+    std::atomic<std::uint32_t> perf_sample_index{0};
   };
 
   bool AllowUnauthByIp(const std::string& remote_ip);

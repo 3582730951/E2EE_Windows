@@ -5,11 +5,20 @@
 #include <QString>
 #include <QTimer>
 #include <QVariant>
+#include <QVideoSink>
+#include <QMediaCaptureSession>
 
 #include "client_core.h"
+#include "media_pipeline.h"
 #include "media_session.h"
 
 namespace mi::client::ui {
+
+class QAudioSink;
+class QAudioSource;
+class QCamera;
+class QIODevice;
+class QVideoFrame;
 
 // 轻量桥接：Qt Quick 与 client_core 的同步调用
 class QuickClient : public QObject {
@@ -23,6 +32,8 @@ class QuickClient : public QObject {
   Q_PROPERTY(QString activeCallId READ activeCallId NOTIFY callStateChanged)
   Q_PROPERTY(QString activeCallPeer READ activeCallPeer NOTIFY callStateChanged)
   Q_PROPERTY(bool activeCallVideo READ activeCallVideo NOTIFY callStateChanged)
+  Q_PROPERTY(QVideoSink* remoteVideoSink READ remoteVideoSink CONSTANT)
+  Q_PROPERTY(QVideoSink* localVideoSink READ localVideoSink CONSTANT)
 
  public:
   explicit QuickClient(QObject* parent = nullptr);
@@ -60,6 +71,8 @@ class QuickClient : public QObject {
   QString activeCallId() const { return active_call_id_; }
   QString activeCallPeer() const { return active_call_peer_; }
   bool activeCallVideo() const { return active_call_video_; }
+  QVideoSink* remoteVideoSink() const { return remote_video_sink_; }
+  QVideoSink* localVideoSink() const { return local_video_sink_; }
 
  signals:
   void tokenChanged();
@@ -88,6 +101,23 @@ class QuickClient : public QObject {
                         bool initiator,
                         bool video,
                         QString& outError);
+  void StartMedia();
+  void StopMedia();
+  void PumpMedia();
+  void DrainAudioInput();
+  void FlushAudioOutput();
+  bool SetupAudio(QString& outError);
+  bool SetupVideo(QString& outError);
+  void ShutdownAudio();
+  void ShutdownVideo();
+  void HandleAudioReady();
+  void HandleLocalVideoFrame(const QVideoFrame& frame);
+  bool ConvertVideoFrameToNv12(const QVideoFrame& frame,
+                               std::vector<std::uint8_t>& out,
+                               std::uint32_t& width,
+                               std::uint32_t& height,
+                               std::size_t& stride) const;
+  bool SelectCameraFormat();
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -101,10 +131,28 @@ class QuickClient : public QObject {
   QVariantList groups_;
   QVariantList friend_requests_;
   QTimer poll_timer_;
+  QTimer media_timer_;
   qint64 last_friend_sync_ms_{0};
   qint64 last_request_sync_ms_{0};
   qint64 last_heartbeat_ms_{0};
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
+  std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
+  std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;
+  mi::client::media::AudioPipelineConfig audio_config_{};
+  mi::client::media::VideoPipelineConfig video_config_{};
+  std::unique_ptr<QAudioSource> audio_source_;
+  std::unique_ptr<QAudioSink> audio_sink_;
+  QIODevice* audio_in_device_{nullptr};
+  QIODevice* audio_out_device_{nullptr};
+  QByteArray audio_in_buffer_;
+  qsizetype audio_in_offset_{0};
+  QByteArray audio_out_pending_;
+  std::vector<std::int16_t> audio_frame_tmp_;
+  std::unique_ptr<QCamera> camera_;
+  QMediaCaptureSession capture_session_;
+  QVideoSink* local_video_sink_{nullptr};
+  QVideoSink* remote_video_sink_{nullptr};
+  std::vector<std::uint8_t> video_send_buffer_;
   QString active_call_id_;
   QString active_call_peer_;
   bool active_call_video_{false};

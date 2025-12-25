@@ -86,7 +86,10 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view
+
+      - name: Perf baseline
+        run: .\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe --quick
 
       - name: Deploy Qt runtime
         run: |
@@ -130,6 +133,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $serverTools | Out-Null
           Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_keygen.exe" $serverTools -Force
           Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_pubinfo.exe" $serverTools -Force
+          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe" $serverTools -Force
+          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_ops_health_view.exe" $serverTools -Force
 
           Copy-Item "$keysDir\\kt_signing_key.bin" $serverConfig -Force
           Copy-Item "$keysDir\\kt_root_pub.bin" $serverConfig -Force
@@ -193,9 +198,10 @@ jobs:
           Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee.exe" $clientRoot -Force
 
           $uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
-          Get-ChildItem -Path $uiRoot -File -Filter "*.dll" | ForEach-Object {
-            Copy-Item $_.FullName $clientDll -Force
-          }
+          Get-ChildItem -Path $uiRoot -File -Filter "*.dll" |
+            Where-Object { $_.Name -notlike "qmldbg_*" } | ForEach-Object {
+              Copy-Item $_.FullName $clientDll -Force
+            }
           $rimeRuntime = $env:RIME_RUNTIME_DIR
           if (-not $rimeRuntime) {
             $rimeRuntime = Join-Path $workspace "build\\rime_runtime"
@@ -206,7 +212,7 @@ jobs:
           if (Test-Path (Join-Path $rimeRuntime "opencc")) {
             Copy-Item (Join-Path $rimeRuntime "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
           }
-          $skipDirs = @("qml", "translations", "icon", "assets", "runtime")
+          $skipDirs = @("qml", "translations", "icon", "assets", "runtime", "qmltooling")
           Get-ChildItem -Path $uiRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name } | ForEach-Object {
             Copy-Item $_.FullName $clientDll -Recurse -Force
           }
@@ -233,7 +239,7 @@ jobs:
           if (Test-Path (Join-Path $uiRoot "runtime")) {
             $runtimeRoot = Join-Path $uiRoot "runtime"
             Get-ChildItem -Path $runtimeRoot -File | ForEach-Object {
-              if ($_.Extension -ieq ".dll") {
+              if ($_.Extension -ieq ".dll" -and $_.Name -notlike "qmldbg_*") {
                 Copy-Item $_.FullName $clientDll -Force
               } else {
                 Copy-Item $_.FullName $clientDb -Force
@@ -253,11 +259,15 @@ jobs:
           if (Test-Path (Join-Path $imeRoot "opencc")) {
             Copy-Item (Join-Path $imeRoot "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
           }
+          Get-ChildItem -Path $clientRoot -Recurse -Filter "qmldbg_*.dll" | Remove-Item -Force
 
           $clientZip = Join-Path $distRoot "mi_e2ee_client.zip"
           $serverZip = Join-Path $distRoot "mi_e2ee_server.zip"
           Compress-Archive -Path $clientRoot -DestinationPath $clientZip -Force
           Compress-Archive -Path $serverRoot -DestinationPath $serverZip -Force
+
+      - name: Perf baseline (dist)
+        run: .\\dist\\mi_e2ee_server\\tools\\mi_e2ee_perf_baseline.exe --quick
 
       - name: Upload client package
         uses: actions/upload-artifact@v4

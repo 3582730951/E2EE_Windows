@@ -20,6 +20,7 @@
 #include <sys/resource.h>
 #endif
 
+#include "buffer_pool.h"
 #include "protocol.h"
 #include "secure_channel.h"
 
@@ -31,6 +32,26 @@ ConnectionHandler::ConnectionHandler(ServerApp* app)
 }
 
 namespace {
+class PayloadPoolGuard {
+ public:
+  PayloadPoolGuard(mi::shard::ByteBufferPool& pool,
+                   std::vector<std::uint8_t>* buffer)
+      : pool_(&pool), buffer_(buffer) {}
+  ~PayloadPoolGuard() { Release(); }
+
+  void Release() {
+    if (!pool_ || !buffer_) {
+      return;
+    }
+    pool_->Release(std::move(*buffer_));
+    buffer_ = nullptr;
+  }
+
+ private:
+  mi::shard::ByteBufferPool* pool_{nullptr};
+  std::vector<std::uint8_t>* buffer_{nullptr};
+};
+
 bool WritePlainLogoutError(const std::string& error,
                            std::vector<std::uint8_t>& out_bytes) {
   Frame out;
@@ -39,7 +60,7 @@ bool WritePlainLogoutError(const std::string& error,
   out.payload.push_back(0);
   proto::WriteString(error.empty() ? std::string("session invalid") : error,
                      out.payload);
-  out_bytes = EncodeFrame(out);
+  EncodeFrame(out, out_bytes);
   return true;
 }
 
@@ -49,7 +70,7 @@ bool WriteTlsRequiredError(FrameType type, std::vector<std::uint8_t>& out_bytes)
   out.payload.clear();
   out.payload.push_back(0);
   proto::WriteString("tls required", out.payload);
-  out_bytes = EncodeFrame(out);
+  EncodeFrame(out, out_bytes);
   return true;
 }
 
@@ -164,8 +185,21 @@ void MaybeSamplePerf(ConnectionHandler::OpsMetrics& metrics,
     }
   }
   metrics.last_cpu_pct_x100.store(cpu_pct_x100, std::memory_order_relaxed);
-  metrics.last_rss_bytes.store(GetProcessRssBytes(),
-                               std::memory_order_relaxed);
+  const std::uint64_t rss_bytes = GetProcessRssBytes();
+  metrics.last_rss_bytes.store(rss_bytes, std::memory_order_relaxed);
+  const auto uptime_sec = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          now - metrics.started_at)
+          .count());
+  const std::uint32_t idx = metrics.perf_sample_index.fetch_add(
+      1, std::memory_order_relaxed);
+  const std::size_t slot =
+      idx % ConnectionHandler::OpsMetrics::kPerfSampleCount;
+  metrics.perf_ts_sec[slot].store(uptime_sec, std::memory_order_relaxed);
+  metrics.perf_cpu_x100[slot].store(cpu_pct_x100,
+                                    std::memory_order_relaxed);
+  metrics.perf_rss_bytes[slot].store(rss_bytes,
+                                     std::memory_order_relaxed);
 }
 
 void ComputeLatencyPercentiles(const ConnectionHandler::OpsMetrics& metrics,
@@ -377,8 +411,8 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
     return false;
   }
   const auto start = std::chrono::steady_clock::now();
-  Frame in;
-  if (!DecodeFrame(data, len, in)) {
+  FrameView in;
+  if (!DecodeFrameView(data, len, in)) {
     metrics_.decode_fail.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
@@ -401,6 +435,9 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   };
   Frame out;
   std::string error;
+  auto& byte_pool = mi::shard::GlobalByteBufferPool();
+  out.payload = byte_pool.Acquire(4096);
+  PayloadPoolGuard out_guard(byte_pool, &out.payload);
 
   const auto& cfg = app_->config().server;
   if (cfg.require_tls && transport != TransportKind::kTls &&
@@ -414,7 +451,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
     out.payload.clear();
     out.payload.push_back(0);
     proto::WriteString("legacy login disabled", out.payload);
-    out_bytes = EncodeFrame(out);
+    EncodeFrame(out, out_bytes);
     finish(false);
     return true;
   }
@@ -430,7 +467,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
       out.payload.clear();
       out.payload.push_back(0);
       proto::WriteString("rate limited", out.payload);
-      out_bytes = EncodeFrame(out);
+      EncodeFrame(out, out_bytes);
       metrics_.rate_limited.fetch_add(1, std::memory_order_relaxed);
       finish(false);
       return true;
@@ -440,12 +477,13 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
       out.payload.clear();
 
       std::size_t offset = 0;
-      std::string token;
-      if (!proto::ReadString(in.payload, offset, token) ||
-          offset != in.payload.size()) {
+      std::string_view token_view;
+      const auto payload = proto::ByteView{in.payload, in.payload_len};
+      if (!proto::ReadStringView(payload, offset, token_view) ||
+          offset != payload.size) {
         out.payload.push_back(0);
         proto::WriteString("invalid request", out.payload);
-        out_bytes = EncodeFrame(out);
+        EncodeFrame(out, out_bytes);
         ReportUnauthOutcome(remote_ip, false);
         finish(false);
         return true;
@@ -455,17 +493,24 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
       const bool enabled = cfg.ops_enable;
       const bool allowed_ip = cfg.ops_allow_remote || IsLoopbackIp(remote_ip);
       const std::string expected = cfg.ops_token.get();
-      const bool ok_token = !expected.empty() && ConstantTimeEqual(token, expected);
+      const bool ok_token =
+          !expected.empty() && ConstantTimeEqual(token_view, expected);
+      const bool require_tls =
+          cfg.ops_allow_remote && transport != TransportKind::kTls &&
+          transport != TransportKind::kLocal;
 
       if (!enabled) {
         out.payload.push_back(0);
         proto::WriteString("unsupported", out.payload);
+      } else if (require_tls) {
+        out.payload.push_back(0);
+        proto::WriteString("tls required", out.payload);
       } else if (!allowed_ip || !ok_token) {
         out.payload.push_back(0);
         proto::WriteString("unauthorized", out.payload);
       } else {
         out.payload.push_back(1);
-        proto::WriteUint32(2, out.payload);  // version
+        proto::WriteUint32(3, out.payload);  // version
 
         const auto now = std::chrono::steady_clock::now();
         const auto uptime_sec = static_cast<std::uint64_t>(
@@ -548,40 +593,68 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
           proto::WriteUint64(0, out.payload);
           proto::WriteUint64(0, out.payload);
         }
+
+        const auto sample_index =
+            metrics_.perf_sample_index.load(std::memory_order_relaxed);
+        const auto capacity = ConnectionHandler::OpsMetrics::kPerfSampleCount;
+        const std::uint32_t count =
+            sample_index < capacity ? sample_index : capacity;
+        proto::WriteUint32(count, out.payload);
+        if (count > 0) {
+          const std::size_t start =
+              sample_index > count
+                  ? (static_cast<std::size_t>(sample_index - count) %
+                     capacity)
+                  : 0;
+          for (std::size_t i = 0; i < count; ++i) {
+            const std::size_t slot = (start + i) % capacity;
+            const auto ts =
+                metrics_.perf_ts_sec[slot].load(std::memory_order_relaxed);
+            const auto cpu =
+                metrics_.perf_cpu_x100[slot].load(std::memory_order_relaxed);
+            const auto rss =
+                metrics_.perf_rss_bytes[slot].load(std::memory_order_relaxed);
+            proto::WriteUint64(ts, out.payload);
+            proto::WriteUint64(cpu, out.payload);
+            proto::WriteUint64(rss, out.payload);
+          }
+        }
       }
 
       const bool success = !out.payload.empty() && out.payload[0] != 0;
-      out_bytes = EncodeFrame(out);
+      EncodeFrame(out, out_bytes);
       finish(success);
       return true;
     }
-    if (!app_->HandleFrame(in, out, transport, error)) {
+    if (!app_->HandleFrameView(in, out, transport, error)) {
       finish(false);
       return false;
     }
     if (!out.payload.empty()) {
       ReportUnauthOutcome(remote_ip, out.payload[0] != 0);
     }
-    out_bytes = EncodeFrame(out);
+    EncodeFrame(out, out_bytes);
     finish(out.payload.empty() || out.payload[0] != 0);
     return true;
   }
 
   // payload = token_len(2) + token(utf8) + cipher
   std::size_t offset = 0;
-  std::string token;
-  if (!proto::ReadString(in.payload, offset, token)) {
+  std::string_view token_view;
+  const auto payload = proto::ByteView{in.payload, in.payload_len};
+  if (!proto::ReadStringView(payload, offset, token_view)) {
     finish(false);
     return false;
   }
-  if (!LooksLikeSessionToken(token)) {
+  if (!LooksLikeSessionToken(token_view)) {
     finish(false);
     return false;
   }
+  const std::string token(token_view);
 
-  const std::vector<std::uint8_t> cipher(in.payload.begin() + offset,
-                                         in.payload.end());
-  if (cipher.empty()) {
+  const std::size_t cipher_len =
+      payload.size > offset ? (payload.size - offset) : 0;
+  if (cipher_len == 0) {
     finish(false);
     return false;
   }
@@ -619,8 +692,11 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
 
   std::lock_guard<std::mutex> state_lock(state->mutex);
 
-  std::vector<std::uint8_t> plain;
-  if (!state->channel.Decrypt(cipher, in.type, plain)) {
+  auto& pool = byte_pool;
+  mi::shard::ScopedBuffer plain_buf(pool, cipher_len, true);
+  auto& plain = plain_buf.get();
+  if (!state->channel.Decrypt(payload.data + offset, cipher_len, in.type,
+                              plain)) {
     ReportAuthDecryptFailure(token);
     const bool ok = WritePlainLogoutError({}, out_bytes);
     finish(false);
@@ -630,16 +706,21 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
 
   Frame inner;
   inner.type = in.type;
-  inner.payload = plain;
+  inner.payload.swap(plain);
 
-  if (!app_->HandleFrameWithToken(inner, out, token, transport, error)) {
+  FrameView inner_view{inner.type, inner.payload.data(), inner.payload.size()};
+  if (!app_->HandleFrameWithTokenView(inner_view, out, token, transport,
+                                      error)) {
+    inner.payload.swap(plain);
     finish(false);
     return false;
   }
 
-  std::vector<std::uint8_t> cipher_out;
+  mi::shard::ScopedBuffer cipher_buf(pool, out.payload.size() + 64, false);
+  auto& cipher_out = cipher_buf.get();
   if (!state->channel.Encrypt(state->send_seq, out.type, out.payload,
                               cipher_out)) {
+    inner.payload.swap(plain);
     finish(false);
     return false;
   }
@@ -651,8 +732,9 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   proto::WriteString(token, envelope.payload);
   envelope.payload.insert(envelope.payload.end(), cipher_out.begin(),
                           cipher_out.end());
+  inner.payload.swap(plain);
 
-  out_bytes = EncodeFrame(envelope);
+  EncodeFrame(envelope, out_bytes);
   if (out.type == FrameType::kLogout) {
     std::lock_guard<std::mutex> lock(channel_mutex_);
     channel_states_.erase(token);

@@ -89,6 +89,7 @@ add_library(mi_e2ee_client_core STATIC
     src/e2ee_engine.cpp
     src/media_jitter_buffer.cpp
     src/media_crypto.cpp
+    src/media_pipeline.cpp
     src/media_session.cpp
 )
 target_include_directories(mi_e2ee_client_core PUBLIC
@@ -100,7 +101,8 @@ target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_core)
 target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_build_flags)
 target_link_libraries(mi_e2ee_client_core PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(WIN32)
-  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt)
+  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt
+      mfplat mf mfreadwrite mfuuid ole32)
 endif()
 
 if(MI_E2EE_BUILD_DEMO_CLIENT)

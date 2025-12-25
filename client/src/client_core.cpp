@@ -16,6 +16,8 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <sstream>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -66,6 +68,7 @@ int PQCLEAN_MLKEM768_CLEAN_crypto_kem_dec(std::uint8_t* ss,
 #include "chat_history_store.h"
 #include "client_config.h"
 #include "dpapi_util.h"
+#include "path_security.h"
 
 namespace mi::client {
 
@@ -106,6 +109,9 @@ struct TrustEntry {
   std::string fingerprint;
   bool tls_required{false};
 };
+
+constexpr char kTrustStoreMagic[] = "MI_TRUST1";
+constexpr char kTrustStoreEntropy[] = "mi_e2ee_trust_store_v1";
 
 std::string ToLower(std::string s) {
   for (auto& ch : s) {
@@ -331,18 +337,92 @@ std::string BuildTrustValue(const TrustEntry& entry) {
   return out;
 }
 
+bool LoadTrustStoreText(const std::string& path, std::string& out_text,
+                        std::string& error) {
+  out_text.clear();
+  error.clear();
+  if (path.empty()) {
+    error = "trust store path empty";
+    return false;
+  }
+#ifdef _WIN32
+  {
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec) && !ec) {
+      std::string perm_err;
+      if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+        error = perm_err.empty() ? "trust store permissions insecure" : perm_err;
+        return false;
+      }
+    }
+  }
+#endif
+  std::ifstream f(path, std::ios::binary);
+  if (!f.is_open()) {
+    return false;
+  }
+  std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                  std::istreambuf_iterator<char>());
+  if (bytes.empty()) {
+    return false;
+  }
+#ifdef _WIN32
+  std::vector<std::uint8_t> plain;
+  bool was_dpapi = false;
+  if (!MaybeUnprotectDpapi(bytes, kTrustStoreMagic, kTrustStoreEntropy, plain,
+                           was_dpapi, error)) {
+    return false;
+  }
+  const auto& view = was_dpapi ? plain : bytes;
+  out_text.assign(view.begin(), view.end());
+#else
+  out_text.assign(bytes.begin(), bytes.end());
+#endif
+  return true;
+}
+
+bool StoreTrustStoreText(const std::string& path, const std::string& text,
+                         std::string& error) {
+  error.clear();
+  if (path.empty()) {
+    error = "trust store path empty";
+    return false;
+  }
+  std::vector<std::uint8_t> out_bytes;
+#ifdef _WIN32
+  std::vector<std::uint8_t> plain(text.begin(), text.end());
+  if (!ProtectDpapi(plain, kTrustStoreMagic, kTrustStoreEntropy, out_bytes,
+                    error)) {
+    return false;
+  }
+#else
+  out_bytes.assign(text.begin(), text.end());
+#endif
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    error = "open trust store failed";
+    return false;
+  }
+  out.write(reinterpret_cast<const char*>(out_bytes.data()),
+            static_cast<std::streamsize>(out_bytes.size()));
+  out.close();
+  return true;
+}
+
 bool LoadTrustEntry(const std::string& path, const std::string& endpoint,
                     TrustEntry& out_entry) {
   out_entry = TrustEntry{};
   if (path.empty() || endpoint.empty()) {
     return false;
   }
-  std::ifstream f(path);
-  if (!f.is_open()) {
+  std::string content;
+  std::string load_err;
+  if (!LoadTrustStoreText(path, content, load_err)) {
     return false;
   }
+  std::istringstream iss(content);
   std::string line;
-  while (std::getline(f, line)) {
+  while (std::getline(iss, line)) {
     const std::string t = StripInlineComment(Trim(line));
     if (t.empty()) {
       continue;
@@ -374,10 +454,12 @@ bool StoreTrustEntry(const std::string& path, const std::string& endpoint,
   }
 
   std::vector<std::pair<std::string, std::string>> entries;
-  {
-    std::ifstream f(path);
+  std::string content;
+  std::string load_err;
+  if (LoadTrustStoreText(path, content, load_err)) {
+    std::istringstream iss(content);
     std::string line;
-    while (f.is_open() && std::getline(f, line)) {
+    while (std::getline(iss, line)) {
       const std::string t = StripInlineComment(Trim(line));
       if (t.empty()) {
         continue;
@@ -405,17 +487,15 @@ bool StoreTrustEntry(const std::string& path, const std::string& endpoint,
   if (!dir.empty()) {
     std::filesystem::create_directories(dir, ec);
   }
-  std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  if (!out) {
-    error = "open trust store failed";
+  std::ostringstream oss;
+  oss << "# mi_e2ee client trust store\n";
+  oss << "# format: host:port=sha256(cert_der)_hex[,tls=1]\n";
+  for (const auto& kv : entries) {
+    oss << kv.first << "=" << kv.second << "\n";
+  }
+  if (!StoreTrustStoreText(path, oss.str(), error)) {
     return false;
   }
-  out << "# mi_e2ee client trust store\n";
-  out << "# format: host:port=sha256(cert_der)_hex[,tls=1]\n";
-  for (const auto& kv : entries) {
-    out << kv.first << "=" << kv.second << "\n";
-  }
-  out.close();
   return true;
 }
 
@@ -4920,6 +5000,108 @@ struct ClientCore::RemoteStream {
     if (!RandomUint32(conv) || conv == 0) {
       conv = NowMs() ^ 0xA5A5A5A5u;
     }
+
+    constexpr std::uint8_t kCookieCmd = 0xFF;
+    constexpr std::uint8_t kCookieHello = 1;
+    constexpr std::uint8_t kCookieChallenge = 2;
+    constexpr std::uint8_t kCookieResponse = 3;
+    constexpr std::size_t kCookieBytes = 16;
+    constexpr std::size_t kCookiePacketBytes = 24;
+
+    auto write_le32 = [](std::uint32_t v, std::uint8_t out[4]) {
+      out[0] = static_cast<std::uint8_t>(v & 0xFF);
+      out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
+      out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFF);
+      out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFF);
+    };
+    auto read_le32 = [](const std::uint8_t in[4]) -> std::uint32_t {
+      return static_cast<std::uint32_t>(in[0]) |
+             (static_cast<std::uint32_t>(in[1]) << 8) |
+             (static_cast<std::uint32_t>(in[2]) << 16) |
+             (static_cast<std::uint32_t>(in[3]) << 24);
+    };
+    auto build_cookie_packet =
+        [&](std::uint8_t type,
+            const std::array<std::uint8_t, kCookieBytes>& cookie,
+            std::array<std::uint8_t, kCookiePacketBytes>& out) {
+          write_le32(conv, out.data());
+          out[4] = kCookieCmd;
+          out[5] = type;
+          out[6] = 0;
+          out[7] = 0;
+          std::memcpy(out.data() + 8, cookie.data(), cookie.size());
+        };
+    auto send_cookie_packet =
+        [&](std::uint8_t type,
+            const std::array<std::uint8_t, kCookieBytes>& cookie) -> bool {
+          std::array<std::uint8_t, kCookiePacketBytes> out{};
+          build_cookie_packet(type, cookie, out);
+#ifdef _WIN32
+          return ::send(sock, reinterpret_cast<const char*>(out.data()),
+                        static_cast<int>(out.size()), 0) ==
+                 static_cast<int>(out.size());
+#else
+          return ::send(sock, out.data(), out.size(), 0) ==
+                 static_cast<ssize_t>(out.size());
+#endif
+        };
+
+    if (!send_cookie_packet(kCookieHello, {})) {
+      error = "kcp cookie hello failed";
+      Close();
+      return false;
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    std::array<std::uint8_t, kCookieBytes> cookie{};
+    bool got_cookie = false;
+    while (true) {
+      std::uint8_t buf[64] = {};
+#ifdef _WIN32
+      const int n = ::recv(sock, reinterpret_cast<char*>(buf),
+                           static_cast<int>(sizeof(buf)), 0);
+#else
+      const ssize_t n = ::recv(sock, buf, sizeof(buf), 0);
+#endif
+      if (n > 0) {
+        if (static_cast<std::size_t>(n) >= kCookiePacketBytes &&
+            buf[4] == kCookieCmd && read_le32(buf) == conv &&
+            buf[5] == kCookieChallenge) {
+          std::memcpy(cookie.data(), buf + 8, cookie.size());
+          got_cookie = true;
+          break;
+        }
+        continue;
+      }
+      if (n == 0) {
+        error = "kcp cookie recv failed";
+        Close();
+        return false;
+      }
+      if (!SocketWouldBlock()) {
+        error = "kcp cookie recv failed";
+        Close();
+        return false;
+      }
+      const auto elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - start)
+              .count();
+      if (elapsed > static_cast<long long>(kcp_cfg.request_timeout_ms)) {
+        error = "kcp cookie timeout";
+        Close();
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    if (!got_cookie ||
+        !send_cookie_packet(kCookieResponse, cookie)) {
+      error = "kcp cookie response failed";
+      Close();
+      return false;
+    }
+
     kcp_conv = conv;
     kcp = ikcp_create(conv, this);
     if (!kcp) {
@@ -5406,6 +5588,7 @@ bool ClientCore::Init(const std::string& config_path) {
     identity_policy_.legacy_retention_days = cfg.identity.legacy_retention_days;
     identity_policy_.tpm_enable = cfg.identity.tpm_enable;
     identity_policy_.tpm_require = cfg.identity.tpm_require;
+    pqc_precompute_pool_ = cfg.perf.pqc_precompute_pool;
     cover_traffic_enabled_ = ResolveCoverTrafficEnabled(cfg.traffic);
     cover_traffic_interval_sec_ = cfg.traffic.cover_traffic_interval_sec;
     cover_traffic_last_sent_ = {};
@@ -5463,6 +5646,7 @@ bool ClientCore::Init(const std::string& config_path) {
     send_seq_ = 0;
 
     e2ee_ = mi::client::e2ee::Engine{};
+    e2ee_.SetPqcPoolSize(pqc_precompute_pool_);
     e2ee_inited_ = false;
     prekey_published_ = false;
     std::filesystem::path base = data_dir;
@@ -5567,6 +5751,7 @@ bool ClientCore::Init(const std::string& config_path) {
   pending_server_fingerprint_.clear();
   pending_server_pin_.clear();
   identity_policy_ = mi::client::e2ee::IdentityPolicy{};
+  pqc_precompute_pool_ = ClientConfig{}.perf.pqc_precompute_pool;
   cover_traffic_enabled_ = ResolveCoverTrafficEnabled(ClientConfig{}.traffic);
   cover_traffic_interval_sec_ = ClientConfig{}.traffic.cover_traffic_interval_sec;
   cover_traffic_last_sent_ = {};
@@ -5577,6 +5762,7 @@ bool ClientCore::Init(const std::string& config_path) {
   }
 
   e2ee_ = mi::client::e2ee::Engine{};
+  e2ee_.SetPqcPoolSize(pqc_precompute_pool_);
   e2ee_inited_ = false;
   prekey_published_ = false;
   std::filesystem::path base = data_dir;
@@ -6313,6 +6499,7 @@ bool ClientCore::Logout() {
   token_.clear();
   prekey_published_ = false;
   e2ee_ = mi::client::e2ee::Engine{};
+  e2ee_.SetPqcPoolSize(pqc_precompute_pool_);
   e2ee_inited_ = false;
   peer_id_cache_.clear();
   group_sender_keys_.clear();
@@ -7692,21 +7879,27 @@ bool ClientCore::ProcessEncrypted(mi::server::FrameType type,
     return false;
   }
 
-  mi::server::Frame resp_frame;
-  if (!mi::server::DecodeFrame(resp_vec.data(), resp_vec.size(), resp_frame)) {
+  mi::server::FrameView resp_view;
+  if (!mi::server::DecodeFrameView(resp_vec.data(), resp_vec.size(),
+                                   resp_view)) {
     if (last_error_.empty()) {
       last_error_ = "invalid server response";
     }
     return false;
   }
+  const mi::server::proto::ByteView payload_view{resp_view.payload,
+                                                 resp_view.payload_len};
   std::size_t off = 0;
-  std::string resp_token;
-  if (!mi::server::proto::ReadString(resp_frame.payload, off, resp_token)) {
-    if (resp_frame.type == mi::server::FrameType::kLogout) {
+  std::string_view resp_token;
+  if (!mi::server::proto::ReadStringView(payload_view, off, resp_token)) {
+    if (resp_view.type == mi::server::FrameType::kLogout) {
       std::string server_err;
-      if (!resp_frame.payload.empty()) {
+      if (payload_view.data && payload_view.size > 1) {
         std::size_t off2 = 1;
-        mi::server::proto::ReadString(resp_frame.payload, off2, server_err);
+        std::string_view err_view;
+        if (mi::server::proto::ReadStringView(payload_view, off2, err_view)) {
+          server_err.assign(err_view.begin(), err_view.end());
+        }
       }
       last_error_ = server_err.empty() ? "session invalid" : server_err;
       token_.clear();
@@ -7724,10 +7917,11 @@ bool ClientCore::ProcessEncrypted(mi::server::FrameType type,
     prekey_published_ = false;
     return false;
   }
-  resp_frame.payload.erase(
-      resp_frame.payload.begin(),
-      resp_frame.payload.begin() + static_cast<std::ptrdiff_t>(off));
-  if (!channel_.Decrypt(resp_frame.payload, resp_frame.type, out_plain)) {
+  const std::size_t cipher_len =
+      payload_view.size >= off ? payload_view.size - off : 0;
+  const std::uint8_t* cipher_ptr =
+      payload_view.data ? payload_view.data + off : nullptr;
+  if (!channel_.Decrypt(cipher_ptr, cipher_len, resp_view.type, out_plain)) {
     if (last_error_.empty()) {
       last_error_ = "decrypt failed";
     }

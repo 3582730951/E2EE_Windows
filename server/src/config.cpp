@@ -10,6 +10,8 @@
 #include <string>
 #include <utility>
 
+#include "path_security.h"
+
 namespace mi::server {
 
 namespace {
@@ -105,7 +107,9 @@ struct IniState {
 };
 
 bool CheckPathPermissions(const std::string& path, std::string& error) {
-#ifndef _WIN32
+#ifdef _WIN32
+  return mi::shard::security::CheckPathNotWorldWritable(path, error);
+#else
   std::error_code ec;
   const auto perms = std::filesystem::status(path, ec).permissions();
   if (ec || perms == std::filesystem::perms::unknown) {
@@ -160,8 +164,14 @@ void ApplyKV(IniState& state, const std::string& key,
       ParseUint32(value, state.cfg->server.max_connection_bytes);
     } else if (key == "max_worker_threads") {
       ParseUint32(value, state.cfg->server.max_worker_threads);
+    } else if (key == "max_io_threads") {
+      ParseUint32(value, state.cfg->server.max_io_threads);
     } else if (key == "max_pending_tasks") {
       ParseUint32(value, state.cfg->server.max_pending_tasks);
+#ifdef _WIN32
+    } else if (key == "iocp_enable") {
+      ParseBool(value, state.cfg->server.iocp_enable);
+#endif
     } else if (key == "tls_enable") {
       ParseBool(value, state.cfg->server.tls_enable);
     } else if (key == "require_tls") {
@@ -178,6 +188,8 @@ void ApplyKV(IniState& state, const std::string& key,
       ParseBool(value, state.cfg->server.allow_legacy_login);
     } else if (key == "secure_delete_enabled") {
       ParseBool(value, state.cfg->server.secure_delete_enabled);
+    } else if (key == "secure_delete_required") {
+      ParseBool(value, state.cfg->server.secure_delete_required);
     } else if (key == "secure_delete_plugin") {
       state.cfg->server.secure_delete_plugin = value;
     } else if (key == "secure_delete_plugin_sha256") {
@@ -332,6 +344,11 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     error = "require_tls=1 but tls_enable=0";
     return false;
   }
+  if (out_config.server.allow_legacy_login &&
+      !out_config.server.require_tls) {
+    error = "legacy login requires TLS";
+    return false;
+  }
   if (out_config.server.tls_enable && out_config.server.tls_cert.empty()) {
     error = "tls_cert empty";
     return false;
@@ -345,8 +362,23 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     error = "secure_delete_plugin missing";
     return false;
   }
+  if (out_config.server.secure_delete_required &&
+      !out_config.server.secure_delete_enabled) {
+    error = "secure_delete_required=1 but secure_delete_enabled=0";
+    return false;
+  }
+  if (out_config.server.secure_delete_enabled &&
+      out_config.server.secure_delete_plugin_sha256.empty()) {
+    error = "secure_delete_plugin_sha256 missing";
+    return false;
+  }
   if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {
     error = "ops_token missing or too short (>=16 chars)";
+    return false;
+  }
+  if (out_config.server.ops_allow_remote &&
+      !out_config.server.require_tls) {
+    error = "ops_allow_remote requires require_tls=1";
     return false;
   }
   if (out_config.server.kcp_enable) {

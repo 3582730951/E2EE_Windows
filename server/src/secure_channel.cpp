@@ -124,17 +124,23 @@ void SecureChannel::MarkSeqReceived(std::uint64_t seq) {
 bool SecureChannel::Decrypt(const std::vector<std::uint8_t>& input,
                             FrameType frame_type,
                             std::vector<std::uint8_t>& out_plain) {
+  return Decrypt(input.data(), input.size(), frame_type, out_plain);
+}
+
+bool SecureChannel::Decrypt(const std::uint8_t* input, std::size_t len,
+                            FrameType frame_type,
+                            std::vector<std::uint8_t>& out_plain) {
   out_plain.clear();
-  if (input.size() < kSeqHeaderSize + kTagSize) {
+  if (!input || len < kSeqHeaderSize + kTagSize) {
     return false;
   }
-  const std::uint64_t seq = LoadLe64(input.data());
+  const std::uint64_t seq = LoadLe64(input);
   if (!CanAcceptSeq(seq)) {
     return false;
   }
-  const std::size_t cipher_len = input.size() - kSeqHeaderSize - kTagSize;
-  const std::uint8_t* cipher = input.data() + kSeqHeaderSize;
-  const std::uint8_t* mac = input.data() + kSeqHeaderSize + cipher_len;
+  const std::size_t cipher_len = len - kSeqHeaderSize - kTagSize;
+  const std::uint8_t* cipher = input + kSeqHeaderSize;
+  const std::uint8_t* mac = input + kSeqHeaderSize + cipher_len;
 
   std::uint8_t nonce[kNonceSize];
   BuildNonce(seq, nonce);

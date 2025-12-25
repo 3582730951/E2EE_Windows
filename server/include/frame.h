@@ -71,12 +71,22 @@ struct Frame {
   std::vector<std::uint8_t> payload;
 };
 
+struct FrameView {
+  FrameType type{FrameType::kHeartbeat};
+  const std::uint8_t* payload{nullptr};
+  std::size_t payload_len{0};
+};
+
 std::vector<std::uint8_t> EncodeFrame(const Frame& frame);
+void EncodeFrame(const Frame& frame, std::vector<std::uint8_t>& out);
+void EncodeFrame(const FrameView& frame, std::vector<std::uint8_t>& out);
 
 bool DecodeFrameHeader(const std::uint8_t* data, std::size_t len,
                        FrameType& out_type, std::uint32_t& out_payload_len);
 
 bool DecodeFrame(const std::uint8_t* data, std::size_t len, Frame& out);
+bool DecodeFrameView(const std::uint8_t* data, std::size_t len,
+                     FrameView& out);
 
 }  // namespace mi::server
 

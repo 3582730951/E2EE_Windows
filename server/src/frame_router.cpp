@@ -12,14 +12,31 @@ namespace mi::server {
 
 namespace {
 
-bool ReadFixed16(const std::vector<std::uint8_t>& data, std::size_t& offset,
+struct PayloadView {
+  proto::ByteView view;
+  const std::uint8_t* data() const { return view.data; }
+  std::size_t size() const { return view.size; }
+  const std::uint8_t& operator[](std::size_t idx) const {
+    return view.data[idx];
+  }
+};
+
+PayloadView MakePayloadView(const FrameView& frame) {
+  return PayloadView{proto::ByteView{frame.payload, frame.payload_len}};
+}
+
+bool ReadFixed16(proto::ByteView data, std::size_t& offset,
                  std::array<std::uint8_t, 16>& out) {
-  if (offset + out.size() > data.size()) {
+  if (!data.data || offset + out.size() > data.size) {
     return false;
   }
-  std::memcpy(out.data(), data.data() + offset, out.size());
+  std::memcpy(out.data(), data.data + offset, out.size());
   offset += out.size();
   return true;
+}
+
+void AssignString(std::string& out, std::string_view in) {
+  out.assign(in.data(), in.size());
 }
 
 constexpr std::size_t kStringSizeOverhead = 2;
@@ -993,32 +1010,45 @@ FrameRouter::FrameRouter(ApiService* api) : api_(api) {}
 
 bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
                          TransportKind transport) {
+  FrameView view{in.type, in.payload.data(), in.payload.size()};
+  return HandleView(view, out, token, transport);
+}
+
+bool FrameRouter::HandleView(const FrameView& in, Frame& out,
+                             const std::string& token,
+                             TransportKind transport) {
   if (!api_) {
     return false;
   }
   out.type = in.type;
+  const PayloadView payload_bytes = MakePayloadView(in);
+  const proto::ByteView payload_view = payload_bytes.view;
   std::size_t offset = 0;
   std::string s1, s2;
+  std::string_view s1_view;
+  std::string_view s2_view;
   switch (in.type) {
     case FrameType::kLogin: {
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       LoginRequest req;
       req.username = s1;
       req.password = s2;
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         std::uint32_t kex = 0;
-        if (!proto::ReadUint32(in.payload, offset, kex)) {
+        if (!proto::ReadUint32(payload_view, offset, kex)) {
           return false;
         }
         req.kex_version = kex;
         if (req.kex_version == kLoginKeyExchangeV1) {
           std::vector<std::uint8_t> dh_pk;
           std::vector<std::uint8_t> kem_pk;
-          if (!proto::ReadBytes(in.payload, offset, dh_pk) ||
-              !proto::ReadBytes(in.payload, offset, kem_pk)) {
+          if (!proto::ReadBytes(payload_view, offset, dh_pk) ||
+              !proto::ReadBytes(payload_view, offset, kem_pk)) {
             return false;
           }
           if (dh_pk.size() != kX25519PublicKeyBytes ||
@@ -1029,7 +1059,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
                       req.client_dh_pk.begin());
           req.client_kem_pk = std::move(kem_pk);
         }
-        if (offset != in.payload.size()) {
+        if (offset != payload_bytes.size()) {
           return false;
         }
       }
@@ -1039,14 +1069,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kOpaqueRegisterStart: {
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
       std::vector<std::uint8_t> reg_req;
-      if (!proto::ReadBytes(in.payload, offset, reg_req) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, reg_req) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       OpaqueRegisterStartRequest req;
       req.username = s1;
       req.registration_request = std::move(reg_req);
@@ -1055,14 +1086,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kOpaqueRegisterFinish: {
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
       std::vector<std::uint8_t> upload;
-      if (!proto::ReadBytes(in.payload, offset, upload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, upload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       OpaqueRegisterFinishRequest req;
       req.username = s1;
       req.registration_upload = std::move(upload);
@@ -1071,14 +1103,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kOpaqueLoginStart: {
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
       std::vector<std::uint8_t> cred_req;
-      if (!proto::ReadBytes(in.payload, offset, cred_req) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, cred_req) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       OpaqueLoginStartRequest req;
       req.username = s1;
       req.credential_request = std::move(cred_req);
@@ -1087,14 +1120,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kOpaqueLoginFinish: {
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
       std::vector<std::uint8_t> finalization;
-      if (!proto::ReadBytes(in.payload, offset, finalization) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, finalization) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       OpaqueLoginFinishRequest req;
       req.login_id = s1;
       req.credential_finalization = std::move(finalization);
@@ -1111,13 +1145,14 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kGroupEvent: {
-      if (offset >= in.payload.size()) {
+      if (offset >= payload_bytes.size()) {
         return false;
       }
-      const std::uint8_t action = in.payload[offset++];
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      const std::uint8_t action = payload_bytes[offset++];
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       GroupEventResponse resp;
       if (action == 0) {
         resp = api_->JoinGroup(token, s1);
@@ -1136,9 +1171,10 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       auto resp = api_->GroupMembers(token, s1);
       out.payload = EncodeGroupMemberListResp(resp);
       return true;
@@ -1147,9 +1183,10 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       auto resp = api_->GroupMembersInfo(token, s1);
       out.payload = EncodeGroupMemberInfoListResp(resp);
       return true;
@@ -1158,15 +1195,17 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2) ||
-          offset >= in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          offset >= payload_bytes.size()) {
         return false;
       }
-      const auto role = static_cast<GroupRole>(in.payload[offset++]);
-      if (offset != in.payload.size()) {
+      const auto role = static_cast<GroupRole>(payload_bytes[offset++]);
+      if (offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp = api_->SetGroupRole(token, s1, s2, role);
       out.payload = EncodeGroupRoleSetResp(resp);
       return true;
@@ -1175,21 +1214,24 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp = api_->KickGroupMember(token, s1, s2);
       out.payload = EncodeGroupEventResp(resp);
       return true;
     }
     case FrameType::kMessage: {
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::uint32_t threshold = api_->default_group_threshold();
-      proto::ReadUint32(in.payload, offset, threshold);
+      proto::ReadUint32(payload_view, offset, threshold);
       auto resp = api_->OnGroupMessage(token, s1, threshold);
       out.payload = EncodeGroupMessageResp(resp);
       return true;
@@ -1199,11 +1241,12 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       return true;
     }
     case FrameType::kOfflinePush: {
-      if (!proto::ReadString(in.payload, offset, s1)) {  // recipient
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // recipient
         return false;
       }
+      AssignString(s1, s1_view);
       std::vector<std::uint8_t> msg;
-      if (!proto::ReadBytes(in.payload, offset, msg)) {
+      if (!proto::ReadBytes(payload_view, offset, msg)) {
         return false;
       }
       auto resp = api_->EnqueueOffline(token, s1, std::move(msg));
@@ -1228,8 +1271,8 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
         return false;
       }
       std::uint32_t last_version = 0;
-      if (!proto::ReadUint32(in.payload, offset, last_version) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadUint32(payload_view, offset, last_version) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->SyncFriends(token, last_version);
@@ -1240,14 +1283,16 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       s2.clear();
-      if (offset < in.payload.size()) {
-        if (!proto::ReadString(in.payload, offset, s2)) {
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadStringView(payload_view, offset, s2_view)) {
           return false;
         }
+        AssignString(s2, s2_view);
       }
       auto resp = api_->AddFriend(token, s1, s2);
       out.payload = EncodeFriendAddResp(resp);
@@ -1257,10 +1302,12 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp = api_->SetFriendRemark(token, s1, s2);
       out.payload = EncodeFriendRemarkResp(resp);
       return true;
@@ -1269,14 +1316,16 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       s2.clear();
-      if (offset < in.payload.size()) {
-        if (!proto::ReadString(in.payload, offset, s2)) {
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadStringView(payload_view, offset, s2_view)) {
           return false;
         }
+        AssignString(s2, s2_view);
       }
       auto resp = api_->SendFriendRequest(token, s1, s2);
       out.payload = EncodeFriendRequestSendResp(resp);
@@ -1286,7 +1335,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->ListFriendRequests(token);
@@ -1297,12 +1346,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::uint32_t accept_u32 = 0;
-      if (!proto::ReadUint32(in.payload, offset, accept_u32) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadUint32(payload_view, offset, accept_u32) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->RespondFriendRequest(token, s1, accept_u32 != 0);
@@ -1313,10 +1363,11 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       auto resp = api_->DeleteFriend(token, s1);
       out.payload = EncodeFriendDeleteResp(resp);
       return true;
@@ -1325,12 +1376,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::uint32_t blocked_u32 = 0;
-      if (!proto::ReadUint32(in.payload, offset, blocked_u32) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadUint32(payload_view, offset, blocked_u32) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->SetUserBlocked(token, s1, blocked_u32 != 0);
@@ -1342,7 +1394,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
         return false;
       }
       std::vector<std::uint8_t> bundle;
-      if (!proto::ReadBytes(in.payload, offset, bundle)) {
+      if (!proto::ReadBytes(payload_view, offset, bundle)) {
         return false;
       }
       auto resp = api_->PublishPreKeyBundle(token, std::move(bundle));
@@ -1353,16 +1405,17 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::uint64_t kt_size = 0;
-      if (offset < in.payload.size()) {
-        if (!proto::ReadUint64(in.payload, offset, kt_size) ||
-            offset != in.payload.size()) {
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadUint64(payload_view, offset, kt_size) ||
+            offset != payload_bytes.size()) {
           return false;
         }
-      } else if (offset != in.payload.size()) {
+      } else if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->FetchPreKeyBundle(token, s1, kt_size);
@@ -1373,7 +1426,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->GetKeyTransparencyHead(token);
@@ -1386,9 +1439,9 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       }
       std::uint64_t old_size = 0;
       std::uint64_t new_size = 0;
-      if (!proto::ReadUint64(in.payload, offset, old_size) ||
-          !proto::ReadUint64(in.payload, offset, new_size) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadUint64(payload_view, offset, old_size) ||
+          !proto::ReadUint64(payload_view, offset, new_size) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->GetKeyTransparencyConsistency(token, old_size, new_size);
@@ -1399,11 +1452,12 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload)) {
+      if (!proto::ReadBytes(payload_view, offset, payload)) {
         return false;
       }
       auto resp = api_->SendPrivate(token, s1, std::move(payload));
@@ -1414,13 +1468,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->SendGroupSenderKey(token, s1, s2, std::move(payload));
@@ -1439,16 +1495,17 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       std::array<std::uint8_t, 16> call_id{};
-      if (!ReadFixed16(in.payload, offset, call_id)) {
+      if (!ReadFixed16(payload_view, offset, call_id)) {
         return false;
       }
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PushMedia(token, s1, call_id, std::move(payload));
@@ -1462,10 +1519,10 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       std::array<std::uint8_t, 16> call_id{};
       std::uint32_t max_packets = 0;
       std::uint32_t wait_ms = 0;
-      if (!ReadFixed16(in.payload, offset, call_id) ||
-          !proto::ReadUint32(in.payload, offset, max_packets) ||
-          !proto::ReadUint32(in.payload, offset, wait_ms) ||
-          offset != in.payload.size()) {
+      if (!ReadFixed16(payload_view, offset, call_id) ||
+          !proto::ReadUint32(payload_view, offset, max_packets) ||
+          !proto::ReadUint32(payload_view, offset, wait_ms) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PullMedia(token, call_id, max_packets, wait_ms);
@@ -1476,12 +1533,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {  // group_id
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // group_id
         return false;
       }
+      AssignString(s1, s1_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->SendGroupCipher(token, s1, std::move(payload));
@@ -1492,7 +1550,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PullGroupCipher(token);
@@ -1503,7 +1561,7 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PullGroupNotices(token);
@@ -1514,12 +1572,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {  // device_id
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // device_id
         return false;
       }
+      AssignString(s1, s1_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PushDeviceSync(token, s1, std::move(payload));
@@ -1530,10 +1589,11 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||  // device_id
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||  // device_id
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       auto resp = api_->PullDeviceSync(token, s1);
       out.payload = EncodeDeviceSyncPullResp(resp);
       return true;
@@ -1542,10 +1602,11 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
       auto resp = api_->ListDevices(token, s1);
       out.payload = EncodeDeviceListResp(resp);
       return true;
@@ -1554,11 +1615,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||
-          !proto::ReadString(in.payload, offset, s2) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp = api_->KickDevice(token, s1, s2);
       out.payload = EncodeDeviceKickResp(resp);
       return true;
@@ -1567,12 +1630,13 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {  // pairing_id_hex
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // pairing_id_hex
         return false;
       }
+      AssignString(s1, s1_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PushDevicePairingRequest(token, s1, std::move(payload));
@@ -1583,20 +1647,22 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (offset >= in.payload.size()) {
+      if (offset >= payload_bytes.size()) {
         return false;
       }
-      const std::uint8_t mode = in.payload[offset++];
-      if (!proto::ReadString(in.payload, offset, s1)) {  // pairing_id_hex
+      const std::uint8_t mode = payload_bytes[offset++];
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // pairing_id_hex
         return false;
       }
+      AssignString(s1, s1_view);
       s2.clear();
       if (mode == 1) {
-        if (!proto::ReadString(in.payload, offset, s2)) {  // device_id
+        if (!proto::ReadStringView(payload_view, offset, s2_view)) {  // device_id
           return false;
         }
+        AssignString(s2, s2_view);
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->PullDevicePairing(token, mode, s1, s2);
@@ -1607,13 +1673,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1) ||  // pairing_id_hex
-          !proto::ReadString(in.payload, offset, s2)) {  // target_device_id
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||  // pairing_id_hex
+          !proto::ReadStringView(payload_view, offset, s2_view)) {  // target_device_id
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       std::vector<std::uint8_t> payload;
-      if (!proto::ReadBytes(in.payload, offset, payload) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp =
@@ -1626,8 +1694,8 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
         return false;
       }
       std::uint64_t expected_size = 0;
-      if (!proto::ReadUint64(in.payload, offset, expected_size) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadUint64(payload_view, offset, expected_size) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->StartE2eeFileBlobUpload(token, expected_size);
@@ -1638,19 +1706,19 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      std::string file_id;
-      std::string upload_id;
       std::uint64_t off = 0;
       std::vector<std::uint8_t> chunk;
-      if (!proto::ReadString(in.payload, offset, file_id) ||
-          !proto::ReadString(in.payload, offset, upload_id) ||
-          !proto::ReadUint64(in.payload, offset, off) ||
-          !proto::ReadBytes(in.payload, offset, chunk) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          !proto::ReadUint64(payload_view, offset, off) ||
+          !proto::ReadBytes(payload_view, offset, chunk) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp =
-          api_->UploadE2eeFileBlobChunk(token, file_id, upload_id, off, chunk);
+          api_->UploadE2eeFileBlobChunk(token, s1, s2, off, chunk);
       out.payload = EncodeE2eeFileUploadChunkResp(resp);
       return true;
     }
@@ -1658,17 +1726,16 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      std::string file_id;
-      std::string upload_id;
       std::uint64_t total = 0;
-      if (!proto::ReadString(in.payload, offset, file_id) ||
-          !proto::ReadString(in.payload, offset, upload_id) ||
-          !proto::ReadUint64(in.payload, offset, total) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          !proto::ReadUint64(payload_view, offset, total) ||
+          offset != payload_bytes.size()) {
         return false;
       }
-      auto resp = api_->FinishE2eeFileBlobUpload(token, file_id, upload_id,
-                                                 total);
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
+      auto resp = api_->FinishE2eeFileBlobUpload(token, s1, s2, total);
       out.payload = EncodeE2eeFileUploadFinishResp(resp);
       return true;
     }
@@ -1676,16 +1743,16 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      std::string file_id;
-      if (!proto::ReadString(in.payload, offset, file_id) ||
-          offset >= in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          offset >= payload_bytes.size()) {
         return false;
       }
-      const bool wipe = in.payload[offset++] != 0;
-      if (offset != in.payload.size()) {
+      AssignString(s1, s1_view);
+      const bool wipe = payload_bytes[offset++] != 0;
+      if (offset != payload_bytes.size()) {
         return false;
       }
-      auto resp = api_->StartE2eeFileBlobDownload(token, file_id, wipe);
+      auto resp = api_->StartE2eeFileBlobDownload(token, s1, wipe);
       out.payload = EncodeE2eeFileDownloadStartResp(resp);
       return true;
     }
@@ -1693,20 +1760,19 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      std::string file_id;
-      std::string download_id;
       std::uint64_t off = 0;
       std::uint32_t max_len = 0;
-      if (!proto::ReadString(in.payload, offset, file_id) ||
-          !proto::ReadString(in.payload, offset, download_id) ||
-          !proto::ReadUint64(in.payload, offset, off) ||
-          !proto::ReadUint32(in.payload, offset, max_len) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          !proto::ReadUint64(payload_view, offset, off) ||
+          !proto::ReadUint32(payload_view, offset, max_len) ||
+          offset != payload_bytes.size()) {
         return false;
       }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
       auto resp =
-          api_->DownloadE2eeFileBlobChunk(token, file_id, download_id, off,
-                                          max_len);
+          api_->DownloadE2eeFileBlobChunk(token, s1, s2, off, max_len);
       out.payload = EncodeE2eeFileDownloadChunkResp(resp);
       return true;
     }
@@ -1715,8 +1781,8 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
         return false;
       }
       std::vector<std::uint8_t> blob;
-      if (!proto::ReadBytes(in.payload, offset, blob) ||
-          offset != in.payload.size()) {
+      if (!proto::ReadBytes(payload_view, offset, blob) ||
+          offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->StoreE2eeFileBlob(token, blob);
@@ -1727,14 +1793,15 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadString(in.payload, offset, s1)) {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
         return false;
       }
+      AssignString(s1, s1_view);
       bool wipe = true;
-      if (offset < in.payload.size()) {
-        wipe = in.payload[offset++] != 0;
+      if (offset < payload_bytes.size()) {
+        wipe = payload_bytes[offset++] != 0;
       }
-      if (offset != in.payload.size()) {
+      if (offset != payload_bytes.size()) {
         return false;
       }
       auto resp = api_->LoadE2eeFileBlob(token, s1, wipe);
@@ -1747,3 +1814,5 @@ bool FrameRouter::Handle(const Frame& in, Frame& out, const std::string& token,
 }
 
 }  // namespace mi::server
+
+
