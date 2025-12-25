@@ -22,11 +22,14 @@
 #include <utility>
 
 #ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #ifndef SECURITY_WIN32
 #define SECURITY_WIN32 1
@@ -78,6 +81,12 @@ constexpr std::size_t kMaxOpaqueMessageBytes = 16 * 1024;
 constexpr std::size_t kMaxOpaqueSessionKeyBytes = 1024;
 constexpr std::size_t kKtRootPubkeyBytes = mi::server::kKtSthSigPublicKeyBytes;
 constexpr std::size_t kMaxDeviceSyncKeyFileBytes = 64u * 1024u;
+constexpr std::uint8_t kKcpCookieCmd = 0xFF;
+constexpr std::uint8_t kKcpCookieHello = 1;
+constexpr std::uint8_t kKcpCookieChallenge = 2;
+constexpr std::uint8_t kKcpCookieResponse = 3;
+constexpr std::size_t kKcpCookieBytes = 16;
+constexpr std::size_t kKcpCookiePacketBytes = 24;
 
 std::string Trim(const std::string& input) {
   const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
@@ -5001,13 +5010,6 @@ struct ClientCore::RemoteStream {
       conv = NowMs() ^ 0xA5A5A5A5u;
     }
 
-    constexpr std::uint8_t kCookieCmd = 0xFF;
-    constexpr std::uint8_t kCookieHello = 1;
-    constexpr std::uint8_t kCookieChallenge = 2;
-    constexpr std::uint8_t kCookieResponse = 3;
-    constexpr std::size_t kCookieBytes = 16;
-    constexpr std::size_t kCookiePacketBytes = 24;
-
     auto write_le32 = [](std::uint32_t v, std::uint8_t out[4]) {
       out[0] = static_cast<std::uint8_t>(v & 0xFF);
       out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
@@ -5022,10 +5024,10 @@ struct ClientCore::RemoteStream {
     };
     auto build_cookie_packet =
         [&](std::uint8_t type,
-            const std::array<std::uint8_t, kCookieBytes>& cookie,
-            std::array<std::uint8_t, kCookiePacketBytes>& out) {
+            const std::array<std::uint8_t, kKcpCookieBytes>& cookie,
+            std::array<std::uint8_t, kKcpCookiePacketBytes>& out) {
           write_le32(conv, out.data());
-          out[4] = kCookieCmd;
+          out[4] = kKcpCookieCmd;
           out[5] = type;
           out[6] = 0;
           out[7] = 0;
@@ -5033,8 +5035,8 @@ struct ClientCore::RemoteStream {
         };
     auto send_cookie_packet =
         [&](std::uint8_t type,
-            const std::array<std::uint8_t, kCookieBytes>& cookie) -> bool {
-          std::array<std::uint8_t, kCookiePacketBytes> out{};
+            const std::array<std::uint8_t, kKcpCookieBytes>& cookie) -> bool {
+          std::array<std::uint8_t, kKcpCookiePacketBytes> out{};
           build_cookie_packet(type, cookie, out);
 #ifdef _WIN32
           return ::send(sock, reinterpret_cast<const char*>(out.data()),
@@ -5046,14 +5048,14 @@ struct ClientCore::RemoteStream {
 #endif
         };
 
-    if (!send_cookie_packet(kCookieHello, {})) {
+    if (!send_cookie_packet(kKcpCookieHello, {})) {
       error = "kcp cookie hello failed";
       Close();
       return false;
     }
 
     const auto start = std::chrono::steady_clock::now();
-    std::array<std::uint8_t, kCookieBytes> cookie{};
+    std::array<std::uint8_t, kKcpCookieBytes> cookie{};
     bool got_cookie = false;
     while (true) {
       std::uint8_t buf[64] = {};
@@ -5064,9 +5066,9 @@ struct ClientCore::RemoteStream {
       const ssize_t n = ::recv(sock, buf, sizeof(buf), 0);
 #endif
       if (n > 0) {
-        if (static_cast<std::size_t>(n) >= kCookiePacketBytes &&
-            buf[4] == kCookieCmd && read_le32(buf) == conv &&
-            buf[5] == kCookieChallenge) {
+        if (static_cast<std::size_t>(n) >= kKcpCookiePacketBytes &&
+            buf[4] == kKcpCookieCmd && read_le32(buf) == conv &&
+            buf[5] == kKcpCookieChallenge) {
           std::memcpy(cookie.data(), buf + 8, cookie.size());
           got_cookie = true;
           break;
@@ -5096,7 +5098,7 @@ struct ClientCore::RemoteStream {
     }
 
     if (!got_cookie ||
-        !send_cookie_packet(kCookieResponse, cookie)) {
+        !send_cookie_packet(kKcpCookieResponse, cookie)) {
       error = "kcp cookie response failed";
       Close();
       return false;
