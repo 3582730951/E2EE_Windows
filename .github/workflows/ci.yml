@@ -28,7 +28,8 @@ jobs:
         with:
           version: 6.10.1
           arch: win64_msvc2022_64
-          modules: qtsvg qtdeclarative qtquickcontrols2 qtmultimedia
+          modules: qtmultimedia
+          archives: qtbase qtdeclarative qtsvg qttools qttranslations
           cache: true
           use-official: true
 
