@@ -12,13 +12,13 @@
 #include "media_pipeline.h"
 #include "media_session.h"
 
-namespace mi::client::ui {
-
 class QAudioSink;
 class QAudioSource;
 class QCamera;
 class QIODevice;
 class QVideoFrame;
+
+namespace mi::client::ui {
 
 // 轻量桥接：Qt Quick 与 client_core 的同步调用
 class QuickClient : public QObject {
