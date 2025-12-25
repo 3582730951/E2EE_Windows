@@ -17,6 +17,13 @@ if(NOT TARGET monocypher)
   target_include_directories(monocypher PUBLIC ../third_party/monocypher)
 endif()
 
+if(NOT TARGET kcp)
+  add_library(kcp STATIC
+      ../third_party/kcp/ikcp.c
+  )
+  target_include_directories(kcp PUBLIC ../third_party/kcp)
+endif()
+
 set(MI_OPAQUE_PAKE_MANIFEST ${CMAKE_CURRENT_LIST_DIR}/../shard/opaque_pake/Cargo.toml)
 if(EXISTS ${MI_OPAQUE_PAKE_MANIFEST} AND NOT TARGET mi_opaque_pake_rust)
   set(MI_OPAQUE_PAKE_CARGO_TARGET_ARGS "")
@@ -261,14 +268,18 @@ add_library(mi_e2ee_core STATIC
     src/secure_channel.cpp
     src/server_app.cpp
     src/listener.cpp
+    src/kcp_server.cpp
     src/network_server.cpp
     src/c_api.cpp
 )
 
 target_include_directories(mi_e2ee_core PUBLIC include ../shard)
-target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean)
+target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(TARGET mi_opaque_pake_rust)
   target_link_libraries(mi_e2ee_core PUBLIC mi_opaque_pake_rust)
+endif()
+if(WIN32)
+  target_link_libraries(mi_e2ee_core PUBLIC crypt32 psapi)
 endif()
 
 if(MSVC)

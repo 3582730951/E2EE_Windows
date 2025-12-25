@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -21,6 +22,13 @@ std::string Trim(const std::string& input) {
     return {};
   }
   return std::string(begin, end);
+}
+
+std::string ToLower(std::string s) {
+  for (auto& ch : s) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return s;
 }
 
 std::string StripInlineComment(const std::string& input) {
@@ -74,10 +82,46 @@ bool ParseBool(const std::string& text, bool& out) {
   return false;
 }
 
+bool ParseKeyProtection(const std::string& text, KeyProtectionMode& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "none" || t == "off" || t == "0") {
+    out = KeyProtectionMode::kNone;
+    return true;
+  }
+  if (t == "dpapi" || t == "dpapi_user" || t == "user") {
+    out = KeyProtectionMode::kDpapiUser;
+    return true;
+  }
+  if (t == "dpapi_machine" || t == "machine") {
+    out = KeyProtectionMode::kDpapiMachine;
+    return true;
+  }
+  return false;
+}
+
 struct IniState {
   std::string section;
   ServerConfig* cfg{nullptr};
 };
+
+bool CheckPathPermissions(const std::string& path, std::string& error) {
+#ifndef _WIN32
+  std::error_code ec;
+  const auto perms = std::filesystem::status(path, ec).permissions();
+  if (ec || perms == std::filesystem::perms::unknown) {
+    return true;  // best-effort on platforms that don't expose perms
+  }
+  const auto writable =
+      std::filesystem::perms::group_write | std::filesystem::perms::others_write;
+  if ((perms & writable) != std::filesystem::perms::none) {
+    error = "config file permissions too permissive";
+    return false;
+  }
+#endif
+  (void)path;
+  (void)error;
+  return true;
+}
 
 void ApplyKV(IniState& state, const std::string& key,
              const std::string& value) {
@@ -114,24 +158,62 @@ void ApplyKV(IniState& state, const std::string& key,
       ParseUint32(value, state.cfg->server.max_connections_per_ip);
     } else if (key == "max_connection_bytes") {
       ParseUint32(value, state.cfg->server.max_connection_bytes);
+    } else if (key == "max_worker_threads") {
+      ParseUint32(value, state.cfg->server.max_worker_threads);
+    } else if (key == "max_pending_tasks") {
+      ParseUint32(value, state.cfg->server.max_pending_tasks);
     } else if (key == "tls_enable") {
       ParseBool(value, state.cfg->server.tls_enable);
     } else if (key == "require_tls") {
-      ParseBool(value, state.cfg->server.require_tls);
+      if (ParseBool(value, state.cfg->server.require_tls)) {
+        state.cfg->server.require_tls_set = true;
+      }
     } else if (key == "tls_cert") {
       state.cfg->server.tls_cert = value;
     } else if (key == "kt_signing_key") {
       state.cfg->server.kt_signing_key = value;
+    } else if (key == "key_protection") {
+      ParseKeyProtection(value, state.cfg->server.key_protection);
+    } else if (key == "allow_legacy_login") {
+      ParseBool(value, state.cfg->server.allow_legacy_login);
     } else if (key == "secure_delete_enabled") {
       ParseBool(value, state.cfg->server.secure_delete_enabled);
     } else if (key == "secure_delete_plugin") {
       state.cfg->server.secure_delete_plugin = value;
+    } else if (key == "secure_delete_plugin_sha256") {
+      state.cfg->server.secure_delete_plugin_sha256 = value;
     } else if (key == "ops_enable") {
       ParseBool(value, state.cfg->server.ops_enable);
     } else if (key == "ops_allow_remote") {
       ParseBool(value, state.cfg->server.ops_allow_remote);
     } else if (key == "ops_token") {
       state.cfg->server.ops_token.set(value);
+    }
+    return;
+  }
+  if (state.section == "kcp") {
+    if (key == "enable") {
+      ParseBool(value, state.cfg->server.kcp_enable);
+    } else if (key == "listen_port") {
+      ParseUint16(value, state.cfg->server.kcp_port);
+    } else if (key == "mtu") {
+      ParseUint32(value, state.cfg->server.kcp_mtu);
+    } else if (key == "snd_wnd") {
+      ParseUint32(value, state.cfg->server.kcp_snd_wnd);
+    } else if (key == "rcv_wnd") {
+      ParseUint32(value, state.cfg->server.kcp_rcv_wnd);
+    } else if (key == "nodelay") {
+      ParseUint32(value, state.cfg->server.kcp_nodelay);
+    } else if (key == "interval") {
+      ParseUint32(value, state.cfg->server.kcp_interval);
+    } else if (key == "resend") {
+      ParseUint32(value, state.cfg->server.kcp_resend);
+    } else if (key == "nc") {
+      ParseUint32(value, state.cfg->server.kcp_nc);
+    } else if (key == "min_rto") {
+      ParseUint32(value, state.cfg->server.kcp_min_rto);
+    } else if (key == "session_idle_sec") {
+      ParseUint32(value, state.cfg->server.kcp_session_idle_sec);
     }
     return;
   }
@@ -178,11 +260,17 @@ bool ParseIni(const std::string& path, ServerConfig& out, std::string& error) {
 bool LoadConfig(const std::string& path, ServerConfig& out_config,
                 std::string& error) {
   out_config = ServerConfig{};
+  if (!CheckPathPermissions(path, error)) {
+    return false;
+  }
   if (!ParseIni(path, out_config, error)) {
     return false;
   }
   if (out_config.server.group_rotation_threshold == 0) {
     out_config.server.group_rotation_threshold = 10000;
+  }
+  if (out_config.server.tls_enable && !out_config.server.require_tls_set) {
+    out_config.server.require_tls = true;
   }
   if (out_config.mode == AuthMode::kMySQL) {
     const bool ok = !out_config.mysql.host.empty() && out_config.mysql.port != 0 &&
@@ -227,10 +315,19 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   if (out_config.server.max_connections_per_ip == 0) {
     out_config.server.max_connections_per_ip = 64;
   }
+  if (out_config.server.max_pending_tasks == 0) {
+    out_config.server.max_pending_tasks = 1024;
+  }
   if (out_config.server.max_connection_bytes < 4096) {
     error = "max_connection_bytes too small";
     return false;
   }
+#ifndef _WIN32
+  if (out_config.server.key_protection != KeyProtectionMode::kNone) {
+    error = "key_protection not supported on this platform";
+    return false;
+  }
+#endif
   if (out_config.server.require_tls && !out_config.server.tls_enable) {
     error = "require_tls=1 but tls_enable=0";
     return false;
@@ -251,6 +348,29 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {
     error = "ops_token missing or too short (>=16 chars)";
     return false;
+  }
+  if (out_config.server.kcp_enable) {
+    if (out_config.server.kcp_port == 0) {
+      out_config.server.kcp_port = out_config.server.listen_port;
+    }
+    if (out_config.server.kcp_mtu == 0) {
+      out_config.server.kcp_mtu = 1400;
+    }
+    if (out_config.server.kcp_snd_wnd == 0) {
+      out_config.server.kcp_snd_wnd = 256;
+    }
+    if (out_config.server.kcp_rcv_wnd == 0) {
+      out_config.server.kcp_rcv_wnd = 256;
+    }
+    if (out_config.server.kcp_interval == 0) {
+      out_config.server.kcp_interval = 10;
+    }
+    if (out_config.server.kcp_min_rto == 0) {
+      out_config.server.kcp_min_rto = 30;
+    }
+    if (out_config.server.kcp_session_idle_sec == 0) {
+      out_config.server.kcp_session_idle_sec = 60;
+    }
   }
   return true;
 }

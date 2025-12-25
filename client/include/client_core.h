@@ -537,6 +537,8 @@ class ClientCore {
   std::uint16_t server_port_{0};
   bool use_tls_{false};
   bool require_tls_{true};
+  bool use_kcp_{false};
+  KcpConfig kcp_cfg_{};
   mi::server::TransportKind transport_kind_{mi::server::TransportKind::kLocal};
   AuthMode auth_mode_{AuthMode::kLegacy};
   ProxyConfig proxy_;

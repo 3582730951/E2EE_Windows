@@ -37,6 +37,13 @@ if(NOT TARGET miniz)
   target_include_directories(miniz PUBLIC ../third_party/miniz)
 endif()
 
+if(NOT TARGET kcp)
+  add_library(kcp STATIC
+      ../third_party/kcp/ikcp.c
+  )
+  target_include_directories(kcp PUBLIC ../third_party/kcp)
+endif()
+
 if(NOT TARGET pqclean_mlkem768_clean)
   add_library(pqclean_mlkem768_clean STATIC
       ../third_party/pqclean_mlkem768_clean/cbd.c
@@ -91,7 +98,7 @@ target_include_directories(mi_e2ee_client_core PUBLIC
 )
 target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_core)
 target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_build_flags)
-target_link_libraries(mi_e2ee_client_core PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean)
+target_link_libraries(mi_e2ee_client_core PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(WIN32)
   target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt)
 endif()

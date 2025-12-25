@@ -16,6 +16,8 @@ std::string_view TransportLabel(TransportKind transport) {
       return "tls";
     case TransportKind::kLocal:
       return "local";
+    case TransportKind::kKcp:
+      return "kcp";
     case TransportKind::kTcp:
     default:
       return "tcp";

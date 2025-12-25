@@ -7,6 +7,14 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <wincrypt.h>
+#endif
+
 #include "protocol.h"
 
 extern "C" {
@@ -35,6 +43,37 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
 #endif
 
 namespace {
+
+#ifdef _WIN32
+constexpr std::uint8_t kDpapiMagic[8] = {'M', 'I', 'D', 'P',
+                                         'A', 'P', 'I', '1'};
+constexpr std::size_t kDpapiHeaderBytes = 12;
+
+bool IsDpapiBlob(const std::vector<std::uint8_t>& data) {
+  return data.size() >= kDpapiHeaderBytes &&
+         std::equal(std::begin(kDpapiMagic), std::end(kDpapiMagic),
+                    data.begin());
+}
+
+bool UnprotectDpapi(const std::vector<std::uint8_t>& blob,
+                    std::vector<std::uint8_t>& out,
+                    std::string& error) {
+  error.clear();
+  DATA_BLOB in{};
+  in.pbData = const_cast<BYTE*>(
+      reinterpret_cast<const BYTE*>(blob.data()));
+  in.cbData = static_cast<DWORD>(blob.size());
+  DATA_BLOB out_blob{};
+  if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                          CRYPTPROTECT_UI_FORBIDDEN, &out_blob)) {
+    error = "dpapi unprotect failed";
+    return false;
+  }
+  out.assign(out_blob.pbData, out_blob.pbData + out_blob.cbData);
+  LocalFree(out_blob.pbData);
+  return true;
+}
+#endif
 
 constexpr std::uint8_t kGroupNoticeJoin = 1;
 constexpr std::uint8_t kGroupNoticeLeave = 2;
@@ -81,26 +120,43 @@ bool ReadFileBytes(const std::filesystem::path& path,
     error = ec ? "kt signing key path error" : "kt signing key not found";
     return false;
   }
-  const auto size = std::filesystem::file_size(path, ec);
-  if (ec) {
-    error = "kt signing key size stat failed";
-    return false;
-  }
-  if (size != kKtSthSigSecretKeyBytes) {
-    error = "kt signing key size invalid";
-    return false;
-  }
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
     error = "kt signing key not found";
     return false;
   }
-  out.resize(static_cast<std::size_t>(size));
-  ifs.read(reinterpret_cast<char*>(out.data()),
-           static_cast<std::streamsize>(out.size()));
-  if (!ifs) {
-    out.clear();
+  std::vector<std::uint8_t> file_bytes(
+      (std::istreambuf_iterator<char>(ifs)),
+      std::istreambuf_iterator<char>());
+  if (!ifs && !ifs.eof()) {
     error = "kt signing key read failed";
+    return false;
+  }
+#ifdef _WIN32
+  if (IsDpapiBlob(file_bytes)) {
+    const std::uint32_t len =
+        static_cast<std::uint32_t>(file_bytes[8]) |
+        (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
+        (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
+        (static_cast<std::uint32_t>(file_bytes[11]) << 24);
+    if (len == 0 || file_bytes.size() != kDpapiHeaderBytes + len) {
+      error = "kt signing key size invalid";
+      return false;
+    }
+    const std::vector<std::uint8_t> blob(
+        file_bytes.begin() + kDpapiHeaderBytes, file_bytes.end());
+    if (!UnprotectDpapi(blob, out, error)) {
+      return false;
+    }
+  } else {
+    out = std::move(file_bytes);
+  }
+#else
+  out = std::move(file_bytes);
+#endif
+  if (out.size() != kKtSthSigSecretKeyBytes) {
+    error = "kt signing key size invalid";
+    out.clear();
     return false;
   }
   return true;

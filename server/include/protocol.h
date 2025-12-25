@@ -2,6 +2,7 @@
 #define MI_E2EE_SERVER_PROTOCOL_H
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -19,10 +20,22 @@ bool WriteUint64(std::uint64_t v, std::vector<std::uint8_t>& out);
 bool ReadUint64(const std::vector<std::uint8_t>& data, std::size_t& offset,
                 std::uint64_t& out);
 
+inline bool WriteBytes(const std::uint8_t* data, std::size_t len,
+                       std::vector<std::uint8_t>& out) {
+  if (!data && len != 0) {
+    return false;
+  }
+  if (len > (std::numeric_limits<std::uint32_t>::max)()) {
+    return false;
+  }
+  out.reserve(out.size() + 4 + len);
+  return WriteUint32(static_cast<std::uint32_t>(len), out) &&
+         (out.insert(out.end(), data, data + len), true);
+}
+
 inline bool WriteBytes(const std::vector<std::uint8_t>& buf,
                        std::vector<std::uint8_t>& out) {
-  return WriteUint32(static_cast<std::uint32_t>(buf.size()), out) &&
-         (out.insert(out.end(), buf.begin(), buf.end()), true);
+  return WriteBytes(buf.data(), buf.size(), out);
 }
 
 inline bool ReadBytes(const std::vector<std::uint8_t>& data,

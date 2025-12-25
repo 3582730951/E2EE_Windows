@@ -1,6 +1,7 @@
 #include "server_app.h"
 
 #include "api_service.h"
+#include "crypto.h"
 #include "key_transparency.h"
 #include "opaque_pake.h"
 
@@ -11,6 +12,16 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <wincrypt.h>
+#endif
 
 namespace mi::server {
 
@@ -29,14 +40,236 @@ struct RustBuf {
 constexpr std::uint8_t kOpaqueSetupMagic[8] = {'M', 'I', 'O', 'P',
                                                'A', 'Q', 'S', '1'};
 constexpr std::size_t kMaxOpaqueSetupBytes = 64u * 1024u;
+constexpr std::uint8_t kDpapiMagic[8] = {'M', 'I', 'D', 'P',
+                                         'A', 'P', 'I', '1'};
+constexpr std::size_t kDpapiHeaderBytes = 12;
 
 extern "C" {
 int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
                                              std::uint8_t* sk);
 }
 
+bool CheckPathNotWorldWritable(const std::filesystem::path& path,
+                               std::string& error) {
+#ifdef _WIN32
+  (void)path;
+  (void)error;
+  return true;
+#else
+  std::error_code ec;
+  const auto perms = std::filesystem::status(path, ec).permissions();
+  if (ec || perms == std::filesystem::perms::unknown) {
+    return true;  // best-effort on filesystems without perms
+  }
+  const auto writable =
+      std::filesystem::perms::group_write | std::filesystem::perms::others_write;
+  if ((perms & writable) != std::filesystem::perms::none) {
+    error = "insecure file permissions: " + path.string();
+    return false;
+  }
+  return true;
+#endif
+}
+
+bool SetOwnerOnlyPermissions(const std::filesystem::path& path,
+                             std::string& error) {
+#ifdef _WIN32
+  (void)path;
+  (void)error;
+  return true;
+#else
+  std::error_code ec;
+  std::filesystem::permissions(
+      path, std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "secure permissions set failed";
+    return false;
+  }
+  return true;
+#endif
+}
+
+bool IsDpapiBlob(const std::vector<std::uint8_t>& data) {
+  return data.size() >= kDpapiHeaderBytes &&
+         std::equal(std::begin(kDpapiMagic), std::end(kDpapiMagic),
+                    data.begin());
+}
+
+#ifdef _WIN32
+bool ProtectDpapi(const std::vector<std::uint8_t>& plain,
+                  bool machine_scope,
+                  std::vector<std::uint8_t>& out,
+                  std::string& error) {
+  error.clear();
+  DATA_BLOB in{};
+  in.pbData = const_cast<BYTE*>(
+      reinterpret_cast<const BYTE*>(plain.data()));
+  in.cbData = static_cast<DWORD>(plain.size());
+  DATA_BLOB out_blob{};
+  DWORD flags = CRYPTPROTECT_UI_FORBIDDEN;
+  if (machine_scope) {
+    flags |= CRYPTPROTECT_LOCAL_MACHINE;
+  }
+  if (!CryptProtectData(&in, L"mi_e2ee", nullptr, nullptr, nullptr, flags,
+                        &out_blob)) {
+    error = "dpapi protect failed";
+    return false;
+  }
+  out.assign(out_blob.pbData, out_blob.pbData + out_blob.cbData);
+  LocalFree(out_blob.pbData);
+  return true;
+}
+
+bool UnprotectDpapi(const std::vector<std::uint8_t>& blob,
+                    std::vector<std::uint8_t>& out,
+                    std::string& error) {
+  error.clear();
+  DATA_BLOB in{};
+  in.pbData = const_cast<BYTE*>(
+      reinterpret_cast<const BYTE*>(blob.data()));
+  in.cbData = static_cast<DWORD>(blob.size());
+  DATA_BLOB out_blob{};
+  if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                          CRYPTPROTECT_UI_FORBIDDEN, &out_blob)) {
+    error = "dpapi unprotect failed";
+    return false;
+  }
+  out.assign(out_blob.pbData, out_blob.pbData + out_blob.cbData);
+  LocalFree(out_blob.pbData);
+  return true;
+}
+#endif
+
+bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
+                              KeyProtectionMode mode,
+                              std::vector<std::uint8_t>& out,
+                              std::string& error) {
+  error.clear();
+  if (mode == KeyProtectionMode::kNone) {
+    out = plain;
+    return true;
+  }
+#ifdef _WIN32
+  std::vector<std::uint8_t> blob;
+  const bool machine = (mode == KeyProtectionMode::kDpapiMachine);
+  if (!ProtectDpapi(plain, machine, blob, error)) {
+    return false;
+  }
+  if (blob.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "dpapi blob too large";
+    return false;
+  }
+  const std::uint32_t len = static_cast<std::uint32_t>(blob.size());
+  out.clear();
+  out.reserve(kDpapiHeaderBytes + blob.size());
+  out.insert(out.end(), std::begin(kDpapiMagic), std::end(kDpapiMagic));
+  out.push_back(static_cast<std::uint8_t>(len & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((len >> 24) & 0xFF));
+  out.insert(out.end(), blob.begin(), blob.end());
+  return true;
+#else
+  error = "key protection not supported";
+  return false;
+#endif
+}
+
+bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
+                              std::vector<std::uint8_t>& out_plain,
+                              bool& was_protected,
+                              std::string& error) {
+  error.clear();
+  was_protected = false;
+  if (!IsDpapiBlob(file_bytes)) {
+    out_plain = file_bytes;
+    return true;
+  }
+  was_protected = true;
+  if (file_bytes.size() < kDpapiHeaderBytes) {
+    error = "dpapi blob invalid";
+    return false;
+  }
+  const std::uint32_t len =
+      static_cast<std::uint32_t>(file_bytes[8]) |
+      (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
+      (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
+      (static_cast<std::uint32_t>(file_bytes[11]) << 24);
+  if (len == 0 || file_bytes.size() != kDpapiHeaderBytes + len) {
+    error = "dpapi blob size invalid";
+    return false;
+  }
+#ifdef _WIN32
+  const std::vector<std::uint8_t> blob(file_bytes.begin() + kDpapiHeaderBytes,
+                                       file_bytes.end());
+  return UnprotectDpapi(blob, out_plain, error);
+#else
+  error = "key protection not supported";
+  return false;
+#endif
+}
+
+int HexNibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+bool ParseSha256Hex(const std::string& hex,
+                    std::array<std::uint8_t, 32>& out) {
+  if (hex.size() != 64) {
+    return false;
+  }
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    const int hi = HexNibble(hex[i * 2]);
+    const int lo = HexNibble(hex[i * 2 + 1]);
+    if (hi < 0 || lo < 0) {
+      return false;
+    }
+    out[i] = static_cast<std::uint8_t>((hi << 4) | lo);
+  }
+  return true;
+}
+
+bool VerifyFileSha256(const std::filesystem::path& path,
+                      const std::string& expected_hex,
+                      std::string& error) {
+  error.clear();
+  if (expected_hex.empty()) {
+    return true;
+  }
+  std::array<std::uint8_t, 32> expected{};
+  if (!ParseSha256Hex(expected_hex, expected)) {
+    error = "secure_delete_plugin_sha256 invalid";
+    return false;
+  }
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    error = "secure_delete_plugin read failed";
+    return false;
+  }
+  std::vector<std::uint8_t> bytes(
+      (std::istreambuf_iterator<char>(ifs)),
+      std::istreambuf_iterator<char>());
+  if (!ifs && !ifs.eof()) {
+    error = "secure_delete_plugin read failed";
+    return false;
+  }
+  crypto::Sha256Digest digest;
+  crypto::Sha256(bytes.data(), bytes.size(), digest);
+  if (digest.bytes != expected) {
+    error = "secure_delete_plugin_sha256 mismatch";
+    return false;
+  }
+  return true;
+}
+
 bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
                                    std::vector<std::uint8_t>& out_setup,
+                                   KeyProtectionMode key_protection,
                                    std::string& error) {
   out_setup.clear();
   const auto path = dir / "opaque_server_setup.bin";
@@ -47,13 +280,7 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     return false;
   }
   if (exists) {
-    const auto file_size = std::filesystem::file_size(path, ec);
-    if (ec) {
-      error = "opaque setup size stat failed";
-      return false;
-    }
-    if (file_size < 12 || file_size > 12 + kMaxOpaqueSetupBytes) {
-      error = "opaque setup size invalid";
+    if (!CheckPathNotWorldWritable(path, error)) {
       return false;
     }
     std::ifstream ifs(path, std::ios::binary);
@@ -64,25 +291,39 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     std::vector<std::uint8_t> file_bytes(
         (std::istreambuf_iterator<char>(ifs)),
         std::istreambuf_iterator<char>());
-    if (file_bytes.size() < 12) {
-      error = "opaque setup corrupted";
+    std::vector<std::uint8_t> decoded;
+    bool was_protected = false;
+    if (!DecodeProtectedFileBytes(file_bytes, decoded, was_protected, error)) {
       return false;
     }
-    if (!std::equal(std::begin(kOpaqueSetupMagic), std::end(kOpaqueSetupMagic),
-                    file_bytes.begin())) {
-      error = "opaque setup bad magic";
+    if (was_protected) {
+      out_setup = std::move(decoded);
+    } else {
+      if (file_bytes.size() < 12) {
+        error = "opaque setup corrupted";
+        return false;
+      }
+      if (!std::equal(std::begin(kOpaqueSetupMagic), std::end(kOpaqueSetupMagic),
+                      file_bytes.begin())) {
+        error = "opaque setup bad magic";
+        return false;
+      }
+      const std::uint32_t len =
+          static_cast<std::uint32_t>(file_bytes[8]) |
+          (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
+          (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
+          (static_cast<std::uint32_t>(file_bytes[11]) << 24);
+      if (len == 0 || len > kMaxOpaqueSetupBytes ||
+          file_bytes.size() != 12 + static_cast<std::size_t>(len)) {
+        error = "opaque setup bad length";
+        return false;
+      }
+      out_setup.assign(file_bytes.begin() + 12, file_bytes.end());
+    }
+    if (out_setup.empty() || out_setup.size() > kMaxOpaqueSetupBytes) {
+      error = "opaque setup size invalid";
       return false;
     }
-    const std::uint32_t len = static_cast<std::uint32_t>(file_bytes[8]) |
-                              (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
-                              (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
-                              (static_cast<std::uint32_t>(file_bytes[11]) << 24);
-    if (len == 0 || len > kMaxOpaqueSetupBytes ||
-        file_bytes.size() != 12 + static_cast<std::size_t>(len)) {
-      error = "opaque setup bad length";
-      return false;
-    }
-    out_setup.assign(file_bytes.begin() + 12, file_bytes.end());
     RustBuf err_buf;
     const int rc = mi_opaque_server_setup_validate(
         out_setup.data(), out_setup.size(), &err_buf.ptr, &err_buf.len);
@@ -94,6 +335,19 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
       }
       out_setup.clear();
       return false;
+    }
+    if (!was_protected && key_protection != KeyProtectionMode::kNone) {
+      std::vector<std::uint8_t> protected_bytes;
+      if (!EncodeProtectedFileBytes(out_setup, key_protection, protected_bytes,
+                                    error)) {
+        out_setup.clear();
+        return false;
+      }
+      if (!WriteFileAtomic(path, protected_bytes.data(), protected_bytes.size(),
+                           true, true, error)) {
+        out_setup.clear();
+        return false;
+      }
     }
     error.clear();
     return true;
@@ -116,6 +370,22 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     error = "opaque setup too large";
     out_setup.clear();
     return false;
+  }
+
+  if (key_protection != KeyProtectionMode::kNone) {
+    std::vector<std::uint8_t> protected_bytes;
+    if (!EncodeProtectedFileBytes(out_setup, key_protection, protected_bytes,
+                                  error)) {
+      out_setup.clear();
+      return false;
+    }
+    if (!WriteFileAtomic(path, protected_bytes.data(), protected_bytes.size(),
+                         false, true, error)) {
+      out_setup.clear();
+      return false;
+    }
+    error.clear();
+    return true;
   }
 
   // Write atomically.
@@ -153,6 +423,10 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     std::filesystem::remove(tmp, ec);
     return false;
   }
+  if (!SetOwnerOnlyPermissions(path, error)) {
+    out_setup.clear();
+    return false;
+  }
   error.clear();
   return true;
 }
@@ -161,6 +435,7 @@ bool WriteFileAtomic(const std::filesystem::path& path,
                      const std::uint8_t* data,
                      std::size_t len,
                      bool overwrite,
+                     bool owner_only,
                      std::string& error) {
   error.clear();
   if (path.empty() || !data || len == 0) {
@@ -213,11 +488,35 @@ bool WriteFileAtomic(const std::filesystem::path& path,
     error = "kt key rename failed";
     return false;
   }
+  if (owner_only && !SetOwnerOnlyPermissions(path, error)) {
+    return false;
+  }
+  return true;
+}
+
+bool ReadFileToBytes(const std::filesystem::path& path,
+                     std::vector<std::uint8_t>& out,
+                     std::string& error) {
+  error.clear();
+  out.clear();
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    error = "file read failed";
+    return false;
+  }
+  out.assign((std::istreambuf_iterator<char>(ifs)),
+             std::istreambuf_iterator<char>());
+  if (!ifs && !ifs.eof()) {
+    error = "file read failed";
+    out.clear();
+    return false;
+  }
   return true;
 }
 
 bool GenerateKtKeyPair(const std::filesystem::path& signing_key,
                        const std::filesystem::path& root_pub,
+                       KeyProtectionMode key_protection,
                        std::string& error) {
   if (signing_key.empty() || root_pub.empty()) {
     error = "kt key path empty";
@@ -233,11 +532,23 @@ bool GenerateKtKeyPair(const std::filesystem::path& signing_key,
     error = "kt signing key generate failed";
     return false;
   }
-  if (!WriteFileAtomic(signing_key, sk.data(), sk.size(), false, error)) {
+  std::vector<std::uint8_t> signing_bytes;
+  if (key_protection != KeyProtectionMode::kNone) {
+    std::vector<std::uint8_t> plain(sk.begin(), sk.end());
+    if (!EncodeProtectedFileBytes(plain, key_protection, signing_bytes,
+                                  error)) {
+      std::fill(sk.begin(), sk.end(), 0);
+      return false;
+    }
+  } else {
+    signing_bytes.assign(sk.begin(), sk.end());
+  }
+  if (!WriteFileAtomic(signing_key, signing_bytes.data(),
+                       signing_bytes.size(), false, true, error)) {
     std::fill(sk.begin(), sk.end(), 0);
     return false;
   }
-  if (!WriteFileAtomic(root_pub, pk.data(), pk.size(), true, error)) {
+  if (!WriteFileAtomic(root_pub, pk.data(), pk.size(), true, true, error)) {
     std::error_code ec;
     std::filesystem::remove(signing_key, ec);
     std::fill(sk.begin(), sk.end(), 0);
@@ -249,6 +560,7 @@ bool GenerateKtKeyPair(const std::filesystem::path& signing_key,
 
 bool EnsureKtSigningKey(const std::filesystem::path& signing_key,
                         const std::filesystem::path& root_pub,
+                        KeyProtectionMode key_protection,
                         bool& generated,
                         std::string& error) {
   generated = false;
@@ -259,15 +571,38 @@ bool EnsureKtSigningKey(const std::filesystem::path& signing_key,
     return false;
   }
   if (!exists) {
-    if (!GenerateKtKeyPair(signing_key, root_pub, error)) {
+    if (!GenerateKtKeyPair(signing_key, root_pub, key_protection, error)) {
       return false;
     }
     generated = true;
   }
-  const auto size = std::filesystem::file_size(signing_key, ec);
-  if (ec || size != kKtSthSigSecretKeyBytes) {
+  if (!CheckPathNotWorldWritable(signing_key, error)) {
+    return false;
+  }
+  std::vector<std::uint8_t> file_bytes;
+  if (!ReadFileToBytes(signing_key, file_bytes, error)) {
+    error = error.empty() ? "kt_signing_key read failed" : error;
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  bool was_protected = false;
+  if (!DecodeProtectedFileBytes(file_bytes, plain, was_protected, error)) {
+    return false;
+  }
+  if (plain.size() != kKtSthSigSecretKeyBytes) {
     error = "kt_signing_key size invalid";
     return false;
+  }
+  if (!was_protected && key_protection != KeyProtectionMode::kNone) {
+    std::vector<std::uint8_t> protected_bytes;
+    if (!EncodeProtectedFileBytes(plain, key_protection, protected_bytes,
+                                  error)) {
+      return false;
+    }
+    if (!WriteFileAtomic(signing_key, protected_bytes.data(),
+                         protected_bytes.size(), true, true, error)) {
+      return false;
+    }
   }
   return true;
 }
@@ -333,7 +668,9 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                        : storage_dir;
   const auto kt_root_pub = kt_root_pub_dir / "kt_root_pub.bin";
   bool kt_generated = false;
-  if (!EnsureKtSigningKey(kt_signing_key, kt_root_pub, kt_generated, error)) {
+  if (!EnsureKtSigningKey(kt_signing_key, kt_root_pub,
+                          config_.server.key_protection,
+                          kt_generated, error)) {
     return false;
   }
   if (kt_generated) {
@@ -354,10 +691,16 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
       error = "secure_delete_plugin not found";
       return false;
     }
+    if (!VerifyFileSha256(secure_delete.plugin_path,
+                          config_.server.secure_delete_plugin_sha256,
+                          error)) {
+      return false;
+    }
   }
 
   std::vector<std::uint8_t> opaque_setup;
-  if (!LoadOrCreateOpaqueServerSetup(storage_dir, opaque_setup, error)) {
+  if (!LoadOrCreateOpaqueServerSetup(storage_dir, opaque_setup,
+                                     config_.server.key_protection, error)) {
     return false;
   }
 
@@ -423,6 +766,10 @@ bool ServerApp::HandleFrame(const Frame& in, Frame& out,
                             TransportKind transport, std::string& error) {
   if (!router_) {
     error = "router not initialized";
+    return false;
+  }
+  if (in.type == FrameType::kLogin && !config_.server.allow_legacy_login) {
+    error = "legacy login disabled";
     return false;
   }
   if (!router_->Handle(in, out, "", transport)) {

@@ -100,6 +100,9 @@ int mi_server_login(mi_server_handle* handle,
     return 0;
   }
   try {
+    if (!handle->app.config().server.allow_legacy_login) {
+      return 0;
+    }
     mi::server::Session session;
     std::string error;
     auto* sessions = handle->app.sessions();

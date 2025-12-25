@@ -2,8 +2,11 @@
 #define MI_E2EE_SERVER_NETWORK_SERVER_H
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <cstddef>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,6 +22,8 @@ struct NetworkServerLimits {
   std::uint32_t max_connections{256};
   std::uint32_t max_connections_per_ip{64};
   std::uint32_t max_connection_bytes{256u * 1024u * 1024u};
+  std::uint32_t max_worker_threads{0};
+  std::uint32_t max_pending_tasks{1024};
 };
 
 //  TCP/KCP 
@@ -36,6 +41,10 @@ class NetworkServer {
   void Run();
   bool StartSocket(std::string& error);
   void StopSocket();
+  void StartWorkers();
+  void StopWorkers();
+  void WorkerLoop();
+  bool EnqueueTask(std::function<void()> task);
   bool TryAcquireConnectionSlot(const std::string& remote_ip);
   void ReleaseConnectionSlot(const std::string& remote_ip);
 
@@ -49,6 +58,11 @@ class NetworkServer {
   std::atomic<std::uint32_t> active_connections_{0};
   std::mutex conn_mutex_;
   std::unordered_map<std::string, std::uint32_t> connections_by_ip_;
+  std::atomic<bool> pool_running_{false};
+  std::vector<std::thread> worker_threads_;
+  std::mutex work_mutex_;
+  std::condition_variable work_cv_;
+  std::deque<std::function<void()>> work_queue_;
 
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
   std::intptr_t listen_fd_{-1};

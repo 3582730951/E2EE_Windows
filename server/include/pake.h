@@ -29,7 +29,12 @@ struct DerivedKeys {
   std::array<std::uint8_t, 32> ratchet_root{};
 };
 
-enum class TransportKind : std::uint8_t { kTcp = 0, kTls = 1, kLocal = 2 };
+enum class TransportKind : std::uint8_t {
+  kTcp = 0,
+  kTls = 1,
+  kLocal = 2,
+  kKcp = 3
+};
 
 std::string_view TransportLabel(TransportKind transport);
 

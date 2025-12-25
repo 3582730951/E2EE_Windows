@@ -4,13 +4,14 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
 #include <iterator>
 #include <limits>
-#include <random>
 #include <utility>
 
 #ifdef _WIN32
@@ -22,6 +23,12 @@
 #include <ncrypt.h>
 #include <wincrypt.h>
 #include <winreg.h>
+#else
+#include <fcntl.h>
+#if defined(__linux__)
+#include <sys/random.h>
+#endif
+#include <unistd.h>
 #endif
 
 #include "crypto.h"
@@ -77,6 +84,46 @@ std::string StripInlineComment(const std::string& input) {
   return input;
 }
 
+#ifndef _WIN32
+bool ReadUrandom(std::uint8_t* out, std::size_t len) {
+  int fd = open("/dev/urandom", O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  std::size_t offset = 0;
+  while (offset < len) {
+    const ssize_t n = read(fd, out + offset, len - offset);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    offset += static_cast<std::size_t>(n);
+  }
+  close(fd);
+  return offset == len;
+}
+
+bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
+#if defined(__linux__)
+  const ssize_t rc = getrandom(out, len, 0);
+  if (rc == static_cast<ssize_t>(len)) {
+    return true;
+  }
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
+  arc4random_buf(out, len);
+  return true;
+#endif
+  return ReadUrandom(out, len);
+}
+#endif
+
 bool RandomBytes(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
     return false;
@@ -85,11 +132,7 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
   return BCryptGenRandom(nullptr, out, static_cast<ULONG>(len),
                          BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
 #else
-  std::random_device rd;
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i] = static_cast<std::uint8_t>(rd());
-  }
-  return true;
+  return OsRandomBytes(out, len);
 #endif
 }
 
@@ -745,13 +788,23 @@ bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
       out.data(), out.size());
 }
 
+bool HkdfSha256Fixed(const std::uint8_t* ikm, std::size_t ikm_len,
+                     const std::uint8_t* salt, std::size_t salt_len,
+                     const char* info, std::uint8_t* out,
+                     std::size_t out_len) {
+  return mi::server::crypto::HkdfSha256(
+      ikm, ikm_len, salt, salt_len,
+      reinterpret_cast<const std::uint8_t*>(info), std::strlen(info),
+      out, out_len);
+}
+
 bool KdfRk(const std::array<std::uint8_t, 32>& rk,
            const std::array<std::uint8_t, 32>& dh,
            std::array<std::uint8_t, 32>& out_rk,
            std::array<std::uint8_t, 32>& out_ck) {
-  std::vector<std::uint8_t> buf;
-  if (!HkdfSha256(dh.data(), dh.size(), rk.data(), rk.size(),
-                  "mi_e2ee_dr_rk_v1", buf, 64)) {
+  std::array<std::uint8_t, 64> buf{};
+  if (!HkdfSha256Fixed(dh.data(), dh.size(), rk.data(), rk.size(),
+                       "mi_e2ee_dr_rk_v1", buf.data(), buf.size())) {
     return false;
   }
   std::memcpy(out_rk.data(), buf.data(), 32);
@@ -767,9 +820,9 @@ bool KdfRkHybrid(const std::array<std::uint8_t, 32>& rk,
   std::array<std::uint8_t, 64> ikm{};
   std::memcpy(ikm.data(), dh.data(), 32);
   std::memcpy(ikm.data() + 32, kem_ss.data(), kem_ss.size());
-  std::vector<std::uint8_t> buf;
-  if (!HkdfSha256(ikm.data(), ikm.size(), rk.data(), rk.size(),
-                  "mi_e2ee_dr_rk_hybrid_v1", buf, 64)) {
+  std::array<std::uint8_t, 64> buf{};
+  if (!HkdfSha256Fixed(ikm.data(), ikm.size(), rk.data(), rk.size(),
+                       "mi_e2ee_dr_rk_hybrid_v1", buf.data(), buf.size())) {
     return false;
   }
   std::memcpy(out_rk.data(), buf.data(), 32);
@@ -780,8 +833,9 @@ bool KdfRkHybrid(const std::array<std::uint8_t, 32>& rk,
 bool KdfCk(const std::array<std::uint8_t, 32>& ck,
            std::array<std::uint8_t, 32>& out_ck,
            std::array<std::uint8_t, 32>& out_mk) {
-  std::vector<std::uint8_t> buf;
-  if (!HkdfSha256(ck.data(), ck.size(), nullptr, 0, "mi_e2ee_dr_ck_v1", buf, 64)) {
+  std::array<std::uint8_t, 64> buf{};
+  if (!HkdfSha256Fixed(ck.data(), ck.size(), nullptr, 0,
+                       "mi_e2ee_dr_ck_v1", buf.data(), buf.size())) {
     return false;
   }
   std::memcpy(out_ck.data(), buf.data(), 32);
@@ -1748,7 +1802,10 @@ bool Engine::EncryptMessage(Session& session, std::uint8_t msg_type,
                    header_ad.data(), header_ad.size(),
                    padded.data(), padded.size());
 
-  out_payload = header_ad;
+  out_payload.clear();
+  out_payload.reserve(header_ad.size() + nonce.size() + mac.size() +
+                      cipher.size());
+  out_payload.insert(out_payload.end(), header_ad.begin(), header_ad.end());
   out_payload.insert(out_payload.end(), nonce.begin(), nonce.end());
   out_payload.insert(out_payload.end(), mac.begin(), mac.end());
   out_payload.insert(out_payload.end(), cipher.begin(), cipher.end());

@@ -4,7 +4,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
-#include <random>
+#include <limits>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -32,23 +32,24 @@ constexpr std::array<std::uint8_t, 8> kOfflineFileMagic = {
     'M', 'I', 'O', 'F', 'A', 'E', 'A', 'D'};
 constexpr std::uint8_t kOfflineFileMagicVersionV1 = 1;
 constexpr std::uint8_t kOfflineFileMagicVersionV2 = 2;
+constexpr std::uint8_t kOfflineFileMagicVersionV3 = 3;
 constexpr std::uint8_t kOfflineFileMagicVersionLatest =
-    kOfflineFileMagicVersionV2;
+    kOfflineFileMagicVersionV3;
 constexpr std::size_t kOfflineFileHeaderBytes =
     kOfflineFileMagic.size() + 1;
+constexpr std::uint32_t kOfflineFileStreamChunkBytes = 1u * 1024u * 1024u;
+constexpr std::uint32_t kOfflineFileStreamMaxChunkBytes = 8u * 1024u * 1024u;
+constexpr std::size_t kOfflineFileV3PrefixBytes =
+    kOfflineFileMagic.size() + 1 + 4 + 8;
+constexpr std::size_t kOfflineFileV3HeaderBytes =
+    kOfflineFileV3PrefixBytes + kOfflineFileAeadNonceBytes;
+constexpr std::size_t kOfflineFileV3AdBytes = kOfflineFileV3PrefixBytes + 8;
 
 bool FillRandom(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
     return false;
   }
-  if (crypto::RandomBytes(out, len)) {
-    return true;
-  }
-  std::random_device rd;
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i] = static_cast<std::uint8_t>(rd());
-  }
-  return true;
+  return crypto::RandomBytes(out, len);
 }
 
 std::array<std::uint8_t, kOfflineFileAeadNonceBytes> RandomAeadNonce() {
@@ -60,6 +61,58 @@ std::array<std::uint8_t, kOfflineFileAeadNonceBytes> RandomAeadNonce() {
 std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> RandomLegacyNonce() {
   std::array<std::uint8_t, kOfflineFileLegacyNonceBytes> nonce{};
   (void)FillRandom(nonce.data(), nonce.size());
+  return nonce;
+}
+
+bool ReadExact(std::istream& is, std::uint8_t* out, std::size_t len) {
+  if (!out || len == 0) {
+    return true;
+  }
+  is.read(reinterpret_cast<char*>(out), static_cast<std::streamsize>(len));
+  return is && static_cast<std::size_t>(is.gcount()) == len;
+}
+
+void WriteUint32Le(std::uint32_t v, std::uint8_t* out) {
+  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
+  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
+  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
+  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
+}
+
+void WriteUint64Le(std::uint64_t v, std::uint8_t* out) {
+  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
+  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
+  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
+  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
+  out[4] = static_cast<std::uint8_t>((v >> 32) & 0xFFu);
+  out[5] = static_cast<std::uint8_t>((v >> 40) & 0xFFu);
+  out[6] = static_cast<std::uint8_t>((v >> 48) & 0xFFu);
+  out[7] = static_cast<std::uint8_t>((v >> 56) & 0xFFu);
+}
+
+std::uint32_t ReadUint32Le(const std::uint8_t* in) {
+  return static_cast<std::uint32_t>(in[0]) |
+         (static_cast<std::uint32_t>(in[1]) << 8) |
+         (static_cast<std::uint32_t>(in[2]) << 16) |
+         (static_cast<std::uint32_t>(in[3]) << 24);
+}
+
+std::uint64_t ReadUint64Le(const std::uint8_t* in) {
+  return static_cast<std::uint64_t>(in[0]) |
+         (static_cast<std::uint64_t>(in[1]) << 8) |
+         (static_cast<std::uint64_t>(in[2]) << 16) |
+         (static_cast<std::uint64_t>(in[3]) << 24) |
+         (static_cast<std::uint64_t>(in[4]) << 32) |
+         (static_cast<std::uint64_t>(in[5]) << 40) |
+         (static_cast<std::uint64_t>(in[6]) << 48) |
+         (static_cast<std::uint64_t>(in[7]) << 56);
+}
+
+std::array<std::uint8_t, kOfflineFileAeadNonceBytes> DeriveChunkNonce(
+    const std::array<std::uint8_t, kOfflineFileAeadNonceBytes>& base_nonce,
+    std::uint64_t index) {
+  auto nonce = base_nonce;
+  WriteUint64Le(index, nonce.data() + (kOfflineFileAeadNonceBytes - 8));
   return nonce;
 }
 
@@ -137,22 +190,18 @@ PutResult OfflineStorage::Put(const std::string& owner,
   std::array<std::uint8_t, 32> erase_key = GenerateKey();
   std::array<std::uint8_t, 32> storage_key =
       DeriveStorageKey(file_key, erase_key);
-  const auto nonce = RandomAeadNonce();
-
-  std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
-  std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
-  ad[kOfflineFileMagic.size()] = kOfflineFileMagicVersionLatest;
-
-  std::vector<std::uint8_t> cipher;
-  std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
-  if (!EncryptAead(plaintext, storage_key, nonce, ad.data(), ad.size(), cipher,
-                   tag)) {
-    result.error = "encrypt failed";
-    crypto_wipe(storage_key.data(), storage_key.size());
-    crypto_wipe(erase_key.data(), erase_key.size());
-    crypto_wipe(file_key.data(), file_key.size());
-    return result;
-  }
+  const auto base_nonce = RandomAeadNonce();
+  const std::uint32_t chunk_bytes = kOfflineFileStreamChunkBytes;
+  const std::uint64_t plain_size =
+      static_cast<std::uint64_t>(plaintext.size());
+  std::array<std::uint8_t, kOfflineFileV3PrefixBytes> ad_prefix{};
+  std::memcpy(ad_prefix.data(), kOfflineFileMagic.data(),
+              kOfflineFileMagic.size());
+  ad_prefix[kOfflineFileMagic.size()] = kOfflineFileMagicVersionLatest;
+  WriteUint32Le(chunk_bytes,
+                ad_prefix.data() + kOfflineFileMagic.size() + 1);
+  WriteUint64Le(plain_size,
+                ad_prefix.data() + kOfflineFileMagic.size() + 1 + 4);
 
   const auto path = ResolvePath(id);
   std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
@@ -167,12 +216,45 @@ PutResult OfflineStorage::Put(const std::string& owner,
             static_cast<std::streamsize>(kOfflineFileMagic.size()));
   const char ver = static_cast<char>(kOfflineFileMagicVersionLatest);
   ofs.write(&ver, 1);
-  ofs.write(reinterpret_cast<const char*>(nonce.data()),
-            static_cast<std::streamsize>(nonce.size()));
-  ofs.write(reinterpret_cast<const char*>(cipher.data()),
-            static_cast<std::streamsize>(cipher.size()));
-  ofs.write(reinterpret_cast<const char*>(tag.data()),
-            static_cast<std::streamsize>(tag.size()));
+  ofs.write(reinterpret_cast<const char*>(ad_prefix.data() +
+                                          kOfflineFileMagic.size() + 1),
+            static_cast<std::streamsize>(4 + 8));
+  ofs.write(reinterpret_cast<const char*>(base_nonce.data()),
+            static_cast<std::streamsize>(base_nonce.size()));
+
+  std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
+  std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
+  std::vector<std::uint8_t> cipher;
+  cipher.reserve(chunk_bytes);
+  std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
+  std::uint64_t offset = 0;
+  std::uint64_t chunk_index = 0;
+  while (offset < plain_size) {
+    const std::size_t to_copy = static_cast<std::size_t>(
+        std::min<std::uint64_t>(plain_size - offset, chunk_bytes));
+    cipher.resize(to_copy);
+    WriteUint64Le(chunk_index, ad.data() + kOfflineFileV3PrefixBytes);
+    const auto nonce = DeriveChunkNonce(base_nonce, chunk_index);
+    crypto_aead_lock(cipher.data(), tag.data(), storage_key.data(),
+                     nonce.data(), ad.data(), ad.size(),
+                     plaintext.data() + static_cast<std::size_t>(offset),
+                     to_copy);
+    ofs.write(reinterpret_cast<const char*>(cipher.data()),
+              static_cast<std::streamsize>(cipher.size()));
+    ofs.write(reinterpret_cast<const char*>(tag.data()),
+              static_cast<std::streamsize>(tag.size()));
+    if (!ofs) {
+      result.error = "write file failed";
+      crypto_wipe(storage_key.data(), storage_key.size());
+      crypto_wipe(erase_key.data(), erase_key.size());
+      crypto_wipe(file_key.data(), file_key.size());
+      ofs.close();
+      WipeFile(path);
+      return result;
+    }
+    offset += to_copy;
+    ++chunk_index;
+  }
   ofs.close();
   if (!ofs.good()) {
     result.error = "write file failed";
@@ -622,63 +704,84 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     error = "file not found";
     return std::nullopt;
   }
-  std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
-                                    std::istreambuf_iterator<char>());
-  ifs.close();
 
   std::vector<std::uint8_t> plaintext;
-  if (content.size() >= kOfflineFileHeaderBytes &&
-      std::equal(kOfflineFileMagic.begin(), kOfflineFileMagic.end(),
-                 content.begin())) {
-    const std::uint8_t version = content[kOfflineFileMagic.size()];
-    if (version != kOfflineFileMagicVersionV1 &&
-        version != kOfflineFileMagicVersionV2) {
-      error = "unsupported format";
-      return std::nullopt;
-    }
-    if (content.size() <
-        (kOfflineFileHeaderBytes + kOfflineFileAeadNonceBytes +
-         kOfflineFileAeadTagBytes)) {
+  std::array<std::uint8_t, kOfflineFileMagic.size()> magic{};
+  if (!ReadExact(ifs, magic.data(), magic.size())) {
+    error = "file truncated";
+    return std::nullopt;
+  }
+
+  if (std::equal(kOfflineFileMagic.begin(), kOfflineFileMagic.end(),
+                 magic.begin())) {
+    std::uint8_t version = 0;
+    if (!ReadExact(ifs, &version, 1)) {
       error = "file truncated";
       return std::nullopt;
     }
 
-    const auto nonce = [&]() {
-      std::array<std::uint8_t, kOfflineFileAeadNonceBytes> n{};
-      std::memcpy(n.data(), content.data() + kOfflineFileHeaderBytes, n.size());
-      return n;
-    }();
+    if (version == kOfflineFileMagicVersionV3) {
+      std::array<std::uint8_t, 4> chunk_buf{};
+      std::array<std::uint8_t, 8> size_buf{};
+      std::array<std::uint8_t, kOfflineFileAeadNonceBytes> base_nonce{};
+      if (!ReadExact(ifs, chunk_buf.data(), chunk_buf.size()) ||
+          !ReadExact(ifs, size_buf.data(), size_buf.size()) ||
+          !ReadExact(ifs, base_nonce.data(), base_nonce.size())) {
+        error = "file truncated";
+        return std::nullopt;
+      }
 
-    const std::size_t cipher_len =
-        content.size() - kOfflineFileHeaderBytes - nonce.size() -
-        kOfflineFileAeadTagBytes;
-    if (cipher_len == 0) {
-      error = "cipher empty";
-      return std::nullopt;
-    }
+      const std::uint32_t chunk_bytes = ReadUint32Le(chunk_buf.data());
+      const std::uint64_t plain_size = ReadUint64Le(size_buf.data());
+      if (chunk_bytes == 0 || chunk_bytes > kOfflineFileStreamMaxChunkBytes) {
+        error = "chunk size invalid";
+        return std::nullopt;
+      }
+      if (plain_size == 0) {
+        error = "plain size invalid";
+        return std::nullopt;
+      }
 
-    const auto tag = [&]() {
-      std::array<std::uint8_t, kOfflineFileAeadTagBytes> t{};
-      std::memcpy(t.data(),
-                  content.data() + kOfflineFileHeaderBytes + nonce.size() +
-                      cipher_len,
-                  t.size());
-      return t;
-    }();
+      std::error_code ec;
+      const std::uint64_t file_size =
+          std::filesystem::file_size(path, ec);
+      if (ec) {
+        error = "file size failed";
+        return std::nullopt;
+      }
+      const std::uint64_t chunk_count =
+          (plain_size + chunk_bytes - 1) / chunk_bytes;
+      if (chunk_count == 0 ||
+          chunk_count >
+              (std::numeric_limits<std::uint64_t>::max)() /
+                  static_cast<std::uint64_t>(kOfflineFileAeadTagBytes)) {
+        error = "file size invalid";
+        return std::nullopt;
+      }
+      const std::uint64_t tag_overhead =
+          chunk_count * static_cast<std::uint64_t>(kOfflineFileAeadTagBytes);
+      if (tag_overhead >
+          (std::numeric_limits<std::uint64_t>::max)() -
+              kOfflineFileV3HeaderBytes - plain_size) {
+        error = "file size invalid";
+        return std::nullopt;
+      }
+      const std::uint64_t expected_size =
+          kOfflineFileV3HeaderBytes + plain_size + tag_overhead;
+      if (file_size != expected_size) {
+        error = "file truncated";
+        return std::nullopt;
+      }
 
-    std::vector<std::uint8_t> cipher(cipher_len);
-    std::memcpy(cipher.data(),
-                content.data() + kOfflineFileHeaderBytes + nonce.size(),
-                cipher_len);
+      if (plain_size > static_cast<std::uint64_t>(
+                           (std::numeric_limits<std::size_t>::max)())) {
+        error = "plain size invalid";
+        return std::nullopt;
+      }
 
-    std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
-    std::memcpy(ad.data(), kOfflineFileMagic.data(), kOfflineFileMagic.size());
-    ad[kOfflineFileMagic.size()] = version;
-
-    std::array<std::uint8_t, 32> file_key_copy = file_key;
-    std::array<std::uint8_t, 32> storage_key = file_key_copy;
-    std::array<std::uint8_t, 32> erase_key{};
-    if (version == kOfflineFileMagicVersionV2) {
+      std::array<std::uint8_t, 32> file_key_copy = file_key;
+      std::array<std::uint8_t, 32> storage_key = file_key_copy;
+      std::array<std::uint8_t, 32> erase_key{};
       std::string key_err;
       if (!LoadEraseKey(path, erase_key, key_err)) {
         error = key_err.empty() ? "erase key missing" : key_err;
@@ -687,21 +790,139 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
         return std::nullopt;
       }
       storage_key = DeriveStorageKey(file_key_copy, erase_key);
-    }
 
-    if (!DecryptAead(cipher, storage_key, nonce, ad.data(), ad.size(), tag,
-                     plaintext)) {
+      plaintext.resize(static_cast<std::size_t>(plain_size));
+      std::array<std::uint8_t, kOfflineFileV3PrefixBytes> ad_prefix{};
+      std::memcpy(ad_prefix.data(), kOfflineFileMagic.data(),
+                  kOfflineFileMagic.size());
+      ad_prefix[kOfflineFileMagic.size()] = version;
+      WriteUint32Le(chunk_bytes,
+                    ad_prefix.data() + kOfflineFileMagic.size() + 1);
+      WriteUint64Le(plain_size,
+                    ad_prefix.data() + kOfflineFileMagic.size() + 1 + 4);
+      std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
+      std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
+      std::vector<std::uint8_t> cipher;
+      cipher.reserve(chunk_bytes);
+      std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
+      std::uint64_t offset = 0;
+      std::uint64_t chunk_index = 0;
+      while (offset < plain_size) {
+        const std::size_t to_read = static_cast<std::size_t>(
+            std::min<std::uint64_t>(plain_size - offset, chunk_bytes));
+        cipher.resize(to_read);
+        if (!ReadExact(ifs, cipher.data(), cipher.size()) ||
+            !ReadExact(ifs, tag.data(), tag.size())) {
+          crypto_wipe(storage_key.data(), storage_key.size());
+          crypto_wipe(file_key_copy.data(), file_key_copy.size());
+          crypto_wipe(erase_key.data(), erase_key.size());
+          error = "file truncated";
+          return std::nullopt;
+        }
+        WriteUint64Le(chunk_index, ad.data() + kOfflineFileV3PrefixBytes);
+        const auto nonce = DeriveChunkNonce(base_nonce, chunk_index);
+        const int ok = crypto_aead_unlock(
+            plaintext.data() + static_cast<std::size_t>(offset), tag.data(),
+            storage_key.data(), nonce.data(), ad.data(), ad.size(),
+            cipher.data(), cipher.size());
+        if (ok != 0) {
+          crypto_wipe(storage_key.data(), storage_key.size());
+          crypto_wipe(file_key_copy.data(), file_key_copy.size());
+          crypto_wipe(erase_key.data(), erase_key.size());
+          error = "auth failed";
+          return std::nullopt;
+        }
+        offset += to_read;
+        ++chunk_index;
+      }
       crypto_wipe(storage_key.data(), storage_key.size());
       crypto_wipe(file_key_copy.data(), file_key_copy.size());
       crypto_wipe(erase_key.data(), erase_key.size());
-      error = "auth failed";
+    } else if (version == kOfflineFileMagicVersionV1 ||
+               version == kOfflineFileMagicVersionV2) {
+      ifs.clear();
+      ifs.seekg(0);
+      std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
+                                        std::istreambuf_iterator<char>());
+      ifs.close();
+      if (content.size() <
+          (kOfflineFileHeaderBytes + kOfflineFileAeadNonceBytes +
+           kOfflineFileAeadTagBytes)) {
+        error = "file truncated";
+        return std::nullopt;
+      }
+
+      const auto nonce = [&]() {
+        std::array<std::uint8_t, kOfflineFileAeadNonceBytes> n{};
+        std::memcpy(n.data(), content.data() + kOfflineFileHeaderBytes,
+                    n.size());
+        return n;
+      }();
+
+      const std::size_t cipher_len =
+          content.size() - kOfflineFileHeaderBytes - nonce.size() -
+          kOfflineFileAeadTagBytes;
+      if (cipher_len == 0) {
+        error = "cipher empty";
+        return std::nullopt;
+      }
+
+      const auto tag = [&]() {
+        std::array<std::uint8_t, kOfflineFileAeadTagBytes> t{};
+        std::memcpy(t.data(),
+                    content.data() + kOfflineFileHeaderBytes + nonce.size() +
+                        cipher_len,
+                    t.size());
+        return t;
+      }();
+
+      std::vector<std::uint8_t> cipher(cipher_len);
+      std::memcpy(cipher.data(),
+                  content.data() + kOfflineFileHeaderBytes + nonce.size(),
+                  cipher_len);
+
+      std::array<std::uint8_t, kOfflineFileHeaderBytes> ad{};
+      std::memcpy(ad.data(), kOfflineFileMagic.data(),
+                  kOfflineFileMagic.size());
+      ad[kOfflineFileMagic.size()] = version;
+
+      std::array<std::uint8_t, 32> file_key_copy = file_key;
+      std::array<std::uint8_t, 32> storage_key = file_key_copy;
+      std::array<std::uint8_t, 32> erase_key{};
+      if (version == kOfflineFileMagicVersionV2) {
+        std::string key_err;
+        if (!LoadEraseKey(path, erase_key, key_err)) {
+          error = key_err.empty() ? "erase key missing" : key_err;
+          crypto_wipe(file_key_copy.data(), file_key_copy.size());
+          crypto_wipe(erase_key.data(), erase_key.size());
+          return std::nullopt;
+        }
+        storage_key = DeriveStorageKey(file_key_copy, erase_key);
+      }
+
+      if (!DecryptAead(cipher, storage_key, nonce, ad.data(), ad.size(), tag,
+                       plaintext)) {
+        crypto_wipe(storage_key.data(), storage_key.size());
+        crypto_wipe(file_key_copy.data(), file_key_copy.size());
+        crypto_wipe(erase_key.data(), erase_key.size());
+        error = "auth failed";
+        return std::nullopt;
+      }
+      crypto_wipe(storage_key.data(), storage_key.size());
+      crypto_wipe(file_key_copy.data(), file_key_copy.size());
+      crypto_wipe(erase_key.data(), erase_key.size());
+    } else {
+      error = "unsupported format";
       return std::nullopt;
     }
-    crypto_wipe(storage_key.data(), storage_key.size());
-    crypto_wipe(file_key_copy.data(), file_key_copy.size());
-    crypto_wipe(erase_key.data(), erase_key.size());
   } else {
-    if (content.size() < (kOfflineFileLegacyNonceBytes + kOfflineFileLegacyTagBytes)) {
+    ifs.clear();
+    ifs.seekg(0);
+    std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
+                                      std::istreambuf_iterator<char>());
+    ifs.close();
+    if (content.size() <
+        (kOfflineFileLegacyNonceBytes + kOfflineFileLegacyTagBytes)) {
       error = "file truncated";
       return std::nullopt;
     }
@@ -1351,6 +1572,7 @@ std::vector<std::vector<std::uint8_t>> OfflineQueue::Drain(
     return out;
   }
   auto& queue = it->second;
+  out.reserve(queue.messages.size());
   for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
     if (msg_it->expires_at <= now) {
       queue.by_id.erase(msg_it->message_id);
@@ -1384,6 +1606,7 @@ std::vector<OfflineMessage> OfflineQueue::DrainPrivate(
     return out;
   }
   auto& queue = it->second;
+  out.reserve(queue.messages.size());
   for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
     if (msg_it->expires_at <= now) {
       queue.by_id.erase(msg_it->message_id);
@@ -1417,6 +1640,7 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupCipher(
     return out;
   }
   auto& queue = it->second;
+  out.reserve(queue.messages.size());
   for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
     if (msg_it->expires_at <= now) {
       queue.by_id.erase(msg_it->message_id);
@@ -1450,6 +1674,7 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupNotice(
     return out;
   }
   auto& queue = it->second;
+  out.reserve(queue.messages.size());
   for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
     if (msg_it->expires_at <= now) {
       queue.by_id.erase(msg_it->message_id);
@@ -1483,6 +1708,7 @@ std::vector<std::vector<std::uint8_t>> OfflineQueue::DrainDeviceSync(
     return out;
   }
   auto& queue = it->second;
+  out.reserve(queue.messages.size());
   for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
     if (msg_it->expires_at <= now) {
       queue.by_id.erase(msg_it->message_id);

@@ -36,6 +36,7 @@
 *.log.old.old.old.old.old
 *.log.old.old
 *.md
+*.txt
 !README.md
 !**/README.md
 

@@ -18,6 +18,8 @@ int main() {
   WriteFile("config.ini",
             "[mode]\nmode=1\n[server]\nlist_port=8888\n"
             "offline_dir=.\n"
+            "allow_legacy_login=1\n"
+            "key_protection=none\n"
             "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "u:p\n");
   {

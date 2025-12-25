@@ -106,6 +106,23 @@ bool ParseAuthMode(const std::string& text, AuthMode& out) {
   return false;
 }
 
+bool ParseCoverTrafficMode(const std::string& text, CoverTrafficMode& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "auto" || t == "adaptive" || t == "2") {
+    out = CoverTrafficMode::kAuto;
+    return true;
+  }
+  if (t == "on" || t == "enable" || t == "enabled" || t == "1") {
+    out = CoverTrafficMode::kOn;
+    return true;
+  }
+  if (t == "off" || t == "disable" || t == "disabled" || t == "0") {
+    out = CoverTrafficMode::kOff;
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
@@ -120,6 +137,7 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   bool saw_client_section = false;
   std::string line;
   std::size_t line_no = 0;
+  bool cover_traffic_mode_set = false;
   while (std::getline(f, line)) {
     ++line_no;
     std::string t = StripInlineComment(Trim(line));
@@ -158,6 +176,8 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
           error = "invalid auth_mode at line " + std::to_string(line_no);
           return false;
         }
+      } else if (key == "allow_legacy_login") {
+        ParseBool(val, out_cfg.allow_legacy_login);
       }
     } else if (section == "proxy") {
       if (key == "type") {
@@ -190,8 +210,24 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         ParseBool(val, out_cfg.identity.tpm_require);
       }
     } else if (section == "traffic") {
-      if (key == "cover_traffic_enabled") {
-        ParseBool(val, out_cfg.traffic.cover_traffic_enabled);
+      if (key == "cover_traffic_mode") {
+        if (!ParseCoverTrafficMode(val, out_cfg.traffic.cover_traffic_mode)) {
+          error = "invalid cover_traffic_mode at line " +
+                  std::to_string(line_no);
+          return false;
+        }
+        cover_traffic_mode_set = true;
+      } else if (key == "cover_traffic_enabled") {
+        bool enabled = false;
+        if (!ParseBool(val, enabled)) {
+          error = "invalid cover_traffic_enabled at line " +
+                  std::to_string(line_no);
+          return false;
+        }
+        if (!cover_traffic_mode_set) {
+          out_cfg.traffic.cover_traffic_mode =
+              enabled ? CoverTrafficMode::kOn : CoverTrafficMode::kOff;
+        }
       } else if (key == "cover_traffic_interval_sec") {
         ParseUint32(val, out_cfg.traffic.cover_traffic_interval_sec);
       }
@@ -204,6 +240,32 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         out_cfg.kt.root_pubkey_hex = val;
       } else if (key == "root_pubkey_path") {
         out_cfg.kt.root_pubkey_path = val;
+      }
+    } else if (section == "kcp") {
+      if (key == "enable") {
+        ParseBool(val, out_cfg.kcp.enable);
+      } else if (key == "server_port") {
+        ParseUint16(val, out_cfg.kcp.server_port);
+      } else if (key == "mtu") {
+        ParseUint32(val, out_cfg.kcp.mtu);
+      } else if (key == "snd_wnd") {
+        ParseUint32(val, out_cfg.kcp.snd_wnd);
+      } else if (key == "rcv_wnd") {
+        ParseUint32(val, out_cfg.kcp.rcv_wnd);
+      } else if (key == "nodelay") {
+        ParseUint32(val, out_cfg.kcp.nodelay);
+      } else if (key == "interval") {
+        ParseUint32(val, out_cfg.kcp.interval);
+      } else if (key == "resend") {
+        ParseUint32(val, out_cfg.kcp.resend);
+      } else if (key == "nc") {
+        ParseUint32(val, out_cfg.kcp.nc);
+      } else if (key == "min_rto") {
+        ParseUint32(val, out_cfg.kcp.min_rto);
+      } else if (key == "request_timeout_ms") {
+        ParseUint32(val, out_cfg.kcp.request_timeout_ms);
+      } else if (key == "session_idle_sec") {
+        ParseUint32(val, out_cfg.kcp.session_idle_sec);
       }
     }
   }
@@ -219,9 +281,16 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     error = "require_tls=1 but use_tls=0";
     return false;
   }
-  if (!out_cfg.require_pinned_fingerprint) {
-    error = "require_pinned_fingerprint must be enabled";
+  if (out_cfg.auth_mode == AuthMode::kLegacy &&
+      !out_cfg.allow_legacy_login) {
+    error = "legacy auth disabled (set allow_legacy_login=1 to override)";
     return false;
+  }
+  if (!out_cfg.require_pinned_fingerprint) {
+    if (!out_cfg.kcp.enable) {
+      error = "require_pinned_fingerprint must be enabled";
+      return false;
+    }
   }
   if (out_cfg.identity.tpm_require && !out_cfg.identity.tpm_enable) {
     error = "tpm_require=1 but tpm_enable=0";
@@ -242,6 +311,40 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
       (out_cfg.proxy.host.empty() || out_cfg.proxy.port == 0)) {
     error = "proxy config incomplete";
     return false;
+  }
+  if (out_cfg.kcp.enable) {
+    if (out_cfg.use_tls || out_cfg.require_tls) {
+      error = "kcp enabled but use_tls/require_tls enabled";
+      return false;
+    }
+    if (out_cfg.proxy.enabled()) {
+      error = "kcp does not support proxy";
+      return false;
+    }
+    if (out_cfg.kcp.server_port == 0) {
+      out_cfg.kcp.server_port = out_cfg.server_port;
+    }
+    if (out_cfg.kcp.mtu == 0) {
+      out_cfg.kcp.mtu = 1400;
+    }
+    if (out_cfg.kcp.snd_wnd == 0) {
+      out_cfg.kcp.snd_wnd = 256;
+    }
+    if (out_cfg.kcp.rcv_wnd == 0) {
+      out_cfg.kcp.rcv_wnd = 256;
+    }
+    if (out_cfg.kcp.interval == 0) {
+      out_cfg.kcp.interval = 10;
+    }
+    if (out_cfg.kcp.min_rto == 0) {
+      out_cfg.kcp.min_rto = 30;
+    }
+    if (out_cfg.kcp.request_timeout_ms == 0) {
+      out_cfg.kcp.request_timeout_ms = 5000;
+    }
+    if (out_cfg.kcp.session_idle_sec == 0) {
+      out_cfg.kcp.session_idle_sec = 60;
+    }
   }
   return true;
 }

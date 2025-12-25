@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -97,9 +98,11 @@ template <typename T>
 class ScrambledValue {
  public:
   using value_type = T;
+  // Obfuscation only; not a cryptographic protection.
 
   ScrambledValue() { encrypt(T{}); }
   explicit ScrambledValue(const T &value) { encrypt(value); }
+  ~ScrambledValue() { buffer_.fill(0); }
 
   void set(const T &value) { encrypt(value); }
 
@@ -188,6 +191,7 @@ class ScrambledString {
  public:
   ScrambledString() { encrypt(std::string{}); }
   explicit ScrambledString(const std::string &value) { encrypt(value); }
+  ~ScrambledString() { std::fill(buffer_.begin(), buffer_.end(), 0); }
 
   void set(const std::string &value) { encrypt(value); }
 

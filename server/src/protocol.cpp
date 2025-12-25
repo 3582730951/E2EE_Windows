@@ -4,13 +4,20 @@
 
 namespace mi::server::proto {
 
+namespace {
+constexpr std::size_t kMaxStringLen = 0xFFFFu;
+}
+
 bool WriteString(const std::string& s, std::vector<std::uint8_t>& out) {
-  const std::uint16_t len =
-      static_cast<std::uint16_t>(s.size() > 0xFFFF ? 0xFFFF : s.size());
+  if (s.size() > kMaxStringLen) {
+    return false;
+  }
+  out.reserve(out.size() + 2 + s.size());
+  const std::uint16_t len = static_cast<std::uint16_t>(s.size());
   out.push_back(static_cast<std::uint8_t>(len & 0xFF));
   out.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
   out.insert(out.end(), s.begin(), s.begin() + len);
-  return s.size() <= 0xFFFF;
+  return true;
 }
 
 bool ReadString(const std::vector<std::uint8_t>& data, std::size_t& offset,
@@ -30,6 +37,7 @@ bool ReadString(const std::vector<std::uint8_t>& data, std::size_t& offset,
 }
 
 bool WriteUint32(std::uint32_t v, std::vector<std::uint8_t>& out) {
+  out.reserve(out.size() + 4);
   out.push_back(static_cast<std::uint8_t>(v & 0xFF));
   out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
   out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
@@ -51,6 +59,7 @@ bool ReadUint32(const std::vector<std::uint8_t>& data, std::size_t& offset,
 }
 
 bool WriteUint64(std::uint64_t v, std::vector<std::uint8_t>& out) {
+  out.reserve(out.size() + 8);
   for (int i = 0; i < 8; ++i) {
     out.push_back(static_cast<std::uint8_t>((v >> (i * 8)) & 0xFF));
   }

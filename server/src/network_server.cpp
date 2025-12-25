@@ -637,6 +637,7 @@ bool SchannelReadFrameBuffered(SOCKET sock, ScopedCtxtHandle& ctx,
     plain_off = 0;
   }
 
+  std::vector<std::uint8_t> plain_chunk;
   while (true) {
     const std::size_t avail =
         plain_buf.size() >= plain_off ? (plain_buf.size() - plain_off) : 0;
@@ -668,7 +669,6 @@ bool SchannelReadFrameBuffered(SOCKET sock, ScopedCtxtHandle& ctx,
       }
     }
 
-    std::vector<std::uint8_t> plain_chunk;
     if (!SchannelDecryptToPlain(sock, ctx, enc_buf, plain_chunk)) {
       return false;
     }
@@ -744,6 +744,7 @@ bool NetworkServer::Start(std::string& error) {
   }
 #endif
   running_.store(true);
+  StartWorkers();
   worker_ = std::thread(&NetworkServer::Run, this);
   return true;
 }
@@ -756,11 +757,71 @@ void NetworkServer::Stop() {
   if (worker_.joinable()) {
     worker_.join();
   }
-  // Run() spawns detached per-connection threads. Wait until they drain to
-  // avoid use-after-free when NetworkServer is destroyed.
+  StopWorkers();
+  // Wait until connections drain to avoid use-after-free.
   while (active_connections_.load(std::memory_order_relaxed) != 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
+}
+
+void NetworkServer::StartWorkers() {
+  pool_running_.store(true);
+  std::uint32_t count = limits_.max_worker_threads;
+  if (count == 0) {
+    const auto hc = std::thread::hardware_concurrency();
+    count = hc == 0 ? 4u : hc;
+  }
+  worker_threads_.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    worker_threads_.emplace_back(&NetworkServer::WorkerLoop, this);
+  }
+}
+
+void NetworkServer::StopWorkers() {
+  pool_running_.store(false);
+  work_cv_.notify_all();
+  for (auto& t : worker_threads_) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+  worker_threads_.clear();
+}
+
+void NetworkServer::WorkerLoop() {
+  for (;;) {
+    std::function<void()> task;
+    {
+      std::unique_lock<std::mutex> lock(work_mutex_);
+      work_cv_.wait(lock, [this] {
+        return !pool_running_.load() || !work_queue_.empty();
+      });
+      if (!pool_running_.load() && work_queue_.empty()) {
+        return;
+      }
+      task = std::move(work_queue_.front());
+      work_queue_.pop_front();
+    }
+    if (task) {
+      task();
+    }
+  }
+}
+
+bool NetworkServer::EnqueueTask(std::function<void()> task) {
+  if (!task) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(work_mutex_);
+  if (!pool_running_.load()) {
+    return false;
+  }
+  if (work_queue_.size() >= limits_.max_pending_tasks) {
+    return false;
+  }
+  work_queue_.push_back(std::move(task));
+  work_cv_.notify_one();
+  return true;
 }
 
 bool NetworkServer::TryAcquireConnectionSlot(const std::string& remote_ip) {
@@ -842,12 +903,12 @@ void NetworkServer::Run() {
     }
 
     try {
-      std::thread([this, client, remote_ip]() mutable {
+      auto task = [this, client, remote_ip]() mutable {
         struct SlotGuard {
           NetworkServer* server;
           std::string ip;
           ~SlotGuard() { server->ReleaseConnectionSlot(ip); }
-        } slot{this, std::move(remote_ip)};
+        } slot{this, remote_ip};
 
         try {
           std::uint64_t bytes_total = 0;
@@ -911,8 +972,9 @@ void NetworkServer::Run() {
             }
             std::vector<std::uint8_t> plain_buf;
             std::size_t plain_off = 0;
+            std::vector<std::uint8_t> request;
+            std::vector<std::uint8_t> response;
             while (running_.load()) {
-              std::vector<std::uint8_t> request;
               if (!SchannelReadFrameBuffered(client, ctx, enc_buf, plain_buf,
                                              plain_off, request)) {
                 break;
@@ -921,7 +983,7 @@ void NetworkServer::Run() {
               if (bytes_total > limits_.max_connection_bytes) {
                 break;
               }
-              std::vector<std::uint8_t> response;
+              response.clear();
               if (!listener_->Process(request, response, slot.ip,
                                       TransportKind::kTls)) {
                 break;
@@ -939,6 +1001,8 @@ void NetworkServer::Run() {
             return;
           }
 
+          std::vector<std::uint8_t> request;
+          std::vector<std::uint8_t> response;
           while (running_.load()) {
             std::uint8_t header[kFrameHeaderSize] = {};
             if (!recv_exact(header, sizeof(header))) {
@@ -955,7 +1019,6 @@ void NetworkServer::Run() {
             if (bytes_total > limits_.max_connection_bytes) {
               break;
             }
-            std::vector<std::uint8_t> request;
             request.resize(total);
             std::memcpy(request.data(), header, sizeof(header));
             if (payload_len > 0 &&
@@ -963,7 +1026,7 @@ void NetworkServer::Run() {
               break;
             }
 
-            std::vector<std::uint8_t> response;
+            response.clear();
             if (!listener_->Process(request, response, slot.ip,
                                     TransportKind::kTcp)) {
               break;
@@ -981,7 +1044,11 @@ void NetworkServer::Run() {
         } catch (...) {
           closesocket(client);
         }
-      }).detach();
+      };
+      if (!EnqueueTask(std::move(task))) {
+        ReleaseConnectionSlot(remote_ip);
+        closesocket(client);
+      }
     } catch (...) {
       ReleaseConnectionSlot(remote_ip);
       closesocket(client);
@@ -1010,12 +1077,12 @@ void NetworkServer::Run() {
     }
 
     try {
-      std::thread([this, client, remote_ip]() mutable {
+      auto task = [this, client, remote_ip]() mutable {
         struct SlotGuard {
           NetworkServer* server;
           std::string ip;
           ~SlotGuard() { server->ReleaseConnectionSlot(ip); }
-        } slot{this, std::move(remote_ip)};
+        } slot{this, remote_ip};
 
         try {
           std::uint64_t bytes_total = 0;
@@ -1068,6 +1135,8 @@ void NetworkServer::Run() {
             return true;
           };
 
+          std::vector<std::uint8_t> request;
+          std::vector<std::uint8_t> response;
           while (running_.load()) {
             std::uint8_t header[kFrameHeaderSize] = {};
             if (!recv_exact(header, sizeof(header))) {
@@ -1084,7 +1153,6 @@ void NetworkServer::Run() {
             if (bytes_total > limits_.max_connection_bytes) {
               break;
             }
-            std::vector<std::uint8_t> request;
             request.resize(total);
             std::memcpy(request.data(), header, sizeof(header));
             if (payload_len > 0 &&
@@ -1092,7 +1160,7 @@ void NetworkServer::Run() {
               break;
             }
 
-            std::vector<std::uint8_t> response;
+            response.clear();
             if (!listener_->Process(request, response, slot.ip,
                                     TransportKind::kTcp)) {
               break;
@@ -1110,7 +1178,11 @@ void NetworkServer::Run() {
         } catch (...) {
           ::close(client);
         }
-      }).detach();
+      };
+      if (!EnqueueTask(std::move(task))) {
+        ReleaseConnectionSlot(remote_ip);
+        ::close(client);
+      }
     } catch (...) {
       ReleaseConnectionSlot(remote_ip);
       ::close(client);

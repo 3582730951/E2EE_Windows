@@ -29,7 +29,9 @@ int main() {
             "[mode]\nmode=1\n[server]\nlist_port=7778\n"
             "offline_dir=.\n"
             "tls_enable=1\n"
+            "allow_legacy_login=1\n"
             "require_tls=1\n"
+            "key_protection=none\n"
             "tls_cert=mi_e2ee_server.pfx\n"
             "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "u1:p1\n");

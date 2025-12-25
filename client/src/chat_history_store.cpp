@@ -395,9 +395,13 @@ bool ChatHistoryStore::EnsureConversationFile(
   }
 
   std::vector<std::uint8_t> meta;
+  meta.reserve(4 + conv_id.size());
   meta.push_back(kRecordMeta);
   meta.push_back(is_group ? 1 : 0);
-  mi::server::proto::WriteString(conv_id, meta);
+  if (!mi::server::proto::WriteString(conv_id, meta)) {
+    error = "conv id too long";
+    return false;
+  }
   if (!WriteRecord(out, master_key_, meta, error)) {
     return false;
   }
@@ -582,6 +586,7 @@ bool ChatHistoryStore::AppendEnvelope(bool is_group,
   }
 
   std::vector<std::uint8_t> rec;
+  rec.reserve(5 + 8 + 2 + sender.size() + 4 + envelope.size());
   rec.push_back(kRecordMessage);
   rec.push_back(kMessageKindEnvelope);
   rec.push_back(is_group ? 1 : 0);
@@ -627,6 +632,7 @@ bool ChatHistoryStore::AppendSystem(bool is_group,
   }
 
   std::vector<std::uint8_t> rec;
+  rec.reserve(5 + 8 + 2 + text_utf8.size());
   rec.push_back(kRecordMessage);
   rec.push_back(kMessageKindSystem);
   rec.push_back(is_group ? 1 : 0);
@@ -673,6 +679,7 @@ bool ChatHistoryStore::AppendStatusUpdate(
   }
 
   std::vector<std::uint8_t> rec;
+  rec.reserve(1 + 1 + 1 + 8 + 16);
   rec.push_back(kRecordStatus);
   rec.push_back(is_group ? 1 : 0);
   rec.push_back(static_cast<std::uint8_t>(status));
@@ -719,6 +726,9 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     return false;
   }
 
+  if (limit > 0) {
+    out_messages.reserve(limit);
+  }
   std::uint8_t hdr[sizeof(kMagic) + 1];
   if (!ReadExact(in, hdr, sizeof(hdr))) {
     return true;
@@ -729,9 +739,13 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
   }
 
   std::unordered_map<std::string, ChatHistoryStatus> status_by_id;
-  status_by_id.reserve(512);
   std::unordered_map<std::string, std::size_t> index_by_id;
-  index_by_id.reserve(512);
+  std::size_t reserve_hint = 512;
+  if (limit > 0) {
+    reserve_hint = std::min<std::size_t>(limit * 2, 8192);
+  }
+  status_by_id.reserve(reserve_hint);
+  index_by_id.reserve(reserve_hint);
 
   const auto statusRank = [](ChatHistoryStatus status) -> int {
     switch (status) {

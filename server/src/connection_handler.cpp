@@ -2,11 +2,23 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <ctime>
 #include <vector>
 #include <unordered_map>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <sys/resource.h>
+#endif
 
 #include "protocol.h"
 #include "secure_channel.h"
@@ -82,6 +94,105 @@ bool LooksLikeSessionToken(std::string_view token) {
     }
   }
   return true;
+}
+
+constexpr std::uint64_t kPerfSampleIntervalNs = 1000000000ull;
+
+std::uint64_t GetProcessRssBytes() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS_EX pmc{};
+  if (GetProcessMemoryInfo(GetCurrentProcess(),
+                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                           sizeof(pmc))) {
+    return static_cast<std::uint64_t>(pmc.WorkingSetSize);
+  }
+  return 0;
+#else
+  struct rusage usage {};
+  if (getrusage(RUSAGE_SELF, &usage) == 0) {
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
+    return static_cast<std::uint64_t>(usage.ru_maxrss);
+#else
+    return static_cast<std::uint64_t>(usage.ru_maxrss) * 1024ull;
+#endif
+  }
+  return 0;
+#endif
+}
+
+void RecordLatencySample(ConnectionHandler::OpsMetrics& metrics,
+                         std::uint64_t latency_us) {
+  const std::uint32_t idx =
+      metrics.latency_sample_index.fetch_add(1, std::memory_order_relaxed);
+  metrics.latency_samples[idx %
+                          ConnectionHandler::OpsMetrics::kLatencySampleCount]
+      .store(latency_us, std::memory_order_relaxed);
+}
+
+void MaybeSamplePerf(ConnectionHandler::OpsMetrics& metrics,
+                     std::chrono::steady_clock::time_point now) {
+  const auto now_ns = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          now.time_since_epoch())
+          .count());
+  std::uint64_t last_ns =
+      metrics.last_perf_sample_ns.load(std::memory_order_relaxed);
+  if (now_ns - last_ns < kPerfSampleIntervalNs) {
+    return;
+  }
+  if (!metrics.last_perf_sample_ns.compare_exchange_strong(
+          last_ns, now_ns, std::memory_order_relaxed)) {
+    return;
+  }
+  const std::uint64_t cpu_now =
+      static_cast<std::uint64_t>(std::clock());
+  const std::uint64_t cpu_prev =
+      metrics.last_cpu_ticks.exchange(cpu_now, std::memory_order_relaxed);
+  std::uint64_t cpu_pct_x100 = 0;
+  if (last_ns != 0 && cpu_prev != 0 && now_ns > last_ns) {
+    const double cpu_delta =
+        static_cast<double>(cpu_now - cpu_prev) / CLOCKS_PER_SEC;
+    const double wall_delta =
+        static_cast<double>(now_ns - last_ns) / 1e9;
+    if (wall_delta > 0.0 && cpu_delta >= 0.0) {
+      const double pct = (cpu_delta / wall_delta) * 100.0;
+      if (pct > 0.0) {
+        cpu_pct_x100 =
+            static_cast<std::uint64_t>(pct * 100.0 + 0.5);
+      }
+    }
+  }
+  metrics.last_cpu_pct_x100.store(cpu_pct_x100, std::memory_order_relaxed);
+  metrics.last_rss_bytes.store(GetProcessRssBytes(),
+                               std::memory_order_relaxed);
+}
+
+void ComputeLatencyPercentiles(const ConnectionHandler::OpsMetrics& metrics,
+                               std::uint64_t& p50,
+                               std::uint64_t& p95,
+                               std::uint64_t& p99) {
+  std::vector<std::uint64_t> samples;
+  samples.reserve(ConnectionHandler::OpsMetrics::kLatencySampleCount);
+  for (const auto& value : metrics.latency_samples) {
+    const auto v = value.load(std::memory_order_relaxed);
+    if (v != 0) {
+      samples.push_back(v);
+    }
+  }
+  if (samples.empty()) {
+    p50 = p95 = p99 = 0;
+    return;
+  }
+  std::sort(samples.begin(), samples.end());
+  const auto pick = [&](double pct) -> std::uint64_t {
+    const std::size_t idx = static_cast<std::size_t>(
+        std::ceil(pct * static_cast<double>(samples.size() - 1)));
+    return samples[idx];
+  };
+  p50 = pick(0.50);
+  p95 = pick(0.95);
+  p99 = pick(0.99);
 }
 }  // namespace
 
@@ -273,12 +384,15 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   }
   metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
   const auto finish = [&](bool success) {
+    const auto now = std::chrono::steady_clock::now();
     const auto latency_us = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start)
+            now - start)
             .count());
     metrics_.total_latency_us.fetch_add(latency_us, std::memory_order_relaxed);
     UpdateMax(metrics_.max_latency_us, latency_us);
+    RecordLatencySample(metrics_, latency_us);
+    MaybeSamplePerf(metrics_, now);
     if (success) {
       metrics_.requests_ok.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -289,8 +403,18 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   std::string error;
 
   const auto& cfg = app_->config().server;
-  if (cfg.require_tls && transport == TransportKind::kTcp) {
+  if (cfg.require_tls && transport != TransportKind::kTls &&
+      transport != TransportKind::kLocal) {
     WriteTlsRequiredError(in.type, out_bytes);
+    finish(false);
+    return true;
+  }
+  if (in.type == FrameType::kLogin && !cfg.allow_legacy_login) {
+    out.type = in.type;
+    out.payload.clear();
+    out.payload.push_back(0);
+    proto::WriteString("legacy login disabled", out.payload);
+    out_bytes = EncodeFrame(out);
     finish(false);
     return true;
   }
@@ -341,7 +465,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
         proto::WriteString("unauthorized", out.payload);
       } else {
         out.payload.push_back(1);
-        proto::WriteUint32(1, out.payload);  // version
+        proto::WriteUint32(2, out.payload);  // version
 
         const auto now = std::chrono::steady_clock::now();
         const auto uptime_sec = static_cast<std::uint64_t>(
@@ -374,6 +498,20 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
         proto::WriteUint64(rate_limited, out.payload);
         proto::WriteUint64(avg_latency_us, out.payload);
         proto::WriteUint64(max_latency_us, out.payload);
+
+        std::uint64_t p50 = 0;
+        std::uint64_t p95 = 0;
+        std::uint64_t p99 = 0;
+        ComputeLatencyPercentiles(metrics_, p50, p95, p99);
+        proto::WriteUint64(p50, out.payload);
+        proto::WriteUint64(p95, out.payload);
+        proto::WriteUint64(p99, out.payload);
+        const auto cpu_pct_x100 =
+            metrics_.last_cpu_pct_x100.load(std::memory_order_relaxed);
+        const auto rss_bytes =
+            metrics_.last_rss_bytes.load(std::memory_order_relaxed);
+        proto::WriteUint64(cpu_pct_x100, out.payload);
+        proto::WriteUint64(rss_bytes, out.payload);
 
         if (auto* sessions = app_->sessions()) {
           const auto stats = sessions->GetStats();

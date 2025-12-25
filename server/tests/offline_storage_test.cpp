@@ -55,7 +55,7 @@ int main() {
       if (!std::equal(kMagic.begin(), kMagic.end(), hdr.begin())) {
         return 1;
       }
-      if (hdr[8] != 2) {
+      if (hdr[8] != 3) {
         return 1;
       }
     }

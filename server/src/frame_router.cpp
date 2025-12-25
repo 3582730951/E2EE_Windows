@@ -22,16 +22,46 @@ bool ReadFixed16(const std::vector<std::uint8_t>& data, std::size_t& offset,
   return true;
 }
 
+constexpr std::size_t kStringSizeOverhead = 2;
+constexpr std::size_t kBytesSizeOverhead = 4;
+
+std::size_t EncodedStringSize(const std::string& s) {
+  return kStringSizeOverhead + s.size();
+}
+
+std::size_t EncodedBytesSize(std::size_t len) {
+  return kBytesSizeOverhead + len;
+}
+
+std::size_t EncodedBytesSize(const std::vector<std::uint8_t>& data) {
+  return EncodedBytesSize(data.size());
+}
+
+template <std::size_t N>
+std::size_t EncodedBytesSize(const std::array<std::uint8_t, N>&) {
+  return EncodedBytesSize(N);
+}
+
 std::vector<std::uint8_t> EncodeLoginResp(const LoginResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (resp.success) {
+    reserve += EncodedStringSize(resp.token);
+    if (resp.kex_version == kLoginKeyExchangeV1 && !resp.kem_ct.empty()) {
+      reserve += 4;
+      reserve += EncodedBytesSize(resp.server_dh_pk);
+      reserve += EncodedBytesSize(resp.kem_ct);
+    }
+  } else {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.token, out);
     if (resp.kex_version == kLoginKeyExchangeV1 && !resp.kem_ct.empty()) {
       proto::WriteUint32(resp.kex_version, out);
-      std::vector<std::uint8_t> pk(resp.server_dh_pk.begin(),
-                                   resp.server_dh_pk.end());
-      proto::WriteBytes(pk, out);
+      proto::WriteBytes(resp.server_dh_pk.data(), resp.server_dh_pk.size(), out);
       proto::WriteBytes(resp.kem_ct, out);
     }
   } else {
@@ -43,6 +73,13 @@ std::vector<std::uint8_t> EncodeLoginResp(const LoginResponse& resp) {
 std::vector<std::uint8_t> EncodeOpaqueRegisterStartResp(
     const OpaqueRegisterStartResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (resp.success) {
+    reserve += EncodedBytesSize(resp.hello.registration_response);
+  } else {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteBytes(resp.hello.registration_response, out);
@@ -55,6 +92,11 @@ std::vector<std::uint8_t> EncodeOpaqueRegisterStartResp(
 std::vector<std::uint8_t> EncodeOpaqueRegisterFinishResp(
     const OpaqueRegisterFinishResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (!resp.success) {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -65,6 +107,14 @@ std::vector<std::uint8_t> EncodeOpaqueRegisterFinishResp(
 std::vector<std::uint8_t> EncodeOpaqueLoginStartResp(
     const OpaqueLoginStartResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (resp.success) {
+    reserve += EncodedStringSize(resp.hello.login_id);
+    reserve += EncodedBytesSize(resp.hello.credential_response);
+  } else {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.hello.login_id, out);
@@ -78,6 +128,13 @@ std::vector<std::uint8_t> EncodeOpaqueLoginStartResp(
 std::vector<std::uint8_t> EncodeOpaqueLoginFinishResp(
     const OpaqueLoginFinishResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (resp.success) {
+    reserve += EncodedStringSize(resp.token);
+  } else {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.token, out);
@@ -89,6 +146,11 @@ std::vector<std::uint8_t> EncodeOpaqueLoginFinishResp(
 
 std::vector<std::uint8_t> EncodeLogoutResp(const LogoutResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1;
+  if (!resp.success) {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -99,6 +161,9 @@ std::vector<std::uint8_t> EncodeLogoutResp(const LogoutResponse& resp) {
 std::vector<std::uint8_t> EncodeGroupEventResp(
     const GroupEventResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = resp.success ? (1 + 4 + 1)
+                                     : (1 + EncodedStringSize(resp.error));
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(resp.version, out);
@@ -112,6 +177,14 @@ std::vector<std::uint8_t> EncodeGroupEventResp(
 std::vector<std::uint8_t> EncodeGroupMessageResp(
     const GroupMessageResponse& resp) {
   std::vector<std::uint8_t> out;
+  std::size_t reserve = 1 + 1;
+  if (resp.success && resp.rotated.has_value()) {
+    reserve += 4 + 1;
+  }
+  if (!resp.success) {
+    reserve += EncodedStringSize(resp.error);
+  }
+  out.reserve(reserve);
   out.push_back(resp.success ? 1 : 0);
   if (resp.success && resp.rotated.has_value()) {
     out.push_back(1);
@@ -129,6 +202,15 @@ std::vector<std::uint8_t> EncodeGroupMessageResp(
 std::vector<std::uint8_t> EncodeGroupMemberListResp(
     const GroupMembersResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& m : resp.members) {
+      reserve += EncodedStringSize(m);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.members.size()), out);
@@ -144,6 +226,15 @@ std::vector<std::uint8_t> EncodeGroupMemberListResp(
 std::vector<std::uint8_t> EncodeGroupMemberInfoListResp(
     const GroupMembersInfoResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& m : resp.members) {
+      reserve += EncodedStringSize(m.username) + 1;
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.members.size()), out);
@@ -160,6 +251,11 @@ std::vector<std::uint8_t> EncodeGroupMemberInfoListResp(
 std::vector<std::uint8_t> EncodeGroupRoleSetResp(
     const GroupRoleSetResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -170,6 +266,11 @@ std::vector<std::uint8_t> EncodeGroupRoleSetResp(
 std::vector<std::uint8_t> EncodeOfflinePushResp(
     const OfflinePushResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -180,6 +281,15 @@ std::vector<std::uint8_t> EncodeOfflinePushResp(
 std::vector<std::uint8_t> EncodeOfflinePullResp(
     const OfflinePullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& msg : resp.messages) {
+      reserve += EncodedBytesSize(msg);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
@@ -194,6 +304,16 @@ std::vector<std::uint8_t> EncodeOfflinePullResp(
 
 std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.friends) {
+      reserve += EncodedStringSize(e.username);
+      reserve += EncodedStringSize(e.remark);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.friends.size()), out);
@@ -209,6 +329,19 @@ std::vector<std::uint8_t> EncodeFriendListResp(const FriendListResponse& resp) {
 
 std::vector<std::uint8_t> EncodeFriendSyncResp(const FriendSyncResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4 + 1;
+    if (resp.changed) {
+      reserve += 4;
+      for (const auto& e : resp.friends) {
+        reserve += EncodedStringSize(e.username);
+        reserve += EncodedStringSize(e.remark);
+      }
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(resp.version, out);
@@ -228,6 +361,11 @@ std::vector<std::uint8_t> EncodeFriendSyncResp(const FriendSyncResponse& resp) {
 
 std::vector<std::uint8_t> EncodeFriendAddResp(const FriendAddResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -238,6 +376,11 @@ std::vector<std::uint8_t> EncodeFriendAddResp(const FriendAddResponse& resp) {
 std::vector<std::uint8_t> EncodeFriendRemarkResp(
     const FriendRemarkResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -248,6 +391,11 @@ std::vector<std::uint8_t> EncodeFriendRemarkResp(
 std::vector<std::uint8_t> EncodeFriendRequestSendResp(
     const FriendRequestSendResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -258,6 +406,16 @@ std::vector<std::uint8_t> EncodeFriendRequestSendResp(
 std::vector<std::uint8_t> EncodeFriendRequestListResp(
     const FriendRequestListResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.requests) {
+      reserve += EncodedStringSize(e.requester_username);
+      reserve += EncodedStringSize(e.requester_remark);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.requests.size()), out);
@@ -274,6 +432,11 @@ std::vector<std::uint8_t> EncodeFriendRequestListResp(
 std::vector<std::uint8_t> EncodeFriendRequestRespondResp(
     const FriendRequestRespondResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -284,6 +447,11 @@ std::vector<std::uint8_t> EncodeFriendRequestRespondResp(
 std::vector<std::uint8_t> EncodeFriendDeleteResp(
     const FriendDeleteResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -294,6 +462,11 @@ std::vector<std::uint8_t> EncodeFriendDeleteResp(
 std::vector<std::uint8_t> EncodeUserBlockSetResp(
     const UserBlockSetResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -304,6 +477,11 @@ std::vector<std::uint8_t> EncodeUserBlockSetResp(
 std::vector<std::uint8_t> EncodePreKeyPublishResp(
     const PreKeyPublishResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -313,26 +491,38 @@ std::vector<std::uint8_t> EncodePreKeyPublishResp(
 
 std::vector<std::uint8_t> EncodePreKeyFetchResp(const PreKeyFetchResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + EncodedBytesSize(resp.bundle);
+    if (resp.kt_version != 0) {
+      reserve += 4 + 8;
+      reserve += EncodedBytesSize(resp.kt_root);
+      reserve += 8 + 4;
+      reserve += resp.kt_audit_path.size() * EncodedBytesSize(resp.kt_root);
+      reserve += 4;
+      reserve += resp.kt_consistency_path.size() * EncodedBytesSize(resp.kt_root);
+      reserve += EncodedBytesSize(resp.kt_signature);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteBytes(resp.bundle, out);
     if (resp.kt_version != 0) {
       proto::WriteUint32(resp.kt_version, out);
       proto::WriteUint64(resp.kt_tree_size, out);
-      std::vector<std::uint8_t> root(resp.kt_root.begin(), resp.kt_root.end());
-      proto::WriteBytes(root, out);
+      proto::WriteBytes(resp.kt_root.data(), resp.kt_root.size(), out);
       proto::WriteUint64(resp.kt_leaf_index, out);
       proto::WriteUint32(static_cast<std::uint32_t>(resp.kt_audit_path.size()),
                          out);
       for (const auto& h : resp.kt_audit_path) {
-        std::vector<std::uint8_t> b(h.begin(), h.end());
-        proto::WriteBytes(b, out);
+        proto::WriteBytes(h.data(), h.size(), out);
       }
       proto::WriteUint32(
           static_cast<std::uint32_t>(resp.kt_consistency_path.size()), out);
       for (const auto& h : resp.kt_consistency_path) {
-        std::vector<std::uint8_t> b(h.begin(), h.end());
-        proto::WriteBytes(b, out);
+        proto::WriteBytes(h.data(), h.size(), out);
       }
       proto::WriteBytes(resp.kt_signature, out);
     }
@@ -345,11 +535,18 @@ std::vector<std::uint8_t> EncodePreKeyFetchResp(const PreKeyFetchResponse& resp)
 std::vector<std::uint8_t> EncodeKeyTransparencyHeadResp(
     const KeyTransparencyHeadResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 8;
+    reserve += EncodedBytesSize(resp.sth.root);
+    reserve += EncodedBytesSize(resp.sth.signature);
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.sth.tree_size, out);
-    std::vector<std::uint8_t> root(resp.sth.root.begin(), resp.sth.root.end());
-    proto::WriteBytes(root, out);
+    proto::WriteBytes(resp.sth.root.data(), resp.sth.root.size(), out);
     proto::WriteBytes(resp.sth.signature, out);
   } else {
     proto::WriteString(resp.error, out);
@@ -360,14 +557,22 @@ std::vector<std::uint8_t> EncodeKeyTransparencyHeadResp(
 std::vector<std::uint8_t> EncodeKeyTransparencyConsistencyResp(
     const KeyTransparencyConsistencyResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 8 + 8 + 4;
+    if (!resp.proof.empty()) {
+      reserve += resp.proof.size() * EncodedBytesSize(resp.proof.front());
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.old_size, out);
     proto::WriteUint64(resp.new_size, out);
     proto::WriteUint32(static_cast<std::uint32_t>(resp.proof.size()), out);
     for (const auto& h : resp.proof) {
-      std::vector<std::uint8_t> b(h.begin(), h.end());
-      proto::WriteBytes(b, out);
+      proto::WriteBytes(h.data(), h.size(), out);
     }
   } else {
     proto::WriteString(resp.error, out);
@@ -377,6 +582,11 @@ std::vector<std::uint8_t> EncodeKeyTransparencyConsistencyResp(
 
 std::vector<std::uint8_t> EncodePrivateSendResp(const PrivateSendResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -387,6 +597,11 @@ std::vector<std::uint8_t> EncodePrivateSendResp(const PrivateSendResponse& resp)
 std::vector<std::uint8_t> EncodeGroupSenderKeySendResp(
     const GroupSenderKeySendResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -396,6 +611,16 @@ std::vector<std::uint8_t> EncodeGroupSenderKeySendResp(
 
 std::vector<std::uint8_t> EncodePrivatePullResp(const PrivatePullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.messages) {
+      reserve += EncodedStringSize(e.sender);
+      reserve += EncodedBytesSize(e.payload);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
@@ -411,6 +636,11 @@ std::vector<std::uint8_t> EncodePrivatePullResp(const PrivatePullResponse& resp)
 
 std::vector<std::uint8_t> EncodeMediaPushResp(const MediaPushResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -420,6 +650,16 @@ std::vector<std::uint8_t> EncodeMediaPushResp(const MediaPushResponse& resp) {
 
 std::vector<std::uint8_t> EncodeMediaPullResp(const MediaPullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.packets) {
+      reserve += EncodedStringSize(e.sender);
+      reserve += EncodedBytesSize(e.payload);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.packets.size()), out);
@@ -436,6 +676,11 @@ std::vector<std::uint8_t> EncodeMediaPullResp(const MediaPullResponse& resp) {
 std::vector<std::uint8_t> EncodeGroupCipherSendResp(
     const GroupCipherSendResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -446,6 +691,17 @@ std::vector<std::uint8_t> EncodeGroupCipherSendResp(
 std::vector<std::uint8_t> EncodeGroupCipherPullResp(
     const GroupCipherPullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.messages) {
+      reserve += EncodedStringSize(e.group_id);
+      reserve += EncodedStringSize(e.sender);
+      reserve += EncodedBytesSize(e.payload);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
@@ -463,6 +719,17 @@ std::vector<std::uint8_t> EncodeGroupCipherPullResp(
 std::vector<std::uint8_t> EncodeGroupNoticePullResp(
     const GroupNoticePullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.notices) {
+      reserve += EncodedStringSize(e.group_id);
+      reserve += EncodedStringSize(e.sender);
+      reserve += EncodedBytesSize(e.payload);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.notices.size()), out);
@@ -480,6 +747,11 @@ std::vector<std::uint8_t> EncodeGroupNoticePullResp(
 std::vector<std::uint8_t> EncodeDeviceSyncPushResp(
     const DeviceSyncPushResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -490,6 +762,15 @@ std::vector<std::uint8_t> EncodeDeviceSyncPushResp(
 std::vector<std::uint8_t> EncodeDeviceSyncPullResp(
     const DeviceSyncPullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& msg : resp.messages) {
+      reserve += EncodedBytesSize(msg);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
@@ -504,6 +785,16 @@ std::vector<std::uint8_t> EncodeDeviceSyncPullResp(
 
 std::vector<std::uint8_t> EncodeDeviceListResp(const DeviceListResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& d : resp.devices) {
+      reserve += EncodedStringSize(d.device_id);
+      reserve += 4;
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.devices.size()), out);
@@ -519,6 +810,11 @@ std::vector<std::uint8_t> EncodeDeviceListResp(const DeviceListResponse& resp) {
 
 std::vector<std::uint8_t> EncodeDeviceKickResp(const DeviceKickResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -529,6 +825,11 @@ std::vector<std::uint8_t> EncodeDeviceKickResp(const DeviceKickResponse& resp) {
 std::vector<std::uint8_t> EncodeDevicePairingPushResp(
     const DevicePairingPushResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
   out.push_back(resp.success ? 1 : 0);
   if (!resp.success) {
     proto::WriteString(resp.error, out);
@@ -539,6 +840,15 @@ std::vector<std::uint8_t> EncodeDevicePairingPushResp(
 std::vector<std::uint8_t> EncodeDevicePairingPullResp(
     const DevicePairingPullResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& msg : resp.messages) {
+      reserve += EncodedBytesSize(msg);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.messages.size()), out);
@@ -554,6 +864,11 @@ std::vector<std::uint8_t> EncodeDevicePairingPullResp(
 std::vector<std::uint8_t> EncodeE2eeFileUploadResp(
     const FileBlobUploadResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.file_id) + 8);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.file_id, out);
@@ -567,6 +882,11 @@ std::vector<std::uint8_t> EncodeE2eeFileUploadResp(
 std::vector<std::uint8_t> EncodeE2eeFileDownloadResp(
     const FileBlobDownloadResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + 8 + EncodedBytesSize(resp.blob));
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.meta.size, out);
@@ -580,6 +900,12 @@ std::vector<std::uint8_t> EncodeE2eeFileDownloadResp(
 std::vector<std::uint8_t> EncodeE2eeFileUploadStartResp(
     const FileBlobUploadStartResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.file_id) +
+                EncodedStringSize(resp.upload_id));
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.file_id, out);
@@ -593,6 +919,11 @@ std::vector<std::uint8_t> EncodeE2eeFileUploadStartResp(
 std::vector<std::uint8_t> EncodeE2eeFileUploadChunkResp(
     const FileBlobUploadChunkResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + 8);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.bytes_received, out);
@@ -605,6 +936,11 @@ std::vector<std::uint8_t> EncodeE2eeFileUploadChunkResp(
 std::vector<std::uint8_t> EncodeE2eeFileUploadFinishResp(
     const FileBlobUploadFinishResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + 8);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.meta.size, out);
@@ -617,6 +953,11 @@ std::vector<std::uint8_t> EncodeE2eeFileUploadFinishResp(
 std::vector<std::uint8_t> EncodeE2eeFileDownloadStartResp(
     const FileBlobDownloadStartResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.download_id) + 8);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteString(resp.download_id, out);
@@ -630,6 +971,11 @@ std::vector<std::uint8_t> EncodeE2eeFileDownloadStartResp(
 std::vector<std::uint8_t> EncodeE2eeFileDownloadChunkResp(
     const FileBlobDownloadChunkResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + 8 + 1 + EncodedBytesSize(resp.chunk));
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
   out.push_back(resp.success ? 1 : 0);
   if (resp.success) {
     proto::WriteUint64(resp.offset, out);

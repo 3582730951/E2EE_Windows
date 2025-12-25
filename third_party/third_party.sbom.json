@@ -39,6 +39,20 @@
       ]
     },
     {
+      "type": "library",
+      "name": "kcp",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "MIT" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "3c77e0e8af2c2f91502a7be78520584eafca515817ae818e6846c65ae526c85a" }
+      ],
+      "properties": [
+        { "name": "path", "value": "core/third_party/kcp" }
+      ]
+    },
+    {
       "type": "file",
       "name": "rime-luna-pinyin",
       "version": "2024.02.10",

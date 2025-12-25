@@ -15,6 +15,8 @@ enum class AuthMode : std::uint8_t { kLegacy = 0, kOpaque = 1 };
 
 enum class DeviceSyncRole : std::uint8_t { kPrimary = 0, kLinked = 1 };
 
+enum class CoverTrafficMode : std::uint8_t { kAuto = 0, kOn = 1, kOff = 2 };
+
 struct ProxyConfig {
   ProxyType type{ProxyType::kNone};
   std::string host;
@@ -41,7 +43,7 @@ struct IdentityConfig {
 };
 
 struct TrafficConfig {
-  bool cover_traffic_enabled{true};
+  CoverTrafficMode cover_traffic_mode{CoverTrafficMode::kAuto};
   std::uint32_t cover_traffic_interval_sec{30};
 };
 
@@ -50,6 +52,21 @@ struct KtConfig {
   std::uint32_t gossip_alert_threshold{3};
   std::string root_pubkey_hex;
   std::string root_pubkey_path;
+};
+
+struct KcpConfig {
+  bool enable{false};
+  std::uint16_t server_port{0};
+  std::uint32_t mtu{1400};
+  std::uint32_t snd_wnd{256};
+  std::uint32_t rcv_wnd{256};
+  std::uint32_t nodelay{1};
+  std::uint32_t interval{10};
+  std::uint32_t resend{2};
+  std::uint32_t nc{1};
+  std::uint32_t min_rto{30};
+  std::uint32_t request_timeout_ms{5000};
+  std::uint32_t session_idle_sec{60};
 };
 
 struct ClientConfig {
@@ -61,11 +78,13 @@ struct ClientConfig {
   bool require_pinned_fingerprint{true};
   std::string pinned_fingerprint;
   AuthMode auth_mode{AuthMode::kOpaque};
+  bool allow_legacy_login{false};
   ProxyConfig proxy;
   DeviceSyncConfig device_sync;
   IdentityConfig identity;
   TrafficConfig traffic;
   KtConfig kt;
+  KcpConfig kcp;
 };
 
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,

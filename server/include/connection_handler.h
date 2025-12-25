@@ -1,6 +1,7 @@
 #ifndef MI_E2EE_SERVER_CONNECTION_HANDLER_H
 #define MI_E2EE_SERVER_CONNECTION_HANDLER_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
@@ -55,6 +56,7 @@ class ConnectionHandler {
   };
 
   struct OpsMetrics {
+    static constexpr std::size_t kLatencySampleCount = 1024;
     std::chrono::steady_clock::time_point started_at{};
     std::atomic<std::uint64_t> decode_fail{0};
     std::atomic<std::uint64_t> requests_total{0};
@@ -63,6 +65,13 @@ class ConnectionHandler {
     std::atomic<std::uint64_t> rate_limited{0};
     std::atomic<std::uint64_t> total_latency_us{0};
     std::atomic<std::uint64_t> max_latency_us{0};
+    std::array<std::atomic<std::uint64_t>, kLatencySampleCount>
+        latency_samples{};
+    std::atomic<std::uint32_t> latency_sample_index{0};
+    std::atomic<std::uint64_t> last_perf_sample_ns{0};
+    std::atomic<std::uint64_t> last_cpu_ticks{0};
+    std::atomic<std::uint64_t> last_cpu_pct_x100{0};
+    std::atomic<std::uint64_t> last_rss_bytes{0};
   };
 
   bool AllowUnauthByIp(const std::string& remote_ip);

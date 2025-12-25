@@ -32,6 +32,7 @@ int main() {
             "ops_enable=1\n"
             "ops_allow_remote=0\n"
             "ops_token=abcdefghijklmnop\n"
+            "key_protection=none\n"
             "kt_signing_key=kt_signing_key.bin\n");
   WriteFile("test_user.txt", "alice:secret\n");
   {
@@ -73,7 +74,7 @@ int main() {
   std::uint32_t ver = 0;
   std::uint64_t uptime = 0;
   if (!ReadUint32(resp.payload, off, ver) ||
-      !ReadUint64(resp.payload, off, uptime) || ver != 1) {
+      !ReadUint64(resp.payload, off, uptime) || ver != 2) {
     return 1;
   }
 

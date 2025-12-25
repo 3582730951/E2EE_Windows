@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cctype>
+#include <cerrno>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -15,7 +16,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
-#include <random>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -33,15 +34,21 @@
 #include <wincrypt.h>
 #include <bcrypt.h>
 #else
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
+#if defined(__linux__)
+#include <sys/random.h>
+#endif
 #include <unistd.h>
 #endif
 
 #include "monocypher.h"
 #include "miniz.h"
 #include "opaque_pake.h"
+#include "ikcp.h"
 
 extern "C" {
 int PQCLEAN_MLKEM768_CLEAN_crypto_kem_keypair(std::uint8_t* pk,
@@ -428,6 +435,46 @@ std::string Sha256Hex(const std::uint8_t* data, std::size_t len) {
   return out;
 }
 
+#ifndef _WIN32
+bool ReadUrandom(std::uint8_t* out, std::size_t len) {
+  int fd = open("/dev/urandom", O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  std::size_t offset = 0;
+  while (offset < len) {
+    const ssize_t n = read(fd, out + offset, len - offset);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    offset += static_cast<std::size_t>(n);
+  }
+  close(fd);
+  return offset == len;
+}
+
+bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
+#if defined(__linux__)
+  const ssize_t rc = getrandom(out, len, 0);
+  if (rc == static_cast<ssize_t>(len)) {
+    return true;
+  }
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
+  arc4random_buf(out, len);
+  return true;
+#endif
+  return ReadUrandom(out, len);
+}
+#endif
+
 bool RandomBytes(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
     return false;
@@ -436,16 +483,100 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
   return BCryptGenRandom(nullptr, out, static_cast<ULONG>(len),
                          BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
 #else
-  std::random_device rd;
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i] = static_cast<std::uint8_t>(rd());
-  }
-  return true;
+  return OsRandomBytes(out, len);
 #endif
 }
 
 bool RandomUint32(std::uint32_t& out) {
   return RandomBytes(reinterpret_cast<std::uint8_t*>(&out), sizeof(out));
+}
+
+std::uint32_t NowMs() {
+  static const auto kStart = std::chrono::steady_clock::now();
+  const auto now = std::chrono::steady_clock::now();
+  return static_cast<std::uint32_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(now - kStart)
+          .count());
+}
+
+bool SetNonBlockingSocket(
+#ifdef _WIN32
+    SOCKET sock
+#else
+    int sock
+#endif
+) {
+#ifdef _WIN32
+  u_long mode = 1;
+  return ioctlsocket(sock, FIONBIO, &mode) == 0;
+#else
+  int flags = fcntl(sock, F_GETFL, 0);
+  if (flags < 0) {
+    return false;
+  }
+  return fcntl(sock, F_SETFL, flags | O_NONBLOCK) == 0;
+#endif
+}
+
+bool WaitForReadable(
+#ifdef _WIN32
+    SOCKET sock,
+#else
+    int sock,
+#endif
+    std::uint32_t timeout_ms) {
+  fd_set readfds;
+  FD_ZERO(&readfds);
+  FD_SET(sock, &readfds);
+  timeval tv{};
+  tv.tv_sec = static_cast<long>(timeout_ms / 1000u);
+  tv.tv_usec = static_cast<long>((timeout_ms % 1000u) * 1000u);
+#ifdef _WIN32
+  const int rc = select(0, &readfds, nullptr, nullptr, &tv);
+#else
+  const int rc = select(sock + 1, &readfds, nullptr, nullptr, &tv);
+#endif
+  return rc > 0 && FD_ISSET(sock, &readfds);
+}
+
+bool SocketWouldBlock() {
+#ifdef _WIN32
+  const int err = WSAGetLastError();
+  return err == WSAEWOULDBLOCK;
+#else
+  return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+}
+
+bool IsLowEndDevice() {
+  const unsigned int hc = std::thread::hardware_concurrency();
+  if (hc != 0 && hc <= 4) {
+    return true;
+  }
+#ifdef _WIN32
+  MEMORYSTATUSEX ms{};
+  ms.dwLength = sizeof(ms);
+  if (GlobalMemoryStatusEx(&ms)) {
+    constexpr std::uint64_t kLowEndMem =
+        4ull * 1024ull * 1024ull * 1024ull;
+    if (ms.ullTotalPhys != 0 && ms.ullTotalPhys <= kLowEndMem) {
+      return true;
+    }
+  }
+#endif
+  return false;
+}
+
+bool ResolveCoverTrafficEnabled(const TrafficConfig& cfg) {
+  switch (cfg.cover_traffic_mode) {
+    case CoverTrafficMode::kOn:
+      return true;
+    case CoverTrafficMode::kOff:
+      return false;
+    case CoverTrafficMode::kAuto:
+    default:
+      return !IsLowEndDevice();
+  }
 }
 
 constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
@@ -1398,10 +1529,18 @@ bool HexToFixedBytes16(const std::string& hex,
   return true;
 }
 
+constexpr std::size_t kChatEnvelopeBaseBytes =
+    sizeof(kChatMagic) + 1 + 1 + 16;
+
+void ReserveChatEnvelope(std::vector<std::uint8_t>& out, std::size_t extra) {
+  out.clear();
+  out.reserve(kChatEnvelopeBaseBytes + extra);
+}
+
 bool EncodeChatText(const std::array<std::uint8_t, 16>& msg_id,
                     const std::string& text_utf8,
                     std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 2 + text_utf8.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeText);
@@ -1411,7 +1550,7 @@ bool EncodeChatText(const std::array<std::uint8_t, 16>& msg_id,
 
 bool EncodeChatAck(const std::array<std::uint8_t, 16>& msg_id,
                    std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 0);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeAck);
@@ -1421,7 +1560,7 @@ bool EncodeChatAck(const std::array<std::uint8_t, 16>& msg_id,
 
 bool EncodeChatReadReceipt(const std::array<std::uint8_t, 16>& msg_id,
                            std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 0);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeReadReceipt);
@@ -1431,7 +1570,7 @@ bool EncodeChatReadReceipt(const std::array<std::uint8_t, 16>& msg_id,
 
 bool EncodeChatTyping(const std::array<std::uint8_t, 16>& msg_id, bool typing,
                       std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 1);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeTyping);
@@ -1442,7 +1581,7 @@ bool EncodeChatTyping(const std::array<std::uint8_t, 16>& msg_id, bool typing,
 
 bool EncodeChatPresence(const std::array<std::uint8_t, 16>& msg_id, bool online,
                         std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 1);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypePresence);
@@ -1454,7 +1593,7 @@ bool EncodeChatPresence(const std::array<std::uint8_t, 16>& msg_id, bool online,
 bool EncodeChatSticker(const std::array<std::uint8_t, 16>& msg_id,
                        const std::string& sticker_id,
                        std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 2 + sticker_id.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeSticker);
@@ -1466,7 +1605,8 @@ bool EncodeChatGroupText(const std::array<std::uint8_t, 16>& msg_id,
                          const std::string& group_id,
                          const std::string& text_utf8,
                          std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out,
+                      2 + group_id.size() + 2 + text_utf8.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeGroupText);
@@ -1478,7 +1618,7 @@ bool EncodeChatGroupText(const std::array<std::uint8_t, 16>& msg_id,
 bool EncodeChatGroupInvite(const std::array<std::uint8_t, 16>& msg_id,
                            const std::string& group_id,
                            std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 2 + group_id.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeGroupInvite);
@@ -1491,12 +1631,12 @@ std::vector<std::uint8_t> BuildGroupSenderKeyDistSigMessage(
     const std::array<std::uint8_t, 32>& ck) {
   std::vector<std::uint8_t> msg;
   static constexpr char kPrefix[] = "MI_GSKD_V1";
+  msg.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + 4 + 4 + 4 + ck.size());
   msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
   mi::server::proto::WriteString(group_id, msg);
   mi::server::proto::WriteUint32(version, msg);
   mi::server::proto::WriteUint32(iteration, msg);
-  const std::vector<std::uint8_t> ck_bytes(ck.begin(), ck.end());
-  mi::server::proto::WriteBytes(ck_bytes, msg);
+  mi::server::proto::WriteBytes(ck.data(), ck.size(), msg);
   return msg;
 }
 
@@ -1505,7 +1645,7 @@ bool EncodeChatGroupSenderKeyDist(
     std::uint32_t version, std::uint32_t iteration,
     const std::array<std::uint8_t, 32>& ck,
     const std::vector<std::uint8_t>& sig, std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, group_id.size() + sig.size() + 50);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeGroupSenderKeyDist);
@@ -1516,8 +1656,7 @@ bool EncodeChatGroupSenderKeyDist(
     out.clear();
     return false;
   }
-  const std::vector<std::uint8_t> ck_bytes(ck.begin(), ck.end());
-  if (!mi::server::proto::WriteBytes(ck_bytes, out) ||
+  if (!mi::server::proto::WriteBytes(ck.data(), ck.size(), out) ||
       !mi::server::proto::WriteBytes(sig, out)) {
     out.clear();
     return false;
@@ -1556,7 +1695,7 @@ bool EncodeChatGroupSenderKeyReq(const std::array<std::uint8_t, 16>& msg_id,
                                  const std::string& group_id,
                                  std::uint32_t want_version,
                                  std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 2 + group_id.size() + 4);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeGroupSenderKeyReq);
@@ -1612,7 +1751,11 @@ bool EncodeChatRichText(const std::array<std::uint8_t, 16>& msg_id,
                         const std::array<std::uint8_t, 16>& reply_to,
                         const std::string& reply_preview_utf8,
                         std::vector<std::uint8_t>& out) {
-  out.clear();
+  std::size_t extra = 2 + 2 + text_utf8.size();
+  if (has_reply) {
+    extra += reply_to.size() + 2 + reply_preview_utf8.size();
+  }
+  ReserveChatEnvelope(out, extra);
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeRich);
@@ -1637,7 +1780,7 @@ bool EncodeChatRichLocation(const std::array<std::uint8_t, 16>& msg_id,
                             std::int32_t lat_e7, std::int32_t lon_e7,
                             const std::string& label_utf8,
                             std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out, 2 + 8 + 2 + label_utf8.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeRich);
@@ -1657,7 +1800,8 @@ bool EncodeChatRichContactCard(const std::array<std::uint8_t, 16>& msg_id,
                                const std::string& card_username,
                                const std::string& card_display,
                                std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out,
+                      2 + 2 + card_username.size() + 2 + card_display.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeRich);
@@ -1874,6 +2018,8 @@ void BuildGroupCipherAd(const std::string& group_id,
                         std::vector<std::uint8_t>& out) {
   out.clear();
   static constexpr char kPrefix[] = "MI_GMSG_AD_V1";
+  out.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + 2 +
+              sender_username.size() + 4 + 4);
   out.insert(out.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
   mi::server::proto::WriteString(group_id, out);
   mi::server::proto::WriteString(sender_username, out);
@@ -1890,6 +2036,9 @@ bool EncodeGroupCipherNoSig(const std::string& group_id,
                             const std::vector<std::uint8_t>& cipher,
                             std::vector<std::uint8_t>& out) {
   out.clear();
+  out.reserve(sizeof(kGroupCipherMagic) + 1 + 4 + 4 +
+              2 + group_id.size() + 2 + sender_username.size() +
+              4 + nonce.size() + 4 + mac.size() + 4 + cipher.size());
   out.insert(out.end(), kGroupCipherMagic,
              kGroupCipherMagic + sizeof(kGroupCipherMagic));
   out.push_back(kGroupCipherVersion);
@@ -1900,10 +2049,8 @@ bool EncodeGroupCipherNoSig(const std::string& group_id,
     out.clear();
     return false;
   }
-  const std::vector<std::uint8_t> nonce_bytes(nonce.begin(), nonce.end());
-  const std::vector<std::uint8_t> mac_bytes(mac.begin(), mac.end());
-  if (!mi::server::proto::WriteBytes(nonce_bytes, out) ||
-      !mi::server::proto::WriteBytes(mac_bytes, out) ||
+  if (!mi::server::proto::WriteBytes(nonce.data(), nonce.size(), out) ||
+      !mi::server::proto::WriteBytes(mac.data(), mac.size(), out) ||
       !mi::server::proto::WriteBytes(cipher, out)) {
     out.clear();
     return false;
@@ -2117,7 +2264,9 @@ bool EncodeChatFile(const std::array<std::uint8_t, 16>& msg_id,
                     const std::string& file_id,
                     const std::array<std::uint8_t, 32>& file_key,
                     std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out,
+                      8 + 2 + file_name.size() + 2 + file_id.size() +
+                          file_key.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeFile);
@@ -2139,7 +2288,9 @@ bool EncodeChatGroupFile(const std::array<std::uint8_t, 16>& msg_id,
                          const std::string& file_id,
                          const std::array<std::uint8_t, 32>& file_key,
                          std::vector<std::uint8_t>& out) {
-  out.clear();
+  ReserveChatEnvelope(out,
+                      2 + group_id.size() + 8 + 2 + file_name.size() + 2 +
+                          file_id.size() + file_key.size());
   out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
   out.push_back(kChatVersion);
   out.push_back(kChatTypeGroupFile);
@@ -2538,8 +2689,15 @@ struct ClientCore::RemoteStream {
   std::string host;
   std::uint16_t port{0};
   bool use_tls{false};
+  bool use_kcp{false};
+  KcpConfig kcp_cfg;
   ProxyConfig proxy;
   std::string pinned_fingerprint;
+
+  ikcpcb* kcp{nullptr};
+  std::uint32_t kcp_conv{0};
+  std::vector<std::uint8_t> kcp_recv_buf;
+  std::chrono::steady_clock::time_point kcp_last_active{};
 
 #ifdef _WIN32
   SOCKET sock{INVALID_SOCKET};
@@ -3006,6 +3164,9 @@ struct ClientCore::RemoteStream {
 
   bool Connect(std::string& out_server_fingerprint, std::string& error) {
     out_server_fingerprint.clear();
+    if (use_kcp) {
+      return ConnectKcp(error);
+    }
 #ifdef _WIN32
     if (use_tls) {
       return ConnectTls(out_server_fingerprint, error);
@@ -3019,6 +3180,107 @@ struct ClientCore::RemoteStream {
                    std::string& error) {
     out_bytes.clear();
     error.clear();
+    if (use_kcp) {
+      const auto now = std::chrono::steady_clock::now();
+      if (kcp_cfg.session_idle_sec > 0 &&
+          kcp_last_active.time_since_epoch().count() != 0) {
+        const auto idle = std::chrono::duration_cast<std::chrono::seconds>(
+            now - kcp_last_active);
+        if (idle.count() > static_cast<long long>(kcp_cfg.session_idle_sec)) {
+          error = "kcp idle timeout";
+          return false;
+        }
+      }
+
+      if (!kcp || sock
+#ifdef _WIN32
+              == INVALID_SOCKET
+#else
+              < 0
+#endif
+      ) {
+        error = "not connected";
+        return false;
+      }
+      if (in_bytes.empty()) {
+        error = "empty request";
+        return false;
+      }
+
+      if (ikcp_send(kcp, reinterpret_cast<const char*>(in_bytes.data()),
+                    static_cast<int>(in_bytes.size())) < 0) {
+        error = "kcp send failed";
+        return false;
+      }
+      ikcp_flush(kcp);
+      kcp_last_active = now;
+
+      const std::uint32_t start_ms = NowMs();
+      const std::uint32_t timeout_ms =
+          kcp_cfg.request_timeout_ms == 0 ? 5000u
+                                          : kcp_cfg.request_timeout_ms;
+      if (kcp_recv_buf.empty()) {
+        kcp_recv_buf.resize(std::max<std::uint32_t>(kcp_cfg.mtu, 1200u) + 256u);
+      }
+      auto& datagram = kcp_recv_buf;
+
+      while (true) {
+        const std::uint32_t now_ms = NowMs();
+        if (now_ms - start_ms >= timeout_ms) {
+          error = "kcp timeout";
+          return false;
+        }
+
+        while (true) {
+#ifdef _WIN32
+          const int n = ::recv(sock, reinterpret_cast<char*>(datagram.data()),
+                               static_cast<int>(datagram.size()), 0);
+          if (n == SOCKET_ERROR) {
+            if (SocketWouldBlock()) {
+              break;
+            }
+            error = "kcp recv failed";
+            return false;
+          }
+#else
+          const ssize_t n = ::recv(sock, datagram.data(), datagram.size(), 0);
+          if (n < 0) {
+            if (SocketWouldBlock()) {
+              break;
+            }
+            error = "kcp recv failed";
+            return false;
+          }
+#endif
+          if (n > 0) {
+            ikcp_input(kcp, reinterpret_cast<const char*>(datagram.data()), n);
+            kcp_last_active = std::chrono::steady_clock::now();
+          } else {
+            break;
+          }
+        }
+
+        const int peek = ikcp_peeksize(kcp);
+        if (peek > 0) {
+          out_bytes.resize(static_cast<std::size_t>(peek));
+          const int n = ikcp_recv(
+              kcp, reinterpret_cast<char*>(out_bytes.data()), peek);
+          if (n > 0) {
+            out_bytes.resize(static_cast<std::size_t>(n));
+            return true;
+          }
+          out_bytes.clear();
+        }
+
+        const std::uint32_t check = ikcp_check(kcp, now_ms);
+        const std::uint32_t wait_ms =
+            check > now_ms ? (check - now_ms) : 1u;
+        const std::uint32_t remaining = timeout_ms - (now_ms - start_ms);
+        const std::uint32_t sleep_ms = std::min(wait_ms, remaining);
+        WaitForReadable(sock, sleep_ms);
+        ikcp_update(kcp, NowMs());
+      }
+    }
 #ifdef _WIN32
     if (use_tls) {
       if (sock == INVALID_SOCKET) {
@@ -4208,8 +4470,15 @@ struct ClientCore::RemoteStream {
   std::string host;
   std::uint16_t port{0};
   bool use_tls{false};
+  bool use_kcp{false};
+  KcpConfig kcp_cfg;
   ProxyConfig proxy;
   std::string pinned_fingerprint;
+
+  ikcpcb* kcp{nullptr};
+  std::uint32_t kcp_conv{0};
+  std::vector<std::uint8_t> kcp_recv_buf;
+  std::chrono::steady_clock::time_point kcp_last_active{};
 
 #ifdef _WIN32
   SOCKET sock{INVALID_SOCKET};
@@ -4224,21 +4493,41 @@ struct ClientCore::RemoteStream {
 #endif
 
   RemoteStream(std::string host_in, std::uint16_t port_in, bool use_tls_in,
-               ProxyConfig proxy_in, std::string pinned_fingerprint_in)
+               bool use_kcp_in, KcpConfig kcp_cfg_in, ProxyConfig proxy_in,
+               std::string pinned_fingerprint_in)
       : host(std::move(host_in)),
         port(port_in),
         use_tls(use_tls_in),
+        use_kcp(use_kcp_in),
+        kcp_cfg(std::move(kcp_cfg_in)),
         proxy(std::move(proxy_in)),
         pinned_fingerprint(std::move(pinned_fingerprint_in)) {}
 
   ~RemoteStream() { Close(); }
 
   bool Matches(const std::string& host_in, std::uint16_t port_in,
-               bool use_tls_in, const ProxyConfig& proxy_in,
+               bool use_tls_in, bool use_kcp_in, const KcpConfig& kcp_cfg_in,
+               const ProxyConfig& proxy_in,
                const std::string& pinned_fingerprint_in) const {
     if (host != host_in || port != port_in || use_tls != use_tls_in ||
-        pinned_fingerprint != pinned_fingerprint_in) {
+        use_kcp != use_kcp_in || pinned_fingerprint != pinned_fingerprint_in) {
       return false;
+    }
+    if (use_kcp) {
+      if (kcp_cfg.enable != kcp_cfg_in.enable ||
+          kcp_cfg.server_port != kcp_cfg_in.server_port ||
+          kcp_cfg.mtu != kcp_cfg_in.mtu ||
+          kcp_cfg.snd_wnd != kcp_cfg_in.snd_wnd ||
+          kcp_cfg.rcv_wnd != kcp_cfg_in.rcv_wnd ||
+          kcp_cfg.nodelay != kcp_cfg_in.nodelay ||
+          kcp_cfg.interval != kcp_cfg_in.interval ||
+          kcp_cfg.resend != kcp_cfg_in.resend ||
+          kcp_cfg.nc != kcp_cfg_in.nc ||
+          kcp_cfg.min_rto != kcp_cfg_in.min_rto ||
+          kcp_cfg.request_timeout_ms != kcp_cfg_in.request_timeout_ms ||
+          kcp_cfg.session_idle_sec != kcp_cfg_in.session_idle_sec) {
+        return false;
+      }
     }
     return proxy.type == proxy_in.type && proxy.host == proxy_in.host &&
            proxy.port == proxy_in.port && proxy.username == proxy_in.username &&
@@ -4246,6 +4535,13 @@ struct ClientCore::RemoteStream {
   }
 
   void Close() {
+    if (kcp) {
+      ikcp_release(kcp);
+      kcp = nullptr;
+    }
+    kcp_recv_buf.clear();
+    kcp_conv = 0;
+    kcp_last_active = {};
 #ifdef _WIN32
     if (sock != INVALID_SOCKET) {
       closesocket(sock);
@@ -4260,6 +4556,20 @@ struct ClientCore::RemoteStream {
     enc_buf.clear();
     plain_buf.clear();
     plain_off = 0;
+  }
+
+  static int KcpOutput(const char* buf, int len, ikcpcb* /*kcp*/, void* user) {
+    if (!buf || len <= 0 || !user) {
+      return -1;
+    }
+    auto* self = static_cast<RemoteStream*>(user);
+#ifdef _WIN32
+    const int sent = ::send(self->sock, buf, len, 0);
+    return sent == len ? 0 : -1;
+#else
+    const ssize_t sent = ::send(self->sock, buf, static_cast<std::size_t>(len), 0);
+    return sent == len ? 0 : -1;
+#endif
   }
 
   bool ConnectPlain(std::string& error) {
@@ -4526,6 +4836,113 @@ struct ClientCore::RemoteStream {
     return true;
   }
 
+  bool ConnectKcp(std::string& error) {
+    error.clear();
+    if (host.empty() || port == 0) {
+      error = "invalid endpoint";
+      return false;
+    }
+    if (proxy.enabled()) {
+      error = "kcp does not support proxy";
+      return false;
+    }
+
+#ifdef _WIN32
+    if (!EnsureWinsock()) {
+      error = "winsock init failed";
+      return false;
+    }
+#endif
+
+    addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+
+    addrinfo* result = nullptr;
+    const std::string port_str = std::to_string(port);
+    if (getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result) != 0) {
+      error = "dns resolve failed";
+      return false;
+    }
+
+#ifdef _WIN32
+    SOCKET new_sock = INVALID_SOCKET;
+    for (addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
+      new_sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+      if (new_sock == INVALID_SOCKET) {
+        continue;
+      }
+      if (::connect(new_sock, rp->ai_addr, static_cast<int>(rp->ai_addrlen)) ==
+          0) {
+        break;
+      }
+      closesocket(new_sock);
+      new_sock = INVALID_SOCKET;
+    }
+    freeaddrinfo(result);
+    if (new_sock == INVALID_SOCKET) {
+      error = "connect failed";
+      return false;
+    }
+#else
+    int new_sock = -1;
+    for (addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
+      new_sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+      if (new_sock < 0) {
+        continue;
+      }
+      if (::connect(new_sock, rp->ai_addr, rp->ai_addrlen) == 0) {
+        break;
+      }
+      ::close(new_sock);
+      new_sock = -1;
+    }
+    freeaddrinfo(result);
+    if (new_sock < 0) {
+      error = "connect failed";
+      return false;
+    }
+#endif
+
+    if (!SetNonBlockingSocket(new_sock)) {
+      error = "kcp non-blocking failed";
+#ifdef _WIN32
+      closesocket(new_sock);
+#else
+      ::close(new_sock);
+#endif
+      return false;
+    }
+
+    sock = new_sock;
+    std::uint32_t conv = 0;
+    if (!RandomUint32(conv) || conv == 0) {
+      conv = NowMs() ^ 0xA5A5A5A5u;
+    }
+    kcp_conv = conv;
+    kcp = ikcp_create(conv, this);
+    if (!kcp) {
+      error = "kcp create failed";
+      Close();
+      return false;
+    }
+    kcp->output = KcpOutput;
+    ikcp_setmtu(kcp, static_cast<int>(kcp_cfg.mtu));
+    ikcp_wndsize(kcp, static_cast<int>(kcp_cfg.snd_wnd),
+                 static_cast<int>(kcp_cfg.rcv_wnd));
+    ikcp_nodelay(kcp, static_cast<int>(kcp_cfg.nodelay),
+                 static_cast<int>(kcp_cfg.interval),
+                 static_cast<int>(kcp_cfg.resend),
+                 static_cast<int>(kcp_cfg.nc));
+    if (kcp_cfg.min_rto > 0) {
+      kcp->rx_minrto = static_cast<int>(kcp_cfg.min_rto);
+    }
+    kcp_recv_buf.resize(std::max<std::uint32_t>(kcp_cfg.mtu, 1200u) + 256u);
+    kcp_last_active = std::chrono::steady_clock::now();
+    return true;
+  }
+
 #ifdef _WIN32
   bool ConnectTls(std::string& out_server_fingerprint, std::string& error) {
     out_server_fingerprint.clear();
@@ -4701,6 +5118,9 @@ struct ClientCore::RemoteStream {
 
   bool Connect(std::string& out_server_fingerprint, std::string& error) {
     out_server_fingerprint.clear();
+    if (use_kcp) {
+      return ConnectKcp(error);
+    }
 #ifdef _WIN32
     if (use_tls) {
       return ConnectTls(out_server_fingerprint, error);
@@ -4714,6 +5134,107 @@ struct ClientCore::RemoteStream {
                    std::string& error) {
     out_bytes.clear();
     error.clear();
+    if (use_kcp) {
+      const auto now = std::chrono::steady_clock::now();
+      if (kcp_cfg.session_idle_sec > 0 &&
+          kcp_last_active.time_since_epoch().count() != 0) {
+        const auto idle = std::chrono::duration_cast<std::chrono::seconds>(
+            now - kcp_last_active);
+        if (idle.count() > static_cast<long long>(kcp_cfg.session_idle_sec)) {
+          error = "kcp idle timeout";
+          return false;
+        }
+      }
+
+      if (!kcp || sock
+#ifdef _WIN32
+              == INVALID_SOCKET
+#else
+              < 0
+#endif
+      ) {
+        error = "not connected";
+        return false;
+      }
+      if (in_bytes.empty()) {
+        error = "empty request";
+        return false;
+      }
+
+      if (ikcp_send(kcp, reinterpret_cast<const char*>(in_bytes.data()),
+                    static_cast<int>(in_bytes.size())) < 0) {
+        error = "kcp send failed";
+        return false;
+      }
+      ikcp_flush(kcp);
+      kcp_last_active = now;
+
+      const std::uint32_t start_ms = NowMs();
+      const std::uint32_t timeout_ms =
+          kcp_cfg.request_timeout_ms == 0 ? 5000u
+                                          : kcp_cfg.request_timeout_ms;
+      if (kcp_recv_buf.empty()) {
+        kcp_recv_buf.resize(1400u + 256u);
+      }
+      auto& datagram = kcp_recv_buf;
+
+      while (true) {
+        const std::uint32_t now_ms = NowMs();
+        if (now_ms - start_ms >= timeout_ms) {
+          error = "kcp timeout";
+          return false;
+        }
+
+        while (true) {
+#ifdef _WIN32
+          const int n = ::recv(sock, reinterpret_cast<char*>(datagram.data()),
+                               static_cast<int>(datagram.size()), 0);
+          if (n == SOCKET_ERROR) {
+            if (SocketWouldBlock()) {
+              break;
+            }
+            error = "kcp recv failed";
+            return false;
+          }
+#else
+          const ssize_t n = ::recv(sock, datagram.data(), datagram.size(), 0);
+          if (n < 0) {
+            if (SocketWouldBlock()) {
+              break;
+            }
+            error = "kcp recv failed";
+            return false;
+          }
+#endif
+          if (n > 0) {
+            ikcp_input(kcp, reinterpret_cast<const char*>(datagram.data()), n);
+            kcp_last_active = std::chrono::steady_clock::now();
+          } else {
+            break;
+          }
+        }
+
+        const int peek = ikcp_peeksize(kcp);
+        if (peek > 0) {
+          out_bytes.resize(static_cast<std::size_t>(peek));
+          const int n = ikcp_recv(
+              kcp, reinterpret_cast<char*>(out_bytes.data()), peek);
+          if (n > 0) {
+            out_bytes.resize(static_cast<std::size_t>(n));
+            return true;
+          }
+          out_bytes.clear();
+        }
+
+        const std::uint32_t check = ikcp_check(kcp, now_ms);
+        const std::uint32_t wait_ms =
+            check > now_ms ? (check - now_ms) : 1u;
+        const std::uint32_t remaining = timeout_ms - (now_ms - start_ms);
+        const std::uint32_t sleep_ms = std::min(wait_ms, remaining);
+        WaitForReadable(sock, sleep_ms);
+        ikcp_update(kcp, NowMs());
+      }
+    }
 #ifdef _WIN32
     if (use_tls) {
       if (sock == INVALID_SOCKET) {
@@ -4862,12 +5383,20 @@ bool ClientCore::Init(const std::string& config_path) {
   }
   if (remote_mode_) {
     server_ip_ = cfg.server_ip;
-    server_port_ = cfg.server_port;
     use_tls_ = cfg.use_tls;
     require_tls_ = cfg.require_tls;
-    transport_kind_ =
-        use_tls_ ? mi::server::TransportKind::kTls
-                 : mi::server::TransportKind::kTcp;
+    use_kcp_ = cfg.kcp.enable;
+    kcp_cfg_ = cfg.kcp;
+    if (use_kcp_) {
+      use_tls_ = false;
+      require_tls_ = false;
+    }
+    server_port_ = use_kcp_ && cfg.kcp.server_port != 0 ? cfg.kcp.server_port
+                                                        : cfg.server_port;
+    transport_kind_ = use_kcp_
+                          ? mi::server::TransportKind::kKcp
+                          : (use_tls_ ? mi::server::TransportKind::kTls
+                                      : mi::server::TransportKind::kTcp);
     auth_mode_ = cfg.auth_mode;
     proxy_ = cfg.proxy;
     device_sync_enabled_ = cfg.device_sync.enabled;
@@ -4877,7 +5406,7 @@ bool ClientCore::Init(const std::string& config_path) {
     identity_policy_.legacy_retention_days = cfg.identity.legacy_retention_days;
     identity_policy_.tpm_enable = cfg.identity.tpm_enable;
     identity_policy_.tpm_require = cfg.identity.tpm_require;
-    cover_traffic_enabled_ = cfg.traffic.cover_traffic_enabled;
+    cover_traffic_enabled_ = ResolveCoverTrafficEnabled(cfg.traffic);
     cover_traffic_interval_sec_ = cfg.traffic.cover_traffic_interval_sec;
     cover_traffic_last_sent_ = {};
     trust_store_path_.clear();
@@ -4886,38 +5415,44 @@ bool ClientCore::Init(const std::string& config_path) {
     pinned_server_fingerprint_.clear();
     pending_server_fingerprint_.clear();
     pending_server_pin_.clear();
-    if (!cfg.trust_store.empty()) {
-      std::filesystem::path trust = cfg.trust_store;
-      if (!trust.is_absolute()) {
-        trust = data_dir / trust;
+    if (!use_kcp_) {
+      if (!cfg.trust_store.empty()) {
+        std::filesystem::path trust = cfg.trust_store;
+        if (!trust.is_absolute()) {
+          trust = data_dir / trust;
+        }
+        trust_store_path_ = trust.string();
+        TrustEntry entry;
+        if (LoadTrustEntry(trust_store_path_,
+                           EndpointKey(server_ip_, server_port_),
+                           entry)) {
+          pinned_server_fingerprint_ = entry.fingerprint;
+          trust_store_tls_required_ = entry.tls_required;
+        }
       }
-      trust_store_path_ = trust.string();
-      TrustEntry entry;
-      if (LoadTrustEntry(trust_store_path_,
-                         EndpointKey(server_ip_, server_port_),
-                         entry)) {
-        pinned_server_fingerprint_ = entry.fingerprint;
-        trust_store_tls_required_ = entry.tls_required;
-      }
-    }
-    if (!cfg.pinned_fingerprint.empty()) {
-      const std::string pin = NormalizeFingerprint(cfg.pinned_fingerprint);
-      if (!IsHex64(pin)) {
-        last_error_ = "pinned_fingerprint invalid";
-        return false;
-      }
-      pinned_server_fingerprint_ = pin;
-      if (!trust_store_path_.empty()) {
-        TrustEntry entry{pin, require_tls_};
-        std::string store_err;
-        if (!StoreTrustEntry(trust_store_path_,
-                             EndpointKey(server_ip_, server_port_),
-                             entry, store_err)) {
-          last_error_ = store_err.empty() ? "store trust failed" : store_err;
+      if (!cfg.pinned_fingerprint.empty()) {
+        const std::string pin = NormalizeFingerprint(cfg.pinned_fingerprint);
+        if (!IsHex64(pin)) {
+          last_error_ = "pinned_fingerprint invalid";
           return false;
         }
-        trust_store_tls_required_ = entry.tls_required;
+        pinned_server_fingerprint_ = pin;
+        if (!trust_store_path_.empty()) {
+          TrustEntry entry{pin, require_tls_};
+          std::string store_err;
+          if (!StoreTrustEntry(trust_store_path_,
+                               EndpointKey(server_ip_, server_port_),
+                               entry, store_err)) {
+            last_error_ = store_err.empty() ? "store trust failed" : store_err;
+            return false;
+          }
+          trust_store_tls_required_ = entry.tls_required;
+        }
       }
+    } else {
+      require_pinned_fingerprint_ = false;
+      trust_store_path_.clear();
+      pinned_server_fingerprint_.clear();
     }
     if (local_handle_) {
       mi_server_destroy(local_handle_);
@@ -5014,6 +5549,8 @@ bool ClientCore::Init(const std::string& config_path) {
   server_port_ = 0;
   use_tls_ = false;
   require_tls_ = true;
+  use_kcp_ = false;
+  kcp_cfg_ = KcpConfig{};
   transport_kind_ = mi::server::TransportKind::kLocal;
   auth_mode_ = AuthMode::kLegacy;
   proxy_ = ProxyConfig{};
@@ -5030,8 +5567,8 @@ bool ClientCore::Init(const std::string& config_path) {
   pending_server_fingerprint_.clear();
   pending_server_pin_.clear();
   identity_policy_ = mi::client::e2ee::IdentityPolicy{};
-  cover_traffic_enabled_ = true;
-  cover_traffic_interval_sec_ = 30;
+  cover_traffic_enabled_ = ResolveCoverTrafficEnabled(ClientConfig{}.traffic);
+  cover_traffic_interval_sec_ = ClientConfig{}.traffic.cover_traffic_interval_sec;
   cover_traffic_last_sent_ = {};
   last_error_.clear();
   if (local_handle_) {
@@ -5115,8 +5652,11 @@ bool ClientCore::Register(const std::string& username,
 
   mi::server::Frame start;
   start.type = mi::server::FrameType::kOpaqueRegisterStart;
-  mi::server::proto::WriteString(username, start.payload);
-  mi::server::proto::WriteBytes(req_vec, start.payload);
+  if (!mi::server::proto::WriteString(username, start.payload) ||
+      !mi::server::proto::WriteBytes(req_vec, start.payload)) {
+    last_error_ = "opaque register start payload too large";
+    return false;
+  }
 
   std::vector<std::uint8_t> resp_vec;
   if (!ProcessRaw(mi::server::EncodeFrame(start), resp_vec)) {
@@ -5164,8 +5704,11 @@ bool ClientCore::Register(const std::string& username,
 
   mi::server::Frame finish;
   finish.type = mi::server::FrameType::kOpaqueRegisterFinish;
-  mi::server::proto::WriteString(username, finish.payload);
-  mi::server::proto::WriteBytes(upload_vec, finish.payload);
+  if (!mi::server::proto::WriteString(username, finish.payload) ||
+      !mi::server::proto::WriteBytes(upload_vec, finish.payload)) {
+    last_error_ = "opaque register finish payload too large";
+    return false;
+  }
 
   resp_vec.clear();
   if (!ProcessRaw(mi::server::EncodeFrame(finish), resp_vec)) {
@@ -5508,8 +6051,11 @@ bool ClientCore::Login(const std::string& username,
   if (auth_mode_ == AuthMode::kLegacy) {
     mi::server::Frame login;
     login.type = mi::server::FrameType::kLogin;
-    mi::server::proto::WriteString(username, login.payload);
-    mi::server::proto::WriteString(password, login.payload);
+    if (!mi::server::proto::WriteString(username, login.payload) ||
+        !mi::server::proto::WriteString(password, login.payload)) {
+      last_error_ = "credentials too long";
+      return false;
+    }
 
     std::vector<std::uint8_t> resp_vec;
     if (!ProcessRaw(mi::server::EncodeFrame(login), resp_vec)) {
@@ -5610,8 +6156,11 @@ bool ClientCore::Login(const std::string& username,
 
   mi::server::Frame start;
   start.type = mi::server::FrameType::kOpaqueLoginStart;
-  mi::server::proto::WriteString(username, start.payload);
-  mi::server::proto::WriteBytes(req_vec, start.payload);
+  if (!mi::server::proto::WriteString(username, start.payload) ||
+      !mi::server::proto::WriteBytes(req_vec, start.payload)) {
+    last_error_ = "opaque login start payload too large";
+    return false;
+  }
 
   std::vector<std::uint8_t> resp_vec;
   if (!ProcessRaw(mi::server::EncodeFrame(start), resp_vec)) {
@@ -5679,8 +6228,11 @@ bool ClientCore::Login(const std::string& username,
 
   mi::server::Frame finish;
   finish.type = mi::server::FrameType::kOpaqueLoginFinish;
-  mi::server::proto::WriteString(login_id, finish.payload);
-  mi::server::proto::WriteBytes(final_vec, finish.payload);
+  if (!mi::server::proto::WriteString(login_id, finish.payload) ||
+      !mi::server::proto::WriteBytes(final_vec, finish.payload)) {
+    last_error_ = "opaque login finish payload too large";
+    return false;
+  }
 
   resp_vec.clear();
   if (!ProcessRaw(mi::server::EncodeFrame(finish), resp_vec)) {
@@ -7044,11 +7596,12 @@ bool ClientCore::ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
 
     std::lock_guard<std::mutex> lock(remote_stream_mutex_);
     if (!remote_stream_ ||
-        !remote_stream_->Matches(server_ip_, server_port_, use_tls_, proxy_,
-                                 pinned_server_fingerprint_)) {
+        !remote_stream_->Matches(server_ip_, server_port_, use_tls_, use_kcp_,
+                                 kcp_cfg_, proxy_, pinned_server_fingerprint_)) {
       remote_stream_.reset();
       remote_stream_ = std::make_unique<RemoteStream>(
-          server_ip_, server_port_, use_tls_, proxy_, pinned_server_fingerprint_);
+          server_ip_, server_port_, use_tls_, use_kcp_, kcp_cfg_, proxy_,
+          pinned_server_fingerprint_);
       std::string fingerprint;
       std::string err;
       if (!remote_stream_->Connect(fingerprint, err)) {
@@ -7063,9 +7616,17 @@ bool ClientCore::ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
           set_remote_ok(false, last_error_);
           return false;
         }
-        last_error_ = err.empty()
-                          ? (use_tls_ ? "tls connect failed" : "tcp connect failed")
-                          : err;
+        if (err.empty()) {
+          if (use_kcp_) {
+            last_error_ = "kcp connect failed";
+          } else if (use_tls_) {
+            last_error_ = "tls connect failed";
+          } else {
+            last_error_ = "tcp connect failed";
+          }
+        } else {
+          last_error_ = err;
+        }
         set_remote_ok(false, last_error_);
         return false;
       }
@@ -7076,9 +7637,15 @@ bool ClientCore::ProcessRaw(const std::vector<std::uint8_t>& in_bytes,
     std::string err;
     if (!remote_stream_->SendAndRecv(in_bytes, out_bytes, err)) {
       remote_stream_.reset();
-      last_error_ = err.empty()
-                        ? (use_tls_ ? "tls request failed" : "tcp request failed")
-                        : err;
+      if (!err.empty()) {
+        last_error_ = err;
+      } else if (use_kcp_) {
+        last_error_ = "kcp request failed";
+      } else if (use_tls_) {
+        last_error_ = "tls request failed";
+      } else {
+        last_error_ = "tcp request failed";
+      }
       set_remote_ok(false, last_error_);
       return false;
     }
@@ -7115,6 +7682,7 @@ bool ClientCore::ProcessEncrypted(mi::server::FrameType type,
 
   mi::server::Frame f;
   f.type = type;
+  f.payload.reserve(2 + token_.size() + cipher.size());
   mi::server::proto::WriteString(token_, f.payload);
   f.payload.insert(f.payload.end(), cipher.begin(), cipher.end());
   const auto bytes = mi::server::EncodeFrame(f);
@@ -7156,9 +7724,10 @@ bool ClientCore::ProcessEncrypted(mi::server::FrameType type,
     prekey_published_ = false;
     return false;
   }
-  std::vector<std::uint8_t> resp_cipher(resp_frame.payload.begin() + off,
-                                        resp_frame.payload.end());
-  if (!channel_.Decrypt(resp_cipher, resp_frame.type, out_plain)) {
+  resp_frame.payload.erase(
+      resp_frame.payload.begin(),
+      resp_frame.payload.begin() + static_cast<std::ptrdiff_t>(off));
+  if (!channel_.Decrypt(resp_frame.payload, resp_frame.type, out_plain)) {
     if (last_error_.empty()) {
       last_error_ = "decrypt failed";
     }
