@@ -101,9 +101,8 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
       if ((mask & kWriteMask) == 0) {
         continue;
       }
-      const PSID ace_sid =
-          const_cast<PSID>(reinterpret_cast<const void*>(
-              &allowed->SidStart));
+      const void* sid_ptr = &allowed->SidStart;
+      PSID ace_sid = const_cast<void*>(sid_ptr);
       for (PSID target : target_sids) {
         if (EqualSid(ace_sid, target)) {
           error = "insecure acl (world-writable)";
@@ -125,8 +124,8 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
       if (allowed->Flags & ACE_INHERITED_OBJECT_TYPE_PRESENT) {
         offset += sizeof(GUID);
       }
-      const PSID ace_sid = reinterpret_cast<PSID>(
-          reinterpret_cast<const BYTE*>(ace) + offset);
+      const auto* ace_bytes = reinterpret_cast<const BYTE*>(ace);
+      PSID ace_sid = const_cast<BYTE*>(ace_bytes + offset);
       for (PSID target : target_sids) {
         if (EqualSid(ace_sid, target)) {
           error = "insecure acl (world-writable)";

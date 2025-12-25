@@ -266,6 +266,13 @@ bool VerifyFileSha256(const std::filesystem::path& path,
   return true;
 }
 
+bool WriteFileAtomic(const std::filesystem::path& path,
+                     const std::uint8_t* data,
+                     std::size_t len,
+                     bool overwrite,
+                     bool owner_only,
+                     std::string& error);
+
 bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
                                    std::vector<std::uint8_t>& out_setup,
                                    KeyProtectionMode key_protection,

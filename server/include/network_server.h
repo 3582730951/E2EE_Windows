@@ -29,6 +29,10 @@ struct NetworkServerLimits {
 
 //  TCP/KCP 
 class NetworkServer {
+  struct Connection;
+  class Reactor;
+  class IocpEngine;
+
  public:
   NetworkServer(Listener* listener, std::uint16_t port, bool tls_enable = false,
                 std::string tls_cert = "mi_e2ee_server.pfx",
@@ -72,9 +76,6 @@ class NetworkServer {
   std::mutex work_mutex_;
   std::condition_variable work_cv_;
   std::deque<std::function<void()>> work_queue_;
-  struct Connection;
-  class Reactor;
-  class IocpEngine;
   std::vector<std::unique_ptr<Reactor>> reactors_;
 #ifdef _WIN32
   std::unique_ptr<IocpEngine> iocp_;

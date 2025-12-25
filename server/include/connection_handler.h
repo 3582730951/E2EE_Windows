@@ -28,6 +28,30 @@ class ConnectionHandler {
               const std::string& remote_ip,
               TransportKind transport = TransportKind::kLocal);
 
+  struct OpsMetrics {
+    static constexpr std::size_t kLatencySampleCount = 1024;
+    static constexpr std::size_t kPerfSampleCount = 120;
+    std::chrono::steady_clock::time_point started_at{};
+    std::atomic<std::uint64_t> decode_fail{0};
+    std::atomic<std::uint64_t> requests_total{0};
+    std::atomic<std::uint64_t> requests_ok{0};
+    std::atomic<std::uint64_t> requests_fail{0};
+    std::atomic<std::uint64_t> rate_limited{0};
+    std::atomic<std::uint64_t> total_latency_us{0};
+    std::atomic<std::uint64_t> max_latency_us{0};
+    std::array<std::atomic<std::uint64_t>, kLatencySampleCount>
+        latency_samples{};
+    std::atomic<std::uint32_t> latency_sample_index{0};
+    std::atomic<std::uint64_t> last_perf_sample_ns{0};
+    std::atomic<std::uint64_t> last_cpu_ticks{0};
+    std::atomic<std::uint64_t> last_cpu_pct_x100{0};
+    std::atomic<std::uint64_t> last_rss_bytes{0};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_ts_sec{};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_cpu_x100{};
+    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_rss_bytes{};
+    std::atomic<std::uint32_t> perf_sample_index{0};
+  };
+
  private:
   struct ChannelState {
     SecureChannel channel;
@@ -53,30 +77,6 @@ class ConnectionHandler {
     std::chrono::steady_clock::time_point first_failure{};
     std::chrono::steady_clock::time_point ban_until{};
     std::chrono::steady_clock::time_point last_seen{};
-  };
-
-  struct OpsMetrics {
-    static constexpr std::size_t kLatencySampleCount = 1024;
-    static constexpr std::size_t kPerfSampleCount = 120;
-    std::chrono::steady_clock::time_point started_at{};
-    std::atomic<std::uint64_t> decode_fail{0};
-    std::atomic<std::uint64_t> requests_total{0};
-    std::atomic<std::uint64_t> requests_ok{0};
-    std::atomic<std::uint64_t> requests_fail{0};
-    std::atomic<std::uint64_t> rate_limited{0};
-    std::atomic<std::uint64_t> total_latency_us{0};
-    std::atomic<std::uint64_t> max_latency_us{0};
-    std::array<std::atomic<std::uint64_t>, kLatencySampleCount>
-        latency_samples{};
-    std::atomic<std::uint32_t> latency_sample_index{0};
-    std::atomic<std::uint64_t> last_perf_sample_ns{0};
-    std::atomic<std::uint64_t> last_cpu_ticks{0};
-    std::atomic<std::uint64_t> last_cpu_pct_x100{0};
-    std::atomic<std::uint64_t> last_rss_bytes{0};
-    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_ts_sec{};
-    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_cpu_x100{};
-    std::array<std::atomic<std::uint64_t>, kPerfSampleCount> perf_rss_bytes{};
-    std::atomic<std::uint32_t> perf_sample_index{0};
   };
 
   bool AllowUnauthByIp(const std::string& remote_ip);
