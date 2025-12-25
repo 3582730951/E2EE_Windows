@@ -10,6 +10,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <wrl/client.h>
 #include <mfapi.h>
@@ -620,6 +623,7 @@ class VideoPipeline::MfVideoCodecImpl {
     if (!encoder_) {
       return false;
     }
+#if defined(__ICodecAPI_INTERFACE_DEFINED__)
     Microsoft::WRL::ComPtr<ICodecAPI> api;
     if (FAILED(encoder_.As(&api))) {
       return false;
@@ -632,6 +636,10 @@ class VideoPipeline::MfVideoCodecImpl {
     }
     bitrate_ = bitrate;
     return true;
+#else
+    (void)bitrate;
+    return false;
+#endif
   }
 
  private:
@@ -770,6 +778,7 @@ class VideoPipeline::MfVideoCodecImpl {
   }
 
   void ForceKeyframe() {
+#if defined(__ICodecAPI_INTERFACE_DEFINED__)
     Microsoft::WRL::ComPtr<ICodecAPI> api;
     if (FAILED(encoder_.As(&api))) {
       return;
@@ -778,6 +787,7 @@ class VideoPipeline::MfVideoCodecImpl {
     v.vt = VT_UI4;
     v.ulVal = 1;
     api->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v);
+#endif
   }
 
   Microsoft::WRL::ComPtr<IMFTransform> encoder_;
