@@ -72,7 +72,7 @@ jobs:
       - name: Configure client
         run: >
           cmake -S client -B build/client
-          -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
           -DMI_E2EE_BUILD_UI=ON
           -DMI_E2EE_BUILD_DEMO_CLIENT=ON
           -DMI_E2EE_BUILD_FUZZERS=OFF
@@ -101,7 +101,14 @@ jobs:
 
       - name: Deploy Qt runtime
         run: |
-          $qtBin = Join-Path "${{ steps.qt.outputs.qt-path }}" "bin"
+          $qtRoot = "${{ steps.qt.outputs.qt-path }}"
+          if (-not $qtRoot) {
+            $qtRoot = $env:QT_ROOT_DIR
+          }
+          if (-not $qtRoot) {
+            throw "Qt root dir not found"
+          }
+          $qtBin = Join-Path $qtRoot "bin"
           & (Join-Path $qtBin "windeployqt.exe") --release --compiler-runtime --qmldir $env:GITHUB_WORKSPACE\\client\\ui $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe
 
       - name: Package artifacts
