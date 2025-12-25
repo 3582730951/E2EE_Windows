@@ -66,6 +66,7 @@ struct VideoFrameData {
 class AudioPipeline {
  public:
   AudioPipeline(MediaSession& session, AudioPipelineConfig config);
+  ~AudioPipeline();
 
   bool Init(std::string& error);
   bool SendPcmFrame(const std::int16_t* samples, std::size_t sample_count);
@@ -97,6 +98,7 @@ class AudioPipeline {
 class VideoPipeline {
  public:
   VideoPipeline(MediaSession& session, VideoPipelineConfig config);
+  ~VideoPipeline();
 
   bool Init(std::string& error);
   bool SendNv12Frame(const std::uint8_t* data,

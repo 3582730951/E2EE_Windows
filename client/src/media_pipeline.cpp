@@ -298,6 +298,8 @@ class AudioPipeline::OpusCodecImpl {
 AudioPipeline::AudioPipeline(MediaSession& session, AudioPipelineConfig config)
     : session_(session), config_(std::move(config)) {}
 
+AudioPipeline::~AudioPipeline() = default;
+
 bool AudioPipeline::Init(std::string& error) {
   error.clear();
   ready_ = false;
@@ -820,6 +822,8 @@ class VideoPipeline::MfVideoCodecImpl {
 
 VideoPipeline::VideoPipeline(MediaSession& session, VideoPipelineConfig config)
     : session_(session), config_(std::move(config)) {}
+
+VideoPipeline::~VideoPipeline() = default;
 
 bool VideoPipeline::Init(std::string& error) {
   error.clear();
