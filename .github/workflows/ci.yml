@@ -50,10 +50,10 @@ jobs:
             $mysqlInclude = $mysqlIncludeRoot
           }
           $libCandidates = @(
-            Join-Path $mysqlRoot "lib\\libmariadb.lib",
-            Join-Path $mysqlRoot "lib\\mariadb.lib",
-            Join-Path $mysqlRoot "lib\\libmysql.lib",
-            Join-Path $mysqlRoot "lib\\mysqlclient.lib"
+            (Join-Path $mysqlRoot "lib\\libmariadb.lib")
+            (Join-Path $mysqlRoot "lib\\mariadb.lib")
+            (Join-Path $mysqlRoot "lib\\libmysql.lib")
+            (Join-Path $mysqlRoot "lib\\mysqlclient.lib")
           )
           $mysqlLib = $libCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $mysqlLib) {
