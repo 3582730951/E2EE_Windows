@@ -40,9 +40,15 @@ jobs:
             git clone https://github.com/microsoft/vcpkg $vcpkgRoot
           }
           & "$vcpkgRoot\\bootstrap-vcpkg.bat"
-          & "$vcpkgRoot\\vcpkg.exe" install mariadb-connector-c:x64-windows
+          & "$vcpkgRoot\\vcpkg.exe" install libmariadb:x64-windows
           $mysqlRoot = Join-Path $vcpkgRoot "installed\\x64-windows"
-          $mysqlInclude = Join-Path $mysqlRoot "include"
+          $mysqlIncludeRoot = Join-Path $mysqlRoot "include"
+          $mysqlInclude = $mysqlIncludeRoot
+          if (Test-Path (Join-Path $mysqlIncludeRoot "mysql\\mysql.h")) {
+            $mysqlInclude = Join-Path $mysqlIncludeRoot "mysql"
+          } elseif (Test-Path (Join-Path $mysqlIncludeRoot "mysql.h")) {
+            $mysqlInclude = $mysqlIncludeRoot
+          }
           $libCandidates = @(
             Join-Path $mysqlRoot "lib\\libmariadb.lib",
             Join-Path $mysqlRoot "lib\\mariadb.lib",
