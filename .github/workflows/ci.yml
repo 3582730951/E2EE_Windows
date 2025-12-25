@@ -132,7 +132,7 @@ jobs:
 
           $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
           $cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\\CurrentUser\\My"
-          $pwd = ConvertTo-SecureString -String "" -AsPlainText -Force
+          $pwd = New-Object System.Security.SecureString
           Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
           $cert = Get-PfxCertificate -FilePath $pfxPath
           $der = $cert.Export("Cert")
