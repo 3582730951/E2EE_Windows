@@ -17,6 +17,10 @@
 
 namespace {
 
+void InitUiResources() {
+    Q_INIT_RESOURCE(ui_resources);
+}
+
 QString ResolveAppDir(const char *argv0) {
 #ifdef _WIN32
     wchar_t path[MAX_PATH] = {};
@@ -74,7 +78,7 @@ QString ResolveRuntimeDir(const QString &appDir) {
 namespace UiRuntimePaths {
 
 void Prepare(const char *argv0) {
-    Q_INIT_RESOURCE(ui_resources);
+    InitUiResources();
     const QString appDir = ResolveAppDir(argv0);
     if (appDir.isEmpty()) {
         return;
