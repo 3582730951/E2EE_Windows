@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QResource>
 #include <QString>
 #include <QtGlobal>
 
@@ -73,6 +74,7 @@ QString ResolveRuntimeDir(const QString &appDir) {
 namespace UiRuntimePaths {
 
 void Prepare(const char *argv0) {
+    Q_INIT_RESOURCE(ui_resources);
     const QString appDir = ResolveAppDir(argv0);
     if (appDir.isEmpty()) {
         return;
