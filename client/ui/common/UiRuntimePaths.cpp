@@ -15,11 +15,11 @@
 #include <windows.h>
 #endif
 
-namespace {
-
-void InitUiResources() {
+static void InitUiResources() {
     Q_INIT_RESOURCE(ui_resources);
 }
+
+namespace {
 
 QString ResolveAppDir(const char *argv0) {
 #ifdef _WIN32
