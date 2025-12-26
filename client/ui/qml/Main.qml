@@ -398,7 +398,7 @@ ApplicationWindow {
 
                     VideoOutput {
                         anchors.fill: parent
-                        videoSink: clientBridge.remoteVideoSink
+                        source: clientBridge.remoteVideoSink
                         fillMode: VideoOutput.PreserveAspectCrop
                     }
 
@@ -415,7 +415,7 @@ ApplicationWindow {
 
                         VideoOutput {
                             anchors.fill: parent
-                            videoSink: clientBridge.localVideoSink
+                            source: clientBridge.localVideoSink
                             fillMode: VideoOutput.PreserveAspectFit
                         }
                     }
