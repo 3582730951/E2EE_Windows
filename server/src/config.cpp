@@ -108,6 +108,20 @@ struct IniState {
 
 bool CheckPathPermissions(const std::string& path, std::string& error) {
 #ifdef _WIN32
+  if (mi::shard::security::CheckPathNotWorldWritable(path, error)) {
+    return true;
+  }
+  if (error != "insecure acl (world-writable)") {
+    return false;
+  }
+  std::string fix_error;
+  if (!mi::shard::security::HardenPathAcl(path, fix_error)) {
+    if (!fix_error.empty()) {
+      error = fix_error;
+    }
+    return false;
+  }
+  error.clear();
   return mi::shard::security::CheckPathNotWorldWritable(path, error);
 #else
   std::error_code ec;

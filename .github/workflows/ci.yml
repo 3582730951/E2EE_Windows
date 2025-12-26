@@ -141,6 +141,7 @@ jobs:
           Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server.exe" (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
           Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server_launcher.exe" (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
           Copy-Item "$workspace\\build\\server\\Release\\*.dll" $serverDll -Force
+          Copy-Item "$workspace\\tools\\mi_e2ee_harden_acl.cmd" (Join-Path $serverRoot "mi_e2ee_harden_acl.cmd") -Force
           if (Test-Path "$workspace\\build\\server\\Release\\test_user.txt") {
             Copy-Item "$workspace\\build\\server\\Release\\test_user.txt" $serverRoot -Force
           }

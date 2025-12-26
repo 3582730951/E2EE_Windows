@@ -53,6 +53,20 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
 bool CheckPathNotWorldWritable(const std::filesystem::path& path,
                                std::string& error) {
 #ifdef _WIN32
+  if (mi::shard::security::CheckPathNotWorldWritable(path, error)) {
+    return true;
+  }
+  if (error != "insecure acl (world-writable)") {
+    return false;
+  }
+  std::string fix_error;
+  if (!mi::shard::security::HardenPathAcl(path, fix_error)) {
+    if (!fix_error.empty()) {
+      error = fix_error;
+    }
+    return false;
+  }
+  error.clear();
   return mi::shard::security::CheckPathNotWorldWritable(path, error);
 #else
   std::error_code ec;
