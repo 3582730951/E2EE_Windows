@@ -59,6 +59,8 @@ class QuickClient : public QObject {
                             const QString& callIdHex,
                             bool video);
   Q_INVOKABLE void endCall();
+  Q_INVOKABLE void bindRemoteVideoSink(QObject* sink);
+  Q_INVOKABLE void bindLocalVideoSink(QObject* sink);
   Q_INVOKABLE QString serverInfo() const;
   Q_INVOKABLE QString version() const;
 

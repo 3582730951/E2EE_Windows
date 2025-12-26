@@ -397,9 +397,10 @@ ApplicationWindow {
                     clip: true
 
                     VideoOutput {
+                        id: remoteVideoOutput
                         anchors.fill: parent
-                        source: clientBridge.remoteVideoSink
                         fillMode: VideoOutput.PreserveAspectCrop
+                        Component.onCompleted: clientBridge.bindRemoteVideoSink(videoSink)
                     }
 
                     Rectangle {
@@ -414,9 +415,10 @@ ApplicationWindow {
                         clip: true
 
                         VideoOutput {
+                            id: localVideoOutput
                             anchors.fill: parent
-                            source: clientBridge.localVideoSink
                             fillMode: VideoOutput.PreserveAspectFit
+                            Component.onCompleted: clientBridge.bindLocalVideoSink(videoSink)
                         }
                     }
                 }

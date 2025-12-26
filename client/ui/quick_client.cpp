@@ -505,6 +505,28 @@ void QuickClient::endCall() {
   emit status(QStringLiteral("通话已结束"));
 }
 
+void QuickClient::bindRemoteVideoSink(QObject* sink) {
+  auto* casted = qobject_cast<QVideoSink*>(sink);
+  if (!casted || casted == remote_video_sink_) {
+    return;
+  }
+  remote_video_sink_ = casted;
+}
+
+void QuickClient::bindLocalVideoSink(QObject* sink) {
+  auto* casted = qobject_cast<QVideoSink*>(sink);
+  if (!casted || casted == local_video_sink_) {
+    return;
+  }
+  if (local_video_sink_) {
+    disconnect(local_video_sink_, nullptr, this, nullptr);
+  }
+  local_video_sink_ = casted;
+  capture_session_.setVideoSink(local_video_sink_);
+  connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
+          &QuickClient::HandleLocalVideoFrame);
+}
+
 QString QuickClient::serverInfo() const {
   return QStringLiteral("config: %1").arg(config_path_);
 }
@@ -1207,9 +1229,11 @@ bool QuickClient::SetupVideo(QString& outError) {
   camera_ = std::make_unique<QCamera>(device);
   capture_session_.setCamera(camera_.get());
   capture_session_.setVideoSink(local_video_sink_);
-  disconnect(local_video_sink_, nullptr, this, nullptr);
-  connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
-          &QuickClient::HandleLocalVideoFrame);
+  if (local_video_sink_) {
+    disconnect(local_video_sink_, nullptr, this, nullptr);
+    connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
+            &QuickClient::HandleLocalVideoFrame);
+  }
   if (!SelectCameraFormat()) {
     const QCameraFormat fmt = camera_->cameraFormat();
     if (fmt.isNull()) {
