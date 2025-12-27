@@ -33,7 +33,7 @@ Dialog {
             }
             Item { Layout.fillWidth: true }
             Components.IconButton {
-                icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                icon.source: "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
                 buttonSize: Ui.Style.iconButtonSmall
                 iconSize: 14
                 onClicked: root.close()

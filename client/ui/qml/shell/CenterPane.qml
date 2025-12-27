@@ -10,8 +10,12 @@ Item {
 
     property bool chatSearchVisible: false
     property bool stickToBottom: true
+    property bool hasChat: Ui.AppStore.currentChatId.length > 0
 
     function showSearch() {
+        if (!hasChat) {
+            return
+        }
         chatSearchVisible = true
         chatSearchField.focusInput()
     }
@@ -24,21 +28,29 @@ Item {
         chatSearchField.text = ""
         return true
     }
+    onHasChatChanged: {
+        if (!hasChat) {
+            clearChatSearch()
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
         Rectangle {
+            id: topBar
             Layout.fillWidth: true
-            Layout.preferredHeight: Ui.Style.topBarHeight
-            color: Ui.Style.panelBgAlt
-            border.color: Ui.Style.borderSubtle
+            Layout.preferredHeight: hasChat ? Ui.Style.topBarHeight : 0
+            Layout.minimumHeight: hasChat ? Ui.Style.topBarHeight : 0
+            Layout.maximumHeight: hasChat ? Ui.Style.topBarHeight : 0
+            visible: hasChat
+            color: Ui.Style.panelBg
 
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: Ui.Style.paddingM
-                spacing: Ui.Style.paddingM
+                spacing: Ui.Style.paddingS
 
                 Rectangle {
                     width: Ui.Style.avatarSizeTopBar
@@ -79,14 +91,14 @@ Item {
                 Components.SearchField {
                     id: chatSearchField
                     visible: chatSearchVisible
-                    Layout.preferredWidth: 200
+                    Layout.preferredWidth: 160
                     placeholderText: "Search in chat"
                 }
 
                 Components.IconButton {
                     icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
-                    buttonSize: Ui.Style.iconButtonSize
-                    iconSize: 16
+                    buttonSize: Ui.Style.iconButtonSmall
+                    iconSize: 15
                     visible: !chatSearchVisible
                     onClicked: root.showSearch()
                     ToolTip.visible: hovered
@@ -94,33 +106,41 @@ Item {
                 }
                 Components.IconButton {
                     icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
-                    buttonSize: Ui.Style.iconButtonSize
-                    iconSize: 16
+                    buttonSize: Ui.Style.iconButtonSmall
+                    iconSize: 15
                     ToolTip.visible: hovered
                     ToolTip.text: "Call"
                 }
                 Components.IconButton {
                     icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
-                    buttonSize: Ui.Style.iconButtonSize
-                    iconSize: 16
+                    buttonSize: Ui.Style.iconButtonSmall
+                    iconSize: 15
                     ToolTip.visible: hovered
                     ToolTip.text: "Video"
                 }
                 Components.IconButton {
                     icon.source: "qrc:/mi/e2ee/ui/icons/info.svg"
-                    buttonSize: Ui.Style.iconButtonSize
-                    iconSize: 16
+                    buttonSize: Ui.Style.iconButtonSmall
+                    iconSize: 15
                     onClicked: Ui.AppStore.toggleRightPane()
                     ToolTip.visible: hovered
                     ToolTip.text: "Info"
                 }
                 Components.IconButton {
                     icon.source: "qrc:/mi/e2ee/ui/icons/more.svg"
-                    buttonSize: Ui.Style.iconButtonSize
-                    iconSize: 16
+                    buttonSize: Ui.Style.iconButtonSmall
+                    iconSize: 15
                     ToolTip.visible: hovered
                     ToolTip.text: "More"
                 }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Ui.Style.borderSubtle
             }
         }
 
@@ -129,31 +149,17 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: Ui.Style.messageBg
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#DCEFD2" }
+                GradientStop { position: 1.0; color: "#C7E7B6" }
+            }
 
-            Canvas {
-                id: pattern
+            Image {
                 anchors.fill: parent
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.fillStyle = Ui.Style.messagePatternA
-                    var step = 80
-                    for (var y = 0; y < height + step; y += step) {
-                        for (var x = 0; x < width + step; x += step) {
-                            ctx.beginPath()
-                            ctx.arc(x + 14, y + 12, 3, 0, Math.PI * 2, false)
-                            ctx.fill()
-                        }
-                    }
-                    ctx.fillStyle = Ui.Style.messagePatternB
-                    for (var yy = 0; yy < height + step; yy += step) {
-                        for (var xx = 0; xx < width + step; xx += step) {
-                            ctx.fillRect(xx + 40, yy + 44, 8, 2)
-                        }
-                    }
-                }
+                source: "qrc:/mi/e2ee/ui/qml/assets/wallpaper_tile.svg"
+                fillMode: Image.Tile
+                opacity: 0.28
+                smooth: true
             }
 
             ListView {
@@ -186,18 +192,20 @@ Item {
 
                 Column {
                     anchors.centerIn: parent
-                    spacing: 12
-                    Image {
-                        source: "qrc:/mi/e2ee/ui/icons/chat.svg"
-                        width: 72
-                        height: 72
-                        opacity: 0.5
-                        fillMode: Image.PreserveAspectFit
-                    }
-                    Text {
-                        text: "Select a chat to start messaging"
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 13
+                    spacing: 10
+                    Rectangle {
+                        radius: 14
+                        color: Qt.rgba(0.28, 0.45, 0.33, 0.35)
+                        border.color: Qt.rgba(1, 1, 1, 0.4)
+                        implicitWidth: emptyText.paintedWidth + 24
+                        implicitHeight: 28
+                        Text {
+                            id: emptyText
+                            anchors.centerIn: parent
+                            text: "Select a chat to start messaging"
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
+                        }
                     }
                 }
             }
@@ -211,7 +219,7 @@ Item {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: Ui.Style.paddingM
-                bgColor: Ui.Style.panelBgAlt
+                bgColor: Ui.Style.panelBg
                 hoverBg: Ui.Style.hoverBg
                 pressedBg: Ui.Style.pressedBg
                 onClicked: messageList.positionViewAtEnd()
@@ -221,11 +229,17 @@ Item {
         }
 
         Rectangle {
+            id: inputBar
             Layout.fillWidth: true
-            color: Ui.Style.panelBgAlt
-            border.color: Ui.Style.borderSubtle
+            Layout.preferredHeight: hasChat ? implicitHeight : 0
+            Layout.minimumHeight: hasChat ? implicitHeight : 0
+            Layout.maximumHeight: hasChat ? implicitHeight : 0
+            visible: hasChat
+            color: Ui.Style.panelBg
+            implicitHeight: inputColumn.implicitHeight + Ui.Style.paddingM * 2
 
             ColumnLayout {
+                id: inputColumn
                 anchors.fill: parent
                 anchors.margins: Ui.Style.paddingM
                 spacing: Ui.Style.paddingS
@@ -302,6 +316,14 @@ Item {
                 }
             }
 
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: Ui.Style.borderSubtle
+            }
+
             function inputHeight() {
                 var minHeight = 40
                 var maxHeight = 160
@@ -336,8 +358,8 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 6
                 radius: 10
-                color: Ui.Style.panelBgAlt
-                border.color: Ui.Style.borderSubtle
+                color: Qt.rgba(1, 1, 1, 0.65)
+                border.color: Qt.rgba(0, 0, 0, 0.06)
                 height: 20
                 width: dateText.paintedWidth + 16
                 Text {
@@ -377,11 +399,9 @@ Item {
                 Rectangle {
                     id: bubble
                     anchors.fill: parent
-                    radius: Ui.Style.radiusLarge
+                    radius: 12
                     color: isOutgoing ? Ui.Style.bubbleOutBg : Ui.Style.bubbleInBg
-                    border.color: isOutgoing ? Qt.darker(Ui.Style.bubbleOutBg, 1.08)
-                                             : Qt.darker(Ui.Style.bubbleInBg, 1.08)
-                    border.width: 1
+                    border.width: 0
 
                     Column {
                         anchors.fill: parent
@@ -425,8 +445,8 @@ Item {
                 }
 
                 Rectangle {
-                    width: 10
-                    height: 10
+                    width: 8
+                    height: 8
                     radius: 2
                     color: bubble.color
                     rotation: 45
@@ -439,8 +459,8 @@ Item {
                 }
 
                 Rectangle {
-                    width: 10
-                    height: 10
+                    width: 8
+                    height: 8
                     radius: 2
                     color: bubble.color
                     rotation: 45

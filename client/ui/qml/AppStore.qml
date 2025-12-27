@@ -66,9 +66,6 @@ QtObject {
         seedDialogs()
         seedMessages()
         rebuildFiltered()
-        if (dialogsModel.count > 0) {
-            setCurrentChat(dialogsModel.get(0).chatId)
-        }
     }
 
     function seedContacts() {

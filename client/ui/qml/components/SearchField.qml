@@ -15,21 +15,21 @@ Item {
     }
 
     implicitWidth: 200
-    implicitHeight: 32
+    implicitHeight: 34
 
     TextField {
         id: field
         anchors.fill: parent
-        leftPadding: Ui.Style.paddingM + 16
+        leftPadding: Ui.Style.paddingM + 14
         rightPadding: Ui.Style.paddingM
         font.pixelSize: 12
         color: Ui.Style.textPrimary
         placeholderTextColor: Ui.Style.textMuted
         background: Rectangle {
-            radius: Ui.Style.radiusMedium
+            radius: 16
             color: Ui.Style.searchBg
-            border.color: field.activeFocus ? Ui.Style.inputFocus : Ui.Style.searchBorder
-            border.width: 1
+            border.color: Ui.Style.inputFocus
+            border.width: field.activeFocus ? 1 : 0
         }
         onTextEdited: root.textEdited(text)
     }

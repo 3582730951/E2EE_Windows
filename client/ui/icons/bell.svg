@@ -1,8 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="-1 -1 26 26" fill="none">
   <path d="M18 16H6c1.3-1.5 1.8-3 1.8-5V9a4.2 4.2 0 0 1 8.4 0v2c0 2 .5 3.5 1.8 5z"
-        stroke="#9bb0c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10 18a2 2 0 0 0 4 0" stroke="#9bb0c7" stroke-width="2" stroke-linecap="round"/>
+        stroke="#6e7a86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 18a2 2 0 0 0 4 0" stroke="#6e7a86" stroke-width="2" stroke-linecap="round"/>
 </svg>
+
 
 
 

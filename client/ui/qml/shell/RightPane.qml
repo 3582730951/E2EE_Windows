@@ -11,7 +11,14 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Ui.Style.panelBg
-        border.color: Ui.Style.borderSubtle
+    }
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        width: 1
+        color: Ui.Style.borderSubtle
     }
 
     ScrollView {

@@ -23,7 +23,6 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Ui.Style.panelBg
-        border.color: Ui.Style.borderSubtle
     }
 
     ColumnLayout {
@@ -33,12 +32,12 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: Ui.Style.topBarHeight - 8
+            Layout.preferredHeight: Ui.Style.topBarHeight
             spacing: Ui.Style.paddingS
 
             Components.IconButton {
                 id: menuButton
-                icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
+                icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
                 buttonSize: Ui.Style.iconButtonSize
                 iconSize: 16
                 onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
@@ -53,78 +52,16 @@ Item {
                 onTextEdited: Ui.AppStore.setSearchQuery(text)
             }
 
-            Components.IconButton {
-                id: addButton
-                icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
-                buttonSize: Ui.Style.iconButtonSize
-                iconSize: 16
-                onClicked: {
-                    var pos = addButton.mapToItem(null, 0, addButton.height)
-                    addMenu.x = pos.x
-                    addMenu.y = pos.y
-                    addMenu.open()
-                }
-                ToolTip.visible: hovered
-                ToolTip.text: "New chat"
-            }
-
             Menu {
                 id: menuPopup
-                MenuItem { text: "Settings"; onTriggered: root.requestSettings() }
-            }
-
-            Menu {
-                id: addMenu
+                MenuItem { text: "Chats"; onTriggered: Ui.AppStore.setLeftTab(0) }
+                MenuItem { text: "Contacts"; onTriggered: Ui.AppStore.setLeftTab(1) }
+                MenuSeparator { }
                 MenuItem { text: "New Chat"; onTriggered: root.requestNewChat() }
                 MenuItem { text: "New Group"; onTriggered: root.requestCreateGroup() }
                 MenuItem { text: "Add Contact"; onTriggered: root.requestAddContact() }
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Ui.Style.paddingS
-
-            Button {
-                id: chatsTab
-                text: "Chats"
-                checkable: true
-                checked: Ui.AppStore.currentLeftTab === 0
-                Layout.fillWidth: true
-                onClicked: Ui.AppStore.setLeftTab(0)
-                background: Rectangle {
-                    radius: Ui.Style.radiusMedium
-                    color: chatsTab.checked ? Ui.Style.dialogSelectedBg : Ui.Style.panelBgAlt
-                    border.color: Ui.Style.borderSubtle
-                }
-                contentItem: Text {
-                    text: chatsTab.text
-                    color: chatsTab.checked ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-
-            Button {
-                id: contactsTab
-                text: "Contacts"
-                checkable: true
-                checked: Ui.AppStore.currentLeftTab === 1
-                Layout.fillWidth: true
-                onClicked: Ui.AppStore.setLeftTab(1)
-                background: Rectangle {
-                    radius: Ui.Style.radiusMedium
-                    color: contactsTab.checked ? Ui.Style.dialogSelectedBg : Ui.Style.panelBgAlt
-                    border.color: Ui.Style.borderSubtle
-                }
-                contentItem: Text {
-                    text: contactsTab.text
-                    color: contactsTab.checked ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
+                MenuSeparator { }
+                MenuItem { text: "Settings"; onTriggered: root.requestSettings() }
             }
         }
 

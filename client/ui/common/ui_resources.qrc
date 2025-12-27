@@ -13,6 +13,7 @@
         <file alias="icons/check.svg">../icons/check.svg</file>
         <file alias="icons/close.svg">../icons/close.svg</file>
         <file alias="icons/close-x.svg">../icons/close-x.svg</file>
+        <file alias="icons/close-x-dark.svg">../icons/close-x-dark.svg</file>
         <file alias="icons/emoji.svg">../icons/emoji.svg</file>
         <file alias="icons/file.svg">../icons/file.svg</file>
         <file alias="icons/image.svg">../icons/image.svg</file>
@@ -22,6 +23,7 @@
         <file alias="icons/maximize.svg">../icons/maximize.svg</file>
         <file alias="icons/minimize.svg">../icons/minimize.svg</file>
         <file alias="icons/menu-lines.svg">../icons/menu-lines.svg</file>
+        <file alias="icons/menu-lines-dark.svg">../icons/menu-lines-dark.svg</file>
         <file alias="icons/plus.svg">../icons/plus.svg</file>
         <file alias="icons/phone.svg">../icons/phone.svg</file>
         <file alias="icons/paperclip.svg">../icons/paperclip.svg</file>
@@ -35,6 +37,7 @@
         <file alias="qml/qmldir">../qml/qmldir</file>
         <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
         <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
+        <file alias="qml/assets/wallpaper_tile.svg">../qml/assets/wallpaper_tile.svg</file>
         <file alias="qml/shell/AppShell.qml">../qml/shell/AppShell.qml</file>
         <file alias="qml/shell/LeftPane.qml">../qml/shell/LeftPane.qml</file>
         <file alias="qml/shell/CenterPane.qml">../qml/shell/CenterPane.qml</file>
