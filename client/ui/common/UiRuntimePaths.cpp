@@ -58,8 +58,7 @@ QString ResolveRuntimeDir(const QString &appDir) {
     }
     QDir dir(appDir);
     const QString leaf = dir.dirName();
-    if (leaf.compare(QStringLiteral("dll"), Qt::CaseInsensitive) == 0 ||
-        leaf.compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
+    if (leaf.compare(QStringLiteral("dll"), Qt::CaseInsensitive) == 0) {
         return dir.absolutePath();
     }
     const QString rootDir = ResolveAppRoot(appDir);
@@ -70,7 +69,10 @@ QString ResolveRuntimeDir(const QString &appDir) {
     if (QDir(dllDir).exists()) {
         return dllDir;
     }
-    return QDir(rootDir).filePath(QStringLiteral("runtime"));
+    if (leaf.compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
+        return dir.absolutePath();
+    }
+    return dir.absolutePath();
 }
 
 }  // namespace

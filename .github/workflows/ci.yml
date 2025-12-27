@@ -248,10 +248,6 @@ jobs:
             Where-Object { $_.Name -notlike "qmldbg_*" } | ForEach-Object {
               Copy-Item $_.FullName $clientDll -Force
             }
-          Get-ChildItem -Path $clientDll -File -Filter "*.dll" |
-            Where-Object { $_.Name -notlike "qmldbg_*" } | ForEach-Object {
-              Copy-Item $_.FullName $clientRoot -Force
-            }
           $rimeRuntime = $env:RIME_RUNTIME_DIR
           if (-not $rimeRuntime) {
             $rimeRuntime = Join-Path $workspace "build\\rime_runtime"
