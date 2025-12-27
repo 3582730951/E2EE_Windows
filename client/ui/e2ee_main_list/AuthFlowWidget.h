@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QPixmap>
+#include <QPoint>
 #include <QString>
 #include <QWidget>
 
@@ -13,6 +14,7 @@ class QPushButton;
 class QStackedWidget;
 class QTimer;
 class QToolButton;
+class QWidget;
 
 class AuthFlowWidget : public QWidget {
     Q_OBJECT
@@ -62,8 +64,11 @@ private:
     QLabel *errorLabel_{nullptr};
     QToolButton *menuButton_{nullptr};
     QToolButton *closeButton_{nullptr};
+    QWidget *dragRegion_{nullptr};
     QTimer *qrTimer_{nullptr};
     int qrRemaining_{30};
     bool demoMode_{true};
     bool busy_{false};
+    bool dragging_{false};
+    QPoint dragOffset_;
 };

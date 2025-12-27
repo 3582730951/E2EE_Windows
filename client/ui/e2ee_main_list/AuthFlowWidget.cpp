@@ -3,11 +3,13 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QPushButton>
@@ -112,9 +114,12 @@ void AuthFlowWidget::buildUi() {
     cardLayout->setContentsMargins(22, 18, 22, 20);
     cardLayout->setSpacing(12);
 
-    auto *topBar = new QHBoxLayout();
-    topBar->setContentsMargins(0, 0, 0, 0);
-    topBar->addStretch();
+    auto *topBar = new QWidget(card);
+    dragRegion_ = topBar;
+    dragRegion_->installEventFilter(this);
+    auto *topBarLayout = new QHBoxLayout(topBar);
+    topBarLayout->setContentsMargins(0, 0, 0, 0);
+    topBarLayout->addStretch();
 
     menuButton_ = new QToolButton(card);
     menuButton_->setObjectName("topTool");
@@ -122,7 +127,7 @@ void AuthFlowWidget::buildUi() {
     menuButton_->setIconSize(QSize(16, 16));
     menuButton_->setFixedSize(26, 26);
     menuButton_->setCursor(Qt::PointingHandCursor);
-    topBar->addWidget(menuButton_);
+    topBarLayout->addWidget(menuButton_);
 
     closeButton_ = new QToolButton(card);
     closeButton_->setObjectName("topTool");
@@ -130,9 +135,9 @@ void AuthFlowWidget::buildUi() {
     closeButton_->setIconSize(QSize(16, 16));
     closeButton_->setFixedSize(26, 26);
     closeButton_->setCursor(Qt::PointingHandCursor);
-    topBar->addSpacing(6);
-    topBar->addWidget(closeButton_);
-    cardLayout->addLayout(topBar);
+    topBarLayout->addSpacing(6);
+    topBarLayout->addWidget(closeButton_);
+    cardLayout->addWidget(topBar);
 
     auto *menu = new QMenu(menuButton_);
     UiStyle::ApplyMenuStyle(*menu);
@@ -140,11 +145,28 @@ void AuthFlowWidget::buildUi() {
         UiSettings::Tr(QStringLiteral("Settings"), QStringLiteral("Settings")));
     menu->addAction(UiSettings::Tr(QStringLiteral("Help"), QStringLiteral("Help")));
     menu->addAction(UiSettings::Tr(QStringLiteral("About"), QStringLiteral("About")));
-    connect(menuButton_, &QToolButton::clicked, this, [menu, this]() {
-        if (!menu) {
+    const int kMenuPaddingX = 3;
+    menu->setStyleSheet(menu->styleSheet() + QStringLiteral(
+        "QMenu::item { padding: 6px %1px; margin: 0px; }").arg(kMenuPaddingX));
+    connect(menuButton_, &QToolButton::clicked, this, [menu, this, kMenuPaddingX]() {
+        if (!menu || !menuButton_) {
             return;
         }
-        menu->exec(menuButton_->mapToGlobal(QPoint(0, menuButton_->height())));
+        const QFontMetrics fm(menu->font());
+        int maxWidth = 0;
+        for (const auto *action : menu->actions()) {
+            if (!action || action->isSeparator()) {
+                continue;
+            }
+            QString text = action->text();
+            text.remove('&');
+            maxWidth = qMax(maxWidth, fm.horizontalAdvance(text));
+        }
+        const int menuWidth = maxWidth + kMenuPaddingX * 2;
+        menu->setFixedWidth(menuWidth);
+        const QPoint anchor =
+            menuButton_->mapToGlobal(QPoint(menuButton_->width() / 2, menuButton_->height()));
+        menu->exec(QPoint(anchor.x() - menuWidth / 2, anchor.y()));
     });
     connect(settingsAction, &QAction::triggered, this, [this]() {
         SettingsDialog dlg(this);
@@ -441,6 +463,29 @@ void AuthFlowWidget::handleQrSimulateClicked() {
 }
 
 bool AuthFlowWidget::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == dragRegion_) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                if (auto *top = window()) {
+                    dragging_ = true;
+                    dragOffset_ = mouseEvent->globalPosition().toPoint() - top->frameGeometry().topLeft();
+                }
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (dragging_ && (mouseEvent->buttons() & Qt::LeftButton)) {
+                if (auto *top = window()) {
+                    top->move(mouseEvent->globalPosition().toPoint() - dragOffset_);
+                }
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            dragging_ = false;
+            return true;
+        }
+    }
     if (watched == qrImage_ && event->type() == QEvent::MouseButtonPress) {
         handleQrSimulateClicked();
         return true;
