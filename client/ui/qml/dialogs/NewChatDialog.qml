@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Dialog {
     id: root
@@ -9,7 +10,7 @@ Dialog {
     width: 420
     height: 520
     title: "New Chat"
-    standardButtons: Dialog.Close
+    standardButtons: Dialog.NoButton
 
     property string filterText: ""
     property var filtered: []
@@ -21,16 +22,45 @@ Dialog {
         }
     }
 
+    background: Rectangle {
+        radius: Ui.Style.radiusLarge
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+    }
+
+    header: Rectangle {
+        height: Ui.Style.topBarHeight
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: Ui.Style.paddingM
+            Text {
+                text: root.title
+                color: Ui.Style.textPrimary
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+            }
+            Item { Layout.fillWidth: true }
+            Components.IconButton {
+                icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                buttonSize: Ui.Style.iconButtonSmall
+                iconSize: 14
+                onClicked: root.close()
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Ui.Style.paddingM
         spacing: Ui.Style.paddingM
 
-        TextField {
+        Components.SearchField {
             id: searchField
             Layout.fillWidth: true
             placeholderText: "Search contacts"
-            onTextChanged: {
+            onTextEdited: {
                 filterText = text
                 rebuild()
             }
@@ -46,7 +76,12 @@ Dialog {
             }
             delegate: Item {
                 width: ListView.view.width
-                height: 54
+                height: 56
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Ui.Style.radiusMedium
+                    color: mouseArea.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
+                }
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: Ui.Style.paddingS
@@ -82,7 +117,9 @@ Dialog {
                 }
 
                 MouseArea {
+                    id: mouseArea
                     anchors.fill: parent
+                    hoverEnabled: true
                     onClicked: {
                         Ui.AppStore.openChatFromContact(contactId)
                         root.close()

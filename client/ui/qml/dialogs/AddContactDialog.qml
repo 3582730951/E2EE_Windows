@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Dialog {
     id: root
@@ -9,12 +10,41 @@ Dialog {
     width: 360
     height: 320
     title: "Add Contact"
-    standardButtons: Dialog.Close
+    standardButtons: Dialog.NoButton
 
     onOpened: {
         nameField.text = ""
         handleField.text = ""
         errorText.visible = false
+    }
+
+    background: Rectangle {
+        radius: Ui.Style.radiusLarge
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+    }
+
+    header: Rectangle {
+        height: Ui.Style.topBarHeight
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: Ui.Style.paddingM
+            Text {
+                text: root.title
+                color: Ui.Style.textPrimary
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+            }
+            Item { Layout.fillWidth: true }
+            Components.IconButton {
+                icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                buttonSize: Ui.Style.iconButtonSmall
+                iconSize: 14
+                onClicked: root.close()
+            }
+        }
     }
 
     ColumnLayout {
@@ -26,11 +56,27 @@ Dialog {
             id: nameField
             Layout.fillWidth: true
             placeholderText: "Name"
+            font.pixelSize: 13
+            color: Ui.Style.textPrimary
+            placeholderTextColor: Ui.Style.textMuted
+            background: Rectangle {
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.inputBg
+                border.color: nameField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
+            }
         }
         TextField {
             id: handleField
             Layout.fillWidth: true
             placeholderText: "Phone or username"
+            font.pixelSize: 13
+            color: Ui.Style.textPrimary
+            placeholderTextColor: Ui.Style.textMuted
+            background: Rectangle {
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.inputBg
+                border.color: handleField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
+            }
         }
         Text {
             id: errorText
@@ -40,27 +86,26 @@ Dialog {
             visible: false
         }
         Item { Layout.fillHeight: true }
-        Button {
-            text: "Add"
+        RowLayout {
             Layout.fillWidth: true
-            background: Rectangle {
-                radius: Ui.Style.radiusMedium
-                color: Ui.Style.accent
+            spacing: Ui.Style.paddingS
+            Components.GhostButton {
+                text: "Cancel"
+                Layout.fillWidth: true
+                onClicked: root.close()
             }
-            contentItem: Text {
+            Components.PrimaryButton {
                 text: "Add"
-                color: Ui.Style.textPrimary
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            onClicked: {
-                if (Ui.AppStore.addContact(nameField.text, handleField.text)) {
-                    nameField.text = ""
-                    handleField.text = ""
-                    errorText.visible = false
-                    root.close()
-                } else {
-                    errorText.visible = true
+                Layout.fillWidth: true
+                onClicked: {
+                    if (Ui.AppStore.addContact(nameField.text, handleField.text)) {
+                        nameField.text = ""
+                        handleField.text = ""
+                        errorText.visible = false
+                        root.close()
+                    } else {
+                        errorText.visible = true
+                    }
                 }
             }
         }

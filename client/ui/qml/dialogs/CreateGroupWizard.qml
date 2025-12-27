@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Dialog {
     id: root
@@ -9,7 +10,7 @@ Dialog {
     width: 520
     height: 600
     title: "New Group"
-    standardButtons: Dialog.Close
+    standardButtons: Dialog.NoButton
 
     property int stepIndex: 0
     property var selectedIds: []
@@ -18,6 +19,40 @@ Dialog {
         stepIndex = 0
         selectedIds = []
         groupNameField.text = ""
+    }
+
+    background: Rectangle {
+        radius: Ui.Style.radiusLarge
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+    }
+
+    header: Rectangle {
+        height: Ui.Style.topBarHeight
+        color: Ui.Style.panelBgAlt
+        border.color: Ui.Style.borderSubtle
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: Ui.Style.paddingM
+            Text {
+                text: root.title
+                color: Ui.Style.textPrimary
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                text: stepIndex === 0 ? "1/2" : "2/2"
+                color: Ui.Style.textMuted
+                font.pixelSize: 12
+            }
+            Components.IconButton {
+                icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                buttonSize: Ui.Style.iconButtonSmall
+                iconSize: 14
+                onClicked: root.close()
+            }
+        }
     }
 
     ColumnLayout {
@@ -38,7 +73,7 @@ Dialog {
 
                     Text {
                         text: "Select members"
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                         color: Ui.Style.textPrimary
                     }
@@ -51,7 +86,12 @@ Dialog {
                         model: Ui.AppStore.contactsModel
                         delegate: Item {
                             width: ListView.view.width
-                            height: 52
+                            height: 54
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Ui.Style.radiusMedium
+                                color: mouseArea.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
+                            }
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: Ui.Style.paddingS
@@ -77,17 +117,22 @@ Dialog {
                                     spacing: 2
                                     Text {
                                         text: displayName
-                                        font.pixelSize: 13
+                                        font.pixelSize: 12
                                         color: Ui.Style.textPrimary
                                         elide: Text.ElideRight
                                     }
                                     Text {
                                         text: usernameOrPhone
-                                        font.pixelSize: 11
+                                        font.pixelSize: 10
                                         color: Ui.Style.textMuted
                                         elide: Text.ElideRight
                                     }
                                 }
+                            }
+                            MouseArea {
+                                id: mouseArea
+                                anchors.fill: parent
+                                hoverEnabled: true
                             }
                         }
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
@@ -102,7 +147,7 @@ Dialog {
 
                     Text {
                         text: "Group details"
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                         color: Ui.Style.textPrimary
                     }
@@ -111,12 +156,20 @@ Dialog {
                         id: groupNameField
                         Layout.fillWidth: true
                         placeholderText: "Group name"
+                        font.pixelSize: 13
+                        color: Ui.Style.textPrimary
+                        placeholderTextColor: Ui.Style.textMuted
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: Ui.Style.inputBg
+                            border.color: groupNameField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
+                        }
                     }
                     Rectangle {
                         width: 96
                         height: 96
                         radius: 48
-                        color: Ui.Style.panelBgAlt
+                        color: Ui.Style.panelBg
                         border.color: Ui.Style.borderSubtle
                         Text {
                             anchors.centerIn: parent
@@ -133,7 +186,7 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             spacing: Ui.Style.paddingS
-            Button {
+            Components.GhostButton {
                 text: stepIndex === 0 ? "Cancel" : "Back"
                 Layout.fillWidth: true
                 onClicked: {
@@ -144,20 +197,10 @@ Dialog {
                     }
                 }
             }
-            Button {
+            Components.PrimaryButton {
                 text: stepIndex === 0 ? "Next" : "Create"
                 Layout.fillWidth: true
                 enabled: stepIndex === 0 ? selectedIds.length > 0 : groupNameField.text.trim().length > 0
-                background: Rectangle {
-                    radius: Ui.Style.radiusMedium
-                    color: parent.enabled ? Ui.Style.accent : Ui.Style.pressedBg
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: Ui.Style.textPrimary
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
                 onClicked: {
                     if (stepIndex === 0) {
                         stepIndex = 1

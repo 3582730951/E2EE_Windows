@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Item {
     id: root
@@ -12,7 +13,7 @@ Item {
 
     function showSearch() {
         chatSearchVisible = true
-        chatSearchField.forceActiveFocus()
+        chatSearchField.focusInput()
     }
 
     function clearChatSearch() {
@@ -30,7 +31,7 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 56
+            Layout.preferredHeight: Ui.Style.topBarHeight
             color: Ui.Style.panelBgAlt
             border.color: Ui.Style.borderSubtle
 
@@ -75,43 +76,90 @@ Item {
                     }
                 }
 
-                TextField {
+                Components.SearchField {
                     id: chatSearchField
                     visible: chatSearchVisible
-                    Layout.preferredWidth: 180
+                    Layout.preferredWidth: 200
                     placeholderText: "Search in chat"
                 }
 
-                Button {
-                    text: "Find"
+                Components.IconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
                     visible: !chatSearchVisible
                     onClicked: root.showSearch()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Find"
                 }
-                Button {
-                    text: "Call"
+                Components.IconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Call"
                 }
-                Button {
-                    text: "Video"
+                Components.IconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Video"
                 }
-                Button {
-                    text: "Info"
+                Components.IconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/info.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
                     onClicked: Ui.AppStore.toggleRightPane()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Info"
                 }
-                Button {
-                    text: "More"
+                Components.IconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/more.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
+                    ToolTip.visible: hovered
+                    ToolTip.text: "More"
                 }
             }
         }
 
         Rectangle {
+            id: messageArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: Ui.Style.panelBg
+            color: Ui.Style.messageBg
+
+            Canvas {
+                id: pattern
+                anchors.fill: parent
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.fillStyle = Ui.Style.messagePatternA
+                    var step = 80
+                    for (var y = 0; y < height + step; y += step) {
+                        for (var x = 0; x < width + step; x += step) {
+                            ctx.beginPath()
+                            ctx.arc(x + 14, y + 12, 3, 0, Math.PI * 2, false)
+                            ctx.fill()
+                        }
+                    }
+                    ctx.fillStyle = Ui.Style.messagePatternB
+                    for (var yy = 0; yy < height + step; yy += step) {
+                        for (var xx = 0; xx < width + step; xx += step) {
+                            ctx.fillRect(xx + 40, yy + 44, 8, 2)
+                        }
+                    }
+                }
+            }
 
             ListView {
                 id: messageList
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingM
+                anchors.margins: Ui.Style.paddingL
                 clip: true
                 model: Ui.AppStore.currentChatId.length > 0
                        ? Ui.AppStore.messagesModel(Ui.AppStore.currentChatId)
@@ -132,14 +180,43 @@ Item {
                 }
             }
 
-            Button {
+            Item {
+                anchors.fill: parent
+                visible: Ui.AppStore.currentChatId.length === 0
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 12
+                    Image {
+                        source: "qrc:/mi/e2ee/ui/icons/chat.svg"
+                        width: 72
+                        height: 72
+                        opacity: 0.5
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Text {
+                        text: "Select a chat to start messaging"
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 13
+                    }
+                }
+            }
+
+            Components.IconButton {
                 id: jumpButton
-                text: "Jump to bottom"
                 visible: !stickToBottom && messageList.count > 0
+                icon.source: "qrc:/mi/e2ee/ui/icons/chevron-down.svg"
+                buttonSize: 30
+                iconSize: 14
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: Ui.Style.paddingM
+                bgColor: Ui.Style.panelBgAlt
+                hoverBg: Ui.Style.hoverBg
+                pressedBg: Ui.Style.pressedBg
                 onClicked: messageList.positionViewAtEnd()
+                ToolTip.visible: hovered
+                ToolTip.text: "Jump to bottom"
             }
         }
 
@@ -153,71 +230,83 @@ Item {
                 anchors.margins: Ui.Style.paddingM
                 spacing: Ui.Style.paddingS
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 0
-                    visible: false
-                }
-
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Ui.Style.paddingS
 
-                    Button {
-                        text: "Attach"
-                        Layout.preferredHeight: 32
-                    }
-                    Button {
-                        text: "Emoji"
-                        Layout.preferredHeight: 32
+                    Components.IconButton {
+                        icon.source: "qrc:/mi/e2ee/ui/icons/paperclip.svg"
+                        buttonSize: Ui.Style.iconButtonSmall
+                        iconSize: 16
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Attach"
                     }
 
-                    TextArea {
-                        id: messageInput
+                    Rectangle {
+                        id: inputField
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        wrapMode: TextEdit.Wrap
-                        placeholderText: "Write a message"
-                        selectByMouse: true
-                        enabled: Ui.AppStore.currentChatId.length > 0
-                        Keys.onPressed: {
-                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                if (event.modifiers & Qt.ShiftModifier) {
-                                    return
+                        radius: Ui.Style.radiusXL
+                        color: Ui.Style.inputBg
+                        border.color: messageInput.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
+                        border.width: 1
+                        height: messageInput.implicitHeight + Ui.Style.paddingS * 2
+
+                        TextArea {
+                            id: messageInput
+                            anchors.fill: parent
+                            anchors.margins: Ui.Style.paddingS
+                            wrapMode: TextEdit.Wrap
+                            placeholderText: "Write a message"
+                            color: Ui.Style.textPrimary
+                            selectByMouse: true
+                            background: Rectangle { color: "transparent" }
+                            enabled: Ui.AppStore.currentChatId.length > 0
+                            Keys.onPressed: {
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    if (event.modifiers & Qt.ShiftModifier) {
+                                        return
+                                    }
+                                    event.accepted = true
+                                    sendMessage()
                                 }
-                                event.accepted = true
-                                sendMessage()
                             }
+                            onTextChanged: inputHeight()
                         }
-                        onTextChanged: inputHeight()
                     }
 
-                    Button {
+                    Components.IconButton {
+                        icon.source: "qrc:/mi/e2ee/ui/icons/emoji.svg"
+                        buttonSize: Ui.Style.iconButtonSmall
+                        iconSize: 16
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Emoji"
+                    }
+
+                    Components.IconButton {
                         id: sendButton
-                        text: "Send"
+                        icon.source: "qrc:/mi/e2ee/ui/icons/send.svg"
+                        buttonSize: 34
+                        iconSize: 18
+                        bgColor: Ui.Style.accent
+                        hoverBg: Ui.Style.accentHover
+                        pressedBg: Ui.Style.accentPressed
+                        baseColor: Ui.Style.textPrimary
+                        hoverColor: Ui.Style.textPrimary
+                        pressColor: Ui.Style.textPrimary
                         enabled: Ui.AppStore.currentChatId.length > 0 &&
                                  messageInput.text.trim().length > 0
-                        Layout.preferredHeight: 36
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: sendButton.enabled ? Ui.Style.accent : Ui.Style.pressedBg
-                        }
-                        contentItem: Text {
-                            text: "Send"
-                            color: Ui.Style.textPrimary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
                         onClicked: sendMessage()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Send"
                     }
                 }
             }
 
             function inputHeight() {
-                var minHeight = 44
+                var minHeight = 40
                 var maxHeight = 160
                 var h = Math.min(maxHeight, Math.max(minHeight, messageInput.contentHeight + 16))
-                messageInput.Layout.preferredHeight = h
+                messageInput.implicitHeight = h
             }
 
             function sendMessage() {
@@ -240,7 +329,7 @@ Item {
             property bool isOutgoing: kind === "out"
             property bool showSender: isIncoming && Ui.AppStore.currentChatType === "group"
 
-            height: isDate || isSystem ? 34 : bubbleBlock.height + 8
+            height: isDate || isSystem ? 32 : bubbleBlock.height + 10
 
             Rectangle {
                 visible: isDate
@@ -249,14 +338,14 @@ Item {
                 radius: 10
                 color: Ui.Style.panelBgAlt
                 border.color: Ui.Style.borderSubtle
-                height: 22
-                width: dateText.paintedWidth + 18
+                height: 20
+                width: dateText.paintedWidth + 16
                 Text {
                     id: dateText
                     anchors.centerIn: parent
                     text: model.text || ""
                     color: Ui.Style.textMuted
-                    font.pixelSize: 11
+                    font.pixelSize: 10
                 }
             }
 
@@ -266,7 +355,7 @@ Item {
                 y: 8
                 text: model.text || ""
                 color: Ui.Style.textMuted
-                font.pixelSize: 11
+                font.pixelSize: 10
             }
 
             Item {
@@ -274,7 +363,7 @@ Item {
                 visible: isIncoming || isOutgoing
                 property int hPadding: 12
                 property int vPadding: 8
-                property real maxBubbleWidth: Math.max(240, (ListView.view ? ListView.view.width : root.width) * 0.65)
+                property real maxBubbleWidth: Math.max(260, (ListView.view ? ListView.view.width : root.width) * 0.62)
                 property real bubbleWidth: Math.min(maxBubbleWidth,
                                                     Math.max(messageText.paintedWidth, metaRow.implicitWidth) + hPadding * 2)
                 property real bubbleHeight: messageText.paintedHeight + metaRow.implicitHeight +
@@ -282,14 +371,17 @@ Item {
 
                 width: bubbleWidth
                 height: bubbleHeight
-                x: isOutgoing ? parent.width - bubbleWidth - 12 : 12
+                x: isOutgoing ? parent.width - bubbleWidth - Ui.Style.paddingL : Ui.Style.paddingL
                 y: 4
 
                 Rectangle {
+                    id: bubble
                     anchors.fill: parent
                     radius: Ui.Style.radiusLarge
                     color: isOutgoing ? Ui.Style.bubbleOutBg : Ui.Style.bubbleInBg
-                    border.color: Qt.darker(color, 1.1)
+                    border.color: isOutgoing ? Qt.darker(Ui.Style.bubbleOutBg, 1.08)
+                                             : Qt.darker(Ui.Style.bubbleInBg, 1.08)
+                    border.width: 1
 
                     Column {
                         anchors.fill: parent
@@ -320,16 +412,44 @@ Item {
                             Text {
                                 text: timeText || ""
                                 font.pixelSize: 10
-                                color: Ui.Style.bubbleMetaFg
+                                color: isOutgoing ? Ui.Style.bubbleMetaOutFg : Ui.Style.bubbleMetaInFg
                             }
                             Text {
                                 visible: isOutgoing
                                 text: tickText(statusTicks)
                                 font.pixelSize: 10
-                                color: Ui.Style.bubbleMetaFg
+                                color: Ui.Style.bubbleMetaOutFg
                             }
                         }
                     }
+                }
+
+                Rectangle {
+                    width: 10
+                    height: 10
+                    radius: 2
+                    color: bubble.color
+                    rotation: 45
+                    transformOrigin: Item.Center
+                    anchors.bottom: bubble.bottom
+                    anchors.bottomMargin: 8
+                    anchors.left: bubble.left
+                    anchors.leftMargin: -4
+                    visible: isIncoming
+                }
+
+                Rectangle {
+                    width: 10
+                    height: 10
+                    radius: 2
+                    color: bubble.color
+                    rotation: 45
+                    transformOrigin: Item.Center
+                    anchors.bottom: bubble.bottom
+                    anchors.bottomMargin: 8
+                    anchors.right: bubble.right
+                    anchors.rightMargin: -4
+                    visible: isOutgoing
                 }
             }
 

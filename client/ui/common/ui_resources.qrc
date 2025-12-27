@@ -16,6 +16,7 @@
         <file alias="icons/emoji.svg">../icons/emoji.svg</file>
         <file alias="icons/file.svg">../icons/file.svg</file>
         <file alias="icons/image.svg">../icons/image.svg</file>
+        <file alias="icons/info.svg">../icons/info.svg</file>
         <file alias="icons/mic.svg">../icons/mic.svg</file>
         <file alias="icons/more.svg">../icons/more.svg</file>
         <file alias="icons/maximize.svg">../icons/maximize.svg</file>
@@ -42,6 +43,10 @@
         <file alias="qml/dialogs/AddContactDialog.qml">../qml/dialogs/AddContactDialog.qml</file>
         <file alias="qml/dialogs/CreateGroupWizard.qml">../qml/dialogs/CreateGroupWizard.qml</file>
         <file alias="qml/dialogs/SettingsDialog.qml">../qml/dialogs/SettingsDialog.qml</file>
+        <file alias="qml/components/IconButton.qml">../qml/components/IconButton.qml</file>
+        <file alias="qml/components/PrimaryButton.qml">../qml/components/PrimaryButton.qml</file>
+        <file alias="qml/components/GhostButton.qml">../qml/components/GhostButton.qml</file>
+        <file alias="qml/components/SearchField.qml">../qml/components/SearchField.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>
