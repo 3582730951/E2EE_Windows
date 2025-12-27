@@ -8,10 +8,16 @@ import "qrc:/mi/e2ee/ui/qml/shell" as Shell
 
 ApplicationWindow {
     id: root
-    width: 1200
-    height: 760
-    minimumWidth: 900
-    minimumHeight: 620
+    property bool authMode: Ui.AppStore.currentPage === 0
+    property int authWidth: 520
+    property int authHeight: 620
+
+    width: authMode ? authWidth : 1200
+    height: authMode ? authHeight : 760
+    minimumWidth: authMode ? authWidth : 900
+    minimumHeight: authMode ? authHeight : 620
+    maximumWidth: authMode ? authWidth : 16384
+    maximumHeight: authMode ? authHeight : 16384
     visible: true
     title: "MI E2EE Client"
     color: Ui.Style.windowBg

@@ -40,18 +40,11 @@ Item {
     }
 
     Rectangle {
-        anchors.fill: parent
-        color: Ui.Style.windowBg
-    }
-
-    Rectangle {
         id: loginShell
-        width: 420
-        height: 520
+        anchors.fill: parent
         radius: 16
         color: Qt.rgba(0.11, 0.14, 0.19, 0.78)
         border.color: Qt.rgba(1, 1, 1, 0.08)
-        anchors.centerIn: parent
         antialiasing: true
 
         ColumnLayout {
@@ -95,13 +88,13 @@ Item {
 
             Label {
                 text: "账号登录"
-                font.pixelSize: 20
+                font.pixelSize: 22
                 font.weight: Font.DemiBold
                 color: Ui.Style.textPrimary
             }
             Label {
                 text: "安全登录，开启加密会话"
-                font.pixelSize: 12
+                font.pixelSize: 14
                 color: Ui.Style.textSecondary
             }
 
@@ -127,6 +120,7 @@ Item {
                         TextField {
                             Layout.fillWidth: true
                             placeholderText: "账号/手机号/邮箱"
+                            font.pixelSize: 14
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -139,6 +133,7 @@ Item {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: "密码"
+                            font.pixelSize: 14
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -149,6 +144,7 @@ Item {
 
                         CheckBox {
                             text: "自动登录"
+                            font.pixelSize: 14
                         }
 
                         Button {
@@ -161,6 +157,7 @@ Item {
                             contentItem: Text {
                                 text: "登录"
                                 color: Ui.Style.textPrimary
+                                font.pixelSize: 16
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -184,7 +181,7 @@ Item {
                                 contentItem: Text {
                                     text: "注册账号"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -195,7 +192,7 @@ Item {
                                 contentItem: Text {
                                     text: "扫码登录"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -215,6 +212,7 @@ Item {
                         TextField {
                             Layout.fillWidth: true
                             placeholderText: "用户名/手机号/邮箱"
+                            font.pixelSize: 14
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -227,6 +225,7 @@ Item {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: "密码"
+                            font.pixelSize: 14
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -239,6 +238,7 @@ Item {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: "确认密码"
+                            font.pixelSize: 14
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -257,6 +257,7 @@ Item {
                             contentItem: Text {
                                 text: "注册"
                                 color: Ui.Style.textPrimary
+                                font.pixelSize: 16
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -284,7 +285,7 @@ Item {
                                 contentItem: Text {
                                     text: "返回登录"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -295,7 +296,7 @@ Item {
                                 contentItem: Text {
                                     text: "扫码登录"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -370,7 +371,7 @@ Item {
                         Text {
                             text: qrSeconds > 0 ? ("二维码将在 " + qrSeconds + " 秒后刷新") : "二维码已过期，请刷新"
                             color: qrSeconds > 0 ? Ui.Style.textSecondary : Ui.Style.link
-                            font.pixelSize: 11
+                            font.pixelSize: 13
                             horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
                         }
@@ -385,7 +386,7 @@ Item {
                                 contentItem: Text {
                                     text: "刷新"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -402,7 +403,7 @@ Item {
                                 contentItem: Text {
                                     text: "返回登录"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -413,7 +414,7 @@ Item {
                                 contentItem: Text {
                                     text: "注册账号"
                                     color: Ui.Style.link
-                                    font.pixelSize: 12
+                                    font.pixelSize: 14
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -427,7 +428,7 @@ Item {
             Text {
                 text: errorText
                 color: Ui.Style.danger
-                font.pixelSize: 11
+                font.pixelSize: 13
                 visible: errorText.length > 0
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true
