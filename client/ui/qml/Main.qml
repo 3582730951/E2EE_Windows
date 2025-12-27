@@ -18,6 +18,7 @@ ApplicationWindow {
     minimumHeight: authMode ? authHeight : 620
     maximumWidth: authMode ? authWidth : 16384
     maximumHeight: authMode ? authHeight : 16384
+    flags: authMode ? (Qt.FramelessWindowHint | Qt.Window) : Qt.Window
     visible: true
     title: "MI E2EE Client"
     color: Ui.Style.windowBg
@@ -46,6 +47,25 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             windowWidth: root.width
+        }
+    }
+
+    MouseArea {
+        id: dragArea
+        anchors.fill: parent
+        enabled: authMode
+        acceptedButtons: Qt.LeftButton
+        property real lastX: 0
+        property real lastY: 0
+        onPressed: {
+            lastX = mouse.x
+            lastY = mouse.y
+        }
+        onPositionChanged: {
+            if (pressedButtons & Qt.LeftButton) {
+                root.x += mouse.x - lastX
+                root.y += mouse.y - lastY
+            }
         }
     }
 
