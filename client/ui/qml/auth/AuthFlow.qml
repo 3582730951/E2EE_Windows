@@ -42,10 +42,11 @@ Item {
     Rectangle {
         id: loginShell
         anchors.fill: parent
-        radius: 16
+        radius: 18
         color: Qt.rgba(0.11, 0.14, 0.19, 0.78)
         border.color: Qt.rgba(1, 1, 1, 0.08)
         antialiasing: true
+        clip: true
 
         ColumnLayout {
             anchors.fill: parent
@@ -54,7 +55,18 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
+                Item {
+                    Layout.fillWidth: true
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton
+                        onPressed: function(mouse) {
+                            if (root.window && root.window.startSystemMove) {
+                                root.window.startSystemMove()
+                            }
+                        }
+                    }
+                }
                 ToolButton {
                     id: menuButton
                     icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
