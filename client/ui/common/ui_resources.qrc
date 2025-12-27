@@ -28,6 +28,17 @@
         <file alias="icons/video.svg">../icons/video.svg</file>
         <file alias="qml/Main.qml">../qml/Main.qml</file>
         <file alias="qml/Style.qml">../qml/Style.qml</file>
+        <file alias="qml/qmldir">../qml/qmldir</file>
+        <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
+        <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
+        <file alias="qml/shell/AppShell.qml">../qml/shell/AppShell.qml</file>
+        <file alias="qml/shell/LeftPane.qml">../qml/shell/LeftPane.qml</file>
+        <file alias="qml/shell/CenterPane.qml">../qml/shell/CenterPane.qml</file>
+        <file alias="qml/shell/RightPane.qml">../qml/shell/RightPane.qml</file>
+        <file alias="qml/dialogs/NewChatDialog.qml">../qml/dialogs/NewChatDialog.qml</file>
+        <file alias="qml/dialogs/AddContactDialog.qml">../qml/dialogs/AddContactDialog.qml</file>
+        <file alias="qml/dialogs/CreateGroupWizard.qml">../qml/dialogs/CreateGroupWizard.qml</file>
+        <file alias="qml/dialogs/SettingsDialog.qml">../qml/dialogs/SettingsDialog.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>

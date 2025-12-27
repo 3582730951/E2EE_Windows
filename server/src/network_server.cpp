@@ -779,6 +779,7 @@ inline int PollSockets(PollFd* fds, nfds_t count, int timeout_ms) {
 }  // namespace
 #endif  // MI_E2EE_ENABLE_TCP_SERVER
 
+#ifdef MI_E2EE_ENABLE_TCP_SERVER
 struct NetworkServer::Connection {
   SocketHandle sock{kInvalidSocket};
   std::string remote_ip;
@@ -1985,6 +1986,30 @@ class NetworkServer::IocpEngine {
   std::atomic<std::uint64_t> sweep_{0};
 };
 #endif  // _WIN32
+#else  // MI_E2EE_ENABLE_TCP_SERVER
+struct NetworkServer::Connection {};
+
+class NetworkServer::Reactor {
+ public:
+  explicit Reactor(NetworkServer*) {}
+  void Start() {}
+  void Stop() {}
+  void AddConnection(std::shared_ptr<Connection>) {}
+};
+
+#ifdef _WIN32
+class NetworkServer::IocpEngine {
+ public:
+  explicit IocpEngine(NetworkServer*) {}
+  bool Start(std::string& error) {
+    error = "tcp server not built";
+    return false;
+  }
+  void Stop() {}
+  void AddConnection(std::shared_ptr<Connection>) {}
+};
+#endif  // _WIN32
+#endif  // MI_E2EE_ENABLE_TCP_SERVER
 
 NetworkServer::NetworkServer(Listener* listener, std::uint16_t port,
                              bool tls_enable, std::string tls_cert,
