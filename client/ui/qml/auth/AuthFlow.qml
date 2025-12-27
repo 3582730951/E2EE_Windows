@@ -43,10 +43,21 @@ Item {
         id: loginShell
         anchors.fill: parent
         radius: 18
-        color: Qt.rgba(0.11, 0.14, 0.19, 0.78)
+        color: Qt.rgba(0.11, 0.14, 0.19, 0.89)
         border.color: Qt.rgba(1, 1, 1, 0.08)
         antialiasing: true
         clip: true
+
+        MouseArea {
+            id: dragArea
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                if (root.window && root.window.startSystemMove) {
+                    root.window.startSystemMove()
+                }
+            }
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -55,18 +66,7 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                Item {
-                    Layout.fillWidth: true
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton
-                        onPressed: function(mouse) {
-                            if (root.window && root.window.startSystemMove) {
-                                root.window.startSystemMove()
-                            }
-                        }
-                    }
-                }
+                Item { Layout.fillWidth: true }
                 ToolButton {
                     id: menuButton
                     icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
