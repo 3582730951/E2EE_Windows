@@ -80,7 +80,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
         return 1;
     }
     const std::wstring dllDir = rootDir + L"\\dll";
-    const std::wstring appExe = rootDir + L"\\mi_e2ee_client_ui.exe";
+    const std::wstring appExe = rootDir + L"\\mi_e2ee_client_ui_app.exe";
     if (!FileExists(appExe)) {
         ShowError(L"Missing runtime executable: " + appExe);
         return 2;

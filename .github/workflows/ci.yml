@@ -82,7 +82,7 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime
+        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime
 
       - name: Configure server
         run: >
@@ -109,7 +109,7 @@ jobs:
             throw "Qt root dir not found"
           }
           $qtBin = Join-Path $qtRoot "bin"
-          & (Join-Path $qtBin "windeployqt.exe") --release --compiler-runtime --qmldir $env:GITHUB_WORKSPACE\\client\\ui $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe
+          & (Join-Path $qtBin "windeployqt.exe") --release --compiler-runtime --qmldir $env:GITHUB_WORKSPACE\\client\\ui $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release\\mi_e2ee_client_ui_app.exe
           $uiRoot = Join-Path $env:GITHUB_WORKSPACE "build\\client\\ui\\Release"
           $qmlRoot = Join-Path $uiRoot "qml"
           $qtQmlCoreDll = Join-Path $qtBin "Qt6QmlCore.dll"
@@ -240,6 +240,7 @@ jobs:
 
           "" | Set-Content -Path (Join-Path $clientDb "server_trust.ini") -Encoding ASCII
 
+          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee_client_ui_app.exe" $clientRoot -Force
           Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe" $clientRoot -Force
           Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee.exe" $clientRoot -Force
 
