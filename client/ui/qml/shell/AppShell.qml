@@ -1,14 +1,13 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import Qt.labs.settings 1.1
+import QtCore
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/dialogs" as Dialogs
 import "qrc:/mi/e2ee/ui/qml/shell" as Shell
 
 Item {
     id: root
-    anchors.fill: parent
 
     property int windowWidth: 0
     property bool showRightPane: Ui.AppStore.rightPaneVisible && windowWidth >= 860

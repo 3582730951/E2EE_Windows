@@ -22,20 +22,13 @@ QtObject {
     signal leftTabChanged(int tab)
     signal rightPaneVisibilityChanged(bool visible)
 
-    property alias dialogsModel: dialogsModel
-    property alias contactsModel: contactsModel
-    property alias membersModel: membersModel
-    property alias filteredDialogsModel: filteredDialogsModel
-    property alias filteredContactsModel: filteredContactsModel
+    property ListModel dialogsModel: ListModel {}
+    property ListModel contactsModel: ListModel {}
+    property ListModel membersModel: ListModel {}
+    property ListModel filteredDialogsModel: ListModel {}
+    property ListModel filteredContactsModel: ListModel {}
 
-    ListModel { id: dialogsModel }
-    ListModel { id: contactsModel }
-    ListModel { id: membersModel }
-    ListModel { id: filteredDialogsModel }
-    ListModel { id: filteredContactsModel }
-
-    Timer {
-        id: replyTimer
+    property Timer replyTimer: Timer {
         interval: 700
         repeat: false
         onTriggered: {

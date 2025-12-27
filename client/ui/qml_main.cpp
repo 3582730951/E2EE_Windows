@@ -2,13 +2,18 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 
 #include "quick_client.h"
 #include "common/UiRuntimePaths.h"
 
 int main(int argc, char* argv[]) {
+    QQuickStyle::setStyle(QStringLiteral("Fusion"));
     UiRuntimePaths::Prepare(argv[0]);
     QGuiApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("MI"));
+    QCoreApplication::setOrganizationDomain(QStringLiteral("mi-e2ee.local"));
+    QCoreApplication::setApplicationName(QStringLiteral("MI E2EE Client"));
 
     QQmlApplicationEngine engine;
     mi::client::ui::QuickClient client;

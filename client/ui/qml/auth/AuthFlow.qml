@@ -5,7 +5,6 @@ import "qrc:/mi/e2ee/ui/qml" as Ui
 
 Item {
     id: root
-    anchors.fill: parent
 
     property string phoneInput: ""
     property string codeInput: ""
@@ -45,7 +44,8 @@ Item {
         currentIndex: 0
 
         Item {
-            anchors.fill: parent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Rectangle {
                 id: welcomeCard
                 width: 420
@@ -102,7 +102,8 @@ Item {
         }
 
         Item {
-            anchors.fill: parent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Rectangle {
                 width: 420
                 height: 380
@@ -188,7 +189,8 @@ Item {
         }
 
         Item {
-            anchors.fill: parent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Rectangle {
                 width: 420
                 height: 400
@@ -276,7 +278,8 @@ Item {
         }
 
         Item {
-            anchors.fill: parent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Rectangle {
                 width: 420
                 height: 360
@@ -350,7 +353,8 @@ Item {
         }
 
         Item {
-            anchors.fill: parent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Rectangle {
                 width: 420
                 height: 420

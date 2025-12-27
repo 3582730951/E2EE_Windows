@@ -274,7 +274,7 @@ Item {
                 visible: isIncoming || isOutgoing
                 property int hPadding: 12
                 property int vPadding: 8
-                property real maxBubbleWidth: Math.max(240, ListView.view.width * 0.65)
+                property real maxBubbleWidth: Math.max(240, (ListView.view ? ListView.view.width : root.width) * 0.65)
                 property real bubbleWidth: Math.min(maxBubbleWidth,
                                                     Math.max(messageText.paintedWidth, metaRow.implicitWidth) + hPadding * 2)
                 property real bubbleHeight: messageText.paintedHeight + metaRow.implicitHeight +

@@ -110,6 +110,18 @@ jobs:
           }
           $qtBin = Join-Path $qtRoot "bin"
           & (Join-Path $qtBin "windeployqt.exe") --release --compiler-runtime --qmldir $env:GITHUB_WORKSPACE\\client\\ui $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe
+          $uiRoot = Join-Path $env:GITHUB_WORKSPACE "build\\client\\ui\\Release"
+          $qmlRoot = Join-Path $uiRoot "qml"
+          $qtQmlCoreDll = Join-Path $qtBin "Qt6QmlCore.dll"
+          if (Test-Path $qtQmlCoreDll) {
+            Copy-Item $qtQmlCoreDll $uiRoot -Force
+          }
+          $qtQmlCoreModule = Join-Path $qtRoot "qml\\QtCore"
+          $dstQmlCoreModule = Join-Path $qmlRoot "QtCore"
+          if ((Test-Path $qtQmlCoreModule) -and (-not (Test-Path $dstQmlCoreModule))) {
+            New-Item -ItemType Directory -Force -Path $qmlRoot | Out-Null
+            Copy-Item $qtQmlCoreModule $dstQmlCoreModule -Recurse -Force
+          }
 
       - name: Package artifacts
         run: |
