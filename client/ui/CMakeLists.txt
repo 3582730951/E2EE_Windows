@@ -170,10 +170,9 @@ if (COMMAND mi_copy_msvc_runtime)
 endif()
 
 if(WIN32)
-    add_executable(mi_e2ee_client_ui_launcher WIN32 launcher/UiLauncher.cpp)
-    set_target_properties(mi_e2ee_client_ui_launcher PROPERTIES OUTPUT_NAME "mi_e2ee_client_ui")
+    add_executable(mi_e2ee_client_ui WIN32 launcher/UiLauncher.cpp)
     if(MSVC)
-        set_property(TARGET mi_e2ee_client_ui_launcher PROPERTY
+        set_property(TARGET mi_e2ee_client_ui PROPERTY
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
