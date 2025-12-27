@@ -6,31 +6,37 @@ import "qrc:/mi/e2ee/ui/qml" as Ui
 Item {
     id: root
 
-    property string phoneInput: ""
-    property string codeInput: ""
+    property string accountInput: ""
     property string passwordInput: ""
-    property int resendSeconds: 25
+    property string registerAccount: ""
+    property string registerPassword: ""
+    property string registerConfirm: ""
+    property int qrSeconds: 30
+    property string errorText: ""
+
+    signal authSucceeded()
 
     Timer {
-        id: resendTimer
+        id: qrTimer
         interval: 1000
         repeat: true
         onTriggered: {
-            if (resendSeconds > 0) {
-                resendSeconds -= 1
+            if (qrSeconds > 0) {
+                qrSeconds -= 1
             } else {
-                resendTimer.stop()
+                qrTimer.stop()
             }
         }
     }
 
     function completeAuth() {
+        authSucceeded()
         Ui.AppStore.currentPage = 1
     }
 
-    function resetResend() {
-        resendSeconds = 25
-        resendTimer.restart()
+    function resetQrTimer() {
+        qrSeconds = 30
+        qrTimer.restart()
     }
 
     Rectangle {
@@ -38,389 +44,393 @@ Item {
         color: Ui.Style.windowBg
     }
 
-    StackLayout {
-        id: stack
-        anchors.fill: parent
-        currentIndex: 0
+    Rectangle {
+        id: loginShell
+        width: 420
+        height: 520
+        radius: 16
+        color: Qt.rgba(0.11, 0.14, 0.19, 0.78)
+        border.color: Qt.rgba(1, 1, 1, 0.08)
+        anchors.centerIn: parent
+        antialiasing: true
 
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Rectangle {
-                id: welcomeCard
-                width: 420
-                height: 360
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                anchors.centerIn: parent
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Ui.Style.paddingL
+            spacing: Ui.Style.paddingM
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingM
-
-                    Label {
-                        text: "MI E2EE"
-                        font.pixelSize: 20
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                ToolButton {
+                    id: menuButton
+                    icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
+                    background: Rectangle {
+                        radius: 6
+                        color: menuButton.down ? Ui.Style.pressedBg : "transparent"
                     }
-                    Label {
-                        text: "Secure messaging demo"
-                        font.pixelSize: 13
-                        color: Ui.Style.textSecondary
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    Button {
-                        text: "Start"
-                        Layout.fillWidth: true
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: Ui.Style.accent
-                        }
-                        contentItem: Text {
-                            text: "Start"
-                            color: Ui.Style.textPrimary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        onClicked: {
-                            stack.currentIndex = 1
-                        }
-                    }
-                    Button {
-                        text: "Use QR code"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            stack.currentIndex = 4
-                        }
+                }
+                ToolButton {
+                    id: closeButton
+                    icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: Qt.quit()
+                    background: Rectangle {
+                        radius: 6
+                        color: closeButton.down ? Ui.Style.pressedBg : "transparent"
                     }
                 }
             }
-        }
 
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Rectangle {
-                width: 420
-                height: 380
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                anchors.centerIn: parent
+            Menu {
+                id: menuPopup
+                MenuItem { text: "设置" }
+                MenuItem { text: "帮助" }
+                MenuItem { text: "关于" }
+            }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingM
+            Label {
+                text: "账号登录"
+                font.pixelSize: 20
+                font.weight: Font.DemiBold
+                color: Ui.Style.textPrimary
+            }
+            Label {
+                text: "安全登录，开启加密会话"
+                font.pixelSize: 12
+                color: Ui.Style.textSecondary
+            }
 
-                    Label {
-                        text: "Enter your phone"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
+            StackLayout {
+                id: loginStack
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: 0
+                onCurrentIndexChanged: {
+                    errorText = ""
+                    if (currentIndex === 2) {
+                        resetQrTimer()
                     }
-                    Label {
-                        text: "We will send you a verification code."
-                        font.pixelSize: 12
-                        color: Ui.Style.textSecondary
-                    }
+                }
 
-                    ComboBox {
-                        id: countryCombo
-                        Layout.fillWidth: true
-                        model: ["United States (+1)", "China (+86)", "United Kingdom (+44)", "Germany (+49)"]
-                    }
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: Ui.Style.paddingM
 
-                    TextField {
-                        id: phoneField
-                        Layout.fillWidth: true
-                        placeholderText: "Phone number"
-                        inputMethodHints: Qt.ImhDigitsOnly
-                        onTextChanged: phoneInput = text
-                    }
-
-                    Text {
-                        id: phoneError
-                        text: "Please enter a valid phone number."
-                        color: Ui.Style.danger
-                        font.pixelSize: 11
-                        visible: false
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Ui.Style.paddingS
-                        Button {
-                            text: "Back"
+                        TextField {
                             Layout.fillWidth: true
-                            onClicked: stack.currentIndex = 0
+                            placeholderText: "账号/手机号/邮箱"
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: accountInput = text
                         }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: "密码"
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: passwordInput = text
+                        }
+
+                        CheckBox {
+                            text: "自动登录"
+                        }
+
                         Button {
-                            text: "Next"
+                            text: "登录"
                             Layout.fillWidth: true
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Ui.Style.accent
                             }
                             contentItem: Text {
-                                text: "Next"
+                                text: "登录"
                                 color: Ui.Style.textPrimary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                             onClicked: {
-                                if (phoneInput.length < 6) {
-                                    phoneError.visible = true
+                                if (accountInput.length === 0 || passwordInput.length === 0) {
+                                    errorText = "请输入账号和密码"
                                     return
                                 }
-                                phoneError.visible = false
-                                resetResend()
-                                stack.currentIndex = 2
+                                errorText = ""
+                                completeAuth()
                             }
                         }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Item { Layout.fillWidth: true }
+                            Button {
+                                text: "注册账号"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 1
+                                contentItem: Text {
+                                    text: "注册账号"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Button {
+                                text: "扫码登录"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 2
+                                contentItem: Text {
+                                    text: "扫码登录"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+                        Item { Layout.fillHeight: true }
                     }
                 }
-            }
-        }
 
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Rectangle {
-                width: 420
-                height: 400
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                anchors.centerIn: parent
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: Ui.Style.paddingM
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingM
-
-                    Label {
-                        text: "Enter code"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
-                    }
-                    Label {
-                        text: "We sent a 6-digit code to your phone."
-                        font.pixelSize: 12
-                        color: Ui.Style.textSecondary
-                    }
-
-                    TextField {
-                        id: codeField
-                        Layout.fillWidth: true
-                        inputMask: "000000"
-                        placeholderText: "000000"
-                        onTextChanged: {
-                            codeInput = text
-                            if (codeInput.length === 6) {
-                                if (codeInput === "000000") {
-                                    stack.currentIndex = 3
-                                } else {
-                                    completeAuth()
-                                }
-                            }
-                        }
-                    }
-
-                    Text {
-                        text: resendSeconds > 0 ? "Resend in 0:" + (resendSeconds < 10 ? "0" + resendSeconds : resendSeconds)
-                                                : "Resend code"
-                        color: resendSeconds > 0 ? Ui.Style.textMuted : Ui.Style.link
-                        font.pixelSize: 11
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Ui.Style.paddingS
-                        Button {
-                            text: "Back"
+                        TextField {
                             Layout.fillWidth: true
-                            onClicked: stack.currentIndex = 1
+                            placeholderText: "用户名/手机号/邮箱"
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: registerAccount = text
                         }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: "密码"
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: registerPassword = text
+                        }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: "确认密码"
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: registerConfirm = text
+                        }
+
                         Button {
-                            text: "Next"
+                            text: "注册"
                             Layout.fillWidth: true
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Ui.Style.accent
                             }
                             contentItem: Text {
-                                text: "Next"
+                                text: "注册"
                                 color: Ui.Style.textPrimary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
                             onClicked: {
-                                if (codeInput.length === 6) {
-                                    if (codeInput === "000000") {
-                                        stack.currentIndex = 3
-                                    } else {
-                                        completeAuth()
+                                if (registerAccount.length === 0 || registerPassword.length === 0 || registerConfirm.length === 0) {
+                                    errorText = "请填写完整注册信息"
+                                    return
+                                }
+                                if (registerPassword !== registerConfirm) {
+                                    errorText = "两次密码不一致"
+                                    return
+                                }
+                                errorText = ""
+                                completeAuth()
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Item { Layout.fillWidth: true }
+                            Button {
+                                text: "返回登录"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 0
+                                contentItem: Text {
+                                    text: "返回登录"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Button {
+                                text: "扫码登录"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 2
+                                contentItem: Text {
+                                    text: "扫码登录"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+                        Item { Layout.fillHeight: true }
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: Ui.Style.paddingM
+
+                        Rectangle {
+                            id: qrBox
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 200
+                            height: 200
+                            radius: Ui.Style.radiusMedium
+                            color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                            border.color: Ui.Style.borderSubtle
+                            Canvas {
+                                anchors.fill: parent
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.clearRect(0, 0, width, height)
+                                    ctx.fillStyle = "#0b0b0c"
+                                    var size = width
+                                    var cells = 21
+                                    var cell = Math.floor(size / cells)
+                                    function drawMarker(x, y) {
+                                        for (var iy = 0; iy < 7; ++iy) {
+                                            for (var ix = 0; ix < 7; ++ix) {
+                                                var border = ix === 0 || ix === 6 || iy === 0 || iy === 6
+                                                var inner = ix >= 2 && ix <= 4 && iy >= 2 && iy <= 4
+                                                if (border || inner) {
+                                                    ctx.fillRect((x + ix) * cell, (y + iy) * cell, cell, cell)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    drawMarker(0, 0)
+                                    drawMarker(cells - 7, 0)
+                                    drawMarker(0, cells - 7)
+                                    for (var y = 0; y < cells; ++y) {
+                                        for (var x = 0; x < cells; ++x) {
+                                            var inMarker = (x < 7 && y < 7) ||
+                                                           (x >= cells - 7 && y < 7) ||
+                                                           (x < 7 && y >= cells - 7)
+                                            if (inMarker) {
+                                                continue
+                                            }
+                                            if (((x * 7 + y * 11) % 13) < 5) {
+                                                ctx.fillRect(x * cell, y * cell, cell, cell)
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-        }
-
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Rectangle {
-                width: 420
-                height: 360
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                anchors.centerIn: parent
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingM
-
-                    Label {
-                        text: "Two-step verification"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
-                    }
-                    Label {
-                        text: "Enter your password to continue."
-                        font.pixelSize: 12
-                        color: Ui.Style.textSecondary
-                    }
-
-                    TextField {
-                        id: passwordField
-                        Layout.fillWidth: true
-                        echoMode: TextInput.Password
-                        placeholderText: "Password"
-                        onTextChanged: passwordInput = text
-                    }
-
-                    Text {
-                        text: "Forgot password?"
-                        color: Ui.Style.link
-                        font.pixelSize: 11
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Ui.Style.paddingS
-                        Button {
-                            text: "Back"
-                            Layout.fillWidth: true
-                            onClicked: stack.currentIndex = 2
-                        }
-                        Button {
-                            text: "Sign in"
-                            Layout.fillWidth: true
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: Ui.Style.accent
-                            }
-                            contentItem: Text {
-                                text: "Sign in"
-                                color: Ui.Style.textPrimary
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            onClicked: {
-                                if (passwordInput.length > 0) {
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    errorText = ""
                                     completeAuth()
                                 }
                             }
                         }
+
+                        Text {
+                            text: qrSeconds > 0 ? ("二维码将在 " + qrSeconds + " 秒后刷新") : "二维码已过期，请刷新"
+                            color: qrSeconds > 0 ? Ui.Style.textSecondary : Ui.Style.link
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Item { Layout.fillWidth: true }
+                            Button {
+                                text: "刷新"
+                                flat: true
+                                onClicked: resetQrTimer()
+                                contentItem: Text {
+                                    text: "刷新"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Item { Layout.fillWidth: true }
+                            Button {
+                                text: "返回登录"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 0
+                                contentItem: Text {
+                                    text: "返回登录"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Button {
+                                text: "注册账号"
+                                flat: true
+                                onClicked: loginStack.currentIndex = 1
+                                contentItem: Text {
+                                    text: "注册账号"
+                                    color: Ui.Style.link
+                                    font.pixelSize: 12
+                                }
+                                background: Rectangle { color: "transparent" }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+                        Item { Layout.fillHeight: true }
                     }
                 }
             }
-        }
 
-        Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Rectangle {
-                width: 420
-                height: 420
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                anchors.centerIn: parent
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingM
-
-                    Label {
-                        text: "Scan QR code"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
-                    }
-                    Label {
-                        text: "Open the app on your phone and scan."
-                        font.pixelSize: 12
-                        color: Ui.Style.textSecondary
-                    }
-
-                    Rectangle {
-                        Layout.alignment: Qt.AlignHCenter
-                        width: 200
-                        height: 200
-                        radius: Ui.Style.radiusMedium
-                        color: Ui.Style.windowBg
-                        border.color: Ui.Style.borderSubtle
-                        Text {
-                            anchors.centerIn: parent
-                            text: "QR"
-                            color: Ui.Style.textMuted
-                            font.pixelSize: 24
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: Ui.Style.paddingS
-                        Button {
-                            text: "Back"
-                            Layout.fillWidth: true
-                            onClicked: stack.currentIndex = 0
-                        }
-                        Button {
-                            text: "Simulate scan"
-                            Layout.fillWidth: true
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: Ui.Style.accent
-                            }
-                            contentItem: Text {
-                                text: "Simulate scan"
-                                color: Ui.Style.textPrimary
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            onClicked: completeAuth()
-                        }
-                    }
-                }
+            Text {
+                text: errorText
+                color: Ui.Style.danger
+                font.pixelSize: 11
+                visible: errorText.length > 0
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
             }
         }
     }

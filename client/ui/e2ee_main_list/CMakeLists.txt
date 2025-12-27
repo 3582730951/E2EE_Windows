@@ -12,6 +12,8 @@ set(UI_MAIN_LIST_SOURCES
     EmojiPickerDialog.h
     LoginDialog.cpp
     LoginDialog.h
+    AuthFlowWidget.cpp
+    AuthFlowWidget.h
     BackendAdapter.cpp
     BackendAdapter.h
     TrustPromptDialog.cpp
