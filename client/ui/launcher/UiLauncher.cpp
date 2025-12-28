@@ -90,11 +90,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
         const std::wstring pluginRoot =
             DirExists(dllDir + L"\\plugins") ? (dllDir + L"\\plugins") : dllDir;
         const std::wstring platformDir = pluginRoot + L"\\platforms";
+        const std::wstring qmlDir = dllDir + L"\\qml";
         if (DirExists(pluginRoot)) {
             SetEnvIfEmpty(L"QT_PLUGIN_PATH", pluginRoot);
         }
         if (DirExists(platformDir)) {
             SetEnvIfEmpty(L"QT_QPA_PLATFORM_PLUGIN_PATH", platformDir);
+        }
+        if (DirExists(qmlDir)) {
+            SetEnvIfEmpty(L"QML2_IMPORT_PATH", qmlDir);
+            SetEnvIfEmpty(L"QML_IMPORT_PATH", qmlDir);
         }
     }
 

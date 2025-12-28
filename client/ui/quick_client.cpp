@@ -697,7 +697,9 @@ void QuickClient::bindLocalVideoSink(QObject* sink) {
     disconnect(local_video_sink_, nullptr, this, nullptr);
   }
   local_video_sink_ = casted;
-  capture_session_.setVideoSink(local_video_sink_);
+  if (auto* session = EnsureCaptureSession()) {
+    session->setVideoSink(local_video_sink_);
+  }
   connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
           &QuickClient::HandleLocalVideoFrame);
 }
@@ -1573,9 +1575,14 @@ bool QuickClient::SetupVideo(QString& outError) {
     outError = QStringLiteral("未检测到摄像头");
     return false;
   }
+  QMediaCaptureSession* session = EnsureCaptureSession();
+  if (!session) {
+    outError = QStringLiteral("视频模块初始化失败");
+    return false;
+  }
   camera_ = std::make_unique<QCamera>(device);
-  capture_session_.setCamera(camera_.get());
-  capture_session_.setVideoSink(local_video_sink_);
+  session->setCamera(camera_.get());
+  session->setVideoSink(local_video_sink_);
   if (local_video_sink_) {
     disconnect(local_video_sink_, nullptr, this, nullptr);
     connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
@@ -1624,9 +1631,18 @@ void QuickClient::ShutdownVideo() {
   if (camera_) {
     camera_->stop();
   }
-  capture_session_.setVideoSink(nullptr);
-  capture_session_.setCamera(nullptr);
+  if (capture_session_) {
+    capture_session_->setVideoSink(nullptr);
+    capture_session_->setCamera(nullptr);
+  }
   camera_.reset();
+}
+
+QMediaCaptureSession* QuickClient::EnsureCaptureSession() {
+  if (!capture_session_) {
+    capture_session_ = std::make_unique<QMediaCaptureSession>(this);
+  }
+  return capture_session_.get();
 }
 
 void QuickClient::HandleAudioReady() {

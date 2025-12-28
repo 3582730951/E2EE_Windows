@@ -7,6 +7,7 @@
 #include <QVariant>
 #include <QVideoSink>
 #include <QMediaCaptureSession>
+#include <memory>
 
 #include "client_core.h"
 #include "media_pipeline.h"
@@ -162,6 +163,7 @@ class QuickClient : public QObject {
                                std::uint32_t& height,
                                std::size_t& stride) const;
   bool SelectCameraFormat();
+  QMediaCaptureSession* EnsureCaptureSession();
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -198,7 +200,7 @@ class QuickClient : public QObject {
   QByteArray audio_out_pending_;
   std::vector<std::int16_t> audio_frame_tmp_;
   std::unique_ptr<QCamera> camera_;
-  QMediaCaptureSession capture_session_;
+  std::unique_ptr<QMediaCaptureSession> capture_session_;
   QVideoSink* local_video_sink_{nullptr};
   QVideoSink* remote_video_sink_{nullptr};
   std::vector<std::uint8_t> video_send_buffer_;
