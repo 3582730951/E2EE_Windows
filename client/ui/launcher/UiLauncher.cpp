@@ -30,6 +30,33 @@ bool DirExists(const std::wstring &path) {
     return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
+void CopyIfMissing(const std::wstring &src, const std::wstring &dst) {
+    if (!FileExists(src) || FileExists(dst)) {
+        return;
+    }
+    CopyFileW(src.c_str(), dst.c_str(), TRUE);
+}
+
+void CopyRuntimeDllsIfNeeded(const std::wstring &dllDir, const std::wstring &rootDir) {
+    static const wchar_t *kRuntimeFiles[] = {
+        L"concrt140.dll",
+        L"msvcp140.dll",
+        L"msvcp140_1.dll",
+        L"msvcp140_2.dll",
+        L"msvcp140_atomic_wait.dll",
+        L"msvcp140_codecvt_ids.dll",
+        L"vccorlib140.dll",
+        L"vcruntime140.dll",
+        L"vcruntime140_1.dll",
+        L"vcruntime140_threads.dll"
+    };
+    for (const auto *name : kRuntimeFiles) {
+        const std::wstring src = dllDir + L"\\" + name;
+        const std::wstring dst = rootDir + L"\\" + name;
+        CopyIfMissing(src, dst);
+    }
+}
+
 std::wstring GetEnvVar(const wchar_t *name) {
     const DWORD len = GetEnvironmentVariableW(name, nullptr, 0);
     if (len == 0) {
@@ -86,6 +113,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
         return 2;
     }
     if (DirExists(dllDir)) {
+        CopyRuntimeDllsIfNeeded(dllDir, rootDir);
         PrependPath(dllDir);
         const std::wstring pluginRoot =
             DirExists(dllDir + L"\\plugins") ? (dllDir + L"\\plugins") : dllDir;
