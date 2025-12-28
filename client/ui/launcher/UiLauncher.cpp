@@ -84,14 +84,19 @@ void PrependPath(const std::wstring &dir) {
     SetEnvironmentVariableW(L"PATH", updated.c_str());
 }
 
-void SetEnvIfEmpty(const wchar_t *name, const std::wstring &value) {
+void PrependEnvVar(const wchar_t *name, const std::wstring &value) {
     if (value.empty()) {
         return;
     }
-    const DWORD len = GetEnvironmentVariableW(name, nullptr, 0);
-    if (len == 0) {
+    const std::wstring current = GetEnvVar(name);
+    if (current.empty()) {
         SetEnvironmentVariableW(name, value.c_str());
+        return;
     }
+    std::wstring updated = value;
+    updated.append(L";");
+    updated.append(current);
+    SetEnvironmentVariableW(name, updated.c_str());
 }
 
 void ShowError(const std::wstring &message) {
@@ -120,14 +125,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR cmdLine, int) {
         const std::wstring platformDir = pluginRoot + L"\\platforms";
         const std::wstring qmlDir = dllDir + L"\\qml";
         if (DirExists(pluginRoot)) {
-            SetEnvIfEmpty(L"QT_PLUGIN_PATH", pluginRoot);
+            PrependEnvVar(L"QT_PLUGIN_PATH", pluginRoot);
         }
         if (DirExists(platformDir)) {
-            SetEnvIfEmpty(L"QT_QPA_PLATFORM_PLUGIN_PATH", platformDir);
+            PrependEnvVar(L"QT_QPA_PLATFORM_PLUGIN_PATH", platformDir);
         }
         if (DirExists(qmlDir)) {
-            SetEnvIfEmpty(L"QML2_IMPORT_PATH", qmlDir);
-            SetEnvIfEmpty(L"QML_IMPORT_PATH", qmlDir);
+            PrependEnvVar(L"QML2_IMPORT_PATH", qmlDir);
+            PrependEnvVar(L"QML_IMPORT_PATH", qmlDir);
         }
     }
 
