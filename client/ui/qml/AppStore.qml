@@ -533,6 +533,19 @@ QtObject {
         return clientBridge.sendFriendRequest(target, displayName)
     }
 
+    function respondFriendRequest(username, accept) {
+        var who = (username || "").trim()
+        if (!clientBridge || who.length === 0) {
+            return false
+        }
+        var ok = clientBridge.respondFriendRequest(who, accept === true)
+        if (ok) {
+            refreshFriendRequests()
+            rebuildDialogs()
+        }
+        return ok
+    }
+
     function createGroup(name, memberIds) {
         if (!clientBridge) {
             return ""

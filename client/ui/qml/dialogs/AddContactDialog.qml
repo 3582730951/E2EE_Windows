@@ -9,7 +9,7 @@ ApplicationWindow {
     id: root
     visible: false
     width: 360
-    height: 320
+    height: hasRequests ? 420 : 320
     flags: Qt.FramelessWindowHint | Qt.Window
     title: Ui.I18n.t("dialog.addContact.title")
     color: "transparent"
@@ -114,6 +114,63 @@ ApplicationWindow {
             font.pixelSize: 11
             visible: false
         }
+
+        ColumnLayout {
+            id: requestsBlock
+            Layout.fillWidth: true
+            visible: Ui.AppStore.friendRequestsModel.count > 0
+            spacing: Ui.Style.paddingS
+
+            Text {
+                text: Ui.I18n.t("dialog.addContact.requestsTitle")
+                color: Ui.Style.textSecondary
+                font.pixelSize: 12
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 140
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.inputBg
+                border.color: Ui.Style.borderSubtle
+
+                ListView {
+                    id: requestsList
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingS
+                    model: Ui.AppStore.friendRequestsModel
+                    clip: true
+                    spacing: Ui.Style.paddingS
+
+                    delegate: RowLayout {
+                        width: requestsList.width
+                        spacing: Ui.Style.paddingS
+
+                        Text {
+                            text: username
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Components.GhostButton {
+                            text: Ui.I18n.t("dialog.addContact.reject")
+                            Layout.preferredWidth: 52
+                            height: 24
+                            onClicked: Ui.AppStore.respondFriendRequest(username, false)
+                        }
+
+                        Components.PrimaryButton {
+                            text: Ui.I18n.t("dialog.addContact.accept")
+                            Layout.preferredWidth: 52
+                            height: 24
+                            onClicked: Ui.AppStore.respondFriendRequest(username, true)
+                        }
+                    }
+                }
+            }
+        }
         Item { Layout.fillHeight: true }
         RowLayout {
             Layout.fillWidth: true
@@ -140,3 +197,4 @@ ApplicationWindow {
         }
     }
 }
+    property bool hasRequests: Ui.AppStore.friendRequestsModel.count > 0

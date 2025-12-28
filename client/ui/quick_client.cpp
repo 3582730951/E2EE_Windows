@@ -505,6 +505,9 @@ bool QuickClient::respondFriendRequest(const QString& requesterUsername,
   }
   if (ok) {
     UpdateFriendRequests(core_.ListFriendRequests());
+    if (accept) {
+      UpdateFriendList(core_.ListFriends());
+    }
   }
   return ok;
 }
