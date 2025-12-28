@@ -96,11 +96,25 @@ function(copy_icon_assets target_name)
     endif()
 endfunction()
 
+function(export_ui_resources_rcc target_name)
+    if(NOT TARGET Qt6::rcc)
+        message(WARNING "Qt rcc tool not available; skip ui_resources.rcc export for ${target_name}")
+        return()
+    endif()
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND $<TARGET_FILE:Qt6::rcc>
+            -binary "${UI_ROOT}/common/ui_resources.qrc"
+            -o "$<TARGET_FILE_DIR:${target_name}>/ui_resources.rcc"
+        COMMENT "Exporting ui_resources.rcc for ${target_name}"
+    )
+endfunction()
+
 function(add_ui_executable target_name)
     add_executable(${target_name} ${ARGN})
     target_link_libraries(${target_name} PRIVATE mi_ui_common Qt6::Widgets)
     copy_ref_images(${target_name})
     copy_icon_assets(${target_name})
+    export_ui_resources_rcc(${target_name})
     if(TARGET mi_ime_rime)
         add_dependencies(${target_name} mi_ime_rime)
         add_custom_command(TARGET ${target_name} POST_BUILD
@@ -142,6 +156,7 @@ target_link_libraries(mi_e2ee_client_ui_app PRIVATE mi_ui_common mi_e2ee_client_
     Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Multimedia)
 copy_ref_images(mi_e2ee_client_ui_app)
 copy_icon_assets(mi_e2ee_client_ui_app)
+export_ui_resources_rcc(mi_e2ee_client_ui_app)
 if(TARGET mi_ime_rime)
     add_dependencies(mi_e2ee_client_ui_app mi_ime_rime)
     add_custom_command(TARGET mi_e2ee_client_ui_app POST_BUILD
@@ -175,6 +190,7 @@ if(WIN32)
         set_property(TARGET mi_e2ee_client_ui PROPERTY
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
+    export_ui_resources_rcc(mi_e2ee_client_ui)
 
     add_executable(mi_e2ee_launcher WIN32 launcher/UiLauncher.cpp)
     set_target_properties(mi_e2ee_launcher PROPERTIES OUTPUT_NAME "mi_e2ee")

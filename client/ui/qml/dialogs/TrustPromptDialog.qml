@@ -8,10 +8,10 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 ApplicationWindow {
     id: root
     visible: false
-    width: 360
+    width: 460
     height: 320
     flags: Qt.FramelessWindowHint | Qt.Window
-    title: Ui.I18n.t("dialog.addContact.title")
+    title: "信任确认"
     color: "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
@@ -22,18 +22,26 @@ ApplicationWindow {
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
 
-    function open() {
+    property string mode: "server"
+    property string fingerprint: ""
+    property string pin: ""
+    property string peerName: ""
+    property string description: ""
+
+    signal accepted(string pinText)
+
+    function openWith(modeValue, fingerprintValue, pinValue, peerValue) {
+        mode = modeValue
+        fingerprint = fingerprintValue || ""
+        pin = pinValue || ""
+        peerName = peerValue || ""
+        description = mode === "peer"
+                       ? ("请确认对端身份指纹/验证码：" + peerName)
+                       : "请确认服务器指纹/验证码"
+        pinField.text = pin
         visible = true
         raise()
         requestActivate()
-    }
-
-    onVisibleChanged: {
-        if (visible) {
-            nameField.text = ""
-            handleField.text = ""
-            errorText.visible = false
-        }
     }
 
     background: Rectangle {
@@ -79,42 +87,55 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Ui.Style.paddingM
-        spacing: Ui.Style.paddingM
+        spacing: Ui.Style.paddingS
 
-        TextField {
-            id: nameField
-            Layout.fillWidth: true
-            placeholderText: Ui.I18n.t("dialog.addContact.name")
-            font.pixelSize: 13
-            color: Ui.Style.textPrimary
-            placeholderTextColor: Ui.Style.textMuted
-            background: Rectangle {
-                radius: Ui.Style.radiusMedium
-                color: Ui.Style.inputBg
-                border.color: nameField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
-            }
-        }
-        TextField {
-            id: handleField
-            Layout.fillWidth: true
-            placeholderText: Ui.I18n.t("dialog.addContact.handle")
-            font.pixelSize: 13
-            color: Ui.Style.textPrimary
-            placeholderTextColor: Ui.Style.textMuted
-            background: Rectangle {
-                radius: Ui.Style.radiusMedium
-                color: Ui.Style.inputBg
-                border.color: handleField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
-            }
-        }
         Text {
-            id: errorText
-            text: Ui.I18n.t("dialog.addContact.errorName")
-            color: Ui.Style.danger
-            font.pixelSize: 11
-            visible: false
+            text: description
+            color: Ui.Style.textSecondary
+            font.pixelSize: 12
         }
+
+        Text {
+            text: "指纹："
+            color: Ui.Style.textMuted
+            font.pixelSize: 11
+        }
+        TextArea {
+            id: fingerprintField
+            Layout.fillWidth: true
+            Layout.preferredHeight: 70
+            text: fingerprint
+            wrapMode: TextEdit.Wrap
+            readOnly: true
+            color: Ui.Style.textPrimary
+            background: Rectangle {
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.inputBg
+                border.color: Ui.Style.borderSubtle
+            }
+        }
+
+        Text {
+            text: "验证码："
+            color: Ui.Style.textMuted
+            font.pixelSize: 11
+        }
+        TextField {
+            id: pinField
+            Layout.fillWidth: true
+            placeholderText: "请输入验证码"
+            font.pixelSize: 12
+            color: Ui.Style.textPrimary
+            placeholderTextColor: Ui.Style.textMuted
+            background: Rectangle {
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.inputBg
+                border.color: pinField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
+            }
+        }
+
         Item { Layout.fillHeight: true }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: Ui.Style.paddingS
@@ -124,17 +145,11 @@ ApplicationWindow {
                 onClicked: root.close()
             }
             Components.PrimaryButton {
-                text: Ui.I18n.t("dialog.addContact.add")
+                text: "信任"
                 Layout.fillWidth: true
                 onClicked: {
-                    if (Ui.AppStore.addContact(nameField.text, handleField.text)) {
-                        nameField.text = ""
-                        handleField.text = ""
-                        errorText.visible = false
-                        root.close()
-                    } else {
-                        errorText.visible = true
-                    }
+                    accepted(pinField.text)
+                    root.close()
                 }
             }
         }

@@ -8,6 +8,7 @@
 #include <QPainterPath>
 #include <QFontMetrics>
 #include <QFileInfo>
+#include <QMovie>
 #include <QTextLayout>
 #include <QLinearGradient>
 #include <QVector>

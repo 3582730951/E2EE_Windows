@@ -26,9 +26,20 @@ class QuickClient : public QObject {
   Q_PROPERTY(QString token READ token NOTIFY tokenChanged)
   Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY tokenChanged)
   Q_PROPERTY(QString username READ username NOTIFY userChanged)
+  Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
   Q_PROPERTY(QVariantList friends READ friends NOTIFY friendsChanged)
   Q_PROPERTY(QVariantList groups READ groups NOTIFY groupsChanged)
   Q_PROPERTY(QVariantList friendRequests READ friendRequests NOTIFY friendRequestsChanged)
+  Q_PROPERTY(QString deviceId READ deviceId NOTIFY deviceChanged)
+  Q_PROPERTY(bool remoteOk READ remoteOk NOTIFY connectionChanged)
+  Q_PROPERTY(QString remoteError READ remoteError NOTIFY connectionChanged)
+  Q_PROPERTY(bool hasPendingServerTrust READ hasPendingServerTrust NOTIFY trustStateChanged)
+  Q_PROPERTY(QString pendingServerFingerprint READ pendingServerFingerprint NOTIFY trustStateChanged)
+  Q_PROPERTY(QString pendingServerPin READ pendingServerPin NOTIFY trustStateChanged)
+  Q_PROPERTY(bool hasPendingPeerTrust READ hasPendingPeerTrust NOTIFY trustStateChanged)
+  Q_PROPERTY(QString pendingPeerUsername READ pendingPeerUsername NOTIFY trustStateChanged)
+  Q_PROPERTY(QString pendingPeerFingerprint READ pendingPeerFingerprint NOTIFY trustStateChanged)
+  Q_PROPERTY(QString pendingPeerPin READ pendingPeerPin NOTIFY trustStateChanged)
   Q_PROPERTY(QString activeCallId READ activeCallId NOTIFY callStateChanged)
   Q_PROPERTY(QString activeCallPeer READ activeCallPeer NOTIFY callStateChanged)
   Q_PROPERTY(bool activeCallVideo READ activeCallVideo NOTIFY callStateChanged)
@@ -40,19 +51,29 @@ class QuickClient : public QObject {
   ~QuickClient() override;
 
   Q_INVOKABLE bool init(const QString& configPath);
+  Q_INVOKABLE bool registerUser(const QString& user, const QString& pass);
   Q_INVOKABLE bool login(const QString& user, const QString& pass);
   Q_INVOKABLE void logout();
   Q_INVOKABLE bool joinGroup(const QString& groupId);
   Q_INVOKABLE QString createGroup();
+  Q_INVOKABLE bool sendGroupInvite(const QString& groupId,
+                                   const QString& peerUsername);
   Q_INVOKABLE bool sendText(const QString& convId, const QString& text, bool isGroup);
   Q_INVOKABLE bool sendFile(const QString& convId, const QString& path, bool isGroup);
   Q_INVOKABLE bool sendSticker(const QString& convId, const QString& stickerId, bool isGroup);
   Q_INVOKABLE QVariantList loadHistory(const QString& convId, bool isGroup);
+  Q_INVOKABLE QVariantList listGroupMembersInfo(const QString& groupId);
   Q_INVOKABLE QVariantList stickerItems();
   Q_INVOKABLE bool sendFriendRequest(const QString& targetUsername,
                                      const QString& remark);
   Q_INVOKABLE bool respondFriendRequest(const QString& requesterUsername,
                                         bool accept);
+  Q_INVOKABLE QVariantList listDevices();
+  Q_INVOKABLE bool kickDevice(const QString& deviceId);
+  Q_INVOKABLE bool sendReadReceipt(const QString& peerUsername,
+                                   const QString& messageId);
+  Q_INVOKABLE bool trustPendingServer(const QString& pin);
+  Q_INVOKABLE bool trustPendingPeer(const QString& pin);
   Q_INVOKABLE QString startVoiceCall(const QString& peerUsername);
   Q_INVOKABLE QString startVideoCall(const QString& peerUsername);
   Q_INVOKABLE bool joinCall(const QString& peerUsername,
@@ -67,9 +88,20 @@ class QuickClient : public QObject {
   QString token() const;
   bool loggedIn() const;
   QString username() const;
+  QString lastError() const;
   QVariantList friends() const;
   QVariantList groups() const;
   QVariantList friendRequests() const;
+  QString deviceId() const;
+  bool remoteOk() const;
+  QString remoteError() const;
+  bool hasPendingServerTrust() const;
+  QString pendingServerFingerprint() const;
+  QString pendingServerPin() const;
+  bool hasPendingPeerTrust() const;
+  QString pendingPeerUsername() const;
+  QString pendingPeerFingerprint() const;
+  QString pendingPeerPin() const;
   QString activeCallId() const { return active_call_id_; }
   QString activeCallPeer() const { return active_call_peer_; }
   bool activeCallVideo() const { return active_call_video_; }
@@ -82,6 +114,13 @@ class QuickClient : public QObject {
   void friendsChanged();
   void groupsChanged();
   void friendRequestsChanged();
+  void errorChanged();
+  void deviceChanged();
+  void connectionChanged();
+  void trustStateChanged();
+  void serverTrustRequired(const QString& fingerprint, const QString& pin);
+  void peerTrustRequired(const QString& peer, const QString& fingerprint,
+                         const QString& pin);
   void status(const QString& message);
   void messageEvent(const QVariantMap& message);
   void callStateChanged();
@@ -94,10 +133,13 @@ class QuickClient : public QObject {
   void UpdateFriendList(const std::vector<ClientCore::FriendEntry>& friends);
   void UpdateFriendRequests(
       const std::vector<ClientCore::FriendRequestEntry>& requests);
-  void AddGroupIfMissing(const QString& groupId);
+  bool AddGroupIfMissing(const QString& groupId);
   QVariantMap BuildStickerMeta(const QString& stickerId) const;
   QVariantMap BuildHistoryMessage(const ClientCore::HistoryEntry& entry) const;
   void HandlePollResult(const ClientCore::ChatPollResult& result);
+  void UpdateLastError(const QString& message);
+  void UpdateConnectionState(bool force_emit);
+  void MaybeEmitTrustSignals();
   bool InitMediaSession(const QString& peerUsername,
                         const QString& callIdHex,
                         bool initiator,
@@ -129,6 +171,7 @@ class QuickClient : public QObject {
   mi::client::ClientCore core_;
   QString token_;
   QString username_;
+  QString last_error_;
   QVariantList friends_;
   QVariantList groups_;
   QVariantList friend_requests_;
@@ -137,6 +180,10 @@ class QuickClient : public QObject {
   qint64 last_friend_sync_ms_{0};
   qint64 last_request_sync_ms_{0};
   qint64 last_heartbeat_ms_{0};
+  bool last_remote_ok_{true};
+  QString last_remote_error_;
+  QString last_pending_server_fingerprint_;
+  QString last_pending_peer_fingerprint_;
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;

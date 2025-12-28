@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick 2.15
+import "qrc:/mi/e2ee/ui/qml" as Ui
 
 QtObject {
     id: store
@@ -14,9 +15,11 @@ QtObject {
     property bool rightPaneVisible: false
     property string searchQuery: ""
     property bool initialized: false
+    property string statusMessage: ""
     property var messagesByChatId: ({})
     property var membersByChatId: ({})
-    property var pendingReply: null
+    property var typingByChatId: ({})
+    property var presenceByChatId: ({})
 
     signal currentChatChanged(string chatId)
     signal leftTabChanged(int tab)
@@ -27,139 +30,220 @@ QtObject {
     property ListModel membersModel: ListModel {}
     property ListModel filteredDialogsModel: ListModel {}
     property ListModel filteredContactsModel: ListModel {}
-
-    property Timer replyTimer: Timer {
-        interval: 700
-        repeat: false
-        onTriggered: {
-            if (!pendingReply) {
-                return
-            }
-            var payload = pendingReply
-            pendingReply = null
-            var replyText = payload.text
-            if (!replyText || replyText.length === 0) {
-                replyText = "Got it."
-            }
-            var timeText = formatTime(new Date())
-            var sender = payload.sender || "Echo"
-            var message = {
-                chatId: payload.chatId,
-                msgId: nextMsgId(),
-                kind: "in",
-                senderName: sender,
-                text: replyText,
-                timeText: timeText,
-                statusTicks: "none",
-                edited: false
-            }
-            appendMessage(payload.chatId, message, payload.chatId !== currentChatId)
-        }
-    }
+    property ListModel friendRequestsModel: ListModel {}
 
     function init() {
         if (initialized) {
             return
         }
         initialized = true
-        seedContacts()
-        seedDialogs()
-        seedMessages()
+        if (clientBridge) {
+            clientBridge.init("")
+        }
         rebuildFiltered()
     }
 
-    function seedContacts() {
-        var contacts = [
-            { id: "c_alice", name: "Alice", handle: "+1 202-555-0101" },
-            { id: "c_ben", name: "Ben Carter", handle: "@ben" },
-            { id: "c_chloe", name: "Chloe", handle: "@chloe" },
-            { id: "c_diego", name: "Diego", handle: "+49 30 90210" },
-            { id: "c_eva", name: "Eva", handle: "@eva" },
-            { id: "c_felix", name: "Felix", handle: "+81 03 5555 1234" },
-            { id: "c_grace", name: "Grace", handle: "@grace" },
-            { id: "c_henry", name: "Henry", handle: "+44 20 7788 9900" }
-        ]
-        for (var i = 0; i < contacts.length; ++i) {
+    function bootstrapAfterLogin() {
+        rebuildDialogs()
+        refreshFriendRequests()
+        rebuildFiltered()
+        if (dialogsModel.count > 0 && currentChatId.length === 0) {
+            setCurrentChat(dialogsModel.get(0).chatId)
+        }
+    }
+
+    function rebuildDialogs() {
+        contactsModel.clear()
+        var targets = {}
+
+        var friends = clientBridge ? clientBridge.friends : []
+        for (var i = 0; i < friends.length; ++i) {
+            var f = friends[i]
+            var username = (f.username || "").trim()
+            if (username.length === 0) {
+                continue
+            }
+            var display = (f.remark && f.remark.length > 0) ? f.remark : username
             contactsModel.append({
-                contactId: contacts[i].id,
-                displayName: contacts[i].name,
-                usernameOrPhone: contacts[i].handle,
-                avatarKey: contacts[i].name
+                contactId: username,
+                displayName: display,
+                usernameOrPhone: username,
+                avatarKey: display
             })
-        }
-    }
-
-    function seedDialogs() {
-        var dialogs = [
-            { id: "c_alice", title: "Alice", preview: "Boarding now, talk soon.", time: "08:42", unread: 1, pinned: false, type: "private" },
-            { id: "c_ben", title: "Ben Carter", preview: "Shipping the draft in 10.", time: "09:15", unread: 0, pinned: false, type: "private" },
-            { id: "c_chloe", title: "Chloe", preview: "Call me when you are free.", time: "10:01", unread: 2, pinned: true, type: "private" },
-            { id: "g_nightfall", title: "Project Nightfall", preview: "Standup moved to 10:30.", time: "11:20", unread: 4, pinned: false, type: "group", members: 6 }
-        ]
-        for (var i = 0; i < dialogs.length; ++i) {
-            dialogsModel.append({
-                chatId: dialogs[i].id,
-                type: dialogs[i].type,
-                title: dialogs[i].title,
-                preview: dialogs[i].preview,
-                timeText: dialogs[i].time,
-                unread: dialogs[i].unread,
-                pinned: dialogs[i].pinned,
-                avatarKey: dialogs[i].title,
-                memberCount: dialogs[i].members || 2
-            })
-        }
-    }
-
-    function seedMessages() {
-        var privateChats = ["c_alice", "c_ben", "c_chloe"]
-        for (var i = 0; i < privateChats.length; ++i) {
-            var chatId = privateChats[i]
-            var model = messagesModel(chatId)
-            model.append({ chatId: chatId, msgId: nextMsgId(), kind: "date", text: "Today" })
-            model.append({ chatId: chatId, msgId: nextMsgId(), kind: "system", text: "Secure session started" })
-            for (var j = 0; j < 12; ++j) {
-                var outgoing = j % 3 === 1
-                model.append({
-                    chatId: chatId,
-                    msgId: nextMsgId(),
-                    kind: outgoing ? "out" : "in",
-                    senderName: outgoing ? "You" : "Contact",
-                    text: sampleLine(chatId, j),
-                    timeText: formatTimeOffset(j * 7 + 5),
-                    statusTicks: outgoing ? "read" : "none",
-                    edited: false
-                })
+            targets[username] = {
+                type: "private",
+                title: display,
+                memberCount: 2,
+                avatarKey: display
             }
         }
 
-        var groupId = "g_nightfall"
-        var groupModel = messagesModel(groupId)
-        groupModel.append({ chatId: groupId, msgId: nextMsgId(), kind: "date", text: "Today" })
-        groupModel.append({ chatId: groupId, msgId: nextMsgId(), kind: "system", text: "You joined the group" })
-        var groupSenders = ["Mia", "Oliver", "Liam", "Ava", "Noah", "Zoe"]
-        for (var k = 0; k < 25; ++k) {
-            var outgoingGroup = k % 4 === 0
-            groupModel.append({
-                chatId: groupId,
-                msgId: nextMsgId(),
-                kind: outgoingGroup ? "out" : "in",
-                senderName: outgoingGroup ? "You" : groupSenders[k % groupSenders.length],
-                text: groupLine(k),
-                timeText: formatTimeOffset(k * 3 + 2),
-                statusTicks: outgoingGroup ? "delivered" : "none",
-                edited: false
-            })
+        var groups = clientBridge ? clientBridge.groups : []
+        for (var g = 0; g < groups.length; ++g) {
+            var group = groups[g]
+            var groupId = (group.id || "").trim()
+            if (groupId.length === 0) {
+                continue
+            }
+            var groupTitle = (group.name && group.name.length > 0) ? group.name : groupId
+            targets[groupId] = {
+                type: "group",
+                title: groupTitle,
+                memberCount: group.memberCount || 0,
+                avatarKey: groupTitle
+            }
         }
 
-        membersByChatId[groupId] = [
-            { memberId: "m_mia", name: "Mia", role: "Owner" },
-            { memberId: "m_oliver", name: "Oliver", role: "Admin" },
-            { memberId: "m_liam", name: "Liam", role: "Member" },
-            { memberId: "m_ava", name: "Ava", role: "Member" },
-            { memberId: "m_noah", name: "Noah", role: "Member" },
-            { memberId: "m_zoe", name: "Zoe", role: "Member" }
-        ]
+        for (var key in targets) {
+            if (!targets.hasOwnProperty(key)) {
+                continue
+            }
+            var entry = targets[key]
+            ensureDialog(key, entry.type, entry.title, entry.memberCount, entry.avatarKey)
+        }
+
+        for (var j = dialogsModel.count - 1; j >= 0; --j) {
+            var id = dialogsModel.get(j).chatId
+            if (!targets.hasOwnProperty(id)) {
+                dialogsModel.remove(j)
+            }
+        }
+        rebuildFiltered()
+        updateCurrentChatDetails()
+    }
+
+    function refreshFriendRequests() {
+        friendRequestsModel.clear()
+        var requests = clientBridge ? clientBridge.friendRequests : []
+        for (var i = 0; i < requests.length; ++i) {
+            var r = requests[i]
+            var name = r.username || ""
+            friendRequestsModel.append({
+                username: name,
+                remark: r.remark || ""
+            })
+        }
+    }
+
+    function ensureDialog(chatId, type, title, memberCount, avatarKey) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            dialogsModel.append({
+                chatId: chatId,
+                type: type,
+                title: title,
+                preview: "",
+                timeText: "",
+                unread: 0,
+                pinned: false,
+                avatarKey: avatarKey || title,
+                lastSenderName: "",
+                lastSenderAvatarKey: "",
+                memberCount: memberCount || (type === "group" ? 0 : 2)
+            })
+            return
+        }
+        if (dialogsModel.get(idx).title !== title) {
+            dialogsModel.setProperty(idx, "title", title)
+        }
+        if (dialogsModel.get(idx).type !== type) {
+            dialogsModel.setProperty(idx, "type", type)
+        }
+        if (avatarKey) {
+            dialogsModel.setProperty(idx, "avatarKey", avatarKey)
+        }
+        if (memberCount && memberCount > 0) {
+            dialogsModel.setProperty(idx, "memberCount", memberCount)
+        }
+    }
+
+    function handleMessageEvent(message) {
+        if (!message || !message.kind) {
+            return
+        }
+        var kind = message.kind
+        var convId = (message.convId || "").trim()
+        if (convId.length === 0) {
+            return
+        }
+
+        if (kind === "delivery" || kind === "read") {
+            updateMessageStatus(convId, message.messageId || "", kind)
+            return
+        }
+        if (kind === "typing") {
+            typingByChatId[convId] = message.typing === true
+            if (convId === currentChatId) {
+                updateCurrentChatDetails()
+            }
+            return
+        }
+        if (kind === "presence") {
+            presenceByChatId[convId] = message.online === true
+            if (convId === currentChatId) {
+                updateCurrentChatDetails()
+            }
+            return
+        }
+
+        var isGroup = message.isGroup === true
+        var outgoing = message.outgoing === true
+        var sender = message.sender || ""
+        var msgId = message.messageId || nextMsgId()
+        var timeText = message.time || formatTime(new Date())
+
+        var text = message.text || ""
+        if (kind === "file") {
+            var name = message.fileName || ""
+            text = name.length > 0 ? "[文件] " + name : "[文件]"
+        } else if (kind === "sticker") {
+            var sticker = message.stickerId || ""
+            text = sticker.length > 0 ? "[贴纸] " + sticker : "[贴纸]"
+        } else if (kind === "call_invite") {
+            text = message.video ? "视频通话邀请" : "语音通话邀请"
+        } else if (kind === "group_invite") {
+            text = "邀请加入群聊"
+        }
+
+        ensureDialog(convId, isGroup ? "group" : "private",
+                     resolveTitle(convId),
+                     isGroup ? currentChatMembers : 2,
+                     resolveTitle(convId))
+
+        var entryKind = "in"
+        if (kind === "notice" || kind === "group_invite") {
+            entryKind = "system"
+        } else if (outgoing) {
+            entryKind = "out"
+        }
+
+        var displaySender = outgoing ? Ui.I18n.t("chat.you") : (sender || resolveTitle(convId))
+        var entry = {
+            chatId: convId,
+            msgId: msgId,
+            kind: entryKind,
+            senderName: displaySender,
+            text: text,
+            timeText: timeText,
+            statusTicks: outgoing ? "sent" : "none",
+            edited: false
+        }
+
+        if (msgId && hasMessageId(convId, msgId)) {
+            return
+        }
+        appendMessage(convId, entry, convId !== currentChatId)
+        if (isGroup && entryKind !== "system") {
+            updateDialogPreview(convId, text, timeText, displaySender)
+        } else {
+            updateDialogPreview(convId, text, timeText, "")
+        }
+
+        if (convId === currentChatId && !outgoing && !isGroup && entryKind === "in") {
+            if (clientBridge) {
+                clientBridge.sendReadReceipt(convId, msgId)
+            }
+        }
     }
 
     function messagesModel(chatId) {
@@ -207,6 +291,7 @@ QtObject {
         }
         currentChatId = chatId
         updateCurrentChatDetails()
+        loadHistoryForChat(chatId)
         markDialogRead(chatId)
         currentChatChanged(chatId)
     }
@@ -224,25 +309,89 @@ QtObject {
         var dialog = dialogsModel.get(idx)
         currentChatTitle = dialog.title
         currentChatType = dialog.type
-        currentChatMembers = dialog.memberCount || 2
-        currentChatSubtitle = dialog.type === "group"
-            ? currentChatMembers + " members"
-            : "online"
+        currentChatMembers = dialog.memberCount || 0
+        if (currentChatType === "group") {
+            currentChatSubtitle = Ui.I18n.format("chat.members", currentChatMembers)
+        } else {
+            var typing = typingByChatId[currentChatId] === true
+            if (typing) {
+                currentChatSubtitle = "正在输入..."
+            } else {
+                currentChatSubtitle = Ui.I18n.t("chat.online")
+            }
+        }
         updateMembers(dialog.chatId)
     }
 
     function updateMembers(chatId) {
         membersModel.clear()
-        var list = membersByChatId[chatId]
-        if (!list) {
+        if (currentChatType !== "group") {
             return
         }
+        var list = clientBridge ? clientBridge.listGroupMembersInfo(chatId) : []
         for (var i = 0; i < list.length; ++i) {
+            var entry = list[i]
+            var roleText = Ui.I18n.t("role.member")
+            if (entry.role === 0) {
+                roleText = Ui.I18n.t("role.owner")
+            } else if (entry.role === 1) {
+                roleText = Ui.I18n.t("role.admin")
+            }
             membersModel.append({
-                memberId: list[i].memberId,
-                displayName: list[i].name,
-                role: list[i].role,
-                avatarKey: list[i].name
+                memberId: entry.username,
+                displayName: entry.username,
+                role: roleText,
+                avatarKey: entry.username
+            })
+        }
+        currentChatMembers = membersModel.count
+    }
+
+    function loadHistoryForChat(chatId) {
+        var model = messagesModel(chatId)
+        model.clear()
+        if (!clientBridge) {
+            return
+        }
+        var isGroup = currentChatType === "group"
+        var history = clientBridge.loadHistory(chatId, isGroup)
+        for (var i = 0; i < history.length; ++i) {
+            var h = history[i]
+            var entryKind = "in"
+            if (h.kind === "system") {
+                entryKind = "system"
+            } else if (h.outgoing === true) {
+                entryKind = "out"
+            }
+
+            var text = h.text || ""
+            if (h.kind === "file") {
+                text = h.fileName ? "[文件] " + h.fileName : "[文件]"
+            } else if (h.kind === "sticker") {
+                text = h.stickerId ? "[贴纸] " + h.stickerId : "[贴纸]"
+            }
+
+            var status = h.status || "sent"
+            var ticks = "none"
+            if (h.outgoing === true) {
+                if (status === "read") {
+                    ticks = "read"
+                } else if (status === "delivered") {
+                    ticks = "delivered"
+                } else if (status === "sent") {
+                    ticks = "sent"
+                }
+            }
+
+            model.append({
+                chatId: chatId,
+                msgId: h.messageId || nextMsgId(),
+                kind: entryKind,
+                senderName: h.outgoing ? Ui.I18n.t("chat.you") : (h.sender || ""),
+                text: text,
+                timeText: h.time || "",
+                statusTicks: ticks,
+                edited: false
             })
         }
     }
@@ -275,66 +424,53 @@ QtObject {
             if (!contact) {
                 return
             }
-            dialogsModel.insert(0, {
-                chatId: contactId,
-                type: "private",
-                title: contact.displayName,
-                preview: "",
-                timeText: "",
-                unread: 0,
-                pinned: false,
-                avatarKey: contact.displayName,
-                memberCount: 2
-            })
+            ensureDialog(contactId, "private", contact.displayName, 2, contact.displayName)
             rebuildFiltered()
         }
         setCurrentChat(contactId)
     }
 
     function sendMessage(text) {
-        if (!currentChatId) {
+        if (!currentChatId || !clientBridge) {
             return
         }
         var trimmed = (text || "").trim()
         if (trimmed.length === 0) {
             return
         }
-        var timeText = formatTime(new Date())
-        var message = {
-            chatId: currentChatId,
-            msgId: nextMsgId(),
-            kind: "out",
-            senderName: "You",
-            text: trimmed,
-            timeText: timeText,
-            statusTicks: "sent",
-            edited: false
+        clientBridge.sendText(currentChatId, trimmed, currentChatType === "group")
+    }
+
+    function sendFile(path) {
+        if (!currentChatId || !clientBridge) {
+            return
         }
-        appendMessage(currentChatId, message, false)
-        pendingReply = {
-            chatId: currentChatId,
-            sender: currentChatType === "group" ? "Mia" : "Contact",
-            text: "Echo: " + trimmed
+        if (!path || path.length === 0) {
+            return
         }
-        replyTimer.restart()
+        clientBridge.sendFile(currentChatId, path, currentChatType === "group")
     }
 
     function appendMessage(chatId, message, markUnread) {
         var model = messagesModel(chatId)
         model.append(message)
-        updateDialogPreview(chatId, message.text || "", message.timeText || "")
+        updateDialogPreview(chatId, message.text || "", message.timeText || "", message.senderName || "")
         if (markUnread) {
             bumpUnread(chatId)
         }
     }
 
-    function updateDialogPreview(chatId, preview, timeText) {
+    function updateDialogPreview(chatId, preview, timeText, senderName) {
         var idx = findDialogIndex(chatId)
         if (idx < 0) {
             return
         }
         dialogsModel.setProperty(idx, "preview", preview)
         dialogsModel.setProperty(idx, "timeText", timeText)
+        if (senderName && dialogsModel.get(idx).type === "group") {
+            dialogsModel.setProperty(idx, "lastSenderName", senderName)
+            dialogsModel.setProperty(idx, "lastSenderAvatarKey", senderName)
+        }
         rebuildFiltered()
     }
 
@@ -390,55 +526,27 @@ QtObject {
     function addContact(name, handle) {
         var displayName = (name || "").trim()
         var handleText = (handle || "").trim()
-        if (displayName.length === 0) {
+        var target = handleText.length ? handleText : displayName
+        if (!clientBridge || target.length === 0) {
             return false
         }
-        var contactId = "c_" + displayName.toLowerCase().replace(/\s+/g, "_")
-        contactsModel.append({
-            contactId: contactId,
-            displayName: displayName,
-            usernameOrPhone: handleText.length ? handleText : "@new",
-            avatarKey: displayName
-        })
-        rebuildFiltered()
-        return true
+        return clientBridge.sendFriendRequest(target, displayName)
     }
 
     function createGroup(name, memberIds) {
-        var title = (name || "").trim()
-        if (title.length === 0) {
+        if (!clientBridge) {
             return ""
         }
-        var groupId = "g_" + title.toLowerCase().replace(/\s+/g, "_")
-        dialogsModel.insert(0, {
-            chatId: groupId,
-            type: "group",
-            title: title,
-            preview: "Group created",
-            timeText: formatTime(new Date()),
-            unread: 0,
-            pinned: false,
-            avatarKey: title,
-            memberCount: (memberIds ? memberIds.length : 1) + 1
-        })
-        membersByChatId[groupId] = []
+        var groupId = clientBridge.createGroup()
+        if (!groupId || groupId.length === 0) {
+            return ""
+        }
         if (memberIds && memberIds.length) {
             for (var i = 0; i < memberIds.length; ++i) {
-                var contact = findContact(memberIds[i])
-                if (contact) {
-                    membersByChatId[groupId].push({
-                        memberId: contact.contactId,
-                        name: contact.displayName,
-                        role: "Member"
-                    })
-                }
+                clientBridge.sendGroupInvite(groupId, memberIds[i])
             }
         }
-        membersByChatId[groupId].unshift({
-            memberId: "m_you",
-            name: "You",
-            role: "Owner"
-        })
+        ensureDialog(groupId, "group", name.length ? name : groupId, memberIds ? memberIds.length + 1 : 1, name.length ? name : groupId)
         rebuildFiltered()
         setCurrentChat(groupId)
         return groupId
@@ -463,6 +571,49 @@ QtObject {
         return null
     }
 
+    function resolveTitle(chatId) {
+        var idx = findDialogIndex(chatId)
+        if (idx >= 0) {
+            return dialogsModel.get(idx).title
+        }
+        var contact = findContact(chatId)
+        if (contact) {
+            return contact.displayName
+        }
+        return chatId
+    }
+
+    function updateMessageStatus(chatId, messageId, status) {
+        if (!messageId) {
+            return
+        }
+        var model = messagesModel(chatId)
+        for (var i = model.count - 1; i >= 0; --i) {
+            var entry = model.get(i)
+            if (entry.msgId === messageId) {
+                if (status === "read") {
+                    model.setProperty(i, "statusTicks", "read")
+                } else if (status === "delivery") {
+                    model.setProperty(i, "statusTicks", "delivered")
+                }
+                break
+            }
+        }
+    }
+
+    function hasMessageId(chatId, messageId) {
+        if (!messageId) {
+            return false
+        }
+        var model = messagesModel(chatId)
+        for (var i = model.count - 1; i >= 0; --i) {
+            if (model.get(i).msgId === messageId) {
+                return true
+            }
+        }
+        return false
+    }
+
     function nextMsgId() {
         return "m_" + Math.floor(Math.random() * 1e9)
     }
@@ -475,38 +626,28 @@ QtObject {
         return hh + ":" + mm
     }
 
-    function formatTimeOffset(minutesAgo) {
-        var d = new Date()
-        d.setMinutes(d.getMinutes() - minutesAgo)
-        return formatTime(d)
-    }
-
-    function sampleLine(chatId, index) {
-        var lines = [
-            "Just landed, grabbing coffee now.",
-            "Let me check the timeline.",
-            "Draft is ready for review.",
-            "Can we move the meeting?",
-            "Pushing an update in 5.",
-            "Looks good to me.",
-            "Any blockers on your side?",
-            "Ping me when ready."
-        ]
-        return lines[(index + chatId.length) % lines.length]
-    }
-
-    function groupLine(index) {
-        var lines = [
-            "Standup moved to 10:30, ok?",
-            "I pushed the UI tweak.",
-            "Need feedback on the API.",
-            "Ship the build tonight?",
-            "Reminder: review the spec.",
-            "Sync after lunch.",
-            "Metrics look stable.",
-            "QA signed off."
-        ]
-        return lines[index % lines.length]
+    property var bridgeConnections: Connections {
+        target: clientBridge
+        function onFriendsChanged() {
+            rebuildDialogs()
+        }
+        function onGroupsChanged() {
+            rebuildDialogs()
+        }
+        function onFriendRequestsChanged() {
+            refreshFriendRequests()
+        }
+        function onMessageEvent(message) {
+            handleMessageEvent(message)
+        }
+        function onStatus(message) {
+            statusMessage = message
+        }
+        function onTokenChanged() {
+            if (clientBridge && clientBridge.loggedIn) {
+                bootstrapAfterLogin()
+            }
+        }
     }
 
     Component.onCompleted: init()

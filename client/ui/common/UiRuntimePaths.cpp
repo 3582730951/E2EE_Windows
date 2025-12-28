@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QResource>
 #include <QString>
@@ -20,6 +21,10 @@ static void InitUiResources() {
 }
 
 namespace {
+
+bool HasUiQmlResource() {
+    return QFile::exists(QStringLiteral(":/mi/e2ee/ui/qml/Main.qml"));
+}
 
 QString ResolveAppDir(const char *argv0) {
 #ifdef _WIN32
@@ -75,6 +80,21 @@ QString ResolveRuntimeDir(const QString &appDir) {
     return dir.absolutePath();
 }
 
+void TryRegisterUiResourceFromDisk(const QString &appDir) {
+    if (HasUiQmlResource()) {
+        return;
+    }
+    const QString runtimeDir = ResolveRuntimeDir(appDir);
+    if (runtimeDir.isEmpty()) {
+        return;
+    }
+    const QString rccPath = QDir(runtimeDir).filePath(QStringLiteral("ui_resources.rcc"));
+    if (!QFile::exists(rccPath)) {
+        return;
+    }
+    QResource::registerResource(rccPath);
+}
+
 }  // namespace
 
 namespace UiRuntimePaths {
@@ -85,6 +105,7 @@ void Prepare(const char *argv0) {
     if (appDir.isEmpty()) {
         return;
     }
+    TryRegisterUiResourceFromDisk(appDir);
     const QString runtimeDir = ResolveRuntimeDir(appDir);
     if (runtimeDir.isEmpty()) {
         return;

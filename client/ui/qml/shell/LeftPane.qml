@@ -10,6 +10,7 @@ Item {
     signal requestAddContact()
     signal requestCreateGroup()
     signal requestSettings()
+    signal requestDeviceManager()
 
     function focusSearch() {
         searchField.focusInput()
@@ -25,6 +26,17 @@ Item {
         color: Ui.Style.panelBg
     }
 
+    Rectangle {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        width: 1
+        color: Ui.Style.borderSubtle
+        z: 10
+        visible: false
+        enabled: false
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Ui.Style.paddingM
@@ -37,31 +49,150 @@ Item {
 
             Components.IconButton {
                 id: menuButton
-                icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
+                icon.source: Ui.Style.isDark
+                             ? "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
+                             : "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
                 buttonSize: Ui.Style.iconButtonSize
                 iconSize: 16
                 onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
+                ToolTip.visible: hovered && !menuPopup.visible
+                ToolTip.text: Ui.I18n.t("left.menu")
+            }
+
+            Components.IconButton {
+                id: deviceButton
+                icon.source: "qrc:/mi/e2ee/ui/icons/device.svg"
+                buttonSize: Ui.Style.iconButtonSize
+                iconSize: 16
+                onClicked: root.requestDeviceManager()
                 ToolTip.visible: hovered
-                ToolTip.text: "Menu"
+                ToolTip.text: Ui.I18n.t("left.deviceManager")
             }
 
             Components.SearchField {
                 id: searchField
                 Layout.fillWidth: true
-                placeholderText: "Search"
+                placeholderText: Ui.I18n.t("left.search")
                 onTextEdited: Ui.AppStore.setSearchQuery(text)
             }
 
             Menu {
                 id: menuPopup
-                MenuItem { text: "Chats"; onTriggered: Ui.AppStore.setLeftTab(0) }
-                MenuItem { text: "Contacts"; onTriggered: Ui.AppStore.setLeftTab(1) }
+                property int compactWidth: 180
+                property int compactFontSize: 13
+                property int compactPadding: 3
+                property int compactSpacing: 3
+                property int compactItemHeight: Math.round(compactFontSize + compactPadding * 2 + 4)
+                padding: 3
+                implicitWidth: compactWidth
+                width: compactWidth
+                MenuItem {
+                    id: menuNewChat
+                    text: Ui.I18n.t("left.newChat")
+                    implicitHeight: menuPopup.compactItemHeight
+                    height: menuPopup.compactItemHeight
+                    padding: menuPopup.compactPadding
+                    spacing: menuPopup.compactSpacing
+                    onTriggered: root.requestNewChat()
+                    contentItem: Text {
+                        anchors.fill: parent
+                        text: menuNewChat.text
+                        color: menuNewChat.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        font.pixelSize: menuPopup.compactFontSize
+                        font.family: Ui.Style.fontFamily
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                MenuItem {
+                    id: menuNewGroup
+                    text: Ui.I18n.t("left.newGroup")
+                    implicitHeight: menuPopup.compactItemHeight
+                    height: menuPopup.compactItemHeight
+                    padding: menuPopup.compactPadding
+                    spacing: menuPopup.compactSpacing
+                    onTriggered: root.requestCreateGroup()
+                    contentItem: Text {
+                        anchors.fill: parent
+                        text: menuNewGroup.text
+                        color: menuNewGroup.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        font.pixelSize: menuPopup.compactFontSize
+                        font.family: Ui.Style.fontFamily
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                MenuItem {
+                    id: menuAddContact
+                    text: Ui.I18n.t("left.addContact")
+                    implicitHeight: menuPopup.compactItemHeight
+                    height: menuPopup.compactItemHeight
+                    padding: menuPopup.compactPadding
+                    spacing: menuPopup.compactSpacing
+                    onTriggered: root.requestAddContact()
+                    contentItem: Text {
+                        anchors.fill: parent
+                        text: menuAddContact.text
+                        color: menuAddContact.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        font.pixelSize: menuPopup.compactFontSize
+                        font.family: Ui.Style.fontFamily
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
                 MenuSeparator { }
-                MenuItem { text: "New Chat"; onTriggered: root.requestNewChat() }
-                MenuItem { text: "New Group"; onTriggered: root.requestCreateGroup() }
-                MenuItem { text: "Add Contact"; onTriggered: root.requestAddContact() }
+                MenuItem {
+                    id: menuDeviceManager
+                    text: Ui.I18n.t("left.deviceManager")
+                    implicitHeight: menuPopup.compactItemHeight
+                    height: menuPopup.compactItemHeight
+                    padding: menuPopup.compactPadding
+                    spacing: menuPopup.compactSpacing
+                    onTriggered: root.requestDeviceManager()
+                    contentItem: Text {
+                        anchors.fill: parent
+                        text: menuDeviceManager.text
+                        color: menuDeviceManager.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        font.pixelSize: menuPopup.compactFontSize
+                        font.family: Ui.Style.fontFamily
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
                 MenuSeparator { }
-                MenuItem { text: "Settings"; onTriggered: root.requestSettings() }
+                MenuItem {
+                    id: menuSettings
+                    text: Ui.I18n.t("left.settings")
+                    implicitHeight: menuPopup.compactItemHeight
+                    height: menuPopup.compactItemHeight
+                    padding: menuPopup.compactPadding
+                    spacing: menuPopup.compactSpacing
+                    onTriggered: root.requestSettings()
+                    contentItem: Text {
+                        anchors.fill: parent
+                        text: menuSettings.text
+                        color: menuSettings.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        font.pixelSize: menuPopup.compactFontSize
+                        font.family: Ui.Style.fontFamily
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
             }
         }
 
@@ -72,30 +203,16 @@ Item {
             opacity: 0.6
         }
 
-        StackLayout {
+        ListView {
+            id: dialogsList
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: Ui.AppStore.currentLeftTab
-
-            ListView {
-                id: dialogsList
-                clip: true
-                model: Ui.AppStore.filteredDialogsModel
-                boundsBehavior: Flickable.StopAtBounds
-                cacheBuffer: 160
-                delegate: dialogDelegate
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
-            }
-
-            ListView {
-                id: contactsList
-                clip: true
-                model: Ui.AppStore.filteredContactsModel
-                boundsBehavior: Flickable.StopAtBounds
-                cacheBuffer: 160
-                delegate: contactDelegate
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
-            }
+            clip: true
+            model: Ui.AppStore.filteredDialogsModel
+            boundsBehavior: Flickable.StopAtBounds
+            cacheBuffer: 160
+            delegate: dialogDelegate
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
         }
     }
 
@@ -105,6 +222,11 @@ Item {
             width: ListView.view.width
             height: Ui.Style.dialogRowHeight
             property bool selected: chatId === Ui.AppStore.currentChatId
+            function handlePressed(mouse) {
+                if (mouse.button === Qt.RightButton) {
+                    contextMenu.popup()
+                }
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -117,6 +239,7 @@ Item {
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: Ui.Style.paddingM
+                anchors.rightMargin: Ui.Style.paddingM + Ui.Style.paddingS
                 spacing: Ui.Style.paddingM
 
                 Rectangle {
@@ -135,54 +258,96 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.rightMargin: Ui.Style.paddingS
                     spacing: 4
                     Text {
                         text: title
+                        Layout.fillWidth: true
                         font.pixelSize: 13
                         font.weight: Font.DemiBold
                         color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textPrimary
                         elide: Text.ElideRight
                     }
-                    Text {
-                        text: preview
-                        font.pixelSize: 11
-                        color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted
-                        elide: Text.ElideRight
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: (type === "group" && (lastSenderName || "").length > 0) ? 6 : 0
+                        Rectangle {
+                            visible: type === "group" && (lastSenderName || "").length > 0
+                            width: 16
+                            height: 16
+                            radius: 8
+                            color: Ui.Style.avatarColor(lastSenderAvatarKey || lastSenderName)
+                            Text {
+                                anchors.centerIn: parent
+                                text: (lastSenderName || "").length > 0
+                                      ? lastSenderName.charAt(0).toUpperCase()
+                                      : ""
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                        Text {
+                            text: preview
+                            Layout.fillWidth: true
+                            font.pixelSize: 11
+                            color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted
+                            elide: Text.ElideRight
+                        }
                     }
                 }
 
-                ColumnLayout {
-                    Layout.preferredWidth: 70
-                    Layout.alignment: Qt.AlignTop
-                    spacing: 6
-                    Text {
-                        text: timeText
-                        font.pixelSize: 10
-                        color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted
-                        horizontalAlignment: Text.AlignRight
-                        elide: Text.ElideRight
-                    }
-                    Rectangle {
-                        visible: unread > 0
-                        radius: 9
-                        color: Ui.Style.unreadBadgeBg
-                        implicitWidth: Math.max(18, unreadText.paintedWidth + 10)
-                        implicitHeight: 16
+                Item {
+                    id: metaColumn
+                    Layout.preferredWidth: 60
+                    Layout.minimumWidth: 60
+                    Layout.maximumWidth: 60
+                    Layout.fillHeight: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 2
+
                         Text {
-                            id: unreadText
-                            anchors.centerIn: parent
-                            text: unread
-                            color: Ui.Style.unreadBadgeFg
+                            id: timeLabel
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                            text: timeText
                             font.pixelSize: 10
+                            color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted
+                            horizontalAlignment: Text.AlignRight
+                            elide: Text.ElideRight
                         }
-                    }
-                    Image {
-                        visible: pinned
-                        source: "qrc:/mi/e2ee/ui/icons/star.svg"
-                        width: 12
-                        height: 12
-                        opacity: 0.65
-                        fillMode: Image.PreserveAspectFit
+
+                        Image {
+                            id: pinnedIcon
+                            visible: pinned
+                            source: "qrc:/mi/e2ee/ui/icons/star.svg"
+                            width: 12
+                            height: 12
+                            opacity: 0.65
+                            fillMode: Image.PreserveAspectFit
+                            Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        Rectangle {
+                            id: unreadBadge
+                            visible: unread > 0
+                            radius: 9
+                            color: Ui.Style.unreadBadgeBg
+                            implicitWidth: Math.max(18, unreadText.paintedWidth + 10)
+                            implicitHeight: 16
+                            Layout.alignment: Qt.AlignRight | Qt.AlignBottom
+                            Text {
+                                id: unreadText
+                                anchors.centerIn: parent
+                                text: unread > 99 ? "99+" : unread
+                                color: Ui.Style.unreadBadgeFg
+                                font.pixelSize: 10
+                            }
+                        }
                     }
                 }
             }
@@ -192,88 +357,26 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 onClicked: Ui.AppStore.setCurrentChat(chatId)
-                onPressed: {
-                    if (mouse.button === Qt.RightButton) {
-                        contextMenu.popup()
-                    }
-                }
+                onPressed: handlePressed
             }
 
             Menu {
                 id: contextMenu
                 MenuItem {
-                    text: pinned ? "Unpin" : "Pin"
+                    text: pinned ? Ui.I18n.t("left.context.unpin") : Ui.I18n.t("left.context.pin")
                     onTriggered: Ui.AppStore.togglePin(chatId)
                 }
                 MenuItem {
-                    text: "Mark as read"
+                    text: Ui.I18n.t("left.context.markRead")
                     onTriggered: Ui.AppStore.markDialogRead(chatId)
                 }
-                MenuItem { text: "Mute" }
+                MenuItem { text: Ui.I18n.t("left.context.mute") }
                 MenuItem {
-                    text: "Delete chat"
+                    text: Ui.I18n.t("left.context.delete")
                     onTriggered: Ui.AppStore.removeChat(chatId)
                 }
             }
         }
     }
 
-    Component {
-        id: contactDelegate
-        Item {
-            width: ListView.view.width
-            height: Ui.Style.dialogRowHeight - 8
-
-            Rectangle {
-                anchors.fill: parent
-                radius: Ui.Style.radiusMedium
-                color: mouseArea.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: Ui.Style.paddingM
-                spacing: Ui.Style.paddingM
-
-                Rectangle {
-                    width: Ui.Style.avatarSizeDialogRow
-                    height: Ui.Style.avatarSizeDialogRow
-                    radius: width / 2
-                    color: Ui.Style.avatarColor(avatarKey)
-                    Text {
-                        anchors.centerIn: parent
-                        text: displayName.length > 0 ? displayName.charAt(0).toUpperCase() : "?"
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 16
-                        font.weight: Font.DemiBold
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Text {
-                        text: displayName
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        color: Ui.Style.textPrimary
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        text: usernameOrPhone
-                        font.pixelSize: 11
-                        color: Ui.Style.textMuted
-                        elide: Text.ElideRight
-                    }
-                }
-            }
-
-            MouseArea {
-                id: mouseArea
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: Ui.AppStore.openChatFromContact(contactId)
-            }
-        }
-    }
 }

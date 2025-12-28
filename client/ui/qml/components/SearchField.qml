@@ -8,6 +8,7 @@ Item {
     property alias text: field.text
     property alias placeholderText: field.placeholderText
     property alias inputMethodHints: field.inputMethodHints
+    property alias inputActiveFocus: field.activeFocus
     signal textEdited(string text)
 
     function focusInput() {

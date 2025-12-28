@@ -1,23 +1,40 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
 
-Dialog {
+ApplicationWindow {
     id: root
-    modal: true
+    visible: false
     width: 420
     height: 520
-    title: "New Chat"
-    standardButtons: Dialog.NoButton
+    flags: Qt.FramelessWindowHint | Qt.Window
+    title: Ui.I18n.t("dialog.newChat.title")
+    color: "transparent"
+    font.family: Ui.Style.fontFamily
+    palette.window: Ui.Style.windowBg
+    palette.base: Ui.Style.panelBgAlt
+    palette.button: Ui.Style.panelBgAlt
+    palette.text: Ui.Style.textPrimary
+    palette.buttonText: Ui.Style.textPrimary
+    palette.highlight: Ui.Style.accent
+    palette.highlightedText: Ui.Style.textPrimary
+
+    function open() {
+        visible = true
+        raise()
+        requestActivate()
+    }
 
     property string filterText: ""
     property var filtered: []
 
-    onOpened: rebuild()
     onVisibleChanged: {
-        if (!visible) {
+        if (visible) {
+            rebuild()
+        } else {
             searchField.text = ""
         }
     }
@@ -32,6 +49,15 @@ Dialog {
         height: Ui.Style.topBarHeight
         color: Ui.Style.panelBgAlt
         border.color: Ui.Style.borderSubtle
+        DragHandler {
+            target: null
+            acceptedButtons: Qt.LeftButton
+            onActiveChanged: {
+                if (active && root.startSystemMove) {
+                    root.startSystemMove()
+                }
+            }
+        }
         RowLayout {
             anchors.fill: parent
             anchors.margins: Ui.Style.paddingM
@@ -43,7 +69,9 @@ Dialog {
             }
             Item { Layout.fillWidth: true }
             Components.IconButton {
-                icon.source: "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
+                icon.source: Ui.Style.isDark
+                             ? "qrc:/mi/e2ee/ui/icons/close-x.svg"
+                             : "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
                 buttonSize: Ui.Style.iconButtonSmall
                 iconSize: 14
                 onClicked: root.close()
@@ -59,7 +87,7 @@ Dialog {
         Components.SearchField {
             id: searchField
             Layout.fillWidth: true
-            placeholderText: "Search contacts"
+            placeholderText: Ui.I18n.t("dialog.newChat.search")
             onTextEdited: {
                 filterText = text
                 rebuild()
@@ -85,7 +113,7 @@ Dialog {
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: Ui.Style.paddingS
-                    spacing: Ui.Style.paddingM
+                    spacing: 10
                     Rectangle {
                         width: 36
                         height: 36
@@ -103,12 +131,14 @@ Dialog {
                         spacing: 2
                         Text {
                             text: displayName
+                            Layout.fillWidth: true
                             font.pixelSize: 13
                             color: Ui.Style.textPrimary
                             elide: Text.ElideRight
                         }
                         Text {
                             text: usernameOrPhone
+                            Layout.fillWidth: true
                             font.pixelSize: 11
                             color: Ui.Style.textMuted
                             elide: Text.ElideRight

@@ -178,8 +178,32 @@ bool QuickClient::init(const QString& configPath) {
   }
   const bool ok = core_.Init(config_path_.toStdString());
   if (!ok) {
+    UpdateLastError(QStringLiteral("初始化失败"));
     emit status(QStringLiteral("初始化失败"));
+  } else {
+    UpdateLastError(QString());
+    emit deviceChanged();
   }
+  return ok;
+}
+
+bool QuickClient::registerUser(const QString& user, const QString& pass) {
+  const QString account = user.trimmed();
+  if (account.isEmpty() || pass.isEmpty()) {
+    UpdateLastError(QStringLiteral("账号或密码为空"));
+    emit status(QStringLiteral("注册失败"));
+    return false;
+  }
+  const bool ok = core_.Register(account.toStdString(), pass.toStdString());
+  if (!ok) {
+    const QString err = QString::fromStdString(core_.last_error());
+    UpdateLastError(err.isEmpty() ? QStringLiteral("注册失败") : err);
+    emit status(QStringLiteral("注册失败"));
+  } else {
+    UpdateLastError(QString());
+    emit status(QStringLiteral("注册成功"));
+  }
+  MaybeEmitTrustSignals();
   return ok;
 }
 
@@ -189,15 +213,20 @@ bool QuickClient::login(const QString& user, const QString& pass) {
     emit status(QStringLiteral("登录失败"));
     token_.clear();
     username_.clear();
+    UpdateLastError(QString::fromStdString(core_.last_error()));
     StopPolling();
   } else {
     token_ = QString::fromStdString(core_.token());
     username_ = user.trimmed();
     emit status(QStringLiteral("登录成功"));
+    UpdateLastError(QString());
     StartPolling();
     UpdateFriendList(core_.ListFriends());
     UpdateFriendRequests(core_.ListFriendRequests());
+    emit deviceChanged();
   }
+  UpdateConnectionState(true);
+  MaybeEmitTrustSignals();
   emit tokenChanged();
   emit userChanged();
   return ok;
@@ -209,12 +238,15 @@ void QuickClient::logout() {
   core_.Logout();
   token_.clear();
   username_.clear();
+  UpdateLastError(QString());
   friends_.clear();
   groups_.clear();
   friend_requests_.clear();
   active_call_id_.clear();
   active_call_peer_.clear();
   active_call_video_ = false;
+  UpdateConnectionState(true);
+  MaybeEmitTrustSignals();
   emit tokenChanged();
   emit userChanged();
   emit friendsChanged();
@@ -228,8 +260,12 @@ bool QuickClient::joinGroup(const QString& groupId) {
   const QString trimmed = groupId.trimmed();
   const bool ok = core_.JoinGroup(trimmed.toStdString());
   if (ok) {
-    AddGroupIfMissing(trimmed);
-    emit groupsChanged();
+    if (AddGroupIfMissing(trimmed)) {
+      emit groupsChanged();
+    }
+    UpdateLastError(QString());
+  } else {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
   }
   emit status(ok ? QStringLiteral("加入群成功") : QStringLiteral("加入群失败"));
   return ok;
@@ -239,13 +275,37 @@ QString QuickClient::createGroup() {
   std::string out_id;
   if (!core_.CreateGroup(out_id)) {
     emit status(QStringLiteral("创建群失败"));
+    UpdateLastError(QString::fromStdString(core_.last_error()));
     return {};
   }
   const QString group_id = QString::fromStdString(out_id);
-  AddGroupIfMissing(group_id);
-  emit groupsChanged();
+  if (AddGroupIfMissing(group_id)) {
+    emit groupsChanged();
+  }
   emit status(QStringLiteral("已创建群"));
+  UpdateLastError(QString());
   return group_id;
+}
+
+bool QuickClient::sendGroupInvite(const QString& groupId,
+                                  const QString& peerUsername) {
+  const QString gid = groupId.trimmed();
+  const QString peer = peerUsername.trimmed();
+  if (gid.isEmpty() || peer.isEmpty()) {
+    UpdateLastError(QStringLiteral("群或成员为空"));
+    return false;
+  }
+  std::string msg_id;
+  const bool ok =
+      core_.SendGroupInvite(gid.toStdString(), peer.toStdString(), msg_id);
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+    emit status(QStringLiteral("邀请失败"));
+    return false;
+  }
+  UpdateLastError(QString());
+  emit status(QStringLiteral("邀请已发送"));
+  return true;
 }
 
 bool QuickClient::sendText(const QString& convId, const QString& text, bool isGroup) {
@@ -264,9 +324,11 @@ bool QuickClient::sendText(const QString& convId, const QString& text, bool isGr
   }
   if (!ok) {
     emit status(QStringLiteral("发送失败"));
+    UpdateLastError(QString::fromStdString(core_.last_error()));
     return false;
   }
 
+  UpdateLastError(QString());
   QVariantMap msg;
   msg.insert(QStringLiteral("convId"), trimmed);
   msg.insert(QStringLiteral("sender"), username_);
@@ -305,9 +367,11 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   }
   if (!ok) {
     emit status(QStringLiteral("文件发送失败"));
+    UpdateLastError(QString::fromStdString(core_.last_error()));
     return false;
   }
 
+  UpdateLastError(QString());
   QVariantMap msg;
   msg.insert(QStringLiteral("convId"), trimmed);
   msg.insert(QStringLiteral("sender"), username_);
@@ -340,9 +404,11 @@ bool QuickClient::sendSticker(const QString& convId,
       core_.SendChatSticker(trimmed.toStdString(), sid.toStdString(), msg_id);
   if (!ok) {
     emit status(QStringLiteral("贴纸发送失败"));
+    UpdateLastError(QString::fromStdString(core_.last_error()));
     return false;
   }
 
+  UpdateLastError(QString());
   QVariantMap msg;
   msg.insert(QStringLiteral("convId"), trimmed);
   msg.insert(QStringLiteral("sender"), username_);
@@ -374,6 +440,25 @@ QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {
   return out;
 }
 
+QVariantList QuickClient::listGroupMembersInfo(const QString& groupId) {
+  QVariantList out;
+  const QString gid = groupId.trimmed();
+  if (gid.isEmpty()) {
+    return out;
+  }
+  const auto members = core_.ListGroupMembersInfo(gid.toStdString());
+  out.reserve(static_cast<int>(members.size()));
+  for (const auto& m : members) {
+    QVariantMap map;
+    map.insert(QStringLiteral("username"),
+               QString::fromStdString(m.username));
+    map.insert(QStringLiteral("role"),
+               static_cast<int>(m.role));
+    out.push_back(map);
+  }
+  return out;
+}
+
 QVariantList QuickClient::stickerItems() {
   QVariantList out;
   const auto items = EmojiPackManager::Instance().Items();
@@ -397,6 +482,11 @@ bool QuickClient::sendFriendRequest(const QString& targetUsername,
   }
   const bool ok = core_.SendFriendRequest(target.toStdString(), remark.toStdString());
   emit status(ok ? QStringLiteral("好友请求已发送") : QStringLiteral("好友请求失败"));
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  } else {
+    UpdateLastError(QString());
+  }
   return ok;
 }
 
@@ -408,9 +498,94 @@ bool QuickClient::respondFriendRequest(const QString& requesterUsername,
   }
   const bool ok = core_.RespondFriendRequest(requester.toStdString(), accept);
   emit status(ok ? QStringLiteral("好友请求已处理") : QStringLiteral("好友请求处理失败"));
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  } else {
+    UpdateLastError(QString());
+  }
   if (ok) {
     UpdateFriendRequests(core_.ListFriendRequests());
   }
+  return ok;
+}
+
+QVariantList QuickClient::listDevices() {
+  QVariantList out;
+  const auto devices = core_.ListDevices();
+  out.reserve(static_cast<int>(devices.size()));
+  for (const auto& d : devices) {
+    QVariantMap map;
+    map.insert(QStringLiteral("deviceId"),
+               QString::fromStdString(d.device_id));
+    map.insert(QStringLiteral("lastSeenSec"),
+               static_cast<int>(d.last_seen_sec));
+    out.push_back(map);
+  }
+  return out;
+}
+
+bool QuickClient::kickDevice(const QString& deviceId) {
+  const QString id = deviceId.trimmed();
+  if (id.isEmpty()) {
+    UpdateLastError(QStringLiteral("设备 ID 为空"));
+    return false;
+  }
+  const bool ok = core_.KickDevice(id.toStdString());
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+    emit status(QStringLiteral("踢出失败"));
+    return false;
+  }
+  UpdateLastError(QString());
+  emit status(QStringLiteral("已踢出设备"));
+  return true;
+}
+
+bool QuickClient::sendReadReceipt(const QString& peerUsername,
+                                  const QString& messageId) {
+  const QString peer = peerUsername.trimmed();
+  const QString msgId = messageId.trimmed();
+  if (peer.isEmpty() || msgId.isEmpty()) {
+    return false;
+  }
+  const bool ok =
+      core_.SendChatReadReceipt(peer.toStdString(), msgId.toStdString());
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  }
+  return ok;
+}
+
+bool QuickClient::trustPendingServer(const QString& pin) {
+  const QString p = pin.trimmed();
+  if (p.isEmpty()) {
+    UpdateLastError(QStringLiteral("验证码为空"));
+    return false;
+  }
+  const bool ok = core_.TrustPendingServer(p.toStdString());
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  } else {
+    UpdateLastError(QString());
+  }
+  MaybeEmitTrustSignals();
+  UpdateConnectionState(true);
+  return ok;
+}
+
+bool QuickClient::trustPendingPeer(const QString& pin) {
+  const QString p = pin.trimmed();
+  if (p.isEmpty()) {
+    UpdateLastError(QStringLiteral("验证码为空"));
+    return false;
+  }
+  const bool ok = core_.TrustPendingPeer(p.toStdString());
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  } else {
+    UpdateLastError(QString());
+  }
+  MaybeEmitTrustSignals();
   return ok;
 }
 
@@ -547,6 +722,10 @@ QString QuickClient::username() const {
   return username_;
 }
 
+QString QuickClient::lastError() const {
+  return last_error_;
+}
+
 QVariantList QuickClient::friends() const {
   return friends_;
 }
@@ -557,6 +736,55 @@ QVariantList QuickClient::groups() const {
 
 QVariantList QuickClient::friendRequests() const {
   return friend_requests_;
+}
+
+QString QuickClient::deviceId() const {
+  return QString::fromStdString(core_.device_id());
+}
+
+bool QuickClient::remoteOk() const {
+  return core_.remote_ok();
+}
+
+QString QuickClient::remoteError() const {
+  return QString::fromStdString(core_.remote_error());
+}
+
+bool QuickClient::hasPendingServerTrust() const {
+  return core_.HasPendingServerTrust();
+}
+
+QString QuickClient::pendingServerFingerprint() const {
+  return QString::fromStdString(core_.pending_server_fingerprint());
+}
+
+QString QuickClient::pendingServerPin() const {
+  return QString::fromStdString(core_.pending_server_pin());
+}
+
+bool QuickClient::hasPendingPeerTrust() const {
+  return core_.HasPendingPeerTrust();
+}
+
+QString QuickClient::pendingPeerUsername() const {
+  if (!core_.HasPendingPeerTrust()) {
+    return {};
+  }
+  return QString::fromStdString(core_.pending_peer_trust().peer_username);
+}
+
+QString QuickClient::pendingPeerFingerprint() const {
+  if (!core_.HasPendingPeerTrust()) {
+    return {};
+  }
+  return QString::fromStdString(core_.pending_peer_trust().fingerprint_hex);
+}
+
+QString QuickClient::pendingPeerPin() const {
+  if (!core_.HasPendingPeerTrust()) {
+    return {};
+  }
+  return QString::fromStdString(core_.pending_peer_trust().pin6);
 }
 
 void QuickClient::StartPolling() {
@@ -579,6 +807,8 @@ void QuickClient::PollOnce() {
     return;
   }
   HandlePollResult(core_.PollChat());
+  UpdateConnectionState(false);
+  MaybeEmitTrustSignals();
 
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   if (now - last_friend_sync_ms_ > 2000) {
@@ -639,11 +869,11 @@ void QuickClient::UpdateFriendRequests(
   emit friendRequestsChanged();
 }
 
-void QuickClient::AddGroupIfMissing(const QString& groupId) {
+bool QuickClient::AddGroupIfMissing(const QString& groupId) {
   for (const auto& entry : groups_) {
     const auto map = entry.toMap();
     if (map.value(QStringLiteral("id")).toString() == groupId) {
-      return;
+      return false;
     }
   }
   QVariantMap map;
@@ -651,6 +881,7 @@ void QuickClient::AddGroupIfMissing(const QString& groupId) {
   map.insert(QStringLiteral("name"), groupId);
   map.insert(QStringLiteral("unread"), 0);
   groups_.push_back(map);
+  return true;
 }
 
 QVariantMap QuickClient::BuildStickerMeta(const QString& stickerId) const {
@@ -680,6 +911,23 @@ QVariantMap QuickClient::BuildHistoryMessage(
              QDateTime::fromSecsSinceEpoch(
                  static_cast<qint64>(entry.timestamp_sec))
                  .toString(QStringLiteral("HH:mm:ss")));
+  switch (entry.status) {
+    case ClientCore::HistoryStatus::kSent:
+      msg.insert(QStringLiteral("status"), QStringLiteral("sent"));
+      break;
+    case ClientCore::HistoryStatus::kDelivered:
+      msg.insert(QStringLiteral("status"), QStringLiteral("delivered"));
+      break;
+    case ClientCore::HistoryStatus::kRead:
+      msg.insert(QStringLiteral("status"), QStringLiteral("read"));
+      break;
+    case ClientCore::HistoryStatus::kFailed:
+      msg.insert(QStringLiteral("status"), QStringLiteral("failed"));
+      break;
+    default:
+      msg.insert(QStringLiteral("status"), QStringLiteral("sent"));
+      break;
+  }
 
   switch (entry.kind) {
     case ClientCore::HistoryKind::kText:
@@ -840,7 +1088,9 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 
   for (const auto& t : result.group_texts) {
     const QString group_id = QString::fromStdString(t.group_id);
-    AddGroupIfMissing(group_id);
+    if (AddGroupIfMissing(group_id)) {
+      emit groupsChanged();
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"),
@@ -857,7 +1107,9 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 
   for (const auto& t : result.outgoing_group_texts) {
     const QString group_id = QString::fromStdString(t.group_id);
-    AddGroupIfMissing(group_id);
+    if (AddGroupIfMissing(group_id)) {
+      emit groupsChanged();
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"), username_);
@@ -873,7 +1125,9 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 
   for (const auto& f : result.group_files) {
     const QString group_id = QString::fromStdString(f.group_id);
-    AddGroupIfMissing(group_id);
+    if (AddGroupIfMissing(group_id)) {
+      emit groupsChanged();
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"),
@@ -893,7 +1147,9 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 
   for (const auto& f : result.outgoing_group_files) {
     const QString group_id = QString::fromStdString(f.group_id);
-    AddGroupIfMissing(group_id);
+    if (AddGroupIfMissing(group_id)) {
+      emit groupsChanged();
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"), username_);
@@ -927,7 +1183,9 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 
   for (const auto& n : result.group_notices) {
     const QString group_id = QString::fromStdString(n.group_id);
-    AddGroupIfMissing(group_id);
+    if (AddGroupIfMissing(group_id)) {
+      emit groupsChanged();
+    }
     QString text;
     switch (n.kind) {
       case 1:
@@ -960,6 +1218,95 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("text"), text);
     msg.insert(QStringLiteral("time"), now);
     EmitMessage(msg);
+  }
+
+  for (const auto& d : result.deliveries) {
+    QVariantMap msg;
+    msg.insert(QStringLiteral("convId"),
+               QString::fromStdString(d.from_username));
+    msg.insert(QStringLiteral("kind"), QStringLiteral("delivery"));
+    msg.insert(QStringLiteral("messageId"),
+               QString::fromStdString(d.message_id_hex));
+    EmitMessage(msg);
+  }
+
+  for (const auto& r : result.read_receipts) {
+    QVariantMap msg;
+    msg.insert(QStringLiteral("convId"),
+               QString::fromStdString(r.from_username));
+    msg.insert(QStringLiteral("kind"), QStringLiteral("read"));
+    msg.insert(QStringLiteral("messageId"),
+               QString::fromStdString(r.message_id_hex));
+    EmitMessage(msg);
+  }
+
+  for (const auto& t : result.typing_events) {
+    QVariantMap msg;
+    msg.insert(QStringLiteral("convId"),
+               QString::fromStdString(t.from_username));
+    msg.insert(QStringLiteral("kind"), QStringLiteral("typing"));
+    msg.insert(QStringLiteral("typing"), t.typing);
+    EmitMessage(msg);
+  }
+
+  for (const auto& p : result.presence_events) {
+    QVariantMap msg;
+    msg.insert(QStringLiteral("convId"),
+               QString::fromStdString(p.from_username));
+    msg.insert(QStringLiteral("kind"), QStringLiteral("presence"));
+    msg.insert(QStringLiteral("online"), p.online);
+    EmitMessage(msg);
+  }
+}
+
+void QuickClient::UpdateLastError(const QString& message) {
+  const QString trimmed = message.trimmed();
+  if (trimmed == last_error_) {
+    return;
+  }
+  last_error_ = trimmed;
+  emit errorChanged();
+}
+
+void QuickClient::UpdateConnectionState(bool force_emit) {
+  const bool ok = core_.remote_ok();
+  const QString err = QString::fromStdString(core_.remote_error());
+  if (!force_emit && ok == last_remote_ok_ && err == last_remote_error_) {
+    return;
+  }
+  last_remote_ok_ = ok;
+  last_remote_error_ = err;
+  emit connectionChanged();
+}
+
+void QuickClient::MaybeEmitTrustSignals() {
+  bool changed = false;
+  if (core_.HasPendingServerTrust()) {
+    const QString fp = pendingServerFingerprint();
+    if (fp != last_pending_server_fingerprint_) {
+      last_pending_server_fingerprint_ = fp;
+      emit serverTrustRequired(fp, pendingServerPin());
+      changed = true;
+    }
+  } else if (!last_pending_server_fingerprint_.isEmpty()) {
+    last_pending_server_fingerprint_.clear();
+    changed = true;
+  }
+
+  if (core_.HasPendingPeerTrust()) {
+    const QString fp = pendingPeerFingerprint();
+    if (fp != last_pending_peer_fingerprint_) {
+      last_pending_peer_fingerprint_ = fp;
+      emit peerTrustRequired(pendingPeerUsername(), fp, pendingPeerPin());
+      changed = true;
+    }
+  } else if (!last_pending_peer_fingerprint_.isEmpty()) {
+    last_pending_peer_fingerprint_.clear();
+    changed = true;
+  }
+
+  if (changed) {
+    emit trustStateChanged();
   }
 }
 

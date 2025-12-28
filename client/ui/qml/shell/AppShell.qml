@@ -1,7 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import QtCore
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/dialogs" as Dialogs
 import "qrc:/mi/e2ee/ui/qml/shell" as Shell
@@ -10,25 +9,7 @@ Item {
     id: root
 
     property int windowWidth: 0
-    property bool showRightPane: Ui.AppStore.rightPaneVisible && windowWidth >= 860
-
-    Settings {
-        id: paneSettings
-        property int leftWidth: Ui.Style.leftPaneWidthDefault
-        property int rightWidth: Ui.Style.rightPaneWidth
-        property bool rightPaneVisible: false
-    }
-
-    Component.onCompleted: {
-        Ui.AppStore.rightPaneVisible = paneSettings.rightPaneVisible
-    }
-
-    Connections {
-        target: Ui.AppStore
-        function onRightPaneVisibilityChanged(visible) {
-            paneSettings.rightPaneVisible = visible
-        }
-    }
+    property int leftWidth: Ui.Style.leftPaneWidthDefault
 
     SplitView {
         id: split
@@ -37,39 +18,28 @@ Item {
         handle: Rectangle {
             implicitWidth: 1
             color: Ui.Style.borderSubtle
+            z: 5
         }
 
         Shell.LeftPane {
             id: leftPane
-            SplitView.preferredWidth: paneSettings.leftWidth
+            SplitView.preferredWidth: root.leftWidth
             SplitView.minimumWidth: Ui.Style.leftPaneWidthMin
             onWidthChanged: {
                 if (width > 80) {
-                    paneSettings.leftWidth = width
+                    root.leftWidth = width
                 }
             }
             onRequestNewChat: newChatDialog.open()
             onRequestAddContact: addContactDialog.open()
             onRequestCreateGroup: createGroupWizard.open()
             onRequestSettings: settingsDialog.open()
+            onRequestDeviceManager: deviceManagerDialog.open()
         }
 
         Shell.CenterPane {
             id: centerPane
             SplitView.fillWidth: true
-        }
-
-        Shell.RightPane {
-            id: rightPane
-            visible: root.showRightPane
-            SplitView.preferredWidth: root.showRightPane ? paneSettings.rightWidth : 0
-            SplitView.minimumWidth: root.showRightPane ? 280 : 0
-            SplitView.maximumWidth: root.showRightPane ? 520 : 0
-            onWidthChanged: {
-                if (root.showRightPane && width > 120) {
-                    paneSettings.rightWidth = width
-                }
-            }
         }
     }
 
@@ -77,6 +47,7 @@ Item {
     Dialogs.AddContactDialog { id: addContactDialog }
     Dialogs.CreateGroupWizard { id: createGroupWizard }
     Dialogs.SettingsDialog { id: settingsDialog }
+    Dialogs.DeviceManagerDialog { id: deviceManagerDialog }
 
     function focusSearch() {
         leftPane.focusSearch()
@@ -89,6 +60,10 @@ Item {
     function handleEscape() {
         if (settingsDialog.visible) {
             settingsDialog.close()
+            return
+        }
+        if (deviceManagerDialog.visible) {
+            deviceManagerDialog.close()
             return
         }
         if (createGroupWizard.visible) {
@@ -110,6 +85,5 @@ Item {
             leftPane.clearSearch()
             return
         }
-        Ui.AppStore.closeRightPane()
     }
 }

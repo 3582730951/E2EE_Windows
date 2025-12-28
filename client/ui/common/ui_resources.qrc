@@ -1,11 +1,13 @@
 <RCC>
     <qresource prefix="/mi/e2ee/ui">
         <file alias="icons/file-upload.svg">../icons/file-upload.svg</file>
+        <file alias="icons/device.svg">../icons/device.svg</file>
         <file alias="icons/group.svg">../icons/group.svg</file>
         <file alias="icons/login.svg">../icons/login.svg</file>
         <file alias="icons/logout.svg">../icons/logout.svg</file>
         <file alias="icons/offline.svg">../icons/offline.svg</file>
         <file alias="icons/send.svg">../icons/send.svg</file>
+        <file alias="icons/location.svg">../icons/location.svg</file>
         <file alias="icons/chat.svg">../icons/chat.svg</file>
         <file alias="icons/clock.svg">../icons/clock.svg</file>
         <file alias="icons/bell.svg">../icons/bell.svg</file>
@@ -20,6 +22,7 @@
         <file alias="icons/info.svg">../icons/info.svg</file>
         <file alias="icons/mic.svg">../icons/mic.svg</file>
         <file alias="icons/more.svg">../icons/more.svg</file>
+        <file alias="icons/more-vert.svg">../icons/more-vert.svg</file>
         <file alias="icons/maximize.svg">../icons/maximize.svg</file>
         <file alias="icons/minimize.svg">../icons/minimize.svg</file>
         <file alias="icons/menu-lines.svg">../icons/menu-lines.svg</file>
@@ -34,9 +37,12 @@
         <file alias="qss/app.qss">../qss/app.qss</file>
         <file alias="qml/Main.qml">../qml/Main.qml</file>
         <file alias="qml/Style.qml">../qml/Style.qml</file>
+        <file alias="qml/I18n.qml">../qml/I18n.qml</file>
         <file alias="qml/qmldir">../qml/qmldir</file>
         <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
         <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
+        <file alias="qml/i18n/zh-CN.json">../qml/i18n/zh-CN.json</file>
+        <file alias="qml/i18n/en-US.json">../qml/i18n/en-US.json</file>
         <file alias="qml/assets/wallpaper_tile.svg">../qml/assets/wallpaper_tile.svg</file>
         <file alias="qml/shell/AppShell.qml">../qml/shell/AppShell.qml</file>
         <file alias="qml/shell/LeftPane.qml">../qml/shell/LeftPane.qml</file>
@@ -46,6 +52,8 @@
         <file alias="qml/dialogs/AddContactDialog.qml">../qml/dialogs/AddContactDialog.qml</file>
         <file alias="qml/dialogs/CreateGroupWizard.qml">../qml/dialogs/CreateGroupWizard.qml</file>
         <file alias="qml/dialogs/SettingsDialog.qml">../qml/dialogs/SettingsDialog.qml</file>
+        <file alias="qml/dialogs/DeviceManagerDialog.qml">../qml/dialogs/DeviceManagerDialog.qml</file>
+        <file alias="qml/dialogs/TrustPromptDialog.qml">../qml/dialogs/TrustPromptDialog.qml</file>
         <file alias="qml/components/IconButton.qml">../qml/components/IconButton.qml</file>
         <file alias="qml/components/PrimaryButton.qml">../qml/components/PrimaryButton.qml</file>
         <file alias="qml/components/GhostButton.qml">../qml/components/GhostButton.qml</file>

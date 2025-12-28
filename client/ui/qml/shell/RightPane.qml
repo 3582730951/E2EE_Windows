@@ -64,7 +64,7 @@ Item {
                         Layout.alignment: Qt.AlignHCenter
                         text: Ui.AppStore.currentChatTitle.length > 0
                               ? Ui.AppStore.currentChatTitle
-                              : "No chat selected"
+                              : Ui.I18n.t("right.noChatSelected")
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
                         color: Ui.Style.textPrimary
@@ -85,21 +85,21 @@ Item {
                             buttonSize: Ui.Style.iconButtonSmall
                             iconSize: 16
                             ToolTip.visible: hovered
-                            ToolTip.text: "Mute"
+                            ToolTip.text: Ui.I18n.t("right.mute")
                         }
                         Components.IconButton {
                             icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
                             buttonSize: Ui.Style.iconButtonSmall
                             iconSize: 16
                             ToolTip.visible: hovered
-                            ToolTip.text: "Search"
+                            ToolTip.text: Ui.I18n.t("right.search")
                         }
                         Components.IconButton {
                             icon.source: "qrc:/mi/e2ee/ui/icons/more.svg"
                             buttonSize: Ui.Style.iconButtonSmall
                             iconSize: 16
                             ToolTip.visible: hovered
-                            ToolTip.text: "More"
+                            ToolTip.text: Ui.I18n.t("chat.more")
                         }
                     }
                 }
@@ -124,14 +124,14 @@ Item {
                                 anchors.margins: Ui.Style.paddingM
                                 spacing: Ui.Style.paddingS
 
-                                Text { text: "Profile"; color: Ui.Style.textSecondary; font.pixelSize: 11 }
+                                Text { text: Ui.I18n.t("right.profile"); color: Ui.Style.textSecondary; font.pixelSize: 11 }
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
-                                    Text { text: "Username"; color: Ui.Style.textMuted; font.pixelSize: 10 }
+                                    Text { text: Ui.I18n.t("right.username"); color: Ui.Style.textMuted; font.pixelSize: 10 }
                                     Text { text: "@demo"; color: Ui.Style.textPrimary; font.pixelSize: 12 }
-                                    Text { text: "Phone"; color: Ui.Style.textMuted; font.pixelSize: 10 }
+                                    Text { text: Ui.I18n.t("right.phone"); color: Ui.Style.textMuted; font.pixelSize: 10 }
                                     Text { text: "+1 202-555-0101"; color: Ui.Style.textPrimary; font.pixelSize: 12 }
                                 }
 
@@ -139,11 +139,11 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: Ui.Style.paddingS
                                     Components.GhostButton {
-                                        text: "Mute"
+                                        text: Ui.I18n.t("right.mute")
                                         Layout.fillWidth: true
                                     }
                                     Components.GhostButton {
-                                        text: "Block"
+                                        text: Ui.I18n.t("right.block")
                                         Layout.fillWidth: true
                                     }
                                 }
@@ -168,21 +168,21 @@ Item {
                                 anchors.margins: Ui.Style.paddingM
                                 spacing: Ui.Style.paddingS
 
-                                Text { text: "Group"; color: Ui.Style.textSecondary; font.pixelSize: 11 }
+                                Text { text: Ui.I18n.t("right.group"); color: Ui.Style.textSecondary; font.pixelSize: 11 }
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: Ui.Style.paddingS
                                     Components.GhostButton {
-                                        text: "Add"
+                                        text: Ui.I18n.t("right.add")
                                         Layout.fillWidth: true
                                     }
                                     Components.GhostButton {
-                                        text: "Search"
+                                        text: Ui.I18n.t("right.search")
                                         Layout.fillWidth: true
                                     }
                                     Components.GhostButton {
-                                        text: "Notify"
+                                        text: Ui.I18n.t("right.notify")
                                         Layout.fillWidth: true
                                     }
                                 }
@@ -197,7 +197,7 @@ Item {
                                         border.color: Ui.Style.borderSubtle
                                     }
                                     TabButton {
-                                        text: "Members"
+                                        text: Ui.I18n.t("right.members")
                                         background: Rectangle {
                                             radius: Ui.Style.radiusMedium
                                             color: groupTabs.currentIndex === 0 ? Ui.Style.dialogSelectedBg : "transparent"
@@ -211,7 +211,7 @@ Item {
                                         }
                                     }
                                     TabButton {
-                                        text: "Media"
+                                        text: Ui.I18n.t("right.media")
                                         background: Rectangle {
                                             radius: Ui.Style.radiusMedium
                                             color: groupTabs.currentIndex === 1 ? Ui.Style.dialogSelectedBg : "transparent"
@@ -225,7 +225,7 @@ Item {
                                         }
                                     }
                                     TabButton {
-                                        text: "Files"
+                                        text: Ui.I18n.t("right.files")
                                         background: Rectangle {
                                             radius: Ui.Style.radiusMedium
                                             color: groupTabs.currentIndex === 2 ? Ui.Style.dialogSelectedBg : "transparent"
@@ -301,7 +301,7 @@ Item {
                                         Layout.preferredHeight: 180
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Media placeholder"
+                                            text: Ui.I18n.t("right.mediaPlaceholder")
                                             color: Ui.Style.textMuted
                                             font.pixelSize: 11
                                         }
@@ -311,7 +311,7 @@ Item {
                                         Layout.preferredHeight: 180
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Files placeholder"
+                                            text: Ui.I18n.t("right.filesPlaceholder")
                                             color: Ui.Style.textMuted
                                             font.pixelSize: 11
                                         }
