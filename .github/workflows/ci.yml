@@ -245,6 +245,10 @@ jobs:
           Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee.exe" $clientRoot -Force
 
           $uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
+          $uiRcc = Join-Path $uiRoot "ui_resources.rcc"
+          if (Test-Path $uiRcc) {
+            Copy-Item $uiRcc (Join-Path $clientDll "ui_resources.rcc") -Force
+          }
           Get-ChildItem -Path $uiRoot -File -Filter "*.dll" |
             Where-Object { $_.Name -notlike "qmldbg_*" } | ForEach-Object {
               Copy-Item $_.FullName $clientDll -Force
