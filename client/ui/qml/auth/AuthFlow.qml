@@ -13,6 +13,9 @@ Item {
     property string registerConfirm: ""
     property int qrSeconds: 30
     property string errorText: ""
+    property string lastLoginAccount: ""
+    property string lastLoginPassword: ""
+    property bool waitingServerTrust: false
 
     signal authSucceeded()
 
@@ -32,6 +35,37 @@ Item {
     function completeAuth() {
         authSucceeded()
         Ui.AppStore.currentPage = 1
+    }
+
+    function attemptLogin(user, pass, fromTrust) {
+        if (!clientBridge) {
+            errorText = Ui.I18n.t("auth.error.login")
+            return false
+        }
+        if (!clientBridge.init("")) {
+            errorText = clientBridge.lastError.length
+                ? clientBridge.lastError
+                : Ui.I18n.t("auth.error.login")
+            return false
+        }
+        if (!clientBridge.login(user, pass)) {
+            if (clientBridge.hasPendingServerTrust) {
+                waitingServerTrust = true
+                if (!fromTrust) {
+                    errorText = "需信任服务器（TLS）"
+                }
+            } else if (clientBridge.lastError.length) {
+                errorText = clientBridge.lastError
+            } else {
+                errorText = Ui.I18n.t("auth.error.login")
+            }
+            return false
+        }
+        waitingServerTrust = false
+        errorText = ""
+        Ui.AppStore.bootstrapAfterLogin()
+        completeAuth()
+        return true
     }
 
     function resetQrTimer() {
@@ -241,24 +275,9 @@ Item {
                                     return
                                 }
                                 errorText = ""
-                                if (clientBridge && !clientBridge.init("")) {
-                                    errorText = clientBridge.lastError.length
-                                        ? clientBridge.lastError
-                                        : Ui.I18n.t("auth.error.login")
-                                    return
-                                }
-                                if (!clientBridge || !clientBridge.login(accountInput, passwordInput)) {
-                                    if (clientBridge && clientBridge.hasPendingServerTrust) {
-                                        errorText = "需信任服务器（TLS）"
-                                    } else if (clientBridge && clientBridge.lastError.length) {
-                                        errorText = clientBridge.lastError
-                                    } else {
-                                        errorText = Ui.I18n.t("auth.error.login")
-                                    }
-                                    return
-                                }
-                                Ui.AppStore.bootstrapAfterLogin()
-                                completeAuth()
+                                lastLoginAccount = accountInput
+                                lastLoginPassword = passwordInput
+                                attemptLogin(accountInput, passwordInput, false)
                             }
                         }
 
@@ -544,6 +563,22 @@ Item {
                 visible: errorText.length > 0
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true
+            }
+        }
+    }
+
+    Connections {
+        target: clientBridge
+        function onTrustStateChanged() {
+            if (waitingServerTrust && clientBridge && !clientBridge.hasPendingServerTrust) {
+                attemptLogin(lastLoginAccount, lastLoginPassword, true)
+            }
+        }
+        function onErrorChanged() {
+            if (waitingServerTrust && clientBridge && clientBridge.hasPendingServerTrust) {
+                if (clientBridge.lastError.length > 0) {
+                    errorText = clientBridge.lastError
+                }
             }
         }
     }
