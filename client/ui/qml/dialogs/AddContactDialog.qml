@@ -7,6 +7,7 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 ApplicationWindow {
     id: root
+    property bool hasRequests: Ui.AppStore.friendRequestsModel.count > 0
     visible: false
     width: 360
     height: hasRequests ? 420 : 320
@@ -197,4 +198,3 @@ ApplicationWindow {
         }
     }
 }
-    property bool hasRequests: Ui.AppStore.friendRequestsModel.count > 0
