@@ -67,6 +67,17 @@ jobs:
           $rimeDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_runtime"
           New-Item -ItemType Directory -Force -Path $rimeDir | Out-Null
           cmake -DRIME_OUTPUT_DIR=$rimeDir -DRIME_WITH_LUA=ON -DRIME_VERSION=1.15.0 -DRIME_ASSET="rime-75bc43a-Windows-msvc-x64.7z" -DRIME_WEASEL_VERSION=0.17.4 -DRIME_WEASEL_ASSET="weasel-0.17.4.0-installer.exe" -P $env:GITHUB_WORKSPACE\\client\\ui\\ime_rime\\FetchRime.cmake
+          $rimeCandidates = @(
+            (Join-Path $rimeDir "rime.dll"),
+            (Join-Path $rimeDir "librime.dll")
+          )
+          $rimeDll = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $rimeDll) {
+            throw "rime runtime dll not found after FetchRime.cmake"
+          }
+          if (-not (Test-Path (Join-Path $rimeDir "rime.dll"))) {
+            Copy-Item $rimeDll (Join-Path $rimeDir "rime.dll") -Force
+          }
           "RIME_RUNTIME_DIR=$rimeDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure client
@@ -257,8 +268,10 @@ jobs:
           if (-not $rimeRuntime) {
             $rimeRuntime = Join-Path $workspace "build\\rime_runtime"
           }
-          if (Test-Path (Join-Path $rimeRuntime "rime.dll")) {
-            Copy-Item (Join-Path $rimeRuntime "rime.dll") $clientDll -Force
+          if (Test-Path $rimeRuntime) {
+            Get-ChildItem -Path $rimeRuntime -File -Filter "*.dll" | ForEach-Object {
+              Copy-Item $_.FullName $clientDll -Force
+            }
           }
           if (Test-Path (Join-Path $rimeRuntime "opencc")) {
             Copy-Item (Join-Path $rimeRuntime "opencc") (Join-Path $clientDb "opencc") -Recurse -Force

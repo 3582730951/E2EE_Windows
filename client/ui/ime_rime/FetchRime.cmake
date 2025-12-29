@@ -80,6 +80,22 @@ function(copy_opencc_data root_dir)
     endforeach()
 endfunction()
 
+function(copy_runtime_dlls source_dir)
+    if(NOT EXISTS "${source_dir}")
+        return()
+    endif()
+    file(GLOB _runtime_dlls "${source_dir}/*.dll")
+    if(NOT _runtime_dlls)
+        return()
+    endif()
+    foreach(_dll IN LISTS _runtime_dlls)
+        get_filename_component(_dll_name "${_dll}" NAME)
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_dll}" "${RIME_OUTPUT_DIR}/${_dll_name}"
+        )
+    endforeach()
+endfunction()
+
 file(MAKE_DIRECTORY "${_cache_dir}")
 file(MAKE_DIRECTORY "${_extract_dir}")
 file(MAKE_DIRECTORY "${RIME_OUTPUT_DIR}")
@@ -149,9 +165,12 @@ if(RIME_WITH_LUA)
         message(FATAL_ERROR "Failed to extract Weasel runtime from ${_weasel_archive}")
     endif()
 
-    file(GLOB_RECURSE _rime_candidates "${_weasel_extract_dir}/rime.dll")
+    file(GLOB_RECURSE _rime_candidates
+        "${_weasel_extract_dir}/rime.dll"
+        "${_weasel_extract_dir}/librime.dll"
+    )
     if(NOT _rime_candidates)
-        message(WARNING "rime.dll not found after extracting ${_weasel_archive}")
+        message(WARNING "rime.dll or librime.dll not found after extracting ${_weasel_archive}")
         return()
     endif()
     set(_rime_src "")
@@ -167,14 +186,18 @@ if(RIME_WITH_LUA)
         message(WARNING "rime.dll candidate selection failed")
         return()
     endif()
-
-    execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_rime_src}" "${RIME_OUTPUT_DIR}/rime.dll"
-        RESULT_VARIABLE _copy_result
-    )
-    if(NOT _copy_result EQUAL 0)
-        message(WARNING "Failed to copy rime.dll to ${RIME_OUTPUT_DIR}")
-        return()
+    get_filename_component(_rime_dir "${_rime_src}" DIRECTORY)
+    copy_runtime_dlls("${_rime_dir}")
+    get_filename_component(_rime_name "${_rime_src}" NAME)
+    if(NOT _rime_name STREQUAL "rime.dll")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_rime_src}" "${RIME_OUTPUT_DIR}/rime.dll"
+            RESULT_VARIABLE _copy_result
+        )
+        if(NOT _copy_result EQUAL 0)
+            message(WARNING "Failed to copy rime.dll to ${RIME_OUTPUT_DIR}")
+            return()
+        endif()
     endif()
     copy_opencc_data("${_weasel_extract_dir}")
     file(WRITE "${_lua_marker}" "weasel")
