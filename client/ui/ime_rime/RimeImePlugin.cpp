@@ -220,6 +220,9 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
     if (!maintenanceStarted && needsDeploy && gApi->deploy) {
         gApi->deploy();
     }
+    if (maintenanceStarted && gApi->join_maintenance_thread) {
+        gApi->join_maintenance_thread();
+    }
     gPreferredSchema = LoadPreferredSchema(user_dir);
     gInitialized = true;
     return true;
@@ -280,7 +283,12 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
     out_buffer[0] = '\0';
     const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
     if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
-        return 0;
+        if (gApi->join_maintenance_thread) {
+            gApi->join_maintenance_thread();
+        }
+        if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
+            return 0;
+        }
     }
     if (*input == '\0') {
         if (gApi->clear_composition) {
