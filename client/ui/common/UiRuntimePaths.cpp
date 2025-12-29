@@ -80,6 +80,25 @@ QString ResolveRuntimeDir(const QString &appDir) {
     return dir.absolutePath();
 }
 
+void PrependEnvVar(const char *name, const QString &value) {
+    if (value.isEmpty()) {
+        return;
+    }
+    const QByteArray valueBytes = QDir::toNativeSeparators(value).toUtf8();
+    const QByteArray current = qgetenv(name);
+    if (current.contains(valueBytes)) {
+        return;
+    }
+    if (current.isEmpty()) {
+        qputenv(name, valueBytes);
+        return;
+    }
+    QByteArray updated = valueBytes;
+    updated.append(';');
+    updated.append(current);
+    qputenv(name, updated);
+}
+
 void TryRegisterUiResourceFromDisk(const QString &appDir) {
     if (HasUiQmlResource()) {
         return;
@@ -123,17 +142,15 @@ void Prepare(const char *argv0) {
     }
 #endif
 
-    if (QDir(pluginRoot).exists() && qEnvironmentVariableIsEmpty("QT_PLUGIN_PATH")) {
-        qputenv("QT_PLUGIN_PATH", pluginRoot.toUtf8());
+    if (QDir(pluginRoot).exists()) {
+        PrependEnvVar("QT_PLUGIN_PATH", pluginRoot);
     }
-    if (QDir(platformDir).exists() && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM_PLUGIN_PATH")) {
-        qputenv("QT_QPA_PLATFORM_PLUGIN_PATH", platformDir.toUtf8());
+    if (QDir(platformDir).exists()) {
+        PrependEnvVar("QT_QPA_PLATFORM_PLUGIN_PATH", platformDir);
     }
-    if (QDir(qmlDir).exists() && qEnvironmentVariableIsEmpty("QML2_IMPORT_PATH")) {
-        qputenv("QML2_IMPORT_PATH", qmlDir.toUtf8());
-    }
-    if (QDir(qmlDir).exists() && qEnvironmentVariableIsEmpty("QML_IMPORT_PATH")) {
-        qputenv("QML_IMPORT_PATH", qmlDir.toUtf8());
+    if (QDir(qmlDir).exists()) {
+        PrependEnvVar("QML2_IMPORT_PATH", qmlDir);
+        PrependEnvVar("QML_IMPORT_PATH", qmlDir);
     }
 }
 
