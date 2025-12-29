@@ -13,10 +13,15 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QHash>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QRandomGenerator>
+#include <QSet>
+#include <QStringConverter>
+#include <QTextStream>
 #include <QUrl>
+#include <QVector>
 #include <QVideoFrame>
 #include <QVideoFrameFormat>
 
@@ -35,6 +40,219 @@ namespace mi::client::ui {
 namespace {
 constexpr char kCallVoicePrefix[] = "[call]voice:";
 constexpr char kCallVideoPrefix[] = "[call]video:";
+constexpr int kMaxPinyinCandidatesPerKey = 5;
+constexpr int kMaxAbbrInputLength = 10;
+constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
+constexpr const char kPinyinAbbrDictResourcePath[] =
+    ":/mi/e2ee/ui/ime/pinyin_short.dat";
+
+struct PinyinIndex {
+  QHash<QString, QStringList> dict;
+  QVector<QString> keys;
+  QSet<QString> keySet;
+  int maxKeyLength{0};
+  QHash<QString, QStringList> abbrDict;
+  QVector<QString> abbrKeys;
+};
+
+bool LoadPinyinDictFromResource(const char* resourcePath,
+                                QHash<QString, QStringList>& dict,
+                                int* maxKeyLength) {
+  QFile file(QString::fromLatin1(resourcePath));
+  if (!file.open(QIODevice::ReadOnly)) {
+    return false;
+  }
+  QTextStream stream(&file);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  stream.setEncoding(QStringConverter::Utf8);
+#else
+  stream.setCodec("UTF-8");
+#endif
+  int maxLen = 0;
+  while (!stream.atEnd()) {
+    const QString line = stream.readLine();
+    if (line.isEmpty() || line.startsWith(QChar('#'))) {
+      continue;
+    }
+    const int tab = line.indexOf(QChar('\t'));
+    if (tab <= 0) {
+      continue;
+    }
+    const QString key = line.left(tab).trimmed();
+    const QString phrase = line.mid(tab + 1).trimmed();
+    if (key.isEmpty() || phrase.isEmpty()) {
+      continue;
+    }
+    auto& list = dict[key];
+    if (list.size() >= kMaxPinyinCandidatesPerKey || list.contains(phrase)) {
+      continue;
+    }
+    list.push_back(phrase);
+    maxLen = qMax(maxLen, key.size());
+  }
+  if (maxKeyLength) {
+    *maxKeyLength = maxLen;
+  }
+  return !dict.isEmpty();
+}
+
+PinyinIndex BuildPinyinIndex() {
+  PinyinIndex index;
+  LoadPinyinDictFromResource(kPinyinDictResourcePath, index.dict,
+                             &index.maxKeyLength);
+  LoadPinyinDictFromResource(kPinyinAbbrDictResourcePath, index.abbrDict,
+                             nullptr);
+  index.keys.reserve(index.dict.size());
+  for (auto it = index.dict.constBegin(); it != index.dict.constEnd(); ++it) {
+    index.keys.push_back(it.key());
+    index.keySet.insert(it.key());
+    index.maxKeyLength = qMax(index.maxKeyLength, it.key().size());
+  }
+  std::sort(index.keys.begin(), index.keys.end());
+  index.abbrKeys.reserve(index.abbrDict.size());
+  for (auto it = index.abbrDict.constBegin(); it != index.abbrDict.constEnd();
+       ++it) {
+    index.abbrKeys.push_back(it.key());
+  }
+  std::sort(index.abbrKeys.begin(), index.abbrKeys.end());
+  return index;
+}
+
+const PinyinIndex& GetPinyinIndex() {
+  static PinyinIndex index = BuildPinyinIndex();
+  return index;
+}
+
+void AppendCandidate(QStringList& list, const QString& candidate, int limit) {
+  if (candidate.isEmpty() || list.contains(candidate)) {
+    return;
+  }
+  list.push_back(candidate);
+  if (limit > 0 && list.size() > limit) {
+    list.removeLast();
+  }
+}
+
+QString SegmentFallback(const QString& pinyin) {
+  const auto& index = GetPinyinIndex();
+  const int n = pinyin.size();
+  const int maxLen = index.maxKeyLength;
+  if (n <= 0 || maxLen <= 0) {
+    return {};
+  }
+  QVector<int> score(n + 1, -1);
+  QVector<int> prev(n + 1, -1);
+  QVector<QString> prevKey(n + 1);
+  score[0] = 0;
+  for (int i = 0; i < n; ++i) {
+    if (score[i] < 0) {
+      continue;
+    }
+    const int limit = qMin(maxLen, n - i);
+    for (int len = 1; len <= limit; ++len) {
+      const QString key = pinyin.mid(i, len);
+      if (!index.keySet.contains(key)) {
+        continue;
+      }
+      const int j = i + len;
+      const int nextScore = score[i] + len * 2 - 1;
+      if (nextScore > score[j]) {
+        score[j] = nextScore;
+        prev[j] = i;
+        prevKey[j] = key;
+      }
+    }
+  }
+  if (score[n] < 0) {
+    return {};
+  }
+  QStringList chunks;
+  int cur = n;
+  while (cur > 0 && prev[cur] >= 0) {
+    const QString key = prevKey[cur];
+    const auto it = index.dict.constFind(key);
+    if (it != index.dict.constEnd() && !it.value().isEmpty()) {
+      chunks.push_front(it.value().front());
+    }
+    cur = prev[cur];
+  }
+  return chunks.join(QString());
+}
+
+QStringList BuildPinyinCandidates(const QString& pinyin, int limit) {
+  const auto& index = GetPinyinIndex();
+  QStringList list;
+  if (pinyin.isEmpty()) {
+    return list;
+  }
+  const auto it = index.dict.constFind(pinyin);
+  if (it != index.dict.constEnd()) {
+    list = it.value();
+  }
+  const bool allowAbbr = pinyin.size() <= kMaxAbbrInputLength;
+  if (allowAbbr) {
+    const auto abbrIt = index.abbrDict.constFind(pinyin);
+    if (abbrIt != index.abbrDict.constEnd()) {
+      for (const auto& cand : abbrIt.value()) {
+        AppendCandidate(list, cand, limit);
+        if (limit > 0 && list.size() >= limit) {
+          break;
+        }
+      }
+    }
+  }
+  const QString fallback = SegmentFallback(pinyin);
+  if (!fallback.isEmpty()) {
+    AppendCandidate(list, fallback, limit);
+  }
+  if (list.size() < limit) {
+    auto itKey = std::lower_bound(index.keys.begin(), index.keys.end(),
+                                  pinyin);
+    for (; itKey != index.keys.end(); ++itKey) {
+      if (!itKey->startsWith(pinyin)) {
+        break;
+      }
+      if (*itKey == pinyin) {
+        continue;
+      }
+      const auto hit = index.dict.constFind(*itKey);
+      if (hit == index.dict.constEnd() || hit.value().isEmpty()) {
+        continue;
+      }
+      AppendCandidate(list, hit.value().front(), limit);
+      if (list.size() >= limit) {
+        break;
+      }
+    }
+  }
+  if (allowAbbr && list.size() < limit) {
+    auto itKey =
+        std::lower_bound(index.abbrKeys.begin(), index.abbrKeys.end(), pinyin);
+    for (; itKey != index.abbrKeys.end(); ++itKey) {
+      if (!itKey->startsWith(pinyin)) {
+        break;
+      }
+      if (*itKey == pinyin) {
+        continue;
+      }
+      const auto hit = index.abbrDict.constFind(*itKey);
+      if (hit == index.abbrDict.constEnd() || hit.value().isEmpty()) {
+        continue;
+      }
+      AppendCandidate(list, hit.value().front(), limit);
+      if (list.size() >= limit) {
+        break;
+      }
+    }
+  }
+  if (list.isEmpty()) {
+    list.push_back(pinyin);
+  }
+  if (limit > 0 && list.size() > limit) {
+    list = list.mid(0, limit);
+  }
+  return list;
+}
 
 QString FindConfigFile(const QString& name) {
   if (name.isEmpty()) {
@@ -741,7 +959,10 @@ qint64 QuickClient::systemClipboardTimestamp() const {
 }
 
 bool QuickClient::imeAvailable() {
-  return EnsureImeSession() != nullptr;
+  if (EnsureImeSession() != nullptr) {
+    return true;
+  }
+  return !GetPinyinIndex().dict.isEmpty();
 }
 
 QVariantList QuickClient::imeCandidates(const QString& input,
@@ -751,13 +972,16 @@ QVariantList QuickClient::imeCandidates(const QString& input,
   if (trimmed.isEmpty()) {
     return items;
   }
+  const int limit =
+      maxCandidates > 0 ? maxCandidates : kMaxPinyinCandidatesPerKey;
+  QStringList list;
   void* session = EnsureImeSession();
-  if (!session) {
-    return items;
+  if (session) {
+    list = ImePluginLoader::instance().queryCandidates(session, trimmed, limit);
   }
-  const int limit = maxCandidates > 0 ? maxCandidates : 1;
-  const QStringList list =
-      ImePluginLoader::instance().queryCandidates(session, trimmed, limit);
+  if (list.isEmpty()) {
+    list = BuildPinyinCandidates(trimmed, limit);
+  }
   for (const auto& candidate : list) {
     items.push_back(candidate);
   }

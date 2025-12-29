@@ -166,6 +166,7 @@ ApplicationWindow {
                                 id: mouseArea
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
                             }
                         }
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
