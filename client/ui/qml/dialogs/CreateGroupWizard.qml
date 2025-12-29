@@ -252,13 +252,15 @@ ApplicationWindow {
     }
 
     function toggleSelection(contactId, checked) {
-        var idx = selectedIds.indexOf(contactId)
+        var ids = selectedIds.slice(0)
+        var idx = ids.indexOf(contactId)
         if (checked) {
             if (idx === -1) {
-                selectedIds.push(contactId)
+                ids.push(contactId)
             }
         } else if (idx !== -1) {
-            selectedIds.splice(idx, 1)
+            ids.splice(idx, 1)
         }
+        selectedIds = ids
     }
 }
