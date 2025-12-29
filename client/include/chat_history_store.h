@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace mi::client {
@@ -72,6 +74,12 @@ class ChatHistoryStore {
                             std::string& error) const;
 
  private:
+  struct HistoryFileEntry {
+    std::filesystem::path path;
+    std::uint32_t seq{0};
+    std::unordered_set<std::string> conv_keys;
+  };
+
   bool EnsureKeyLoaded(std::string& error);
 
   bool DeriveConversationKey(bool is_group,
@@ -79,27 +87,29 @@ class ChatHistoryStore {
                              std::array<std::uint8_t, 32>& out_key,
                              std::string& error) const;
 
-  bool EnsureConversationFile(bool is_group,
-                              const std::string& conv_id,
-                              std::filesystem::path& out_path,
-                              std::array<std::uint8_t, 32>& out_conv_key,
-                              std::string& error) const;
+  bool LoadHistoryFiles(std::string& error);
 
-  static bool WriteRecord(std::ofstream& out,
-                          const std::array<std::uint8_t, 32>& conv_key,
-                          const std::vector<std::uint8_t>& plain,
-                          std::string& error);
-
-  static bool ReadRecord(std::ifstream& in,
-                         const std::array<std::uint8_t, 32>& conv_key,
-                         const std::array<std::uint8_t, 32>& master_key,
-                         std::vector<std::uint8_t>& out_plain,
+  bool EnsureHistoryFile(bool is_group,
+                         const std::string& conv_id,
+                         std::filesystem::path& out_path,
+                         std::array<std::uint8_t, 32>& out_conv_key,
                          std::string& error);
+
+  bool LoadLegacyConversation(bool is_group,
+                              const std::string& conv_id,
+                              std::size_t limit,
+                              std::vector<ChatHistoryMessage>& out_messages,
+                              std::string& error) const;
 
   std::filesystem::path e2ee_state_dir_;
   std::filesystem::path user_dir_;
-  std::filesystem::path conv_dir_;
   std::filesystem::path key_path_;
+  std::filesystem::path legacy_conv_dir_;
+  std::filesystem::path history_dir_;
+  std::string user_tag_;
+  std::vector<HistoryFileEntry> history_files_;
+  std::unordered_map<std::string, std::size_t> conv_to_file_;
+  std::uint32_t next_seq_{1};
   bool key_loaded_{false};
   std::array<std::uint8_t, 32> master_key_{};
 };
