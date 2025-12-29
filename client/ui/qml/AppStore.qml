@@ -16,6 +16,11 @@ QtObject {
     property string searchQuery: ""
     property bool initialized: false
     property string statusMessage: ""
+    property string sendErrorMessage: ""
+    property bool clipboardIsolationEnabled: true
+    property bool internalImeEnabled: true
+    property string internalClipboardText: ""
+    property double internalClipboardMs: 0
     property var messagesByChatId: ({})
     property var membersByChatId: ({})
     property var typingByChatId: ({})
@@ -39,6 +44,9 @@ QtObject {
         initialized = true
         if (clientBridge) {
             clientBridge.init("")
+            if (clientBridge.setClipboardIsolation) {
+                clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
+            }
         }
         rebuildFiltered()
     }
@@ -136,6 +144,8 @@ QtObject {
                 timeText: "",
                 unread: 0,
                 pinned: false,
+                muted: false,
+                stealth: false,
                 avatarKey: avatarKey || title,
                 lastSenderName: "",
                 lastSenderAvatarKey: "",
@@ -151,6 +161,12 @@ QtObject {
         }
         if (avatarKey) {
             dialogsModel.setProperty(idx, "avatarKey", avatarKey)
+        }
+        if (dialogsModel.get(idx).muted === undefined) {
+            dialogsModel.setProperty(idx, "muted", false)
+        }
+        if (dialogsModel.get(idx).stealth === undefined) {
+            dialogsModel.setProperty(idx, "stealth", false)
         }
         if (memberCount && memberCount > 0) {
             dialogsModel.setProperty(idx, "memberCount", memberCount)
@@ -431,24 +447,42 @@ QtObject {
     }
 
     function sendMessage(text) {
+        sendErrorMessage = ""
         if (!currentChatId || !clientBridge) {
-            return
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
         }
         var trimmed = (text || "").trim()
         if (trimmed.length === 0) {
-            return
+            return false
         }
-        clientBridge.sendText(currentChatId, trimmed, currentChatType === "group")
+        var ok = clientBridge.sendText(currentChatId, trimmed, currentChatType === "group")
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
     }
 
     function sendFile(path) {
+        sendErrorMessage = ""
         if (!currentChatId || !clientBridge) {
-            return
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
         }
         if (!path || path.length === 0) {
-            return
+            return false
         }
-        clientBridge.sendFile(currentChatId, path, currentChatType === "group")
+        var ok = clientBridge.sendFile(currentChatId, path, currentChatType === "group")
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
+    }
+
+    function sendLocation() {
+        return sendMessage("[" + Ui.I18n.t("attach.location") + "]")
     }
 
     function appendMessage(chatId, message, markUnread) {
@@ -504,6 +538,75 @@ QtObject {
             dialogsModel.move(idx, 0, 1)
         }
         rebuildFiltered()
+    }
+
+    function isChatMuted(chatId) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            return false
+        }
+        return dialogsModel.get(idx).muted === true
+    }
+
+    function isChatStealth(chatId) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            return false
+        }
+        return dialogsModel.get(idx).stealth === true
+    }
+
+    function setChatMuted(chatId, muted) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            return
+        }
+        dialogsModel.setProperty(idx, "muted", muted === true)
+        rebuildFiltered()
+    }
+
+    function setChatStealth(chatId, stealth) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            return
+        }
+        dialogsModel.setProperty(idx, "stealth", stealth === true)
+        rebuildFiltered()
+    }
+
+    function toggleChatMuted(chatId) {
+        setChatMuted(chatId, !isChatMuted(chatId))
+    }
+
+    function toggleChatStealth(chatId) {
+        setChatStealth(chatId, !isChatStealth(chatId))
+    }
+
+    function setClipboardIsolationEnabled(enabled) {
+        clipboardIsolationEnabled = enabled === true
+        if (!clipboardIsolationEnabled) {
+            internalClipboardText = ""
+            internalClipboardMs = 0
+        }
+        if (clientBridge && clientBridge.setClipboardIsolation) {
+            clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
+        }
+    }
+
+    function setInternalImeEnabled(enabled) {
+        internalImeEnabled = enabled === true
+        if (!internalImeEnabled && clientBridge && clientBridge.imeReset) {
+            clientBridge.imeReset()
+        }
+    }
+
+    function setInternalClipboard(text) {
+        internalClipboardText = text || ""
+        internalClipboardMs = Date.now()
+    }
+
+    function clearSendError() {
+        sendErrorMessage = ""
     }
 
     function removeChat(chatId) {

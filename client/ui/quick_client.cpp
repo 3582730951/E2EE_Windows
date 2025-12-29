@@ -8,9 +8,11 @@
 #include <QCamera>
 #include <QCameraDevice>
 #include <QCoreApplication>
+#include <QClipboard>
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QRandomGenerator>
@@ -25,6 +27,7 @@
 #include <utility>
 
 #include "common/EmojiPackManager.h"
+#include "common/ImePluginLoader.h"
 #include "common/UiRuntimePaths.h"
 
 namespace mi::client::ui {
@@ -150,9 +153,23 @@ QuickClient::QuickClient(QObject* parent) : QObject(parent) {
   connect(&media_timer_, &QTimer::timeout, this, &QuickClient::PumpMedia);
   local_video_sink_ = new QVideoSink(this);
   remote_video_sink_ = new QVideoSink(this);
+  if (auto* clipboard = QGuiApplication::clipboard()) {
+    last_system_clipboard_text_ = clipboard->text();
+    last_system_clipboard_ms_ = QDateTime::currentMSecsSinceEpoch();
+    connect(clipboard, &QClipboard::dataChanged, this, [this]() {
+      if (auto* cb = QGuiApplication::clipboard()) {
+        last_system_clipboard_text_ = cb->text();
+        last_system_clipboard_ms_ = QDateTime::currentMSecsSinceEpoch();
+      }
+    });
+  }
 }
 
 QuickClient::~QuickClient() {
+  if (ime_session_) {
+    ImePluginLoader::instance().destroySession(ime_session_);
+    ime_session_ = nullptr;
+  }
   StopMedia();
   StopPolling();
   core_.Logout();
@@ -713,6 +730,75 @@ QString QuickClient::serverInfo() const {
 
 QString QuickClient::version() const {
   return QStringLiteral("UI QML 1.0");
+}
+
+QString QuickClient::systemClipboardText() const {
+  return last_system_clipboard_text_;
+}
+
+qint64 QuickClient::systemClipboardTimestamp() const {
+  return last_system_clipboard_ms_;
+}
+
+bool QuickClient::imeAvailable() {
+  return EnsureImeSession() != nullptr;
+}
+
+QVariantList QuickClient::imeCandidates(const QString& input,
+                                        int maxCandidates) {
+  QVariantList items;
+  const QString trimmed = input.trimmed();
+  if (trimmed.isEmpty()) {
+    return items;
+  }
+  void* session = EnsureImeSession();
+  if (!session) {
+    return items;
+  }
+  const int limit = maxCandidates > 0 ? maxCandidates : 1;
+  const QStringList list =
+      ImePluginLoader::instance().queryCandidates(session, trimmed, limit);
+  for (const auto& candidate : list) {
+    items.push_back(candidate);
+  }
+  return items;
+}
+
+QString QuickClient::imePreedit() {
+  if (!ime_session_) {
+    return {};
+  }
+  return ImePluginLoader::instance().queryPreedit(ime_session_);
+}
+
+bool QuickClient::imeCommit(int index) {
+  if (!ime_session_) {
+    return false;
+  }
+  return ImePluginLoader::instance().commitCandidate(ime_session_, index);
+}
+
+void QuickClient::imeClear() {
+  if (!ime_session_) {
+    return;
+  }
+  ImePluginLoader::instance().clearComposition(ime_session_);
+}
+
+void QuickClient::imeReset() {
+  if (!ime_session_) {
+    return;
+  }
+  ImePluginLoader::instance().destroySession(ime_session_);
+  ime_session_ = nullptr;
+}
+
+bool QuickClient::clipboardIsolation() const {
+  return clipboard_isolation_enabled_;
+}
+
+void QuickClient::setClipboardIsolation(bool enabled) {
+  clipboard_isolation_enabled_ = enabled;
 }
 
 QString QuickClient::token() const {
@@ -1646,6 +1732,14 @@ QMediaCaptureSession* QuickClient::EnsureCaptureSession() {
     capture_session_ = std::make_unique<QMediaCaptureSession>(this);
   }
   return capture_session_.get();
+}
+
+void* QuickClient::EnsureImeSession() {
+  if (ime_session_) {
+    return ime_session_;
+  }
+  ime_session_ = ImePluginLoader::instance().createSession();
+  return ime_session_;
 }
 
 void QuickClient::HandleAudioReady() {

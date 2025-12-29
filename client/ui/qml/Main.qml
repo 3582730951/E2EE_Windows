@@ -32,6 +32,89 @@ ApplicationWindow {
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
 
+    function activeTextItem() {
+        var item = root.activeFocusItem
+        if (!item) {
+            return null
+        }
+        if (item.readOnly !== undefined && item.readOnly) {
+            return null
+        }
+        if (item.selectedText === undefined && item.insert === undefined) {
+            return null
+        }
+        return item
+    }
+
+    function selectionRange(item) {
+        if (!item) {
+            return null
+        }
+        if (item.selectionStart === undefined || item.selectionEnd === undefined) {
+            return null
+        }
+        var start = item.selectionStart
+        var end = item.selectionEnd
+        if (start === end) {
+            return null
+        }
+        if (start > end) {
+            var tmp = start
+            start = end
+            end = tmp
+        }
+        return { start: start, end: end }
+    }
+
+    function handleSecureCopy(cut) {
+        var item = activeTextItem()
+        if (!item || item.selectedText === undefined) {
+            return
+        }
+        var text = item.selectedText || ""
+        if (text.length === 0) {
+            return
+        }
+        Ui.AppStore.setInternalClipboard(text)
+        if (cut && item.remove !== undefined) {
+            var range = selectionRange(item)
+            if (range) {
+                item.remove(range.start, range.end)
+                if (item.cursorPosition !== undefined) {
+                    item.cursorPosition = range.start
+                }
+            }
+        }
+    }
+
+    function handleSecurePaste() {
+        var item = activeTextItem()
+        if (!item) {
+            return
+        }
+        var internalText = Ui.AppStore.internalClipboardText || ""
+        var internalMs = Ui.AppStore.internalClipboardMs || 0
+        var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
+        var systemMs = clientBridge ? clientBridge.systemClipboardTimestamp() : 0
+        var text = internalText
+        if (systemText.length > 0 && systemMs > internalMs) {
+            text = systemText
+        }
+        if (text.length === 0) {
+            return
+        }
+        if (item.insert !== undefined && item.cursorPosition !== undefined) {
+            item.insert(item.cursorPosition, text)
+        }
+    }
+
+    function handleSecureSelectAll() {
+        var item = activeTextItem()
+        if (item && item.selectAll !== undefined) {
+            item.selectAll()
+        }
+    }
+
     function toggleMaximize() {
         if (root.visibility === Window.Maximized) {
             root.showNormal()
@@ -248,6 +331,30 @@ ApplicationWindow {
     Shortcut {
         sequence: "Esc"
         onActivated: appShell.handleEscape()
+    }
+    Shortcut {
+        sequence: StandardKey.Copy
+        context: Qt.ApplicationShortcut
+        enabled: Ui.AppStore.clipboardIsolationEnabled
+        onActivated: handleSecureCopy(false)
+    }
+    Shortcut {
+        sequence: StandardKey.Cut
+        context: Qt.ApplicationShortcut
+        enabled: Ui.AppStore.clipboardIsolationEnabled
+        onActivated: handleSecureCopy(true)
+    }
+    Shortcut {
+        sequence: StandardKey.Paste
+        context: Qt.ApplicationShortcut
+        enabled: Ui.AppStore.clipboardIsolationEnabled
+        onActivated: handleSecurePaste()
+    }
+    Shortcut {
+        sequence: StandardKey.SelectAll
+        context: Qt.ApplicationShortcut
+        enabled: Ui.AppStore.clipboardIsolationEnabled
+        onActivated: handleSecureSelectAll()
     }
 
     Dialogs.TrustPromptDialog {

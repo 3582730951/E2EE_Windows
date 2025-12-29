@@ -154,10 +154,50 @@ ApplicationWindow {
             }
 
             Item {
-                Text {
-                    anchors.centerIn: parent
-                    text: Ui.I18n.t("settings.section.privacy")
-                    color: Ui.Style.textMuted
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: Ui.Style.paddingM
+
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.clipboardIsolation")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.clipboardIsolationHint")
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Switch {
+                            checked: Ui.AppStore.clipboardIsolationEnabled
+                            onToggled: Ui.AppStore.setClipboardIsolationEnabled(checked)
+                        }
+                    }
+
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.internalIme")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.internalImeHint")
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Switch {
+                            checked: Ui.AppStore.internalImeEnabled
+                            onToggled: Ui.AppStore.setInternalImeEnabled(checked)
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
                 }
             }
 

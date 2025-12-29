@@ -100,7 +100,7 @@ ApplicationWindow {
             color: Ui.Style.textMuted
             font.pixelSize: 11
         }
-        TextArea {
+        Components.SecureTextArea {
             id: fingerprintField
             Layout.fillWidth: true
             Layout.preferredHeight: 70
@@ -120,7 +120,7 @@ ApplicationWindow {
             color: Ui.Style.textMuted
             font.pixelSize: 11
         }
-        TextField {
+        Components.SecureTextField {
             id: pinField
             Layout.fillWidth: true
             placeholderText: "请输入验证码"

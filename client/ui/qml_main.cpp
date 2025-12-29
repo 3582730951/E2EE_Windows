@@ -4,6 +4,7 @@
 #include <QEvent>
 #include <QFile>
 #include <QDir>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -190,6 +191,62 @@ private:
     QPointer<QQuickWindow> window_;
 };
 
+class SecureClipboardFilter : public QObject {
+public:
+    SecureClipboardFilter(QObject* root,
+                          mi::client::ui::QuickClient* client,
+                          QObject* parent = nullptr)
+        : QObject(parent), root_(root), client_(client) {}
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (!root_ || !client_ || !event) {
+            return QObject::eventFilter(obj, event);
+        }
+        if (!client_->clipboardIsolation()) {
+            return QObject::eventFilter(obj, event);
+        }
+        if (event->type() == QEvent::ShortcutOverride) {
+            auto* keyEvent = static_cast<QKeyEvent*>(event);
+            if (keyEvent->matches(QKeySequence::Copy) ||
+                keyEvent->matches(QKeySequence::Cut) ||
+                keyEvent->matches(QKeySequence::Paste) ||
+                keyEvent->matches(QKeySequence::SelectAll)) {
+                event->accept();
+                return true;
+            }
+            return QObject::eventFilter(obj, event);
+        }
+        if (event->type() != QEvent::KeyPress) {
+            return QObject::eventFilter(obj, event);
+        }
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->matches(QKeySequence::Copy)) {
+            QMetaObject::invokeMethod(root_, "handleSecureCopy",
+                                      Q_ARG(QVariant, false));
+            return true;
+        }
+        if (keyEvent->matches(QKeySequence::Cut)) {
+            QMetaObject::invokeMethod(root_, "handleSecureCopy",
+                                      Q_ARG(QVariant, true));
+            return true;
+        }
+        if (keyEvent->matches(QKeySequence::Paste)) {
+            QMetaObject::invokeMethod(root_, "handleSecurePaste");
+            return true;
+        }
+        if (keyEvent->matches(QKeySequence::SelectAll)) {
+            QMetaObject::invokeMethod(root_, "handleSecureSelectAll");
+            return true;
+        }
+        return QObject::eventFilter(obj, event);
+    }
+
+private:
+    QPointer<QObject> root_;
+    QPointer<mi::client::ui::QuickClient> client_;
+};
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -238,5 +295,7 @@ int main(int argc, char* argv[]) {
         window->installEventFilter(new AuthWindowDragFilter(window));
         window->installEventFilter(new WindowRoundFilter(window));
     }
+    app.installEventFilter(new SecureClipboardFilter(engine.rootObjects().first(),
+                                                     &client, &app));
     return app.exec();
 }

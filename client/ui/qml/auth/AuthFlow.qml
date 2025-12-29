@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Item {
     id: root
@@ -221,7 +222,7 @@ Item {
                         anchors.fill: parent
                         spacing: Ui.Style.paddingM
 
-                        TextField {
+                        Components.SecureTextField {
                             Layout.fillWidth: true
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
                             font.pixelSize: 14
@@ -235,7 +236,7 @@ Item {
                             onTextChanged: accountInput = text
                         }
 
-                        TextField {
+                        Components.SecureTextField {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
@@ -319,7 +320,7 @@ Item {
                         anchors.fill: parent
                         spacing: Ui.Style.paddingM
 
-                        TextField {
+                        Components.SecureTextField {
                             Layout.fillWidth: true
                             placeholderText: Ui.I18n.t("auth.register.placeholder.account")
                             font.pixelSize: 14
@@ -333,7 +334,7 @@ Item {
                             onTextChanged: registerAccount = text
                         }
 
-                        TextField {
+                        Components.SecureTextField {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.register.placeholder.password")
@@ -348,7 +349,7 @@ Item {
                             onTextChanged: registerPassword = text
                         }
 
-                        TextField {
+                        Components.SecureTextField {
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.register.placeholder.confirm")

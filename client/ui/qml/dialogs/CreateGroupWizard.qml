@@ -185,7 +185,7 @@ ApplicationWindow {
                         color: Ui.Style.textPrimary
                     }
 
-                    TextField {
+                    Components.SecureTextField {
                         id: groupNameField
                         Layout.fillWidth: true
                         placeholderText: Ui.I18n.t("dialog.createGroup.groupName")

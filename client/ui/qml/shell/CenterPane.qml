@@ -23,6 +23,18 @@ Item {
     property int emojiPopupWidth: 280
     property int emojiPopupHeight: 220
     property int emojiCellSize: 28
+    property bool imeChineseMode: true
+    property bool imeComposing: false
+    property bool imeShiftPressed: false
+    property bool imeShiftUsed: false
+    property int imeStartPos: 0
+    property int imeLength: 0
+    property string imeBuffer: ""
+    property var imeCandidates: []
+    property int imeCandidateIndex: 0
+    property string imePreedit: ""
+    property bool imePopupVisible: Ui.AppStore.internalImeEnabled && imeComposing &&
+                                   imeCandidates && imeCandidates.length > 0
 
     function showSearch() {
         if (!hasChat) {
@@ -104,9 +116,279 @@ Item {
         messageInput.insert(messageInput.cursorPosition, value)
         messageInput.forceActiveFocus()
     }
+    function selectedRange() {
+        if (!messageInput) {
+            return null
+        }
+        var start = messageInput.selectionStart
+        var end = messageInput.selectionEnd
+        if (start === undefined || end === undefined) {
+            return null
+        }
+        if (start === end) {
+            return null
+        }
+        if (start > end) {
+            var tmp = start
+            start = end
+            end = tmp
+        }
+        return { start: start, end: end }
+    }
+    function replaceSelectionWith(text) {
+        if (!text || !messageInput) {
+            return
+        }
+        var range = selectedRange()
+        if (range) {
+            messageInput.remove(range.start, range.end)
+            messageInput.cursorPosition = range.start
+        }
+        messageInput.insert(messageInput.cursorPosition, text)
+    }
+    function contextCopy(cut) {
+        var selected = messageInput.selectedText || ""
+        if (selected.length === 0) {
+            return
+        }
+        if (Ui.AppStore.clipboardIsolationEnabled) {
+            Ui.AppStore.setInternalClipboard(selected)
+            if (cut) {
+                var range = selectedRange()
+                if (range) {
+                    messageInput.remove(range.start, range.end)
+                    messageInput.cursorPosition = range.start
+                }
+            }
+            return
+        }
+        if (cut) {
+            messageInput.cut()
+        } else {
+            messageInput.copy()
+        }
+    }
+    function contextPaste() {
+        if (!messageInput) {
+            return
+        }
+        if (!Ui.AppStore.clipboardIsolationEnabled) {
+            messageInput.paste()
+            return
+        }
+        var internalText = Ui.AppStore.internalClipboardText || ""
+        var internalMs = Ui.AppStore.internalClipboardMs || 0
+        var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
+        var systemMs = clientBridge ? clientBridge.systemClipboardTimestamp() : 0
+        var text = internalText
+        if (systemText.length > 0 && systemMs > internalMs) {
+            text = systemText
+        }
+        if (text.length === 0) {
+            return
+        }
+        replaceSelectionWith(text)
+    }
+    function contextSelectAll() {
+        if (messageInput) {
+            messageInput.selectAll()
+        }
+    }
+    function contextCanPaste() {
+        if (!Ui.AppStore.clipboardIsolationEnabled) {
+            return true
+        }
+        var internalText = Ui.AppStore.internalClipboardText || ""
+        var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
+        return internalText.length > 0 || systemText.length > 0
+    }
+    function resetImeState() {
+        imeComposing = false
+        imeShiftPressed = false
+        imeShiftUsed = false
+        imeStartPos = 0
+        imeLength = 0
+        imeBuffer = ""
+        imeCandidates = []
+        imeCandidateIndex = 0
+        imePreedit = ""
+    }
+    function cancelImeComposition(keepText) {
+        if (!imeComposing) {
+            return
+        }
+        if (!keepText && imeLength > 0) {
+            messageInput.remove(imeStartPos, imeStartPos + imeLength)
+            messageInput.cursorPosition = imeStartPos
+        }
+        if (clientBridge && clientBridge.imeClear) {
+            clientBridge.imeClear()
+        }
+        resetImeState()
+    }
+    function updateImeCandidates() {
+        var list = []
+        if (clientBridge && clientBridge.imeCandidates) {
+            list = clientBridge.imeCandidates(imeBuffer, 5)
+        }
+        if (!list || list.length === 0) {
+            list = [imeBuffer]
+        }
+        imeCandidates = list
+        if (imeCandidateIndex >= imeCandidates.length) {
+            imeCandidateIndex = 0
+        }
+        var preeditText = ""
+        if (clientBridge && clientBridge.imePreedit) {
+            preeditText = clientBridge.imePreedit()
+        }
+        imePreedit = preeditText.length > 0 ? preeditText : imeBuffer
+    }
+    function updateImeComposition() {
+        if (!imeComposing) {
+            return
+        }
+        if (imeLength > 0) {
+            messageInput.remove(imeStartPos, imeStartPos + imeLength)
+        }
+        messageInput.insert(imeStartPos, imeBuffer)
+        imeLength = imeBuffer.length
+        messageInput.cursorPosition = imeStartPos + imeLength
+        updateImeCandidates()
+    }
+    function startImeComposition(ch) {
+        if (!messageInput) {
+            return
+        }
+        if (!imeComposing) {
+            var selStart = Math.min(messageInput.selectionStart, messageInput.selectionEnd)
+            var selEnd = Math.max(messageInput.selectionStart, messageInput.selectionEnd)
+            if (!isNaN(selStart) && !isNaN(selEnd) && selEnd > selStart) {
+                messageInput.remove(selStart, selEnd)
+                messageInput.cursorPosition = selStart
+            }
+            imeComposing = true
+            imeStartPos = messageInput.cursorPosition
+            imeLength = 0
+            imeBuffer = ""
+            imeCandidateIndex = 0
+            imeCandidates = []
+            imePreedit = ""
+        }
+        imeBuffer += ch
+        updateImeComposition()
+    }
+    function commitImeCandidate(index) {
+        if (!imeComposing) {
+            return
+        }
+        if (!imeCandidates || imeCandidates.length === 0) {
+            cancelImeComposition(true)
+            return
+        }
+        var safeIndex = Math.max(0, Math.min(index, imeCandidates.length - 1))
+        var candidate = imeCandidates[safeIndex]
+        if (imeLength > 0) {
+            messageInput.remove(imeStartPos, imeStartPos + imeLength)
+        }
+        messageInput.insert(imeStartPos, candidate)
+        messageInput.cursorPosition = imeStartPos + candidate.length
+        if (clientBridge && clientBridge.imeCommit) {
+            clientBridge.imeCommit(safeIndex)
+        }
+        resetImeState()
+    }
+    function handleImeKey(event) {
+        if (!Ui.AppStore.internalImeEnabled || !imeChineseMode) {
+            return false
+        }
+        if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) {
+            return false
+        }
+        var key = event.key
+        var text = event.text || ""
+        if (!imeComposing) {
+            if (text.length === 1 && /[a-zA-Z]/.test(text)) {
+                startImeComposition(text.toLowerCase())
+                event.accepted = true
+                return true
+            }
+            return false
+        }
+        if (key === Qt.Key_Backspace) {
+            if (imeBuffer.length > 0) {
+                imeBuffer = imeBuffer.slice(0, -1)
+                if (imeBuffer.length === 0) {
+                    cancelImeComposition(false)
+                } else {
+                    updateImeComposition()
+                }
+            } else {
+                cancelImeComposition(false)
+            }
+            event.accepted = true
+            return true
+        }
+        if (key === Qt.Key_Space || key === Qt.Key_Return || key === Qt.Key_Enter) {
+            commitImeCandidate(imeCandidateIndex)
+            event.accepted = true
+            return true
+        }
+        if (key >= Qt.Key_1 && key <= Qt.Key_5) {
+            commitImeCandidate(key - Qt.Key_1)
+            event.accepted = true
+            return true
+        }
+        if (key === Qt.Key_Left) {
+            imeCandidateIndex = Math.max(0, imeCandidateIndex - 1)
+            updateImeCandidates()
+            event.accepted = true
+            return true
+        }
+        if (key === Qt.Key_Right) {
+            imeCandidateIndex = Math.min(imeCandidateIndex + 1, imeCandidates.length - 1)
+            updateImeCandidates()
+            event.accepted = true
+            return true
+        }
+        if (key === Qt.Key_Up || key === Qt.Key_Down) {
+            event.accepted = true
+            return true
+        }
+        if (key === Qt.Key_Escape) {
+            cancelImeComposition(false)
+            event.accepted = true
+            return true
+        }
+        if (text.length === 1 && /[a-zA-Z]/.test(text)) {
+            imeBuffer += text.toLowerCase()
+            updateImeComposition()
+            event.accepted = true
+            return true
+        }
+        if (text.length === 1 && !/[a-zA-Z\\s]/.test(text)) {
+            commitImeCandidate(imeCandidateIndex)
+            messageInput.insert(messageInput.cursorPosition, text)
+            event.accepted = true
+            return true
+        }
+        return false
+    }
     onHasChatChanged: {
         if (!hasChat) {
             clearChatSearch()
+        }
+    }
+
+    Connections {
+        target: Ui.AppStore
+        function onInternalImeEnabledChanged() {
+            if (!Ui.AppStore.internalImeEnabled) {
+                cancelImeComposition(true)
+                if (clientBridge && clientBridge.imeReset) {
+                    clientBridge.imeReset()
+                }
+            }
         }
     }
 
@@ -193,12 +475,35 @@ Item {
                         ToolTip.text: Ui.I18n.t("chat.video")
                     }
                     Components.IconButton {
+                        id: chatMoreButton
                         icon.source: "qrc:/mi/e2ee/ui/icons/more-vert.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.more")
+                        onClicked: chatMoreMenu.popup(chatMoreButton, 0, chatMoreButton.height + 4)
                     }
+                }
+            }
+
+            Menu {
+                id: chatMoreMenu
+                property int compactWidth: 180
+                implicitWidth: compactWidth
+                width: compactWidth
+                MenuItem {
+                    text: Ui.I18n.t("chat.stealth")
+                    checkable: true
+                    checked: Ui.AppStore.isChatStealth(Ui.AppStore.currentChatId)
+                    enabled: Ui.AppStore.currentChatId.length > 0
+                    onTriggered: Ui.AppStore.toggleChatStealth(Ui.AppStore.currentChatId)
+                }
+                MenuItem {
+                    text: Ui.I18n.t("chat.mute")
+                    checkable: true
+                    checked: Ui.AppStore.isChatMuted(Ui.AppStore.currentChatId)
+                    enabled: Ui.AppStore.currentChatId.length > 0
+                    onTriggered: Ui.AppStore.toggleChatMuted(Ui.AppStore.currentChatId)
                 }
             }
 
@@ -312,6 +617,15 @@ Item {
                 anchors.margins: Ui.Style.paddingM
                 spacing: Ui.Style.paddingS
 
+                Text {
+                    visible: Ui.AppStore.sendErrorMessage.length > 0
+                    text: Ui.AppStore.sendErrorMessage
+                    color: Ui.Style.danger
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Ui.Style.paddingS
@@ -364,6 +678,20 @@ Item {
                                 background: Rectangle { color: "transparent" }
                                 enabled: Ui.AppStore.currentChatId.length > 0
                                 Keys.onPressed: function(event) {
+                                    if (Ui.AppStore.internalImeEnabled) {
+                                        if (event.key === Qt.Key_Shift && !event.isAutoRepeat) {
+                                            imeShiftPressed = true
+                                            imeShiftUsed = false
+                                            event.accepted = true
+                                            return
+                                        }
+                                        if (imeShiftPressed && event.key !== Qt.Key_Shift) {
+                                            imeShiftUsed = true
+                                        }
+                                        if (handleImeKey(event)) {
+                                            return
+                                        }
+                                    }
                                     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                         if (event.modifiers & Qt.ShiftModifier) {
                                             return
@@ -372,12 +700,51 @@ Item {
                                         sendMessage()
                                     }
                                 }
+                                Keys.onReleased: function(event) {
+                                    if (!Ui.AppStore.internalImeEnabled) {
+                                        return
+                                    }
+                                    if (event.key === Qt.Key_Shift && !event.isAutoRepeat) {
+                                        var toggle = imeShiftPressed && !imeShiftUsed
+                                        imeShiftPressed = false
+                                        imeShiftUsed = false
+                                        if (toggle) {
+                                            imeChineseMode = !imeChineseMode
+                                            if (!imeChineseMode) {
+                                                cancelImeComposition(true)
+                                            }
+                                            event.accepted = true
+                                        }
+                                    }
+                                }
                                 onTextChanged: inputBar.updateInputHeight()
                                 onContentHeightChanged: inputBar.updateInputHeight()
                                 Component.onCompleted: inputBar.updateInputHeight()
                                 onCursorPositionChanged: inputBar.ensureCursorVisible()
                                 onCursorRectangleChanged: inputBar.ensureCursorVisible()
+                                onActiveFocusChanged: {
+                                    if (!activeFocus) {
+                                        cancelImeComposition(true)
+                                    }
+                                }
+                                inputMethodHints: Ui.AppStore.internalImeEnabled
+                                                    ? (Qt.ImhNoPredictiveText | Qt.ImhPreferLatin)
+                                                    : Qt.ImhNone
                             }
+                        }
+                    }
+
+                    MouseArea {
+                        id: inputContextArea
+                        anchors.fill: inputField
+                        acceptedButtons: Qt.RightButton
+                        hoverEnabled: true
+                        onPressed: {
+                            if (!hasChat) {
+                                return
+                            }
+                            messageInput.forceActiveFocus()
+                            inputContextMenu.popup()
                         }
                     }
 
@@ -412,11 +779,113 @@ Item {
             }
 
             Rectangle {
+                id: imePopup
+                visible: imePopupVisible
+                radius: 8
+                color: Ui.Style.panelBgRaised
+                border.color: Ui.Style.borderSubtle
+                anchors.left: inputField.left
+                anchors.bottom: inputField.top
+                anchors.bottomMargin: 6
+                width: Math.min(inputField.width, 420)
+                implicitHeight: imePopupColumn.implicitHeight + Ui.Style.paddingS * 2
+                z: 4
+
+                Column {
+                    id: imePopupColumn
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingS
+                    spacing: 6
+                    Text {
+                        text: imePreedit
+                        visible: imePreedit.length > 0
+                        color: Ui.Style.textPrimary
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 6
+                        Repeater {
+                            model: imeCandidates
+                            delegate: Rectangle {
+                                radius: 6
+                                color: index === imeCandidateIndex ? Ui.Style.hoverBg : "transparent"
+                                border.color: index === imeCandidateIndex ? Ui.Style.accent : "transparent"
+                                border.width: 1
+                                height: 26
+                                width: candidateRow.implicitWidth + 12
+                                Row {
+                                    id: candidateRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    Text {
+                                        text: (index + 1) + "."
+                                        color: Ui.Style.textMuted
+                                        font.pixelSize: 11
+                                    }
+                                    Text {
+                                        text: modelData
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 12
+                                    }
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: commitImeCandidate(index)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
                 height: 1
                 color: Ui.Style.borderSubtle
+            }
+
+            Menu {
+                id: inputContextMenu
+                MenuItem {
+                    text: Ui.I18n.t("input.context.cut")
+                    enabled: messageInput.selectedText.length > 0
+                    onTriggered: contextCopy(true)
+                }
+                MenuItem {
+                    text: Ui.I18n.t("input.context.copy")
+                    enabled: messageInput.selectedText.length > 0
+                    onTriggered: contextCopy(false)
+                }
+                MenuItem {
+                    text: Ui.I18n.t("input.context.paste")
+                    enabled: contextCanPaste()
+                    onTriggered: contextPaste()
+                }
+                MenuItem {
+                    text: Ui.I18n.t("input.context.selectAll")
+                    enabled: messageInput.length > 0
+                    onTriggered: contextSelectAll()
+                }
+            }
+
+            Connections {
+                target: Ui.AppStore
+                function onSendErrorMessageChanged() {
+                    if (Ui.AppStore.sendErrorMessage.length > 0) {
+                        sendErrorTimer.restart()
+                    }
+                }
+            }
+
+            Timer {
+                id: sendErrorTimer
+                interval: 3000
+                repeat: false
+                onTriggered: Ui.AppStore.clearSendError()
             }
 
             function updateInputHeight() {
@@ -446,11 +915,16 @@ Item {
             }
 
             function sendMessage() {
+                if (Ui.AppStore.internalImeEnabled && imeComposing) {
+                    commitImeCandidate(imeCandidateIndex)
+                }
                 if (messageInput.text.trim().length === 0) {
                     return
                 }
-                Ui.AppStore.sendMessage(messageInput.text)
-                messageInput.text = ""
+                var ok = Ui.AppStore.sendMessage(messageInput.text)
+                if (ok) {
+                    messageInput.text = ""
+                }
             }
         }
     }
@@ -589,8 +1063,10 @@ Item {
                         hoverEnabled: true
                         onClicked: {
                             attachPopup.close()
-                            if (modelData.kind === "document") {
+                            if (modelData.kind === "document" || modelData.kind === "photo") {
                                 filePicker.open()
+                            } else if (modelData.kind === "location") {
+                                Ui.AppStore.sendLocation()
                             }
                         }
                     }

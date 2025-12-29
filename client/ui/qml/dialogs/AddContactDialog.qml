@@ -82,7 +82,7 @@ ApplicationWindow {
         anchors.margins: Ui.Style.paddingM
         spacing: Ui.Style.paddingM
 
-        TextField {
+        Components.SecureTextField {
             id: nameField
             Layout.fillWidth: true
             placeholderText: Ui.I18n.t("dialog.addContact.name")
@@ -95,7 +95,7 @@ ApplicationWindow {
                 border.color: nameField.activeFocus ? Ui.Style.inputFocus : Ui.Style.inputBorder
             }
         }
-        TextField {
+        Components.SecureTextField {
             id: handleField
             Layout.fillWidth: true
             placeholderText: Ui.I18n.t("dialog.addContact.handle")

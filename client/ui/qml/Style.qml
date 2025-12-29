@@ -38,6 +38,8 @@ QtObject {
     property color dialogHoverBg: isDark ? "#1F2C3C" : "#F4F6F8"
     property color unreadBadgeBg: "#4A90E2"
     property color unreadBadgeFg: "#FFFFFF"
+    property color unreadBadgeMutedBg: isDark ? "#4F5C6B" : "#C3CBD5"
+    property color unreadBadgeMutedFg: isDark ? "#E2E8F0" : "#2B2F33"
 
     property color bubbleInBg: isDark ? "#1E2B39" : "#FFFFFF"
     property color bubbleInFg: isDark ? "#E6EDF3" : "#2B2F33"

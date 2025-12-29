@@ -336,7 +336,7 @@ Item {
                             id: unreadBadge
                             visible: unread > 0
                             radius: 9
-                            color: Ui.Style.unreadBadgeBg
+                            color: muted ? Ui.Style.unreadBadgeMutedBg : Ui.Style.unreadBadgeBg
                             implicitWidth: Math.max(18, unreadText.paintedWidth + 10)
                             implicitHeight: 16
                             Layout.alignment: Qt.AlignRight | Qt.AlignBottom
@@ -344,7 +344,7 @@ Item {
                                 id: unreadText
                                 anchors.centerIn: parent
                                 text: unread > 99 ? "99+" : unread
-                                color: Ui.Style.unreadBadgeFg
+                                color: muted ? Ui.Style.unreadBadgeMutedFg : Ui.Style.unreadBadgeFg
                                 font.pixelSize: 10
                             }
                         }

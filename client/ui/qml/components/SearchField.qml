@@ -18,7 +18,7 @@ Item {
     implicitWidth: 200
     implicitHeight: 34
 
-    TextField {
+    SecureTextField {
         id: field
         anchors.fill: parent
         leftPadding: Ui.Style.paddingM + 14

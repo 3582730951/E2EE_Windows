@@ -85,6 +85,16 @@ class QuickClient : public QObject {
   Q_INVOKABLE void bindLocalVideoSink(QObject* sink);
   Q_INVOKABLE QString serverInfo() const;
   Q_INVOKABLE QString version() const;
+  Q_INVOKABLE QString systemClipboardText() const;
+  Q_INVOKABLE qint64 systemClipboardTimestamp() const;
+  Q_INVOKABLE bool imeAvailable();
+  Q_INVOKABLE QVariantList imeCandidates(const QString& input, int maxCandidates);
+  Q_INVOKABLE QString imePreedit();
+  Q_INVOKABLE bool imeCommit(int index);
+  Q_INVOKABLE void imeClear();
+  Q_INVOKABLE void imeReset();
+  Q_INVOKABLE bool clipboardIsolation() const;
+  Q_INVOKABLE void setClipboardIsolation(bool enabled);
 
   QString token() const;
   bool loggedIn() const;
@@ -164,6 +174,7 @@ class QuickClient : public QObject {
                                std::size_t& stride) const;
   bool SelectCameraFormat();
   QMediaCaptureSession* EnsureCaptureSession();
+  void* EnsureImeSession();
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -186,6 +197,10 @@ class QuickClient : public QObject {
   QString last_remote_error_;
   QString last_pending_server_fingerprint_;
   QString last_pending_peer_fingerprint_;
+  QString last_system_clipboard_text_;
+  qint64 last_system_clipboard_ms_{0};
+  void* ime_session_{nullptr};
+  bool clipboard_isolation_enabled_{true};
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;
