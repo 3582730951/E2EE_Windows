@@ -66,12 +66,34 @@ jobs:
         run: |
           $rimeDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_runtime"
           New-Item -ItemType Directory -Force -Path $rimeDir | Out-Null
-          cmake -DRIME_OUTPUT_DIR=$rimeDir -DRIME_WITH_LUA=ON -DRIME_VERSION=1.15.0 -DRIME_ASSET="rime-75bc43a-Windows-msvc-x64.7z" -DRIME_WEASEL_VERSION=0.17.4 -DRIME_WEASEL_ASSET="weasel-0.17.4.0-installer.exe" -P $env:GITHUB_WORKSPACE\\client\\ui\\ime_rime\\FetchRime.cmake
+          $fetchArgs = @(
+            "-DRIME_OUTPUT_DIR=$rimeDir",
+            "-DRIME_WITH_LUA=ON",
+            "-DRIME_VERSION=1.15.0",
+            "-DRIME_ASSET=rime-75bc43a-Windows-msvc-x64.7z",
+            "-DRIME_WEASEL_VERSION=0.17.4",
+            "-DRIME_WEASEL_ASSET=weasel-0.17.4.0-installer.exe",
+            "-P",
+            "$env:GITHUB_WORKSPACE\\client\\ui\\ime_rime\\FetchRime.cmake"
+          )
+          cmake @fetchArgs
           $rimeCandidates = @(
             (Join-Path $rimeDir "rime.dll"),
             (Join-Path $rimeDir "librime.dll")
           )
           $rimeDll = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $rimeDll) {
+            $fallbackArgs = @(
+              "-DRIME_OUTPUT_DIR=$rimeDir",
+              "-DRIME_WITH_LUA=OFF",
+              "-DRIME_VERSION=1.15.0",
+              "-DRIME_ASSET=rime-75bc43a-Windows-msvc-x64.7z",
+              "-P",
+              "$env:GITHUB_WORKSPACE\\client\\ui\\ime_rime\\FetchRime.cmake"
+            )
+            cmake @fallbackArgs
+            $rimeDll = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
           if (-not $rimeDll) {
             throw "rime runtime dll not found after FetchRime.cmake"
           }

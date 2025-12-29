@@ -229,13 +229,18 @@ else()
     endif()
 
     list(GET _rime_dll 0 _rime_src)
-    execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_rime_src}" "${RIME_OUTPUT_DIR}/rime.dll"
-        RESULT_VARIABLE _copy_result
-    )
-    if(NOT _copy_result EQUAL 0)
-        message(WARNING "Failed to copy rime.dll to ${RIME_OUTPUT_DIR}")
-        return()
+    get_filename_component(_rime_dir "${_rime_src}" DIRECTORY)
+    copy_runtime_dlls("${_rime_dir}")
+    get_filename_component(_rime_name "${_rime_src}" NAME)
+    if(NOT _rime_name STREQUAL "rime.dll")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_rime_src}" "${RIME_OUTPUT_DIR}/rime.dll"
+            RESULT_VARIABLE _copy_result
+        )
+        if(NOT _copy_result EQUAL 0)
+            message(WARNING "Failed to copy rime.dll to ${RIME_OUTPUT_DIR}")
+            return()
+        endif()
     endif()
     copy_opencc_data("${_extract_dir}")
     file(WRITE "${_plain_marker}" "librime")
