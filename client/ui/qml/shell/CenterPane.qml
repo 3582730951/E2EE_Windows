@@ -697,7 +697,7 @@ Item {
                                             return
                                         }
                                         event.accepted = true
-                                        sendMessage()
+                                        inputBar.sendMessage()
                                     }
                                 }
                                 Keys.onReleased: function(event) {
@@ -771,7 +771,7 @@ Item {
                         pressColor: Ui.Style.textPrimary
                         enabled: Ui.AppStore.currentChatId.length > 0 &&
                                  messageInput.text.trim().length > 0
-                        onClicked: sendMessage()
+                        onClicked: inputBar.sendMessage()
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.send")
                     }

@@ -301,11 +301,31 @@ jobs:
             }
           }
           $imeRoot = Join-Path $workspace "build\\client\\ui\\ime_rime\\Release"
-          if (Test-Path (Join-Path $imeRoot "mi_ime_rime.dll")) {
-            Copy-Item (Join-Path $imeRoot "mi_ime_rime.dll") $clientDll -Force
+          $imeCandidates = @(
+            (Join-Path $workspace "build\\client\\ui\\Release\\mi_ime_rime.dll"),
+            (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\mi_ime_rime.dll"),
+            (Join-Path $workspace "build\\client\\ui\\ime_rime\\Release\\mi_ime_rime.dll"),
+            (Join-Path $workspace "build\\client\\ime_rime\\Release\\mi_ime_rime.dll")
+          )
+          $imeDllPath = $imeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $imeDllPath) {
+            $imeDllPath = Get-ChildItem -Path (Join-Path $workspace "build\\client") -Recurse -Filter "mi_ime_rime.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($imeDllPath) {
+              $imeDllPath = $imeDllPath.FullName
+            }
           }
-          if (Test-Path (Join-Path $imeRoot "rime.dll")) {
-            Copy-Item (Join-Path $imeRoot "rime.dll") $clientDll -Force
+          if ($imeDllPath) {
+            Copy-Item $imeDllPath $clientDll -Force
+            Copy-Item $imeDllPath $clientRoot -Force
+          }
+          $rimeDllPath = $null
+          $rimeCandidates = @(
+            (Join-Path $imeRoot "rime.dll"),
+            (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\rime.dll")
+          )
+          $rimeDllPath = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($rimeDllPath) {
+            Copy-Item $rimeDllPath $clientDll -Force
           }
           if (Test-Path (Join-Path $imeRoot "opencc")) {
             Copy-Item (Join-Path $imeRoot "opencc") (Join-Path $clientDb "opencc") -Recurse -Force

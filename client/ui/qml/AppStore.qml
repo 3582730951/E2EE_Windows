@@ -462,6 +462,9 @@ QtObject {
         var ok = clientBridge.sendText(currentChatId, trimmed, currentChatType === "group")
         if (!ok) {
             var err = clientBridge.lastError || ""
+            if (err.length === 0 && clientBridge.remoteOk === false) {
+                err = clientBridge.remoteError || ""
+            }
             sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
         }
         return ok
