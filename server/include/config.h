@@ -30,6 +30,7 @@ struct ServerSection {
   std::uint32_t group_rotation_threshold{10000};
   std::string offline_dir;
   bool debug_log{false};
+  std::uint32_t session_ttl_sec{0};
   std::uint32_t max_connections{256};
   std::uint32_t max_connections_per_ip{64};
   std::uint32_t max_connection_bytes{512u * 1024u * 1024u};

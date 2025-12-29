@@ -730,9 +730,10 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
 
-  sessions_ = std::make_unique<SessionManager>(std::move(auth_),
-                                               std::chrono::minutes(30),
-                                               std::move(opaque_setup));
+  sessions_ = std::make_unique<SessionManager>(
+      std::move(auth_),
+      std::chrono::seconds(config_.server.session_ttl_sec),
+      std::move(opaque_setup));
   groups_ = std::make_unique<GroupManager>();
   directory_ = std::make_unique<GroupDirectory>();
   offline_storage_ = std::make_unique<OfflineStorage>(

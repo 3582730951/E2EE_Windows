@@ -19,6 +19,7 @@ struct Session {
   std::string username;
   DerivedKeys keys;
   std::chrono::steady_clock::time_point created_at;
+  std::chrono::steady_clock::time_point last_seen;
 };
 
 struct LoginHybridServerHello {
@@ -94,6 +95,8 @@ class SessionManager {
   bool UserExists(const std::string& username, std::string& error) const;
 
   std::optional<Session> GetSession(const std::string& token);
+
+  bool TouchSession(const std::string& token);
 
   std::optional<DerivedKeys> GetKeys(const std::string& token);
 

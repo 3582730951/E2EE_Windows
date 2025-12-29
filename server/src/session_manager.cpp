@@ -152,6 +152,7 @@ bool SessionManager::Login(const std::string& username,
   }
   session.keys = keys;
   session.created_at = std::chrono::steady_clock::now();
+  session.last_seen = session.created_at;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -444,6 +445,7 @@ bool SessionManager::LoginHybrid(
   session.token = token;
   session.keys = keys;
   session.created_at = std::chrono::steady_clock::now();
+  session.last_seen = session.created_at;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -722,6 +724,7 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
   session.token = token;
   session.keys = keys;
   session.created_at = std::chrono::steady_clock::now();
+  session.last_seen = session.created_at;
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -748,11 +751,29 @@ std::optional<Session> SessionManager::GetSession(const std::string& token) {
     return std::nullopt;
   }
   const auto now = std::chrono::steady_clock::now();
-  if (now - it->second.created_at > ttl_) {
+  if (ttl_.count() > 0 &&
+      now - it->second.last_seen > ttl_) {
     sessions_.erase(it);
     return std::nullopt;
   }
+  it->second.last_seen = now;
   return it->second;
+}
+
+bool SessionManager::TouchSession(const std::string& token) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = sessions_.find(token);
+  if (it == sessions_.end()) {
+    return false;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (ttl_.count() > 0 &&
+      now - it->second.last_seen > ttl_) {
+    sessions_.erase(it);
+    return false;
+  }
+  it->second.last_seen = now;
+  return true;
 }
 
 std::optional<DerivedKeys> SessionManager::GetKeys(const std::string& token) {
@@ -782,7 +803,8 @@ void SessionManager::Cleanup() {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto now = std::chrono::steady_clock::now();
   for (auto it = sessions_.begin(); it != sessions_.end();) {
-    if (now - it->second.created_at > ttl_) {
+    if (ttl_.count() > 0 &&
+        now - it->second.last_seen > ttl_) {
       it = sessions_.erase(it);
     } else {
       ++it;

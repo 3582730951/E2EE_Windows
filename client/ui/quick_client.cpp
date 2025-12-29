@@ -46,6 +46,13 @@ constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
 constexpr const char kPinyinAbbrDictResourcePath[] =
     ":/mi/e2ee/ui/ime/pinyin_short.dat";
 
+bool IsSessionInvalidError(const QString& message) {
+  const QString lowered = message.trimmed().toLower();
+  return lowered == QStringLiteral("unauthorized") ||
+         lowered == QStringLiteral("session invalid") ||
+         lowered == QStringLiteral("not logged in");
+}
+
 struct PinyinIndex {
   QHash<QString, QStringList> dict;
   QVector<QString> keys;
@@ -1129,7 +1136,13 @@ void QuickClient::PollOnce() {
   if (!loggedIn()) {
     return;
   }
-  HandlePollResult(core_.PollChat());
+  const auto poll_result = core_.PollChat();
+  const QString poll_error = QString::fromStdString(core_.last_error());
+  if (IsSessionInvalidError(poll_error)) {
+    HandleSessionInvalid(QStringLiteral("登录已失效，请重新登录"));
+    return;
+  }
+  HandlePollResult(poll_result);
   UpdateConnectionState(false);
   MaybeEmitTrustSignals();
 
@@ -1582,8 +1595,47 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
   }
 }
 
+void QuickClient::HandleSessionInvalid(const QString& message) {
+  const QString hint = message.trimmed().isEmpty()
+                           ? QStringLiteral("登录已失效，请重新登录")
+                           : message.trimmed();
+  const bool was_logged_in = !token_.isEmpty() || !username_.isEmpty();
+
+  StopPolling();
+  StopMedia();
+  core_.Logout();
+  token_.clear();
+  username_.clear();
+  friends_.clear();
+  groups_.clear();
+  friend_requests_.clear();
+  active_call_id_.clear();
+  active_call_peer_.clear();
+  active_call_video_ = false;
+  UpdateConnectionState(true);
+  MaybeEmitTrustSignals();
+
+  if (last_error_ != hint) {
+    last_error_ = hint;
+    emit errorChanged();
+  }
+  if (was_logged_in) {
+    emit tokenChanged();
+    emit userChanged();
+    emit friendsChanged();
+    emit groupsChanged();
+    emit friendRequestsChanged();
+    emit callStateChanged();
+  }
+  emit status(hint);
+}
+
 void QuickClient::UpdateLastError(const QString& message) {
   const QString trimmed = message.trimmed();
+  if (IsSessionInvalidError(trimmed)) {
+    HandleSessionInvalid(QStringLiteral("登录已失效，请重新登录"));
+    return;
+  }
   if (trimmed == last_error_) {
     return;
   }

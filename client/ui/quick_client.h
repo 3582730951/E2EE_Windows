@@ -150,6 +150,7 @@ class QuickClient : public QObject {
   QVariantMap BuildStickerMeta(const QString& stickerId) const;
   QVariantMap BuildHistoryMessage(const ClientCore::HistoryEntry& entry) const;
   void HandlePollResult(const ClientCore::ChatPollResult& result);
+  void HandleSessionInvalid(const QString& message);
   void UpdateLastError(const QString& message);
   void UpdateConnectionState(bool force_emit);
   void MaybeEmitTrustSignals();

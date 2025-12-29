@@ -170,6 +170,8 @@ void ApplyKV(IniState& state, const std::string& key,
       state.cfg->server.offline_dir = value;
     } else if (key == "debug_log") {
       ParseBool(value, state.cfg->server.debug_log);
+    } else if (key == "session_ttl_sec") {
+      ParseUint32(value, state.cfg->server.session_ttl_sec);
     } else if (key == "max_connections") {
       ParseUint32(value, state.cfg->server.max_connections);
     } else if (key == "max_connections_per_ip") {

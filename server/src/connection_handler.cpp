@@ -665,6 +665,18 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
     return false;
   }
 
+  if (auto* sessions = app_->sessions()) {
+    if (!sessions->TouchSession(token)) {
+      {
+        std::lock_guard<std::mutex> lock(channel_mutex_);
+        channel_states_.erase(token);
+      }
+      const bool ok = WritePlainLogoutError({}, out_bytes);
+      finish(false);
+      return ok;
+    }
+  }
+
   std::shared_ptr<ChannelState> state;
   {
     std::lock_guard<std::mutex> lock(channel_mutex_);
