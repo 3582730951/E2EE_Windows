@@ -93,6 +93,8 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool imeCommit(int index);
   Q_INVOKABLE void imeClear();
   Q_INVOKABLE void imeReset();
+  Q_INVOKABLE bool internalImeEnabled() const;
+  Q_INVOKABLE void setInternalImeEnabled(bool enabled);
   Q_INVOKABLE bool clipboardIsolation() const;
   Q_INVOKABLE void setClipboardIsolation(bool enabled);
 
@@ -201,6 +203,7 @@ class QuickClient : public QObject {
   qint64 last_system_clipboard_ms_{0};
   void* ime_session_{nullptr};
   bool clipboard_isolation_enabled_{true};
+  bool internal_ime_enabled_{true};
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;

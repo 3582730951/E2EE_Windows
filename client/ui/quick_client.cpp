@@ -793,6 +793,14 @@ void QuickClient::imeReset() {
   ime_session_ = nullptr;
 }
 
+bool QuickClient::internalImeEnabled() const {
+  return internal_ime_enabled_;
+}
+
+void QuickClient::setInternalImeEnabled(bool enabled) {
+  internal_ime_enabled_ = enabled;
+}
+
 bool QuickClient::clipboardIsolation() const {
   return clipboard_isolation_enabled_;
 }

@@ -18,6 +18,10 @@
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <imm.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "Imm32.lib")
+#endif
 #endif
 
 #include "quick_client.h"
@@ -247,6 +251,84 @@ private:
     QPointer<mi::client::ui::QuickClient> client_;
 };
 
+class InputMethodBlocker : public QObject {
+public:
+    explicit InputMethodBlocker(mi::client::ui::QuickClient* client,
+                                QObject* parent = nullptr)
+        : QObject(parent), client_(client) {}
+
+    void refresh() {
+        if (!client_) {
+            return;
+        }
+        const auto windows = QGuiApplication::allWindows();
+        for (auto* window : windows) {
+            applyForWindow(window);
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (!client_ || !obj || !event) {
+            return QObject::eventFilter(obj, event);
+        }
+        if (event->type() == QEvent::Show ||
+            event->type() == QEvent::WindowActivate ||
+            event->type() == QEvent::FocusIn) {
+            if (auto* window = qobject_cast<QWindow*>(obj)) {
+                applyForWindow(window);
+            }
+        }
+        if (event->type() == QEvent::InputMethod) {
+            if (client_->internalImeEnabled() && isTextInput(obj)) {
+                return true;
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+
+private:
+    static bool isTextInput(QObject* obj) {
+        if (!obj) {
+            return false;
+        }
+        return obj->inherits("QQuickTextInput") ||
+               obj->inherits("QQuickTextEdit") ||
+               obj->inherits("QQuickTextArea");
+    }
+
+    void applyForWindow(QWindow* window) {
+#ifdef Q_OS_WIN
+        if (!window || !client_) {
+            return;
+        }
+        const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+        if (!hwnd) {
+            return;
+        }
+        const bool enableInternal = client_->internalImeEnabled();
+        if (enableInternal) {
+            if (!saved_contexts_.contains(window->winId())) {
+                HIMC previous = ImmAssociateContext(hwnd, nullptr);
+                saved_contexts_.insert(window->winId(), previous);
+            } else {
+                ImmAssociateContext(hwnd, nullptr);
+            }
+        } else if (saved_contexts_.contains(window->winId())) {
+            HIMC previous = saved_contexts_.take(window->winId());
+            ImmAssociateContext(hwnd, previous);
+        }
+#else
+        Q_UNUSED(window);
+#endif
+    }
+
+    QPointer<mi::client::ui::QuickClient> client_;
+#ifdef Q_OS_WIN
+    QHash<WId, HIMC> saved_contexts_;
+#endif
+};
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -297,5 +379,8 @@ int main(int argc, char* argv[]) {
     }
     app.installEventFilter(new SecureClipboardFilter(engine.rootObjects().first(),
                                                      &client, &app));
+    auto* imeBlocker = new InputMethodBlocker(&client, &app);
+    app.installEventFilter(imeBlocker);
+    imeBlocker->refresh();
     return app.exec();
 }

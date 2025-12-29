@@ -47,6 +47,9 @@ QtObject {
             if (clientBridge.setClipboardIsolation) {
                 clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
             }
+            if (clientBridge.setInternalImeEnabled) {
+                clientBridge.setInternalImeEnabled(internalImeEnabled)
+            }
         }
         rebuildFiltered()
     }
@@ -597,6 +600,9 @@ QtObject {
         internalImeEnabled = enabled === true
         if (!internalImeEnabled && clientBridge && clientBridge.imeReset) {
             clientBridge.imeReset()
+        }
+        if (clientBridge && clientBridge.setInternalImeEnabled) {
+            clientBridge.setInternalImeEnabled(internalImeEnabled)
         }
     }
 
