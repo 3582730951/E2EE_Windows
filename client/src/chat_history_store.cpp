@@ -43,6 +43,13 @@ constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
 constexpr std::size_t kPadHeaderBytes = 8;
 constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048,
                                        4096, 8192, 16384};
+constexpr std::uint8_t kAesLayerMagic[8] = {'M', 'I', 'A', 'E',
+                                            'S', '0', '1', 0};
+constexpr std::uint8_t kAesLayerVersion = 1;
+constexpr std::size_t kAesNonceBytes = 12;
+constexpr std::size_t kAesTagBytes = 16;
+constexpr std::size_t kAesLayerHeaderBytes =
+    sizeof(kAesLayerMagic) + 1 + kAesNonceBytes + kAesTagBytes + 4;
 
 constexpr std::size_t kMaxRecordCipherLen = 2u * 1024u * 1024u;
 constexpr std::size_t kMaxHistoryKeyFileBytes = 64u * 1024u;
@@ -376,6 +383,574 @@ bool ReadContainerHeader(std::ifstream& in, std::string& error) {
   return true;
 }
 
+std::array<std::uint8_t, 32> DeriveMaskFromLabel(const char* label) {
+  mi::server::crypto::Sha256Digest d;
+  const std::size_t len = label ? std::strlen(label) : 0u;
+  mi::server::crypto::Sha256(reinterpret_cast<const std::uint8_t*>(label), len,
+                             d);
+  return d.bytes;
+}
+
+const std::array<std::uint8_t, 32>& WhiteboxMask1() {
+  static const std::array<std::uint8_t, 32> mask =
+      DeriveMaskFromLabel("MI_E2EE_WB_MASK1_V1");
+  return mask;
+}
+
+const std::array<std::uint8_t, 32>& WhiteboxMask2() {
+  static const std::array<std::uint8_t, 32> mask =
+      DeriveMaskFromLabel("MI_E2EE_WB_MASK2_V1");
+  return mask;
+}
+
+const std::array<std::uint8_t, 32>& WhiteboxMask3() {
+  static const std::array<std::uint8_t, 32> mask =
+      DeriveMaskFromLabel("MI_E2EE_WB_MASK3_V1");
+  return mask;
+}
+
+void WhiteboxMixKey(std::array<std::uint8_t, 32>& key) {
+  const auto& m1 = WhiteboxMask1();
+  const auto& m2 = WhiteboxMask2();
+  const auto& m3 = WhiteboxMask3();
+  for (std::size_t i = 0; i < key.size(); ++i) {
+    key[i] = static_cast<std::uint8_t>(key[i] ^ m1[i]);
+  }
+  for (std::size_t i = 0; i < key.size(); ++i) {
+    key[i] = static_cast<std::uint8_t>(key[i] + m2[i]);
+  }
+  for (std::size_t i = 0; i < key.size(); ++i) {
+    const std::uint8_t src = m3[i];
+    const std::uint8_t shift = static_cast<std::uint8_t>(i & 7u);
+    std::uint8_t rot = src;
+    if (shift != 0) {
+      rot = static_cast<std::uint8_t>(
+          static_cast<std::uint8_t>(src << shift) |
+          static_cast<std::uint8_t>(src >> (8u - shift)));
+    }
+    key[i] = static_cast<std::uint8_t>(key[i] ^ rot ^
+                                       key[(i + 13u) % key.size()]);
+  }
+}
+
+bool DeriveWhiteboxAesKey(const std::array<std::uint8_t, 32>& conv_key,
+                          bool is_group,
+                          const std::string& conv_id,
+                          std::array<std::uint8_t, 32>& out_key,
+                          std::string& error) {
+  error.clear();
+  out_key.fill(0);
+  if (conv_id.empty()) {
+    error = "conv id empty";
+    return false;
+  }
+  if (IsAllZero(conv_key.data(), conv_key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> info;
+  static constexpr char kPrefix[] = "MI_E2EE_HISTORY_AESGCM_WB_V1";
+  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  info.push_back(0);
+  info.push_back(is_group ? 1 : 0);
+  info.push_back(0);
+  info.insert(info.end(), conv_id.begin(), conv_id.end());
+
+  std::array<std::uint8_t, 32> salt{};
+  static constexpr char kSalt[] = "MI_E2EE_HISTORY_AESGCM_WB_SALT_V1";
+  mi::server::crypto::Sha256Digest d;
+  mi::server::crypto::Sha256(reinterpret_cast<const std::uint8_t*>(kSalt),
+                             sizeof(kSalt) - 1, d);
+  salt = d.bytes;
+
+  if (!mi::server::crypto::HkdfSha256(conv_key.data(), conv_key.size(),
+                                      salt.data(), salt.size(), info.data(),
+                                      info.size(), out_key.data(),
+                                      out_key.size())) {
+    error = "history hkdf failed";
+    return false;
+  }
+  WhiteboxMixKey(out_key);
+  return true;
+}
+
+constexpr std::uint8_t kAesSbox[256] = {
+    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
+    0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+    0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0,
+    0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
+    0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc,
+    0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
+    0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a,
+    0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+    0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0,
+    0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
+    0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b,
+    0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
+    0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85,
+    0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
+    0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5,
+    0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
+    0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17,
+    0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
+    0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88,
+    0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
+    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c,
+    0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+    0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9,
+    0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
+    0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6,
+    0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
+    0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e,
+    0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
+    0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94,
+    0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
+    0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68,
+    0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
+};
+
+constexpr std::uint8_t kAesRcon[15] = {
+    0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40,
+    0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D,
+};
+
+struct Aes256KeySchedule {
+  std::array<std::uint8_t, 240> bytes;
+};
+
+void RotWord(std::uint8_t w[4]) {
+  const std::uint8_t tmp = w[0];
+  w[0] = w[1];
+  w[1] = w[2];
+  w[2] = w[3];
+  w[3] = tmp;
+}
+
+void SubWord(std::uint8_t w[4]) {
+  w[0] = kAesSbox[w[0]];
+  w[1] = kAesSbox[w[1]];
+  w[2] = kAesSbox[w[2]];
+  w[3] = kAesSbox[w[3]];
+}
+
+void Aes256KeyExpand(const std::array<std::uint8_t, 32>& key,
+                     Aes256KeySchedule& ks) {
+  ks.bytes.fill(0);
+  std::memcpy(ks.bytes.data(), key.data(), key.size());
+  std::size_t bytes_generated = key.size();
+  std::size_t rcon_iter = 1;
+  std::uint8_t temp[4];
+  while (bytes_generated < ks.bytes.size()) {
+    std::memcpy(temp, ks.bytes.data() + bytes_generated - 4, sizeof(temp));
+    if (bytes_generated % 32 == 0) {
+      RotWord(temp);
+      SubWord(temp);
+      temp[0] = static_cast<std::uint8_t>(temp[0] ^ kAesRcon[rcon_iter]);
+      ++rcon_iter;
+    } else if (bytes_generated % 32 == 16) {
+      SubWord(temp);
+    }
+    for (std::size_t i = 0; i < 4; ++i) {
+      ks.bytes[bytes_generated] =
+          static_cast<std::uint8_t>(ks.bytes[bytes_generated - 32] ^ temp[i]);
+      ++bytes_generated;
+    }
+  }
+}
+
+std::uint8_t Xtime(std::uint8_t v) {
+  return static_cast<std::uint8_t>((v << 1) ^ ((v & 0x80u) ? 0x1Bu : 0));
+}
+
+void SubBytes(std::uint8_t state[16]) {
+  for (std::size_t i = 0; i < 16; ++i) {
+    state[i] = kAesSbox[state[i]];
+  }
+}
+
+void ShiftRows(std::uint8_t state[16]) {
+  std::uint8_t t[16];
+  t[0] = state[0];
+  t[1] = state[5];
+  t[2] = state[10];
+  t[3] = state[15];
+  t[4] = state[4];
+  t[5] = state[9];
+  t[6] = state[14];
+  t[7] = state[3];
+  t[8] = state[8];
+  t[9] = state[13];
+  t[10] = state[2];
+  t[11] = state[7];
+  t[12] = state[12];
+  t[13] = state[1];
+  t[14] = state[6];
+  t[15] = state[11];
+  std::memcpy(state, t, sizeof(t));
+}
+
+void MixColumns(std::uint8_t state[16]) {
+  for (std::size_t c = 0; c < 4; ++c) {
+    const std::size_t base = c * 4;
+    const std::uint8_t a0 = state[base + 0];
+    const std::uint8_t a1 = state[base + 1];
+    const std::uint8_t a2 = state[base + 2];
+    const std::uint8_t a3 = state[base + 3];
+    const std::uint8_t x0 = Xtime(a0);
+    const std::uint8_t x1 = Xtime(a1);
+    const std::uint8_t x2 = Xtime(a2);
+    const std::uint8_t x3 = Xtime(a3);
+    state[base + 0] =
+        static_cast<std::uint8_t>(x0 ^ (x1 ^ a1) ^ a2 ^ a3);
+    state[base + 1] =
+        static_cast<std::uint8_t>(a0 ^ x1 ^ (x2 ^ a2) ^ a3);
+    state[base + 2] =
+        static_cast<std::uint8_t>(a0 ^ a1 ^ x2 ^ (x3 ^ a3));
+    state[base + 3] =
+        static_cast<std::uint8_t>((x0 ^ a0) ^ a1 ^ a2 ^ x3);
+  }
+}
+
+void AddRoundKey(std::uint8_t state[16], const std::uint8_t* rk) {
+  for (std::size_t i = 0; i < 16; ++i) {
+    state[i] = static_cast<std::uint8_t>(state[i] ^ rk[i]);
+  }
+}
+
+void AesEncryptBlock(const Aes256KeySchedule& ks,
+                     const std::uint8_t in[16],
+                     std::uint8_t out[16]) {
+  std::uint8_t state[16];
+  std::memcpy(state, in, 16);
+  AddRoundKey(state, ks.bytes.data());
+  for (int round = 1; round < 14; ++round) {
+    SubBytes(state);
+    ShiftRows(state);
+    MixColumns(state);
+    AddRoundKey(state, ks.bytes.data() + round * 16);
+  }
+  SubBytes(state);
+  ShiftRows(state);
+  AddRoundKey(state, ks.bytes.data() + 14 * 16);
+  std::memcpy(out, state, 16);
+}
+
+void StoreUint64Be(std::uint8_t* out, std::uint64_t v) {
+  out[0] = static_cast<std::uint8_t>(v >> 56);
+  out[1] = static_cast<std::uint8_t>(v >> 48);
+  out[2] = static_cast<std::uint8_t>(v >> 40);
+  out[3] = static_cast<std::uint8_t>(v >> 32);
+  out[4] = static_cast<std::uint8_t>(v >> 24);
+  out[5] = static_cast<std::uint8_t>(v >> 16);
+  out[6] = static_cast<std::uint8_t>(v >> 8);
+  out[7] = static_cast<std::uint8_t>(v);
+}
+
+void GcmXorBlock(std::uint8_t out[16],
+                 const std::uint8_t a[16],
+                 const std::uint8_t b[16]) {
+  for (std::size_t i = 0; i < 16; ++i) {
+    out[i] = static_cast<std::uint8_t>(a[i] ^ b[i]);
+  }
+}
+
+void GcmShiftRightOne(std::uint8_t v[16]) {
+  const bool lsb = (v[15] & 1u) != 0;
+  for (int i = 15; i > 0; --i) {
+    v[i] = static_cast<std::uint8_t>((v[i] >> 1) | ((v[i - 1] & 1u) << 7));
+  }
+  v[0] = static_cast<std::uint8_t>(v[0] >> 1);
+  if (lsb) {
+    v[0] = static_cast<std::uint8_t>(v[0] ^ 0xE1u);
+  }
+}
+
+void GcmMul(const std::uint8_t x[16],
+            const std::uint8_t h[16],
+            std::uint8_t out[16]) {
+  std::uint8_t z[16]{};
+  std::uint8_t v[16];
+  std::memcpy(v, h, 16);
+  for (int i = 0; i < 128; ++i) {
+    const std::uint8_t bit =
+        static_cast<std::uint8_t>((x[i / 8] >> (7 - (i % 8))) & 1u);
+    if (bit) {
+      for (std::size_t j = 0; j < 16; ++j) {
+        z[j] = static_cast<std::uint8_t>(z[j] ^ v[j]);
+      }
+    }
+    GcmShiftRightOne(v);
+  }
+  std::memcpy(out, z, 16);
+}
+
+void GcmGhash(const std::uint8_t h[16],
+              const std::uint8_t* aad,
+              std::size_t aad_len,
+              const std::uint8_t* cipher,
+              std::size_t cipher_len,
+              std::uint8_t out[16]) {
+  std::uint8_t y[16]{};
+  std::uint8_t block[16]{};
+  std::size_t offset = 0;
+  while (offset < aad_len) {
+    const std::size_t take =
+        std::min<std::size_t>(16, aad_len - offset);
+    std::memset(block, 0, sizeof(block));
+    if (aad) {
+      std::memcpy(block, aad + offset, take);
+    }
+    std::uint8_t tmp[16];
+    GcmXorBlock(tmp, y, block);
+    GcmMul(tmp, h, y);
+    offset += take;
+  }
+  offset = 0;
+  while (offset < cipher_len) {
+    const std::size_t take =
+        std::min<std::size_t>(16, cipher_len - offset);
+    std::memset(block, 0, sizeof(block));
+    if (cipher) {
+      std::memcpy(block, cipher + offset, take);
+    }
+    std::uint8_t tmp[16];
+    GcmXorBlock(tmp, y, block);
+    GcmMul(tmp, h, y);
+    offset += take;
+  }
+  std::uint8_t len_block[16]{};
+  StoreUint64Be(len_block, static_cast<std::uint64_t>(aad_len) * 8u);
+  StoreUint64Be(len_block + 8, static_cast<std::uint64_t>(cipher_len) * 8u);
+  std::uint8_t tmp[16];
+  GcmXorBlock(tmp, y, len_block);
+  GcmMul(tmp, h, y);
+  std::memcpy(out, y, 16);
+}
+
+void Increment32(std::uint8_t counter[16]) {
+  for (int i = 15; i >= 12; --i) {
+    counter[i] = static_cast<std::uint8_t>(counter[i] + 1u);
+    if (counter[i] != 0) {
+      break;
+    }
+  }
+}
+
+bool Aes256GcmEncrypt(const std::array<std::uint8_t, 32>& key,
+                      const std::array<std::uint8_t, kAesNonceBytes>& nonce,
+                      const std::vector<std::uint8_t>& plain,
+                      std::vector<std::uint8_t>& out_cipher,
+                      std::array<std::uint8_t, kAesTagBytes>& out_tag,
+                      std::string& error) {
+  error.clear();
+  out_cipher.clear();
+  out_tag.fill(0);
+  if (IsAllZero(key.data(), key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+
+  Aes256KeySchedule ks;
+  Aes256KeyExpand(key, ks);
+
+  std::uint8_t h[16]{};
+  std::uint8_t zero[16]{};
+  AesEncryptBlock(ks, zero, h);
+
+  std::uint8_t j0[16]{};
+  std::memcpy(j0, nonce.data(), nonce.size());
+  j0[15] = 0x01;
+
+  out_cipher.resize(plain.size());
+  std::uint8_t counter[16];
+  std::memcpy(counter, j0, sizeof(counter));
+  std::size_t offset = 0;
+  while (offset < plain.size()) {
+    Increment32(counter);
+    std::uint8_t stream[16];
+    AesEncryptBlock(ks, counter, stream);
+    const std::size_t take =
+        std::min<std::size_t>(16, plain.size() - offset);
+    for (std::size_t i = 0; i < take; ++i) {
+      out_cipher[offset + i] =
+          static_cast<std::uint8_t>(plain[offset + i] ^ stream[i]);
+    }
+    offset += take;
+  }
+
+  std::uint8_t ghash[16]{};
+  GcmGhash(h, nullptr, 0, out_cipher.data(), out_cipher.size(), ghash);
+
+  std::uint8_t s[16];
+  AesEncryptBlock(ks, j0, s);
+  for (std::size_t i = 0; i < out_tag.size(); ++i) {
+    out_tag[i] = static_cast<std::uint8_t>(s[i] ^ ghash[i]);
+  }
+  crypto_wipe(ks.bytes.data(), ks.bytes.size());
+  return true;
+}
+
+bool Aes256GcmDecrypt(const std::array<std::uint8_t, 32>& key,
+                      const std::array<std::uint8_t, kAesNonceBytes>& nonce,
+                      const std::vector<std::uint8_t>& cipher,
+                      const std::array<std::uint8_t, kAesTagBytes>& tag,
+                      std::vector<std::uint8_t>& out_plain,
+                      std::string& error) {
+  error.clear();
+  out_plain.clear();
+  if (IsAllZero(key.data(), key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+
+  Aes256KeySchedule ks;
+  Aes256KeyExpand(key, ks);
+
+  std::uint8_t h[16]{};
+  std::uint8_t zero[16]{};
+  AesEncryptBlock(ks, zero, h);
+
+  std::uint8_t j0[16]{};
+  std::memcpy(j0, nonce.data(), nonce.size());
+  j0[15] = 0x01;
+
+  std::uint8_t ghash[16]{};
+  GcmGhash(h, nullptr, 0, cipher.data(), cipher.size(), ghash);
+
+  std::uint8_t s[16];
+  AesEncryptBlock(ks, j0, s);
+  std::uint8_t expected[16];
+  for (std::size_t i = 0; i < sizeof(expected); ++i) {
+    expected[i] = static_cast<std::uint8_t>(s[i] ^ ghash[i]);
+  }
+
+  if (crypto_verify16(expected, tag.data()) != 0) {
+    crypto_wipe(ks.bytes.data(), ks.bytes.size());
+    error = "history auth failed";
+    return false;
+  }
+
+  out_plain.resize(cipher.size());
+  std::uint8_t counter[16];
+  std::memcpy(counter, j0, sizeof(counter));
+  std::size_t offset = 0;
+  while (offset < cipher.size()) {
+    Increment32(counter);
+    std::uint8_t stream[16];
+    AesEncryptBlock(ks, counter, stream);
+    const std::size_t take =
+        std::min<std::size_t>(16, cipher.size() - offset);
+    for (std::size_t i = 0; i < take; ++i) {
+      out_plain[offset + i] =
+          static_cast<std::uint8_t>(cipher[offset + i] ^ stream[i]);
+    }
+    offset += take;
+  }
+  crypto_wipe(ks.bytes.data(), ks.bytes.size());
+  return true;
+}
+
+bool EncodeAesLayer(const std::array<std::uint8_t, 32>& conv_key,
+                    bool is_group,
+                    const std::string& conv_id,
+                    const std::vector<std::uint8_t>& plain,
+                    std::vector<std::uint8_t>& out,
+                    std::string& error) {
+  error.clear();
+  out.clear();
+  std::array<std::uint8_t, 32> aes_key{};
+  if (!DeriveWhiteboxAesKey(conv_key, is_group, conv_id, aes_key, error)) {
+    return false;
+  }
+  std::array<std::uint8_t, kAesNonceBytes> nonce{};
+  if (!mi::server::crypto::RandomBytes(nonce.data(), nonce.size())) {
+    error = "rng failed";
+    crypto_wipe(aes_key.data(), aes_key.size());
+    return false;
+  }
+  std::vector<std::uint8_t> cipher;
+  std::array<std::uint8_t, kAesTagBytes> tag{};
+  if (!Aes256GcmEncrypt(aes_key, nonce, plain, cipher, tag, error)) {
+    crypto_wipe(aes_key.data(), aes_key.size());
+    return false;
+  }
+  if (cipher.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "history record too large";
+    crypto_wipe(aes_key.data(), aes_key.size());
+    return false;
+  }
+
+  out.reserve(kAesLayerHeaderBytes + cipher.size());
+  out.insert(out.end(), kAesLayerMagic,
+             kAesLayerMagic + sizeof(kAesLayerMagic));
+  out.push_back(kAesLayerVersion);
+  out.insert(out.end(), nonce.begin(), nonce.end());
+  out.insert(out.end(), tag.begin(), tag.end());
+  if (!mi::server::proto::WriteBytes(cipher, out)) {
+    error = "history record too large";
+    crypto_wipe(aes_key.data(), aes_key.size());
+    return false;
+  }
+  crypto_wipe(aes_key.data(), aes_key.size());
+  return true;
+}
+
+bool DecodeAesLayer(const std::array<std::uint8_t, 32>& conv_key,
+                    bool is_group,
+                    const std::string& conv_id,
+                    const std::vector<std::uint8_t>& input,
+                    std::vector<std::uint8_t>& out_plain,
+                    bool& out_used_aes,
+                    std::string& error) {
+  error.clear();
+  out_plain.clear();
+  out_used_aes = false;
+  if (input.size() < kAesLayerHeaderBytes) {
+    out_plain = input;
+    return true;
+  }
+  if (std::memcmp(input.data(), kAesLayerMagic,
+                  sizeof(kAesLayerMagic)) != 0) {
+    out_plain = input;
+    return true;
+  }
+  std::size_t off = sizeof(kAesLayerMagic);
+  const std::uint8_t version = input[off++];
+  if (version != kAesLayerVersion) {
+    error = "history version mismatch";
+    return false;
+  }
+  if (off + kAesNonceBytes + kAesTagBytes > input.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::array<std::uint8_t, kAesNonceBytes> nonce{};
+  std::memcpy(nonce.data(), input.data() + off, nonce.size());
+  off += nonce.size();
+  std::array<std::uint8_t, kAesTagBytes> tag{};
+  std::memcpy(tag.data(), input.data() + off, tag.size());
+  off += tag.size();
+  std::vector<std::uint8_t> cipher;
+  if (!mi::server::proto::ReadBytes(input, off, cipher) ||
+      off != input.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::array<std::uint8_t, 32> aes_key{};
+  if (!DeriveWhiteboxAesKey(conv_key, is_group, conv_id, aes_key, error)) {
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  if (!Aes256GcmDecrypt(aes_key, nonce, cipher, tag, plain, error)) {
+    crypto_wipe(aes_key.data(), aes_key.size());
+    return false;
+  }
+  crypto_wipe(aes_key.data(), aes_key.size());
+  out_plain = std::move(plain);
+  out_used_aes = true;
+  return true;
+}
+
 bool WriteEncryptedRecord(std::ofstream& out,
                           const std::array<std::uint8_t, 32>& master_key,
                           const std::array<std::uint8_t, 32>& conv_key,
@@ -403,17 +978,22 @@ bool WriteEncryptedRecord(std::ofstream& out,
     return false;
   }
 
+  std::vector<std::uint8_t> aes_layer;
+  if (!EncodeAesLayer(conv_key, is_group, conv_id, padded, aes_layer, error)) {
+    return false;
+  }
+
   std::array<std::uint8_t, 24> inner_nonce{};
   if (!mi::server::crypto::RandomBytes(inner_nonce.data(),
                                        inner_nonce.size())) {
     error = "rng failed";
     return false;
   }
-  std::vector<std::uint8_t> inner_cipher(padded.size());
+  std::vector<std::uint8_t> inner_cipher(aes_layer.size());
   std::array<std::uint8_t, 16> inner_mac{};
   crypto_aead_lock(inner_cipher.data(), inner_mac.data(), conv_key.data(),
-                   inner_nonce.data(), nullptr, 0, padded.data(),
-                   padded.size());
+                   inner_nonce.data(), nullptr, 0, aes_layer.data(),
+                   aes_layer.size());
 
   std::vector<std::uint8_t> outer_plain;
   outer_plain.reserve(1 + 2 + conv_id.size() + inner_nonce.size() + 4 +
@@ -1613,9 +2193,18 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
       error = "history auth failed";
       return false;
     }
+    std::vector<std::uint8_t> padded;
+    bool used_aes = false;
+    std::string aes_err;
+    if (!DecodeAesLayer(conv_key, is_group, conv_id, plain, padded, used_aes,
+                        aes_err)) {
+      error = aes_err.empty() ? "history read failed" : aes_err;
+      return false;
+    }
+    (void)used_aes;
     std::vector<std::uint8_t> unpadded;
     std::string pad_err;
-    if (!UnpadPlain(plain, unpadded, pad_err)) {
+    if (!UnpadPlain(padded, unpadded, pad_err)) {
       error = pad_err.empty() ? "history read failed" : pad_err;
       return false;
     }
