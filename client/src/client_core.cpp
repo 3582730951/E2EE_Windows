@@ -12768,6 +12768,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       t.message_id_hex = id_hex;
       t.text_utf8 = std::move(text);
       result.texts.push_back(std::move(t));
+      BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -12783,6 +12786,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       t.message_id_hex = id_hex;
       t.text_utf8 = FormatRichAsText(rich);
       result.texts.push_back(std::move(t));
+      BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -12806,6 +12812,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       f.file_name = std::move(file_name);
       f.file_size = file_size;
       result.files.push_back(std::move(f));
+      BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -12822,6 +12831,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       s.message_id_hex = id_hex;
       s.sticker_id = std::move(sticker_id);
       result.stickers.push_back(std::move(s));
+      BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -12836,12 +12848,15 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
         return;
       }
       GroupChatTextMessage t;
-      t.group_id = std::move(group_id);
+      t.group_id = group_id;
       t.from_username = msg.from_username;
       t.message_id_hex = id_hex;
       t.text_utf8 = std::move(text);
       result.group_texts.push_back(std::move(t));
-      BestEffortBroadcastDeviceSyncMessage(true, false, t.group_id,
+      BestEffortPersistHistoryEnvelope(true, false, group_id, msg.from_username,
+                                      msg.plaintext, HistoryStatus::kSent,
+                                      NowUnixSeconds());
+      BestEffortBroadcastDeviceSyncMessage(true, false, group_id,
                                           msg.from_username, msg.plaintext);
       return;
     }
@@ -12858,7 +12873,7 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
         return;
       }
       GroupChatFileMessage f;
-      f.group_id = std::move(group_id);
+      f.group_id = group_id;
       f.from_username = msg.from_username;
       f.message_id_hex = id_hex;
       f.file_id = std::move(file_id);
@@ -12866,7 +12881,10 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       f.file_name = std::move(file_name);
       f.file_size = file_size;
       result.group_files.push_back(std::move(f));
-      BestEffortBroadcastDeviceSyncMessage(true, false, f.group_id,
+      BestEffortPersistHistoryEnvelope(true, false, group_id, msg.from_username,
+                                      msg.plaintext, HistoryStatus::kSent,
+                                      NowUnixSeconds());
+      BestEffortBroadcastDeviceSyncMessage(true, false, group_id,
                                           msg.from_username, msg.plaintext);
       return;
     }
@@ -13060,6 +13078,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       t.message_id_hex = id_hex;
       t.text_utf8 = std::move(text);
       result.group_texts.push_back(std::move(t));
+      BestEffortPersistHistoryEnvelope(true, false, group_id, sender_username,
+                                      plain, HistoryStatus::kSent,
+                                      NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(true, false, group_id, sender_username,
                                           plain);
     } else if (type == kChatTypeGroupFile) {
@@ -13083,6 +13104,9 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
       f.file_name = std::move(file_name);
       f.file_size = file_size;
       result.group_files.push_back(std::move(f));
+      BestEffortPersistHistoryEnvelope(true, false, group_id, sender_username,
+                                      plain, HistoryStatus::kSent,
+                                      NowUnixSeconds());
       BestEffortBroadcastDeviceSyncMessage(true, false, group_id, sender_username,
                                           plain);
     }
