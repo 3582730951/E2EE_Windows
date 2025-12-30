@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QLockFile>
@@ -26,6 +27,71 @@ QString PluginFileName() {
 
 QString RimeResourcePath(const QString &name) {
     return QStringLiteral(":/mi/e2ee/ui/ime/rime/") + name;
+}
+
+bool HasBinFiles(const QString &root) {
+    if (root.isEmpty() || !QDir(root).exists()) {
+        return false;
+    }
+    QDirIterator it(root, QStringList() << QStringLiteral("*.bin"),
+                    QDir::Files, QDirIterator::Subdirectories);
+    return it.hasNext();
+}
+
+QString ResolveRimePrebuiltDir() {
+    const QString env = qEnvironmentVariable("MI_E2EE_RIME_PREBUILT_DIR");
+    if (!env.isEmpty()) {
+        return env;
+    }
+    const QString appRoot = UiRuntimePaths::AppRootDir();
+    const QString runtimeDir = UiRuntimePaths::RuntimeDir();
+    const QStringList candidates = {
+        appRoot.isEmpty() ? QString() : QDir(appRoot).filePath(QStringLiteral("database/rime/prebuilt")),
+        appRoot.isEmpty() ? QString() : QDir(appRoot).filePath(QStringLiteral("rime/prebuilt")),
+        runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(QStringLiteral("rime/prebuilt")),
+    };
+    for (const auto &dir : candidates) {
+        if (!dir.isEmpty() && QDir(dir).exists()) {
+            return dir;
+        }
+    }
+    return {};
+}
+
+void CopyPrebuiltUserData(const QString &srcRoot, const QString &dstRoot) {
+    if (srcRoot.isEmpty() || dstRoot.isEmpty()) {
+        return;
+    }
+    QDir srcDir(srcRoot);
+    if (!srcDir.exists()) {
+        return;
+    }
+    QDir dstDir(dstRoot);
+    if (!dstDir.exists()) {
+        if (!QDir().mkpath(dstRoot)) {
+            return;
+        }
+    }
+    QDirIterator it(srcRoot, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo info = it.fileInfo();
+        const QString rel = srcDir.relativeFilePath(info.filePath());
+        const QString dstPath = dstDir.filePath(rel);
+        if (info.isDir()) {
+            QDir().mkpath(dstPath);
+            continue;
+        }
+        if (QFile::exists(dstPath)) {
+            continue;
+        }
+        const QFileInfo dstInfo(dstPath);
+        if (!dstInfo.dir().exists()) {
+            QDir().mkpath(dstInfo.path());
+        }
+        QFile::copy(info.filePath(), dstPath);
+    }
 }
 }  // namespace
 
@@ -316,6 +382,12 @@ bool ImePluginLoader::ensureRimeData(QString &sharedDir, QString &userDir) {
         userLock_->setStaleLockTime(0);
         if (!userLock_->tryLock(0)) {
             return false;
+        }
+    }
+    if (!HasBinFiles(userDir)) {
+        const QString prebuiltDir = ResolveRimePrebuiltDir();
+        if (!prebuiltDir.isEmpty() && HasBinFiles(prebuiltDir)) {
+            CopyPrebuiltUserData(prebuiltDir, userDir);
         }
     }
     const QStringList forcedFiles = {

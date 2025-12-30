@@ -1,6 +1,7 @@
 #include "../common/ImePluginApi.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -212,10 +213,17 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
         gApi->deployer_initialize(&traits);
     }
     gApi->initialize(&traits);
-    const bool needsDeploy = !HasCompiledData(user_dir);
+    const bool hasCompiled = HasCompiledData(user_dir);
+    bool forceDeploy = false;
+    if (const char *env = std::getenv("MI_E2EE_RIME_FORCE_DEPLOY")) {
+        if (*env != '\0' && std::strcmp(env, "0") != 0) {
+            forceDeploy = true;
+        }
+    }
+    const bool needsDeploy = !hasCompiled || forceDeploy;
     bool maintenanceStarted = false;
-    if (gApi->start_maintenance) {
-        maintenanceStarted = gApi->start_maintenance(needsDeploy ? True : False) == True;
+    if (needsDeploy && gApi->start_maintenance) {
+        maintenanceStarted = gApi->start_maintenance(True) == True;
     }
     if (!maintenanceStarted && needsDeploy && gApi->deploy) {
         gApi->deploy();
