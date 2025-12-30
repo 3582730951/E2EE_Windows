@@ -562,10 +562,17 @@ std::uint8_t Xtime(std::uint8_t v) {
   return static_cast<std::uint8_t>((v << 1) ^ ((v & 0x80u) ? 0x1Bu : 0));
 }
 
+using ByteBijection = std::array<std::uint8_t, 256>;
+using RoundBijections = std::array<std::array<ByteBijection, 16>, 15>;
+
 struct WhiteboxAesTables {
   std::array<std::array<std::array<std::array<std::uint32_t, 256>, 4>, 4>, 13>
       rounds{};
   std::array<std::array<std::array<std::uint32_t, 256>, 4>, 4> final{};
+  RoundBijections enc_a{};
+  RoundBijections dec_a{};
+  RoundBijections enc_b{};
+  RoundBijections dec_b{};
 };
 
 constexpr std::array<std::array<int, 4>, 4> kAesTboxInputIndex = {{
@@ -634,10 +641,168 @@ void BuildBaseTables(
   }
 }
 
+std::uint8_t EncodeByte(const WhiteboxAesTables& tables,
+                        std::size_t round,
+                        std::size_t pos,
+                        std::uint8_t value) {
+  return tables.enc_b[round][pos][tables.enc_a[round][pos][value]];
+}
+
+std::uint8_t DecodeByte(const WhiteboxAesTables& tables,
+                        std::size_t round,
+                        std::size_t pos,
+                        std::uint8_t value) {
+  return tables.dec_a[round][pos][tables.dec_b[round][pos][value]];
+}
+
+std::uint32_t EncodeWord(const WhiteboxAesTables& tables,
+                         std::size_t round,
+                         std::uint32_t word,
+                         std::size_t word_index) {
+  const std::uint8_t b0 = static_cast<std::uint8_t>((word >> 24) & 0xFF);
+  const std::uint8_t b1 = static_cast<std::uint8_t>((word >> 16) & 0xFF);
+  const std::uint8_t b2 = static_cast<std::uint8_t>((word >> 8) & 0xFF);
+  const std::uint8_t b3 = static_cast<std::uint8_t>(word & 0xFF);
+  const std::size_t base = word_index * 4;
+  const std::uint8_t e0 = EncodeByte(tables, round, base + 0, b0);
+  const std::uint8_t e1 = EncodeByte(tables, round, base + 1, b1);
+  const std::uint8_t e2 = EncodeByte(tables, round, base + 2, b2);
+  const std::uint8_t e3 = EncodeByte(tables, round, base + 3, b3);
+  return (static_cast<std::uint32_t>(e0) << 24) |
+         (static_cast<std::uint32_t>(e1) << 16) |
+         (static_cast<std::uint32_t>(e2) << 8) |
+         static_cast<std::uint32_t>(e3);
+}
+
 std::array<std::uint8_t, 32> Sha256Bytes(const std::vector<std::uint8_t>& in) {
   mi::server::crypto::Sha256Digest d;
   mi::server::crypto::Sha256(in.data(), in.size(), d);
   return d.bytes;
+}
+
+std::uint8_t Parity8(std::uint8_t v) {
+  v ^= static_cast<std::uint8_t>(v >> 4);
+  v ^= static_cast<std::uint8_t>(v >> 2);
+  v ^= static_cast<std::uint8_t>(v >> 1);
+  return static_cast<std::uint8_t>(v & 1u);
+}
+
+std::uint8_t ApplyMatrix(const std::array<std::uint8_t, 8>& mat,
+                         std::uint8_t value) {
+  std::uint8_t out = 0;
+  for (std::size_t row = 0; row < mat.size(); ++row) {
+    const std::uint8_t bits = static_cast<std::uint8_t>(mat[row] & value);
+    const std::uint8_t bit = Parity8(bits);
+    if (bit) {
+      out = static_cast<std::uint8_t>(out | (1u << (7u - row)));
+    }
+  }
+  return out;
+}
+
+bool InvertMatrix(const std::array<std::uint8_t, 8>& mat,
+                  std::array<std::uint8_t, 8>& inv) {
+  std::array<std::uint16_t, 8> rows{};
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    const std::uint16_t left = static_cast<std::uint16_t>(mat[i]) << 8;
+    const std::uint16_t right =
+        static_cast<std::uint16_t>(1u << (7u - i));
+    rows[i] = static_cast<std::uint16_t>(left | right);
+  }
+
+  for (std::size_t col = 0; col < 8; ++col) {
+    const std::uint16_t mask =
+        static_cast<std::uint16_t>(1u << (15u - col));
+    std::size_t pivot = col;
+    while (pivot < 8 && (rows[pivot] & mask) == 0) {
+      ++pivot;
+    }
+    if (pivot == 8) {
+      return false;
+    }
+    if (pivot != col) {
+      std::swap(rows[pivot], rows[col]);
+    }
+    for (std::size_t r = 0; r < 8; ++r) {
+      if (r != col && (rows[r] & mask)) {
+        rows[r] = static_cast<std::uint16_t>(rows[r] ^ rows[col]);
+      }
+    }
+  }
+
+  for (std::size_t i = 0; i < 8; ++i) {
+    inv[i] = static_cast<std::uint8_t>(rows[i] & 0xFFu);
+  }
+  return true;
+}
+
+bool BuildLinearBijection(const std::array<std::uint8_t, 32>& key,
+                          std::uint32_t round,
+                          std::uint32_t pos,
+                          const char* label,
+                          ByteBijection& enc,
+                          ByteBijection& dec,
+                          std::string& error) {
+  error.clear();
+  std::array<std::uint8_t, 8> mat{};
+  std::array<std::uint8_t, 8> inv{};
+  bool ok = false;
+  for (std::uint32_t attempt = 0; attempt < 1024; ++attempt) {
+    std::vector<std::uint8_t> seed;
+    if (label && *label) {
+      const std::size_t len = std::strlen(label);
+      seed.insert(seed.end(), label, label + len);
+    }
+    seed.insert(seed.end(), key.begin(), key.end());
+    seed.push_back(static_cast<std::uint8_t>(round & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((round >> 8) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((round >> 16) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((round >> 24) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>(pos & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((pos >> 8) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((pos >> 16) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((pos >> 24) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>(attempt & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((attempt >> 8) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((attempt >> 16) & 0xFF));
+    seed.push_back(static_cast<std::uint8_t>((attempt >> 24) & 0xFF));
+    const auto hash = Sha256Bytes(seed);
+    for (std::size_t i = 0; i < mat.size(); ++i) {
+      mat[i] = hash[i];
+    }
+    if (InvertMatrix(mat, inv)) {
+      ok = true;
+      break;
+    }
+  }
+  if (!ok) {
+    error = "history whitebox linear map failed";
+    return false;
+  }
+
+  for (std::size_t v = 0; v < 256; ++v) {
+    const auto byte = static_cast<std::uint8_t>(v);
+    enc[v] = ApplyMatrix(mat, byte);
+    dec[v] = ApplyMatrix(inv, byte);
+  }
+  return true;
+}
+
+bool BuildRoundBijections(const std::array<std::uint8_t, 32>& key,
+                          const char* label,
+                          RoundBijections& enc,
+                          RoundBijections& dec,
+                          std::string& error) {
+  error.clear();
+  for (std::uint32_t round = 0; round < enc.size(); ++round) {
+    for (std::uint32_t pos = 0; pos < 16; ++pos) {
+      if (!BuildLinearBijection(key, round, pos, label,
+                                enc[round][pos], dec[round][pos], error)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 std::array<std::uint32_t, 4> DeriveRoundMask(
@@ -696,6 +861,14 @@ bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
     error = "history key invalid";
     return false;
   }
+  if (!BuildRoundBijections(key, "MI_E2EE_WB_LIN_A_V1",
+                            out.enc_a, out.dec_a, error)) {
+    return false;
+  }
+  if (!BuildRoundBijections(key, "MI_E2EE_WB_LIN_B_V1",
+                            out.enc_b, out.dec_b, error)) {
+    return false;
+  }
 
   Aes256KeySchedule ks;
   Aes256KeyExpand(key, ks);
@@ -722,13 +895,15 @@ bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
 
     for (std::uint32_t word = 0; word < 4; ++word) {
       const auto shares = DeriveShareMask(key, round, word, false);
-      const std::uint32_t rk =
-          round_keys[(round + 1) * 4 + word];
-      const std::uint32_t share0 = shares[0] ^ rk;
+      const std::uint32_t rk = round_keys[(round + 1) * 4 + word];
+      const std::uint32_t const_word = rk ^ out_mask_words[word];
+      const std::uint32_t enc_const =
+          EncodeWord(out, round + 1, const_word, word);
+      const std::uint32_t share0 = shares[0];
       const std::uint32_t share1 = shares[1];
       const std::uint32_t share2 = shares[2];
       const std::uint32_t share3 =
-          out_mask_words[word] ^ shares[0] ^ shares[1] ^ shares[2];
+          enc_const ^ shares[0] ^ shares[1] ^ shares[2];
       const std::uint32_t share[4] = {share0, share1, share2, share3};
 
       for (std::size_t table = 0; table < 4; ++table) {
@@ -736,9 +911,13 @@ bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
         const std::uint8_t mask = in_mask[static_cast<std::size_t>(idx)];
         for (std::size_t b = 0; b < 256; ++b) {
           const std::uint8_t unmasked =
-              static_cast<std::uint8_t>(b) ^ mask;
+              static_cast<std::uint8_t>(
+                  DecodeByte(out, round, static_cast<std::size_t>(idx),
+                             static_cast<std::uint8_t>(b)) ^
+                  mask);
           out.rounds[round][word][table][b] =
-              te[table][unmasked] ^ share[table];
+              EncodeWord(out, round + 1, te[table][unmasked], word) ^
+              share[table];
         }
       }
     }
@@ -748,13 +927,14 @@ bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
   const std::uint32_t final_round = 13;
   for (std::uint32_t word = 0; word < 4; ++word) {
     const auto shares = DeriveShareMask(key, final_round, word, true);
-    const std::uint32_t rk =
-        round_keys[14 * 4 + word];
-    const std::uint32_t share0 = shares[0] ^ rk;
+    const std::uint32_t rk = round_keys[14 * 4 + word];
+    const std::uint32_t enc_const =
+        EncodeWord(out, 14, rk, word);
+    const std::uint32_t share0 = shares[0];
     const std::uint32_t share1 = shares[1];
     const std::uint32_t share2 = shares[2];
     const std::uint32_t share3 =
-        shares[0] ^ shares[1] ^ shares[2];
+        enc_const ^ shares[0] ^ shares[1] ^ shares[2];
     const std::uint32_t share[4] = {share0, share1, share2, share3};
 
     for (std::size_t table = 0; table < 4; ++table) {
@@ -762,9 +942,14 @@ bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
       const std::uint8_t mask = in_mask[static_cast<std::size_t>(idx)];
       for (std::size_t b = 0; b < 256; ++b) {
         const std::uint8_t unmasked =
-            static_cast<std::uint8_t>(b) ^ mask;
+            static_cast<std::uint8_t>(
+                DecodeByte(out, final_round,
+                           static_cast<std::size_t>(idx),
+                           static_cast<std::uint8_t>(b)) ^
+                mask);
         out.final[word][table][b] =
-            fe[table][unmasked] ^ share[table];
+            EncodeWord(out, 14, fe[table][unmasked], word) ^
+            share[table];
       }
     }
   }
@@ -781,10 +966,14 @@ void WipeWhiteboxTables(WhiteboxAesTables& tables) {
 void WhiteboxAesEncryptBlock(const WhiteboxAesTables& tables,
                              const std::uint8_t in[16],
                              std::uint8_t out[16]) {
-  std::uint32_t s0 = LoadBe32(in + 0);
-  std::uint32_t s1 = LoadBe32(in + 4);
-  std::uint32_t s2 = LoadBe32(in + 8);
-  std::uint32_t s3 = LoadBe32(in + 12);
+  std::array<std::uint8_t, 16> encoded{};
+  for (std::size_t i = 0; i < encoded.size(); ++i) {
+    encoded[i] = EncodeByte(tables, 0, i, in[i]);
+  }
+  std::uint32_t s0 = LoadBe32(encoded.data() + 0);
+  std::uint32_t s1 = LoadBe32(encoded.data() + 4);
+  std::uint32_t s2 = LoadBe32(encoded.data() + 8);
+  std::uint32_t s3 = LoadBe32(encoded.data() + 12);
 
   for (std::size_t round = 0; round < 13; ++round) {
     const auto& r = tables.rounds[round];
@@ -836,22 +1025,27 @@ void WhiteboxAesEncryptBlock(const WhiteboxAesTables& tables,
       f[3][2][(s1 >> 8) & 0xFF] ^
       f[3][3][s2 & 0xFF];
 
-  out[0] = static_cast<std::uint8_t>(t0 >> 24);
-  out[1] = static_cast<std::uint8_t>(t0 >> 16);
-  out[2] = static_cast<std::uint8_t>(t0 >> 8);
-  out[3] = static_cast<std::uint8_t>(t0);
-  out[4] = static_cast<std::uint8_t>(t1 >> 24);
-  out[5] = static_cast<std::uint8_t>(t1 >> 16);
-  out[6] = static_cast<std::uint8_t>(t1 >> 8);
-  out[7] = static_cast<std::uint8_t>(t1);
-  out[8] = static_cast<std::uint8_t>(t2 >> 24);
-  out[9] = static_cast<std::uint8_t>(t2 >> 16);
-  out[10] = static_cast<std::uint8_t>(t2 >> 8);
-  out[11] = static_cast<std::uint8_t>(t2);
-  out[12] = static_cast<std::uint8_t>(t3 >> 24);
-  out[13] = static_cast<std::uint8_t>(t3 >> 16);
-  out[14] = static_cast<std::uint8_t>(t3 >> 8);
-  out[15] = static_cast<std::uint8_t>(t3);
+  const std::uint8_t raw[16] = {
+      static_cast<std::uint8_t>(t0 >> 24),
+      static_cast<std::uint8_t>(t0 >> 16),
+      static_cast<std::uint8_t>(t0 >> 8),
+      static_cast<std::uint8_t>(t0),
+      static_cast<std::uint8_t>(t1 >> 24),
+      static_cast<std::uint8_t>(t1 >> 16),
+      static_cast<std::uint8_t>(t1 >> 8),
+      static_cast<std::uint8_t>(t1),
+      static_cast<std::uint8_t>(t2 >> 24),
+      static_cast<std::uint8_t>(t2 >> 16),
+      static_cast<std::uint8_t>(t2 >> 8),
+      static_cast<std::uint8_t>(t2),
+      static_cast<std::uint8_t>(t3 >> 24),
+      static_cast<std::uint8_t>(t3 >> 16),
+      static_cast<std::uint8_t>(t3 >> 8),
+      static_cast<std::uint8_t>(t3),
+  };
+  for (std::size_t i = 0; i < 16; ++i) {
+    out[i] = DecodeByte(tables, 14, i, raw[i]);
+  }
 }
 
 void StoreUint64Be(std::uint8_t* out, std::uint64_t v) {
