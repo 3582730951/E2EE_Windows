@@ -425,6 +425,8 @@ class ClientCore {
   bool EnsureE2ee();
   bool LoadKtState();
   bool SaveKtState();
+  void WarmupHistoryOnStartup();
+  void FlushHistoryOnShutdown();
   bool EnsurePreKeyPublished();
   bool MaybeSendCoverTraffic();
   bool FetchPreKeyBundle(const std::string& peer_username,

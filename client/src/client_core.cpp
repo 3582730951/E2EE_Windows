@@ -6293,6 +6293,7 @@ bool ClientCore::Login(const std::string& username,
       std::string hist_err;
       if (store->Init(e2ee_state_dir_, username_, hist_err)) {
         history_store_ = std::move(store);
+        WarmupHistoryOnStartup();
       } else {
         history_store_.reset();
       }
@@ -6471,6 +6472,7 @@ bool ClientCore::Login(const std::string& username,
     std::string hist_err;
     if (store->Init(e2ee_state_dir_, username_, hist_err)) {
       history_store_ = std::move(store);
+      WarmupHistoryOnStartup();
     } else {
       history_store_.reset();
     }
@@ -6512,6 +6514,7 @@ bool ClientCore::Logout() {
   group_delivery_order_.clear();
   chat_seen_ids_.clear();
   chat_seen_order_.clear();
+  FlushHistoryOnShutdown();
   history_store_.reset();
   cover_traffic_last_sent_ = {};
   friend_sync_version_ = 0;
@@ -7236,6 +7239,27 @@ void ClientCore::BestEffortPersistHistoryStatus(
   (void)history_store_->AppendStatusUpdate(
       is_group, conv_id, msg_id, static_cast<ChatHistoryStatus>(status),
       timestamp_sec, hist_err);
+  last_error_ = saved_err;
+}
+
+void ClientCore::WarmupHistoryOnStartup() {
+  if (!history_store_) {
+    return;
+  }
+  const std::string saved_err = last_error_;
+  std::vector<ChatHistoryMessage> msgs;
+  std::string hist_err;
+  (void)history_store_->ExportRecentSnapshot(20, 50, msgs, hist_err);
+  last_error_ = saved_err;
+}
+
+void ClientCore::FlushHistoryOnShutdown() {
+  if (!history_store_) {
+    return;
+  }
+  const std::string saved_err = last_error_;
+  std::string hist_err;
+  (void)history_store_->Flush(hist_err);
   last_error_ = saved_err;
 }
 

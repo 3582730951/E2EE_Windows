@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -13,6 +14,7 @@
 #include <utility>
 
 #include "dpapi_util.h"
+#include "miniz.h"
 #include "monocypher.h"
 
 #include "../server/include/crypto.h"
@@ -24,7 +26,8 @@ namespace {
 
 constexpr std::uint8_t kContainerMagic[8] = {'M', 'I', 'H', 'D',
                                              'B', '0', '1', 0};
-constexpr std::uint8_t kContainerVersion = 1;
+constexpr std::uint8_t kContainerVersionV1 = 1;
+constexpr std::uint8_t kContainerVersionV2 = 2;
 constexpr std::size_t kPeStubSize = 512;
 constexpr std::size_t kMaxConversationsPerFile = 3;
 constexpr std::size_t kSeqWidth = 6;
@@ -43,6 +46,12 @@ constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
 constexpr std::size_t kPadHeaderBytes = 8;
 constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048,
                                        4096, 8192, 16384};
+constexpr std::uint8_t kCompressMagic[4] = {'M', 'I', 'C', 'M'};
+constexpr std::uint8_t kCompressVersion = 1;
+constexpr std::uint8_t kCompressMethodDeflate = 1;
+constexpr int kCompressLevel = 1;
+constexpr std::size_t kCompressHeaderBytes =
+    sizeof(kCompressMagic) + 1 + 1 + 2 + 4;
 constexpr std::uint8_t kAesLayerMagic[8] = {'M', 'I', 'A', 'E',
                                             'S', '0', '1', 0};
 constexpr std::uint8_t kAesLayerVersion = 1;
@@ -50,8 +59,19 @@ constexpr std::size_t kAesNonceBytes = 12;
 constexpr std::size_t kAesTagBytes = 16;
 constexpr std::size_t kAesLayerHeaderBytes =
     sizeof(kAesLayerMagic) + 1 + kAesNonceBytes + kAesTagBytes + 4;
+constexpr std::uint8_t kWrapMagic[4] = {'M', 'I', 'H', '2'};
+constexpr std::uint8_t kWrapVersion = 1;
+constexpr std::size_t kWrapKeyBytes = 32;
+constexpr std::size_t kWrapSlotCount = 3;
+constexpr std::size_t kWrapSlotNonceBytes = 24;
+constexpr std::size_t kWrapSlotCipherBytes = kWrapKeyBytes;
+constexpr std::size_t kWrapSlotMacBytes = 16;
+constexpr std::size_t kWrapHeaderBytes = 8;
+constexpr std::size_t kWrapNonceBytes = 24;
+constexpr std::size_t kWrapMacBytes = 16;
 
 constexpr std::size_t kMaxRecordCipherLen = 2u * 1024u * 1024u;
+constexpr std::size_t kMaxWrapRecordBytes = kMaxRecordCipherLen + 4096;
 constexpr std::size_t kMaxHistoryKeyFileBytes = 64u * 1024u;
 
 bool IsAllZero(const std::uint8_t* data, std::size_t len) {
@@ -119,6 +139,15 @@ bool ReadUint32(std::ifstream& in, std::uint32_t& v) {
 bool RandomUint32(std::uint32_t& out) {
   return mi::server::crypto::RandomBytes(reinterpret_cast<std::uint8_t*>(&out),
                                          sizeof(out));
+}
+
+std::uint64_t NowUnixSeconds() {
+  using clock = std::chrono::system_clock;
+  const auto now = clock::now();
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          now.time_since_epoch())
+          .count());
 }
 
 std::size_t SelectPadTarget(std::size_t min_len) {
@@ -202,6 +231,104 @@ bool UnpadPlain(const std::vector<std::uint8_t>& plain,
   return true;
 }
 
+bool EncodeCompressionLayer(const std::vector<std::uint8_t>& plain,
+                            std::vector<std::uint8_t>& out,
+                            std::string& error) {
+  error.clear();
+  out.clear();
+  if (plain.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "history record too large";
+    return false;
+  }
+
+  mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(plain.size()));
+  if (bound == 0 || bound > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "history compress failed";
+    return false;
+  }
+  std::vector<std::uint8_t> comp;
+  comp.resize(static_cast<std::size_t>(bound));
+  mz_ulong comp_len = bound;
+  const int rc = mz_compress2(comp.data(), &comp_len, plain.data(),
+                              static_cast<mz_ulong>(plain.size()),
+                              kCompressLevel);
+  if (rc != MZ_OK) {
+    error = "history compress failed";
+    return false;
+  }
+  comp.resize(static_cast<std::size_t>(comp_len));
+
+  out.reserve(kCompressHeaderBytes + 4 + comp.size());
+  out.insert(out.end(), kCompressMagic,
+             kCompressMagic + sizeof(kCompressMagic));
+  out.push_back(kCompressVersion);
+  out.push_back(kCompressMethodDeflate);
+  out.push_back(0);
+  out.push_back(0);
+  if (!mi::server::proto::WriteUint32(
+          static_cast<std::uint32_t>(plain.size()), out)) {
+    error = "history record too large";
+    return false;
+  }
+  if (!mi::server::proto::WriteBytes(comp, out)) {
+    error = "history record too large";
+    return false;
+  }
+  return true;
+}
+
+bool DecodeCompressionLayer(const std::vector<std::uint8_t>& input,
+                            std::vector<std::uint8_t>& out_plain,
+                            bool& out_used_compress,
+                            std::string& error) {
+  error.clear();
+  out_plain.clear();
+  out_used_compress = false;
+  if (input.size() < kCompressHeaderBytes) {
+    out_plain = input;
+    return true;
+  }
+  if (std::memcmp(input.data(), kCompressMagic,
+                  sizeof(kCompressMagic)) != 0) {
+    out_plain = input;
+    return true;
+  }
+  std::size_t off = sizeof(kCompressMagic);
+  const std::uint8_t version = input[off++];
+  const std::uint8_t method = input[off++];
+  off += 2;
+  if (version != kCompressVersion || method != kCompressMethodDeflate) {
+    error = "history version mismatch";
+    return false;
+  }
+  std::uint32_t plain_len = 0;
+  if (!mi::server::proto::ReadUint32(input, off, plain_len)) {
+    error = "history read failed";
+    return false;
+  }
+  if (plain_len > kMaxRecordCipherLen) {
+    error = "history record size invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> comp;
+  if (!mi::server::proto::ReadBytes(input, off, comp) || off != input.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  plain.resize(plain_len);
+  mz_ulong dest_len = static_cast<mz_ulong>(plain_len);
+  const int rc = mz_uncompress(plain.data(), &dest_len, comp.data(),
+                               static_cast<mz_ulong>(comp.size()));
+  if (rc != MZ_OK || dest_len != plain_len) {
+    error = "history compress failed";
+    return false;
+  }
+  out_plain = std::move(plain);
+  out_used_compress = true;
+  return true;
+}
+
 std::string MakeConvKey(bool is_group, const std::string& conv_id) {
   std::string out;
   out.reserve(conv_id.size() + 2);
@@ -209,6 +336,23 @@ std::string MakeConvKey(bool is_group, const std::string& conv_id) {
   out.push_back(':');
   out.append(conv_id);
   return out;
+}
+
+bool ParseConvKey(const std::string& key,
+                  bool& out_is_group,
+                  std::string& out_conv_id) {
+  out_is_group = false;
+  out_conv_id.clear();
+  if (key.size() < 3 || key[1] != ':') {
+    return false;
+  }
+  const char prefix = key[0];
+  if (prefix != 'g' && prefix != 'p') {
+    return false;
+  }
+  out_is_group = (prefix == 'g');
+  out_conv_id = key.substr(2);
+  return !out_conv_id.empty();
 }
 
 std::string PadSeq(std::uint32_t seq) {
@@ -337,7 +481,9 @@ const std::vector<std::uint8_t>& PeStubBytes() {
   return stub;
 }
 
-bool WriteContainerHeader(std::ofstream& out, std::string& error) {
+bool WriteContainerHeader(std::ofstream& out,
+                          std::uint8_t version,
+                          std::string& error) {
   error.clear();
   if (!out) {
     error = "history write failed";
@@ -345,7 +491,7 @@ bool WriteContainerHeader(std::ofstream& out, std::string& error) {
   }
   out.write(reinterpret_cast<const char*>(kContainerMagic),
             sizeof(kContainerMagic));
-  out.put(static_cast<char>(kContainerVersion));
+  out.put(static_cast<char>(version));
   const char zero[3] = {0, 0, 0};
   out.write(zero, sizeof(zero));
   if (!out.good()) {
@@ -355,8 +501,11 @@ bool WriteContainerHeader(std::ofstream& out, std::string& error) {
   return true;
 }
 
-bool ReadContainerHeader(std::ifstream& in, std::string& error) {
+bool ReadContainerHeader(std::ifstream& in,
+                         std::uint8_t& out_version,
+                         std::string& error) {
   error.clear();
+  out_version = 0;
   std::uint8_t magic[sizeof(kContainerMagic)]{};
   if (!ReadExact(in, magic, sizeof(magic))) {
     error = "history read failed";
@@ -376,11 +525,103 @@ bool ReadContainerHeader(std::ifstream& in, std::string& error) {
     error = "history read failed";
     return false;
   }
-  if (version != kContainerVersion) {
-    error = "history version mismatch";
+  out_version = version;
+  return true;
+}
+
+bool ParseOuterPlain(const std::vector<std::uint8_t>& outer_plain,
+                     bool& out_is_group,
+                     std::string& out_conv_id,
+                     std::array<std::uint8_t, 24>& out_inner_nonce,
+                     std::vector<std::uint8_t>& out_inner_cipher,
+                     std::array<std::uint8_t, 16>& out_inner_mac,
+                     std::string& error) {
+  error.clear();
+  out_is_group = false;
+  out_conv_id.clear();
+  out_inner_nonce.fill(0);
+  out_inner_cipher.clear();
+  out_inner_mac.fill(0);
+
+  if (outer_plain.empty()) {
+    error = "history record empty";
     return false;
   }
+  std::size_t off = 0;
+  out_is_group = outer_plain[off++] != 0;
+  if (!mi::server::proto::ReadString(outer_plain, off, out_conv_id) ||
+      out_conv_id.empty()) {
+    error = "history read failed";
+    return false;
+  }
+  if (off + out_inner_nonce.size() > outer_plain.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::memcpy(out_inner_nonce.data(), outer_plain.data() + off,
+              out_inner_nonce.size());
+  off += out_inner_nonce.size();
+  if (!mi::server::proto::ReadBytes(outer_plain, off, out_inner_cipher)) {
+    error = "history read failed";
+    return false;
+  }
+  if (off + out_inner_mac.size() != outer_plain.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::memcpy(out_inner_mac.data(), outer_plain.data() + off,
+              out_inner_mac.size());
   return true;
+}
+
+bool DecryptOuterBlob(const std::array<std::uint8_t, 32>& master_key,
+                      const std::vector<std::uint8_t>& blob,
+                      bool& out_is_group,
+                      std::string& out_conv_id,
+                      std::array<std::uint8_t, 24>& out_inner_nonce,
+                      std::vector<std::uint8_t>& out_inner_cipher,
+                      std::array<std::uint8_t, 16>& out_inner_mac,
+                      std::string& error) {
+  error.clear();
+  out_is_group = false;
+  out_conv_id.clear();
+  out_inner_nonce.fill(0);
+  out_inner_cipher.clear();
+  out_inner_mac.fill(0);
+
+  if (IsAllZero(master_key.data(), master_key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+  if (blob.size() < (kWrapNonceBytes + kWrapMacBytes)) {
+    error = "history record size invalid";
+    return false;
+  }
+  const std::size_t cipher_len =
+      blob.size() - kWrapNonceBytes - kWrapMacBytes;
+  if (cipher_len == 0 || cipher_len > kMaxRecordCipherLen) {
+    error = "history record size invalid";
+    return false;
+  }
+  std::array<std::uint8_t, 24> nonce{};
+  std::memcpy(nonce.data(), blob.data(), nonce.size());
+  std::vector<std::uint8_t> cipher(cipher_len);
+  std::memcpy(cipher.data(), blob.data() + nonce.size(), cipher.size());
+  std::array<std::uint8_t, 16> mac{};
+  std::memcpy(mac.data(), blob.data() + nonce.size() + cipher.size(),
+              mac.size());
+
+  std::vector<std::uint8_t> outer_plain(cipher.size());
+  const int ok = crypto_aead_unlock(outer_plain.data(), mac.data(),
+                                    master_key.data(), nonce.data(), nullptr,
+                                    0, cipher.data(), cipher.size());
+  if (ok != 0) {
+    error = "history auth failed";
+    return false;
+  }
+  return ParseOuterPlain(outer_plain, out_is_group, out_conv_id,
+                         out_inner_nonce, out_inner_cipher, out_inner_mac,
+                         error);
 }
 
 std::array<std::uint8_t, 32> DeriveMaskFromLabel(const char* label) {
@@ -1376,6 +1617,7 @@ bool WriteEncryptedRecord(std::ofstream& out,
                           bool is_group,
                           const std::string& conv_id,
                           const std::vector<std::uint8_t>& inner_plain,
+                          std::uint8_t format_version,
                           std::string& error) {
   error.clear();
   if (!out) {
@@ -1392,8 +1634,13 @@ bool WriteEncryptedRecord(std::ofstream& out,
     return false;
   }
 
+  std::vector<std::uint8_t> compressed;
+  if (!EncodeCompressionLayer(inner_plain, compressed, error)) {
+    return false;
+  }
+
   std::vector<std::uint8_t> padded;
-  if (!PadPlain(inner_plain, padded, error)) {
+  if (!PadPlain(compressed, padded, error)) {
     return false;
   }
 
@@ -1441,6 +1688,16 @@ bool WriteEncryptedRecord(std::ofstream& out,
   crypto_aead_lock(outer_cipher.data(), outer_mac.data(), master_key.data(),
                    outer_nonce.data(), nullptr, 0, outer_plain.data(),
                    outer_plain.size());
+
+  std::vector<std::uint8_t> outer_blob;
+  outer_blob.reserve(outer_nonce.size() + outer_cipher.size() + outer_mac.size());
+  outer_blob.insert(outer_blob.end(), outer_nonce.begin(), outer_nonce.end());
+  outer_blob.insert(outer_blob.end(), outer_cipher.begin(), outer_cipher.end());
+  outer_blob.insert(outer_blob.end(), outer_mac.begin(), outer_mac.end());
+
+  if (format_version >= kContainerVersionV2) {
+    return WriteMultiWrappedRecord(out, master_key, outer_blob, error);
+  }
 
   if (outer_cipher.size() > (std::numeric_limits<std::uint32_t>::max)()) {
     error = "history record too large";
@@ -1541,34 +1798,318 @@ bool ReadOuterRecord(std::ifstream& in,
     return false;
   }
 
-  std::size_t off = 0;
-  if (outer_plain.empty()) {
+  std::string parse_err;
+  if (!ParseOuterPlain(outer_plain, out_is_group, out_conv_id,
+                       out_inner_nonce, out_inner_cipher, out_inner_mac,
+                       parse_err)) {
+    error = parse_err.empty() ? "history read failed" : parse_err;
+    return false;
+  }
+  out_has_record = true;
+  return true;
+}
+
+bool DeriveWrapSlotKey(const std::array<std::uint8_t, 32>& master_key,
+                       std::uint32_t slot,
+                       std::array<std::uint8_t, 32>& out_key,
+                       std::string& error) {
+  error.clear();
+  out_key.fill(0);
+  if (IsAllZero(master_key.data(), master_key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> info;
+  static constexpr char kPrefix[] = "MI_E2EE_HISTORY_WRAP_SLOT_V1";
+  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  info.push_back(0);
+  info.push_back(static_cast<std::uint8_t>(slot & 0xFF));
+  info.push_back(static_cast<std::uint8_t>((slot >> 8) & 0xFF));
+  info.push_back(static_cast<std::uint8_t>((slot >> 16) & 0xFF));
+  info.push_back(static_cast<std::uint8_t>((slot >> 24) & 0xFF));
+
+  std::array<std::uint8_t, 32> salt{};
+  static constexpr char kSalt[] = "MI_E2EE_HISTORY_WRAP_SALT_V1";
+  mi::server::crypto::Sha256Digest d;
+  mi::server::crypto::Sha256(reinterpret_cast<const std::uint8_t*>(kSalt),
+                             sizeof(kSalt) - 1, d);
+  salt = d.bytes;
+
+  if (!mi::server::crypto::HkdfSha256(master_key.data(), master_key.size(),
+                                      salt.data(), salt.size(), info.data(),
+                                      info.size(), out_key.data(),
+                                      out_key.size())) {
+    error = "history hkdf failed";
+    return false;
+  }
+  return true;
+}
+
+bool WriteMultiWrappedRecord(std::ofstream& out,
+                             const std::array<std::uint8_t, 32>& master_key,
+                             const std::vector<std::uint8_t>& payload,
+                             std::string& error) {
+  error.clear();
+  if (!out) {
+    error = "history write failed";
+    return false;
+  }
+  if (IsAllZero(master_key.data(), master_key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+  if (payload.empty()) {
     error = "history record empty";
     return false;
   }
-  out_is_group = outer_plain[off++] != 0;
-  if (!mi::server::proto::ReadString(outer_plain, off, out_conv_id) ||
-      out_conv_id.empty()) {
+  if (payload.size() > (kMaxRecordCipherLen + 64u)) {
+    error = "history record too large";
+    return false;
+  }
+
+  std::array<std::uint8_t, kWrapKeyBytes> wrap_key{};
+  if (!mi::server::crypto::RandomBytes(wrap_key.data(), wrap_key.size())) {
+    error = "rng failed";
+    return false;
+  }
+
+  struct WrapSlot {
+    std::array<std::uint8_t, kWrapSlotNonceBytes> nonce{};
+    std::array<std::uint8_t, kWrapSlotCipherBytes> cipher{};
+    std::array<std::uint8_t, kWrapSlotMacBytes> mac{};
+  };
+
+  std::array<WrapSlot, kWrapSlotCount> slots{};
+  for (std::size_t i = 0; i < slots.size(); ++i) {
+    std::array<std::uint8_t, 32> slot_key{};
+    std::string slot_err;
+    if (!DeriveWrapSlotKey(master_key, static_cast<std::uint32_t>(i),
+                           slot_key, slot_err)) {
+      error = slot_err.empty() ? "history hkdf failed" : slot_err;
+      return false;
+    }
+    if (!mi::server::crypto::RandomBytes(slots[i].nonce.data(),
+                                         slots[i].nonce.size())) {
+      error = "rng failed";
+      return false;
+    }
+    crypto_aead_lock(slots[i].cipher.data(), slots[i].mac.data(),
+                     slot_key.data(), slots[i].nonce.data(), nullptr, 0,
+                     wrap_key.data(), wrap_key.size());
+    crypto_wipe(slot_key.data(), slot_key.size());
+  }
+
+  std::array<std::uint8_t, kWrapNonceBytes> wrap_nonce{};
+  if (!mi::server::crypto::RandomBytes(wrap_nonce.data(),
+                                       wrap_nonce.size())) {
+    error = "rng failed";
+    return false;
+  }
+  std::vector<std::uint8_t> wrap_cipher(payload.size());
+  std::array<std::uint8_t, kWrapMacBytes> wrap_mac{};
+  crypto_aead_lock(wrap_cipher.data(), wrap_mac.data(), wrap_key.data(),
+                   wrap_nonce.data(), nullptr, 0, payload.data(),
+                   payload.size());
+
+  std::vector<std::uint8_t> record;
+  record.reserve(kWrapHeaderBytes +
+                 slots.size() * (kWrapSlotNonceBytes + kWrapSlotCipherBytes +
+                                 kWrapSlotMacBytes) +
+                 kWrapNonceBytes + 4 + wrap_cipher.size() + kWrapMacBytes);
+  record.insert(record.end(), kWrapMagic, kWrapMagic + sizeof(kWrapMagic));
+  record.push_back(kWrapVersion);
+  record.push_back(static_cast<std::uint8_t>(slots.size()));
+  record.push_back(0);
+  record.push_back(0);
+  for (const auto& slot : slots) {
+    record.insert(record.end(), slot.nonce.begin(), slot.nonce.end());
+    record.insert(record.end(), slot.cipher.begin(), slot.cipher.end());
+    record.insert(record.end(), slot.mac.begin(), slot.mac.end());
+  }
+  record.insert(record.end(), wrap_nonce.begin(), wrap_nonce.end());
+  if (!mi::server::proto::WriteBytes(wrap_cipher, record)) {
+    error = "history record too large";
+    return false;
+  }
+  record.insert(record.end(), wrap_mac.begin(), wrap_mac.end());
+
+  if (record.size() > (std::numeric_limits<std::uint32_t>::max)()) {
+    error = "history record too large";
+    return false;
+  }
+  const std::uint32_t record_len =
+      static_cast<std::uint32_t>(record.size());
+  if (!WriteUint32(out, record_len)) {
+    error = "history write failed";
+    return false;
+  }
+  out.write(reinterpret_cast<const char*>(record.data()),
+            static_cast<std::streamsize>(record.size()));
+  if (!out.good()) {
+    error = "history write failed";
+    return false;
+  }
+  return true;
+}
+
+bool ReadOuterRecordV2(std::ifstream& in,
+                       const std::array<std::uint8_t, 32>& master_key,
+                       bool& out_has_record,
+                       bool& out_is_group,
+                       std::string& out_conv_id,
+                       std::array<std::uint8_t, 24>& out_inner_nonce,
+                       std::vector<std::uint8_t>& out_inner_cipher,
+                       std::array<std::uint8_t, 16>& out_inner_mac,
+                       std::string& error) {
+  error.clear();
+  out_has_record = false;
+  out_is_group = false;
+  out_conv_id.clear();
+  out_inner_nonce.fill(0);
+  out_inner_cipher.clear();
+  out_inner_mac.fill(0);
+
+  if (IsAllZero(master_key.data(), master_key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+  if (!in) {
     error = "history read failed";
     return false;
   }
-  if (off + out_inner_nonce.size() > outer_plain.size()) {
+
+  std::uint32_t record_len = 0;
+  if (!ReadUint32(in, record_len)) {
+    if (in.eof()) {
+      return true;
+    }
     error = "history read failed";
     return false;
   }
-  std::memcpy(out_inner_nonce.data(), outer_plain.data() + off,
-              out_inner_nonce.size());
-  off += out_inner_nonce.size();
-  if (!mi::server::proto::ReadBytes(outer_plain, off, out_inner_cipher)) {
+  if (record_len == 0 || record_len > kMaxWrapRecordBytes) {
+    error = "history record size invalid";
+    return false;
+  }
+
+  std::vector<std::uint8_t> record;
+  record.resize(record_len);
+  if (!ReadExact(in, record.data(), record.size())) {
+    if (in.eof()) {
+      return true;
+    }
     error = "history read failed";
     return false;
   }
-  if (off + out_inner_mac.size() != outer_plain.size()) {
+
+  std::size_t off = 0;
+  if (record.size() < kWrapHeaderBytes ||
+      std::memcmp(record.data(), kWrapMagic, sizeof(kWrapMagic)) != 0) {
+    error = "history magic mismatch";
+    return false;
+  }
+  off += sizeof(kWrapMagic);
+  const std::uint8_t version = record[off++];
+  const std::uint8_t slot_count = record[off++];
+  off += 2;
+  if (version != kWrapVersion || slot_count == 0 ||
+      slot_count > static_cast<std::uint8_t>(kWrapSlotCount)) {
+    error = "history version mismatch";
+    return false;
+  }
+  const std::size_t slot_bytes =
+      kWrapSlotNonceBytes + kWrapSlotCipherBytes + kWrapSlotMacBytes;
+  const std::size_t slot_block = static_cast<std::size_t>(slot_count) * slot_bytes;
+  if (off + slot_block + kWrapNonceBytes + 4 + kWrapMacBytes > record.size()) {
+    error = "history record size invalid";
+    return false;
+  }
+
+  struct SlotView {
+    std::array<std::uint8_t, kWrapSlotNonceBytes> nonce{};
+    std::array<std::uint8_t, kWrapSlotCipherBytes> cipher{};
+    std::array<std::uint8_t, kWrapSlotMacBytes> mac{};
+  };
+  std::vector<SlotView> slots;
+  slots.resize(slot_count);
+  for (std::size_t i = 0; i < slots.size(); ++i) {
+    std::memcpy(slots[i].nonce.data(), record.data() + off,
+                slots[i].nonce.size());
+    off += slots[i].nonce.size();
+    std::memcpy(slots[i].cipher.data(), record.data() + off,
+                slots[i].cipher.size());
+    off += slots[i].cipher.size();
+    std::memcpy(slots[i].mac.data(), record.data() + off,
+                slots[i].mac.size());
+    off += slots[i].mac.size();
+  }
+
+  std::array<std::uint8_t, kWrapNonceBytes> wrap_nonce{};
+  std::memcpy(wrap_nonce.data(), record.data() + off, wrap_nonce.size());
+  off += wrap_nonce.size();
+  std::vector<std::uint8_t> wrap_cipher;
+  if (!mi::server::proto::ReadBytes(record, off, wrap_cipher)) {
     error = "history read failed";
     return false;
   }
-  std::memcpy(out_inner_mac.data(), outer_plain.data() + off,
-              out_inner_mac.size());
+  if (wrap_cipher.size() > (kMaxRecordCipherLen + 64u)) {
+    error = "history record size invalid";
+    return false;
+  }
+  if (off + kWrapMacBytes > record.size()) {
+    error = "history read failed";
+    return false;
+  }
+  std::array<std::uint8_t, kWrapMacBytes> wrap_mac{};
+  std::memcpy(wrap_mac.data(), record.data() + off, wrap_mac.size());
+  off += wrap_mac.size();
+  if (off != record.size()) {
+    error = "history read failed";
+    return false;
+  }
+
+  std::array<std::uint8_t, kWrapKeyBytes> wrap_key{};
+  bool slot_ok = false;
+  for (std::size_t i = 0; i < slots.size(); ++i) {
+    std::array<std::uint8_t, 32> slot_key{};
+    std::string slot_err;
+    if (!DeriveWrapSlotKey(master_key, static_cast<std::uint32_t>(i),
+                           slot_key, slot_err)) {
+      error = slot_err.empty() ? "history hkdf failed" : slot_err;
+      return false;
+    }
+    std::array<std::uint8_t, kWrapKeyBytes> candidate{};
+    const int ok = crypto_aead_unlock(
+        candidate.data(), slots[i].mac.data(), slot_key.data(),
+        slots[i].nonce.data(), nullptr, 0, slots[i].cipher.data(),
+        slots[i].cipher.size());
+    crypto_wipe(slot_key.data(), slot_key.size());
+    if (ok == 0) {
+      wrap_key = candidate;
+      slot_ok = true;
+      break;
+    }
+  }
+  if (!slot_ok) {
+    error = "history auth failed";
+    return false;
+  }
+
+  std::vector<std::uint8_t> outer_blob(wrap_cipher.size());
+  const int ok = crypto_aead_unlock(outer_blob.data(), wrap_mac.data(),
+                                    wrap_key.data(), wrap_nonce.data(), nullptr,
+                                    0, wrap_cipher.data(), wrap_cipher.size());
+  if (ok != 0) {
+    error = "history auth failed";
+    return false;
+  }
+
+  std::string parse_err;
+  if (!DecryptOuterBlob(master_key, outer_blob, out_is_group, out_conv_id,
+                        out_inner_nonce, out_inner_cipher, out_inner_mac,
+                        parse_err)) {
+    error = parse_err.empty() ? "history read failed" : parse_err;
+    return false;
+  }
   out_has_record = true;
   return true;
 }
@@ -1733,10 +2274,11 @@ bool ChatHistoryStore::Init(const std::filesystem::path& e2ee_state_dir,
   legacy_conv_dir_ = user_dir_ / "conversations";
   key_path_ = user_dir_ / "history_key.bin";
   user_tag_ = user_hash.substr(0, std::min<std::size_t>(16, user_hash.size()));
-  history_dir_ = e2ee_state_dir_.parent_path();
-  if (history_dir_.empty()) {
-    history_dir_ = e2ee_state_dir_;
+  std::filesystem::path base_dir = e2ee_state_dir_.parent_path();
+  if (base_dir.empty()) {
+    base_dir = e2ee_state_dir_;
   }
+  history_dir_ = base_dir / "database";
 
   std::error_code ec;
   std::filesystem::create_directories(legacy_conv_dir_, ec);
@@ -1967,10 +2509,15 @@ bool ChatHistoryStore::LoadHistoryFiles(std::string& error) {
     if (stub.size() < 2 || stub[0] != 'M' || stub[1] != 'Z') {
       continue;
     }
+    std::uint8_t version = 0;
     std::string hdr_err;
-    if (!ReadContainerHeader(in, hdr_err)) {
+    if (!ReadContainerHeader(in, version, hdr_err)) {
       continue;
     }
+    if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+      continue;
+    }
+    file.version = version;
 
     while (true) {
       bool has_record = false;
@@ -1980,8 +2527,14 @@ bool ChatHistoryStore::LoadHistoryFiles(std::string& error) {
       std::vector<std::uint8_t> inner_cipher;
       std::array<std::uint8_t, 16> inner_mac{};
       std::string rec_err;
-      if (!ReadOuterRecord(in, master_key_, has_record, is_group, conv_id,
-                           inner_nonce, inner_cipher, inner_mac, rec_err)) {
+      const bool ok = (version >= kContainerVersionV2)
+                          ? ReadOuterRecordV2(in, master_key_, has_record,
+                                              is_group, conv_id, inner_nonce,
+                                              inner_cipher, inner_mac, rec_err)
+                          : ReadOuterRecord(in, master_key_, has_record,
+                                            is_group, conv_id, inner_nonce,
+                                            inner_cipher, inner_mac, rec_err);
+      if (!ok) {
         break;
       }
       if (!has_record) {
@@ -2016,10 +2569,12 @@ bool ChatHistoryStore::EnsureHistoryFile(
     const std::string& conv_id,
     std::filesystem::path& out_path,
     std::array<std::uint8_t, 32>& out_conv_key,
+    std::uint8_t& out_version,
     std::string& error) {
   error.clear();
   out_path.clear();
   out_conv_key.fill(0);
+  out_version = kContainerVersionV2;
   if (history_dir_.empty()) {
     error = "history dir empty";
     return false;
@@ -2033,15 +2588,29 @@ bool ChatHistoryStore::EnsureHistoryFile(
   }
 
   const std::string conv_key = MakeConvKey(is_group, conv_id);
+  bool had_existing = false;
+  bool loaded_existing = false;
+  std::size_t old_index = history_files_.size();
+  std::vector<ChatHistoryMessage> migrate_messages;
   auto it = conv_to_file_.find(conv_key);
   if (it != conv_to_file_.end() && it->second < history_files_.size()) {
-    out_path = history_files_[it->second].path;
-    return true;
+    HistoryFileEntry& entry = history_files_[it->second];
+    had_existing = true;
+    old_index = it->second;
+    if (entry.version >= kContainerVersionV2) {
+      out_path = entry.path;
+      out_version = entry.version;
+      return true;
+    }
+    std::string load_err;
+    loaded_existing =
+        LoadConversation(is_group, conv_id, 0, migrate_messages, load_err);
   }
 
   std::size_t target = history_files_.size();
   for (std::size_t i = history_files_.size(); i > 0; --i) {
-    if (history_files_[i - 1].conv_keys.size() < kMaxConversationsPerFile) {
+    if (history_files_[i - 1].version >= kContainerVersionV2 &&
+        history_files_[i - 1].conv_keys.size() < kMaxConversationsPerFile) {
       target = i - 1;
       break;
     }
@@ -2066,7 +2635,7 @@ bool ChatHistoryStore::EnsureHistoryFile(
       error = "history create failed";
       return false;
     }
-    if (!WriteContainerHeader(out, error)) {
+    if (!WriteContainerHeader(out, kContainerVersionV2, error)) {
       return false;
     }
     out.flush();
@@ -2077,53 +2646,76 @@ bool ChatHistoryStore::EnsureHistoryFile(
     HistoryFileEntry entry;
     entry.path = path;
     entry.seq = seq;
+    entry.version = kContainerVersionV2;
     history_files_.push_back(std::move(entry));
     target = history_files_.size() - 1;
+  }
+
+  if (had_existing && old_index < history_files_.size()) {
+    history_files_[old_index].conv_keys.erase(conv_key);
   }
 
   history_files_[target].conv_keys.insert(conv_key);
   conv_to_file_[conv_key] = target;
   out_path = history_files_[target].path;
+  out_version = history_files_[target].version;
 
-  std::vector<ChatHistoryMessage> legacy;
-  std::string legacy_err;
-  if (LoadLegacyConversation(is_group, conv_id, 0, legacy, legacy_err) &&
-      !legacy.empty()) {
-    std::ofstream out(out_path, std::ios::binary | std::ios::app);
-    if (out) {
-      for (const auto& m : legacy) {
-        std::vector<std::uint8_t> rec;
-        std::string rec_err;
-        bool ok = false;
-        if (m.is_system) {
-          rec.reserve(5 + 8 + 2 + m.system_text_utf8.size());
-          rec.push_back(kRecordMessage);
-          rec.push_back(kMessageKindSystem);
-          rec.push_back(m.is_group ? 1 : 0);
-          rec.push_back(0);
-          rec.push_back(static_cast<std::uint8_t>(ChatHistoryStatus::kSent));
-          mi::server::proto::WriteUint64(m.timestamp_sec, rec);
-          ok = mi::server::proto::WriteString(m.system_text_utf8, rec);
-        } else {
-          rec.reserve(5 + 8 + 2 + m.sender.size() + 4 + m.envelope.size());
-          rec.push_back(kRecordMessage);
-          rec.push_back(kMessageKindEnvelope);
-          rec.push_back(m.is_group ? 1 : 0);
-          rec.push_back(m.outgoing ? 1 : 0);
-          rec.push_back(static_cast<std::uint8_t>(m.status));
-          mi::server::proto::WriteUint64(m.timestamp_sec, rec);
-          ok = mi::server::proto::WriteString(m.sender, rec) &&
-               mi::server::proto::WriteBytes(m.envelope, rec);
+  const auto append_messages =
+      [&](const std::vector<ChatHistoryMessage>& messages) {
+        if (messages.empty()) {
+          return;
         }
-        if (!ok) {
-          continue;
+        std::ofstream out(out_path, std::ios::binary | std::ios::app);
+        if (!out) {
+          return;
         }
-        std::string write_err;
-        if (!WriteEncryptedRecord(out, master_key_, out_conv_key, is_group,
-                                  conv_id, rec, write_err)) {
-          break;
+        for (const auto& m : messages) {
+          if (m.is_group != is_group) {
+            continue;
+          }
+          std::vector<std::uint8_t> rec;
+          bool ok = false;
+          if (m.is_system) {
+            rec.reserve(5 + 8 + 2 + m.system_text_utf8.size());
+            rec.push_back(kRecordMessage);
+            rec.push_back(kMessageKindSystem);
+            rec.push_back(m.is_group ? 1 : 0);
+            rec.push_back(0);
+            rec.push_back(static_cast<std::uint8_t>(ChatHistoryStatus::kSent));
+            mi::server::proto::WriteUint64(m.timestamp_sec, rec);
+            ok = mi::server::proto::WriteString(m.system_text_utf8, rec);
+          } else {
+            rec.reserve(5 + 8 + 2 + m.sender.size() + 4 + m.envelope.size());
+            rec.push_back(kRecordMessage);
+            rec.push_back(kMessageKindEnvelope);
+            rec.push_back(m.is_group ? 1 : 0);
+            rec.push_back(m.outgoing ? 1 : 0);
+            rec.push_back(static_cast<std::uint8_t>(m.status));
+            mi::server::proto::WriteUint64(m.timestamp_sec, rec);
+            ok = mi::server::proto::WriteString(m.sender, rec) &&
+                 mi::server::proto::WriteBytes(m.envelope, rec);
+          }
+          if (!ok) {
+            continue;
+          }
+          std::string write_err;
+          if (!WriteEncryptedRecord(out, master_key_, out_conv_key, is_group,
+                                    conv_id, rec, out_version, write_err)) {
+            break;
+          }
         }
-      }
+      };
+
+  if (had_existing) {
+    append_messages(migrate_messages);
+  }
+
+  if (!had_existing || (!loaded_existing && migrate_messages.empty())) {
+    std::vector<ChatHistoryMessage> legacy;
+    std::string legacy_err;
+    if (LoadLegacyConversation(is_group, conv_id, 0, legacy, legacy_err) &&
+        !legacy.empty()) {
+      append_messages(legacy);
     }
   }
   return true;
@@ -2368,7 +2960,9 @@ bool ChatHistoryStore::AppendEnvelope(bool is_group,
 
   std::filesystem::path path;
   std::array<std::uint8_t, 32> conv_key{};
-  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, error)) {
+  std::uint8_t file_version = kContainerVersionV2;
+  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, file_version,
+                         error)) {
     return false;
   }
 
@@ -2392,7 +2986,7 @@ bool ChatHistoryStore::AppendEnvelope(bool is_group,
     return false;
   }
   if (!WriteEncryptedRecord(out, master_key_, conv_key, is_group, conv_id, rec,
-                            error)) {
+                            file_version, error)) {
     return false;
   }
   return true;
@@ -2418,7 +3012,9 @@ bool ChatHistoryStore::AppendSystem(bool is_group,
 
   std::filesystem::path path;
   std::array<std::uint8_t, 32> conv_key{};
-  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, error)) {
+  std::uint8_t file_version = kContainerVersionV2;
+  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, file_version,
+                         error)) {
     return false;
   }
 
@@ -2441,7 +3037,7 @@ bool ChatHistoryStore::AppendSystem(bool is_group,
     return false;
   }
   if (!WriteEncryptedRecord(out, master_key_, conv_key, is_group, conv_id, rec,
-                            error)) {
+                            file_version, error)) {
     return false;
   }
   return true;
@@ -2469,7 +3065,9 @@ bool ChatHistoryStore::AppendStatusUpdate(
 
   std::filesystem::path path;
   std::array<std::uint8_t, 32> conv_key{};
-  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, error)) {
+  std::uint8_t file_version = kContainerVersionV2;
+  if (!EnsureHistoryFile(is_group, conv_id, path, conv_key, file_version,
+                         error)) {
     return false;
   }
 
@@ -2487,7 +3085,7 @@ bool ChatHistoryStore::AppendStatusUpdate(
   mi::server::proto::WriteUint64(timestamp_sec, rec);
   rec.insert(rec.end(), msg_id.begin(), msg_id.end());
   if (!WriteEncryptedRecord(out, master_key_, conv_key, is_group, conv_id, rec,
-                            error)) {
+                            file_version, error)) {
     return false;
   }
   return true;
@@ -2538,7 +3136,12 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     error = "history magic mismatch";
     return false;
   }
-  if (!ReadContainerHeader(in, error)) {
+  std::uint8_t version = 0;
+  if (!ReadContainerHeader(in, version, error)) {
+    return false;
+  }
+  if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+    error = "history version mismatch";
     return false;
   }
 
@@ -2589,8 +3192,13 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     std::vector<std::uint8_t> inner_cipher;
     std::array<std::uint8_t, 16> inner_mac{};
     std::string rec_err;
-    if (!ReadOuterRecord(in, master_key_, has_record, rec_group, rec_conv,
-                         inner_nonce, inner_cipher, inner_mac, rec_err)) {
+    const bool record_ok =
+        (version >= kContainerVersionV2)
+            ? ReadOuterRecordV2(in, master_key_, has_record, rec_group, rec_conv,
+                                inner_nonce, inner_cipher, inner_mac, rec_err)
+            : ReadOuterRecord(in, master_key_, has_record, rec_group, rec_conv,
+                              inner_nonce, inner_cipher, inner_mac, rec_err);
+    if (!record_ok) {
       error = rec_err.empty() ? "history read failed" : rec_err;
       return false;
     }
@@ -2627,20 +3235,29 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
       error = pad_err.empty() ? "history read failed" : pad_err;
       return false;
     }
-    if (unpadded.empty()) {
+    std::vector<std::uint8_t> record_plain;
+    bool used_compress = false;
+    std::string comp_err;
+    if (!DecodeCompressionLayer(unpadded, record_plain, used_compress,
+                                comp_err)) {
+      error = comp_err.empty() ? "history read failed" : comp_err;
+      return false;
+    }
+    (void)used_compress;
+    if (record_plain.empty()) {
       continue;
     }
     std::size_t off = 0;
-    const std::uint8_t type = unpadded[off++];
+    const std::uint8_t type = record_plain[off++];
     if (type == kRecordMeta) {
       continue;
     }
     if (type == kRecordStatus) {
-      if (off + 1 + 1 + 8 + 16 > unpadded.size()) {
+      if (off + 1 + 1 + 8 + 16 > record_plain.size()) {
         continue;
       }
-      const bool rec_is_group = unpadded[off++] != 0;
-      const std::uint8_t raw_st = unpadded[off++];
+      const bool rec_is_group = record_plain[off++] != 0;
+      const std::uint8_t raw_st = record_plain[off++];
       if (rec_is_group != is_group) {
         continue;
       }
@@ -2649,12 +3266,12 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
         continue;
       }
       std::uint64_t ts = 0;
-      if (!mi::server::proto::ReadUint64(unpadded, off, ts) ||
-          off + 16 != unpadded.size()) {
+      if (!mi::server::proto::ReadUint64(record_plain, off, ts) ||
+          off + 16 != record_plain.size()) {
         continue;
       }
       std::array<std::uint8_t, 16> msg_id{};
-      std::memcpy(msg_id.data(), unpadded.data() + off, msg_id.size());
+      std::memcpy(msg_id.data(), record_plain.data() + off, msg_id.size());
       const std::string id_hex = BytesToHexLower(msg_id.data(), msg_id.size());
       auto st_it = status_by_id.find(id_hex);
       if (st_it == status_by_id.end()) {
@@ -2673,13 +3290,13 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     if (type != kRecordMessage) {
       continue;
     }
-    if (off + 1 + 1 + 1 + 1 + 8 > unpadded.size()) {
+    if (off + 1 + 1 + 1 + 1 + 8 > record_plain.size()) {
       continue;
     }
-    const std::uint8_t kind = unpadded[off++];
-    const bool rec_is_group = unpadded[off++] != 0;
-    const bool outgoing = unpadded[off++] != 0;
-    const std::uint8_t raw_st = unpadded[off++];
+    const std::uint8_t kind = record_plain[off++];
+    const bool rec_is_group = record_plain[off++] != 0;
+    const bool outgoing = record_plain[off++] != 0;
+    const std::uint8_t raw_st = record_plain[off++];
     if (rec_is_group != is_group) {
       continue;
     }
@@ -2688,7 +3305,7 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
       continue;
     }
     std::uint64_t ts = 0;
-    if (!mi::server::proto::ReadUint64(unpadded, off, ts)) {
+    if (!mi::server::proto::ReadUint64(record_plain, off, ts)) {
       continue;
     }
 
@@ -2700,9 +3317,9 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     m.conv_id = conv_id;
 
     if (kind == kMessageKindEnvelope) {
-      if (!mi::server::proto::ReadString(unpadded, off, m.sender) ||
-          !mi::server::proto::ReadBytes(unpadded, off, m.envelope) ||
-          off != unpadded.size()) {
+      if (!mi::server::proto::ReadString(record_plain, off, m.sender) ||
+          !mi::server::proto::ReadBytes(record_plain, off, m.envelope) ||
+          off != record_plain.size()) {
         continue;
       }
       m.is_system = false;
@@ -2731,8 +3348,8 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     }
     if (kind == kMessageKindSystem) {
       std::string text;
-      if (!mi::server::proto::ReadString(unpadded, off, text) ||
-          off != unpadded.size()) {
+      if (!mi::server::proto::ReadString(record_plain, off, text) ||
+          off != record_plain.size()) {
         continue;
       }
       m.is_system = true;
@@ -2814,6 +3431,53 @@ bool ChatHistoryStore::ExportRecentSnapshot(
     out_messages.insert(out_messages.end(),
                         std::make_move_iterator(c.msgs.begin()),
                         std::make_move_iterator(c.msgs.end()));
+  }
+  return true;
+}
+
+bool ChatHistoryStore::Flush(std::string& error) {
+  error.clear();
+  if (!key_loaded_ || IsAllZero(master_key_.data(), master_key_.size())) {
+    return true;
+  }
+  if (history_files_.empty()) {
+    return true;
+  }
+
+  const std::uint64_t now_ts = NowUnixSeconds();
+  for (const auto& entry : history_files_) {
+    if (entry.path.empty() || entry.conv_keys.empty()) {
+      continue;
+    }
+    const std::string& conv_key = *entry.conv_keys.begin();
+    bool is_group = false;
+    std::string conv_id;
+    if (!ParseConvKey(conv_key, is_group, conv_id)) {
+      continue;
+    }
+
+    std::array<std::uint8_t, 32> conv_key_bytes{};
+    std::string key_err;
+    if (!DeriveConversationKey(is_group, conv_id, conv_key_bytes, key_err)) {
+      continue;
+    }
+
+    std::vector<std::uint8_t> rec;
+    rec.reserve(1 + 8);
+    rec.push_back(kRecordMeta);
+    mi::server::proto::WriteUint64(now_ts, rec);
+
+    std::ofstream out(entry.path, std::ios::binary | std::ios::app);
+    if (!out) {
+      error = "history write failed";
+      return false;
+    }
+    std::string write_err;
+    if (!WriteEncryptedRecord(out, master_key_, conv_key_bytes, is_group,
+                              conv_id, rec, entry.version, write_err)) {
+      error = write_err.empty() ? "history write failed" : write_err;
+      return false;
+    }
   }
   return true;
 }

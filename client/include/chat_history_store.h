@@ -73,10 +73,13 @@ class ChatHistoryStore {
                             std::vector<ChatHistoryMessage>& out_messages,
                             std::string& error) const;
 
+  bool Flush(std::string& error);
+
  private:
   struct HistoryFileEntry {
     std::filesystem::path path;
     std::uint32_t seq{0};
+    std::uint8_t version{1};
     std::unordered_set<std::string> conv_keys;
   };
 
@@ -93,6 +96,7 @@ class ChatHistoryStore {
                          const std::string& conv_id,
                          std::filesystem::path& out_path,
                          std::array<std::uint8_t, 32>& out_conv_key,
+                         std::uint8_t& out_version,
                          std::string& error);
 
   bool LoadLegacyConversation(bool is_group,
