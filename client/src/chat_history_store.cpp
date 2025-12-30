@@ -1611,6 +1611,11 @@ bool DecodeAesLayer(const std::array<std::uint8_t, 32>& conv_key,
   return true;
 }
 
+bool WriteMultiWrappedRecord(std::ofstream& out,
+                             const std::array<std::uint8_t, 32>& master_key,
+                             const std::vector<std::uint8_t>& payload,
+                             std::string& error);
+
 bool WriteEncryptedRecord(std::ofstream& out,
                           const std::array<std::uint8_t, 32>& master_key,
                           const std::array<std::uint8_t, 32>& conv_key,
