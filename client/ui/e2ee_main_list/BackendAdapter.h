@@ -171,6 +171,8 @@ signals:
     void friendRequestReceived(const QString &requester, const QString &remark);
     void groupInviteReceived(const QString &groupId, const QString &fromUser, const QString &messageId);
     void groupNoticeReceived(const QString &groupId, const QString &text);
+    void groupNoticeEvent(const QString &groupId, int kind,
+                          const QString &actor, const QString &target);
     void messageResent(const QString &convId, const QString &messageId);
     void connectionStateChanged(bool online, const QString &detail);
     void friendListLoaded(const QVector<FriendEntry> &friends, const QString &error);

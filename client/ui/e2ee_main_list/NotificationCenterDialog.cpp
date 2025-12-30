@@ -161,15 +161,20 @@ NotificationCenterDialog::NotificationCenterDialog(QWidget *parent) : QDialog(pa
     invitesBtn_ = new QToolButton(seg);
     invitesBtn_->setText(UiSettings::Tr(QStringLiteral("群邀请"), QStringLiteral("Invites")));
     invitesBtn_->setCheckable(true);
+    noticesBtn_ = new QToolButton(seg);
+    noticesBtn_->setText(UiSettings::Tr(QStringLiteral("通知"), QStringLiteral("Notices")));
+    noticesBtn_->setCheckable(true);
 
     auto *group = new QButtonGroup(this);
     group->setExclusive(true);
     group->addButton(requestsBtn_, 0);
     group->addButton(invitesBtn_, 1);
+    group->addButton(noticesBtn_, 2);
     requestsBtn_->setChecked(true);
 
     segLayout->addWidget(requestsBtn_, 0, Qt::AlignLeft);
     segLayout->addWidget(invitesBtn_, 0, Qt::AlignLeft);
+    segLayout->addWidget(noticesBtn_, 0, Qt::AlignLeft);
     segLayout->addStretch();
     root->addWidget(seg);
 
@@ -200,6 +205,7 @@ NotificationCenterDialog::NotificationCenterDialog(QWidget *parent) : QDialog(pa
 
     makeScroll(requestsScroll_, requestsBody_, requestsLayout_);
     makeScroll(invitesScroll_, invitesBody_, invitesLayout_);
+    makeScroll(noticesScroll_, noticesBody_, noticesLayout_);
 
     connect(group, QOverload<int>::of(&QButtonGroup::idClicked), this, [this](int id) {
         if (stack_) {
@@ -209,6 +215,7 @@ NotificationCenterDialog::NotificationCenterDialog(QWidget *parent) : QDialog(pa
 
     rebuildFriendRequests();
     rebuildGroupInvites();
+    rebuildNotices();
     updateSegmentTitles();
 }
 
@@ -221,6 +228,12 @@ void NotificationCenterDialog::setFriendRequests(const QVector<FriendRequest> &r
 void NotificationCenterDialog::setGroupInvites(const QVector<GroupInvite> &invites) {
     groupInvites_ = invites;
     rebuildGroupInvites();
+    updateSegmentTitles();
+}
+
+void NotificationCenterDialog::setNotices(const QVector<Notice> &notices) {
+    notices_ = notices;
+    rebuildNotices();
     updateSegmentTitles();
 }
 
@@ -252,6 +265,20 @@ void NotificationCenterDialog::removeGroupInvite(const QString &groupId, const Q
         }
     }
     rebuildGroupInvites();
+    updateSegmentTitles();
+}
+
+void NotificationCenterDialog::removeNotice(const QString &key) {
+    const QString k = key.trimmed();
+    if (k.isEmpty()) {
+        return;
+    }
+    for (int i = notices_.size() - 1; i >= 0; --i) {
+        if (notices_[i].key == k) {
+            notices_.removeAt(i);
+        }
+    }
+    rebuildNotices();
     updateSegmentTitles();
 }
 
@@ -423,12 +450,82 @@ void NotificationCenterDialog::rebuildGroupInvites() {
     invitesLayout_->addStretch();
 }
 
+void NotificationCenterDialog::rebuildNotices() {
+    if (!noticesLayout_) {
+        return;
+    }
+    ClearLayout(noticesLayout_);
+
+    if (notices_.isEmpty()) {
+        auto *empty = new QLabel(
+            UiSettings::Tr(QStringLiteral("暂无通知"), QStringLiteral("No notices")), noticesBody_);
+        empty->setAlignment(Qt::AlignHCenter);
+        empty->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                                 .arg(Theme::uiTextMuted().name()));
+        noticesLayout_->addStretch();
+        noticesLayout_->addWidget(empty);
+        noticesLayout_->addStretch();
+        return;
+    }
+
+    auto sorted = notices_;
+    std::sort(sorted.begin(), sorted.end(), [](const Notice &a, const Notice &b) {
+        return a.receivedMs > b.receivedMs;
+    });
+
+    for (const auto &notice : sorted) {
+        auto *card = cardFrame(noticesBody_);
+        auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(12, 12, 12, 12);
+        cardLayout->setSpacing(8);
+
+        auto *top = new QHBoxLayout();
+        top->setSpacing(8);
+        auto *title = new QLabel(notice.title, card);
+        title->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 650;")
+                                 .arg(Theme::uiTextMain().name()));
+        top->addWidget(title);
+        top->addStretch();
+        const QString ts = FormatTime(notice.receivedMs);
+        if (!ts.isEmpty()) {
+            auto *time = new QLabel(ts, card);
+            time->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
+                                    .arg(Theme::uiTextMuted().name()));
+            top->addWidget(time);
+        }
+        cardLayout->addLayout(top);
+
+        if (!notice.detail.trimmed().isEmpty()) {
+            auto *detail = new QLabel(notice.detail, card);
+            detail->setWordWrap(true);
+            detail->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;")
+                                      .arg(Theme::uiTextSub().name()));
+            cardLayout->addWidget(detail);
+        }
+
+        auto *row = new QHBoxLayout();
+        row->setSpacing(10);
+        row->addStretch();
+
+        auto *dismissBtn = outlineButton(UiSettings::Tr(QStringLiteral("清除"), QStringLiteral("Dismiss")), card);
+        connect(dismissBtn, &QAbstractButton::clicked, this, [this, key = notice.key]() {
+            emit noticeDismissRequested(key);
+        });
+        row->addWidget(dismissBtn);
+        cardLayout->addLayout(row);
+
+        noticesLayout_->addWidget(card);
+    }
+    noticesLayout_->addStretch();
+}
+
 void NotificationCenterDialog::updateSegmentTitles() {
-    if (!requestsBtn_ || !invitesBtn_) {
+    if (!requestsBtn_ || !invitesBtn_ || !noticesBtn_) {
         return;
     }
     const int req = friendRequests_.size();
     const int inv = groupInvites_.size();
+    const int notes = notices_.size();
 
     requestsBtn_->setText(
         UiSettings::Tr(QStringLiteral("好友申请"), QStringLiteral("Requests")) +
@@ -436,4 +533,7 @@ void NotificationCenterDialog::updateSegmentTitles() {
     invitesBtn_->setText(
         UiSettings::Tr(QStringLiteral("群邀请"), QStringLiteral("Invites")) +
         (inv > 0 ? QStringLiteral(" (%1)").arg(inv) : QString()));
+    noticesBtn_->setText(
+        UiSettings::Tr(QStringLiteral("通知"), QStringLiteral("Notices")) +
+        (notes > 0 ? QStringLiteral(" (%1)").arg(notes) : QString()));
 }

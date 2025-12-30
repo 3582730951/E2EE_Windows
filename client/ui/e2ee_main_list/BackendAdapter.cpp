@@ -2724,6 +2724,7 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
             continue;
         }
         emit groupNoticeReceived(groupId, text);
+        emit groupNoticeEvent(groupId, n.kind, actor, target);
     }
 
     std::unordered_set<std::string> current;

@@ -1,4 +1,4 @@
-// Notification center dialog for friend requests / group invites.
+// Notification center dialog for friend requests / group invites / notices.
 #pragma once
 
 #include <QDialog>
@@ -28,6 +28,13 @@ public:
         qint64 receivedMs{0};
     };
 
+    struct Notice {
+        QString key;
+        QString title;
+        QString detail;
+        qint64 receivedMs{0};
+    };
+
     enum class FriendRequestAction {
         Accept = 0,
         Reject = 1,
@@ -44,9 +51,11 @@ public:
 
     void setFriendRequests(const QVector<FriendRequest> &requests);
     void setGroupInvites(const QVector<GroupInvite> &invites);
+    void setNotices(const QVector<Notice> &notices);
 
     void removeFriendRequest(const QString &requester);
     void removeGroupInvite(const QString &groupId, const QString &messageId);
+    void removeNotice(const QString &key);
 
 signals:
     void friendRequestActionRequested(const QString &requester, FriendRequestAction action);
@@ -54,18 +63,22 @@ signals:
                                     const QString &fromUser,
                                     const QString &messageId,
                                     GroupInviteAction action);
+    void noticeDismissRequested(const QString &key);
     void refreshRequested();
 
 private:
     void rebuildFriendRequests();
     void rebuildGroupInvites();
+    void rebuildNotices();
     void updateSegmentTitles();
 
     QVector<FriendRequest> friendRequests_;
     QVector<GroupInvite> groupInvites_;
+    QVector<Notice> notices_;
 
     QToolButton *requestsBtn_{nullptr};
     QToolButton *invitesBtn_{nullptr};
+    QToolButton *noticesBtn_{nullptr};
     QStackedWidget *stack_{nullptr};
 
     QScrollArea *requestsScroll_{nullptr};
@@ -75,4 +88,8 @@ private:
     QScrollArea *invitesScroll_{nullptr};
     QWidget *invitesBody_{nullptr};
     QVBoxLayout *invitesLayout_{nullptr};
+
+    QScrollArea *noticesScroll_{nullptr};
+    QWidget *noticesBody_{nullptr};
+    QVBoxLayout *noticesLayout_{nullptr};
 };

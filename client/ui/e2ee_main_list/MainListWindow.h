@@ -66,6 +66,8 @@ private slots:
     void handleFriendRequestReceived(const QString &requester, const QString &remark);
     void handleGroupInviteReceived(const QString &groupId, const QString &fromUser, const QString &messageId);
     void handleGroupNoticeReceived(const QString &groupId, const QString &text);
+    void handleGroupNoticeEvent(const QString &groupId, int kind,
+                                const QString &actor, const QString &target);
     void handleConnectionStateChanged(bool online, const QString &detail);
 
 private:
@@ -89,6 +91,13 @@ private:
         qint64 receivedMs{0};
     };
 
+    struct PendingNotice {
+        QString key;
+        QString title;
+        QString detail;
+        qint64 receivedMs{0};
+    };
+
     void initTray();
     void showTrayMessage(const QString &title, const QString &message);
     QStandardItem *findItemById(const QString &id) const;
@@ -106,6 +115,7 @@ private:
     void applyPresenceMode();
     void updatePresenceLabel();
     bool presenceEnabled() const;
+    void addNotice(const QString &key, const QString &title, const QString &detail);
 
     QListView *listView_{nullptr};
     QStandardItemModel *model_{nullptr};
@@ -128,7 +138,9 @@ private:
     bool backendOnline_{false};
     QString connectionDetail_;
     QLabel *bellBadge_{nullptr};
+    QLabel *searchBellBadge_{nullptr};
     IconButton *navBellBtn_{nullptr};
+    IconButton *searchBellBtn_{nullptr};
     IconButton *navAllBtn_{nullptr};
     IconButton *navPinnedBtn_{nullptr};
     IconButton *navGroupsBtn_{nullptr};
@@ -143,6 +155,10 @@ private:
     QSet<QString> pinnedIds_;
     QHash<QString, QString> pendingFriendRequests_;
     QVector<PendingGroupInvite> pendingGroupInvites_;
+    QVector<PendingNotice> pendingNotices_;
+    QSet<QString> knownFriendIds_;
+    QSet<QString> localFriendRemovals_;
+    bool friendListInitialized_{false};
     QSystemTrayIcon *tray_{nullptr};
     QMenu *trayMenu_{nullptr};
     QAction *traySettingsAction_{nullptr};

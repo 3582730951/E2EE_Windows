@@ -619,7 +619,20 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         }
     });
 
+    auto *notifyBtn = new IconButton(QString(), mainArea);
+    notifyBtn->setSvgIcon(QStringLiteral(":/mi/e2ee/ui/icons/bell.svg"), 16);
+    notifyBtn->setFocusPolicy(Qt::NoFocus);
+    notifyBtn->setFixedSize(32, 32);
+    notifyBtn->setRound(true);
+    notifyBtn->setColors(Tokens::textMain(), Tokens::textMain(), Tokens::textMain(),
+                         Tokens::searchBg(), Tokens::hoverBg(), Tokens::selectedBg());
+    notifyBtn->setToolTip(UiSettings::Tr(QStringLiteral("通知中心"), QStringLiteral("Notifications")));
+    notifyBtn->setAccessibleName(notifyBtn->toolTip());
+    connect(notifyBtn, &QPushButton::clicked, this, &MainListWindow::handleNotificationCenter);
+    searchBellBtn_ = notifyBtn;
+
     searchRow->addWidget(searchBox, 1);
+    searchRow->addWidget(notifyBtn);
     searchRow->addWidget(plusBtn);
 
     // Conversation list
@@ -684,6 +697,43 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                         if (!id.isEmpty()) {
                             friendIds.insert(id);
                         }
+                    }
+                    QHash<QString, QString> friendNames;
+                    friendNames.reserve(friends.size());
+                    for (const auto &f : friends) {
+                        const QString id = f.username.trimmed();
+                        if (!id.isEmpty()) {
+                            friendNames.insert(id, f.displayName());
+                        }
+                    }
+
+                    const QString errTrimmed = loadErr.trimmed();
+                    if (errTrimmed.isEmpty()) {
+                        if (friendListInitialized_) {
+                            const auto added = friendIds - knownFriendIds_;
+                            const auto removed = knownFriendIds_ - friendIds;
+                            for (const auto &id : added) {
+                                const QString display = friendNames.value(id, id);
+                                addNotice(QStringLiteral("friend_added|") + id,
+                                          UiSettings::Tr(QStringLiteral("好友添加"),
+                                                         QStringLiteral("Friend added")),
+                                          UiSettings::Tr(QStringLiteral("已添加好友：%1").arg(display),
+                                                         QStringLiteral("Friend added: %1").arg(display)));
+                            }
+                            for (const auto &id : removed) {
+                                if (localFriendRemovals_.contains(id)) {
+                                    localFriendRemovals_.remove(id);
+                                    continue;
+                                }
+                                addNotice(QStringLiteral("friend_removed|") + id,
+                                          UiSettings::Tr(QStringLiteral("好友删除"),
+                                                         QStringLiteral("Friend removed")),
+                                          UiSettings::Tr(QStringLiteral("好友已删除你：%1").arg(id),
+                                                         QStringLiteral("Friend removed you: %1").arg(id)));
+                            }
+                        }
+                        knownFriendIds_ = friendIds;
+                        friendListInitialized_ = true;
                     }
 
                     for (int i = model_->rowCount() - 1; i >= 0; --i) {
@@ -957,6 +1007,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                                      err.isEmpty() ? QStringLiteral("删除失败") : err);
                 return;
             }
+            localFriendRemovals_.insert(id);
             for (int i = model_->rowCount() - 1; i >= 0; --i) {
                 if (model_->item(i)->data(IdRole).toString() == id) {
                     model_->removeRow(i);
@@ -988,6 +1039,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
                 return;
             }
             if (doBlock) {
+                localFriendRemovals_.insert(id);
                 for (int i = model_->rowCount() - 1; i >= 0; --i) {
                     if (model_->item(i)->data(IdRole).toString() == id) {
                         model_->removeRow(i);
@@ -1115,6 +1167,7 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         connect(backend_, &BackendAdapter::friendRequestReceived, this, &MainListWindow::handleFriendRequestReceived);
         connect(backend_, &BackendAdapter::groupInviteReceived, this, &MainListWindow::handleGroupInviteReceived);
         connect(backend_, &BackendAdapter::groupNoticeReceived, this, &MainListWindow::handleGroupNoticeReceived);
+        connect(backend_, &BackendAdapter::groupNoticeEvent, this, &MainListWindow::handleGroupNoticeEvent);
         connect(backend_, &BackendAdapter::connectionStateChanged, this, &MainListWindow::handleConnectionStateChanged);
         handleConnectionStateChanged(backend_->isOnline(), backend_->isOnline() ? QStringLiteral("在线") : QStringLiteral("离线"));
     } else {
@@ -1158,24 +1211,36 @@ void MainListWindow::handleNotificationCenter() {
         updateNotificationBadge();
         dlg.setFriendRequests(reqs);
 
+        QVector<NotificationCenterDialog::GroupInvite> invites;
+        invites.reserve(pendingGroupInvites_.size());
+        for (const auto &inv : pendingGroupInvites_) {
+            NotificationCenterDialog::GroupInvite v;
+            v.groupId = inv.groupId;
+            v.fromUser = inv.fromUser;
+            v.messageId = inv.messageId;
+            v.receivedMs = inv.receivedMs;
+            invites.push_back(v);
+        }
+        dlg.setGroupInvites(invites);
+
+        QVector<NotificationCenterDialog::Notice> notices;
+        notices.reserve(pendingNotices_.size());
+        for (const auto &note : pendingNotices_) {
+            NotificationCenterDialog::Notice v;
+            v.key = note.key;
+            v.title = note.title;
+            v.detail = note.detail;
+            v.receivedMs = note.receivedMs;
+            notices.push_back(v);
+        }
+        dlg.setNotices(notices);
+
         if (!err.trimmed().isEmpty()) {
             Toast::Show(&dlg, err.trimmed(), Toast::Level::Warning);
         }
     };
 
-    QVector<NotificationCenterDialog::GroupInvite> invites;
-    invites.reserve(pendingGroupInvites_.size());
-    for (const auto &inv : pendingGroupInvites_) {
-        NotificationCenterDialog::GroupInvite v;
-        v.groupId = inv.groupId;
-        v.fromUser = inv.fromUser;
-        v.messageId = inv.messageId;
-        v.receivedMs = inv.receivedMs;
-        invites.push_back(v);
-    }
-
     NotificationCenterDialog dlg(this);
-    dlg.setGroupInvites(invites);
     refreshFromBackend(dlg);
 
     connect(&dlg, &NotificationCenterDialog::refreshRequested, this, [this, &dlg, refreshFromBackend]() mutable {
@@ -1645,28 +1710,50 @@ void MainListWindow::updateNavSelection() {
 }
 
 void MainListWindow::updateNotificationBadge() {
-    if (!navBellBtn_) {
-        return;
-    }
-    const int count = pendingFriendRequests_.size() + pendingGroupInvites_.size();
-    if (count <= 0) {
-        if (bellBadge_) {
-            bellBadge_->hide();
+    const int count = pendingFriendRequests_.size() + pendingGroupInvites_.size() + pendingNotices_.size();
+    auto update = [&](IconButton *btn, QLabel *&badge) {
+        if (!btn) {
+            return;
         }
+        if (count <= 0) {
+            if (badge) {
+                badge->hide();
+            }
+            return;
+        }
+        if (!badge) {
+            badge = new QLabel(btn);
+            badge->setFixedSize(8, 8);
+            badge->setAttribute(Qt::WA_TransparentForMouseEvents);
+            badge->setStyleSheet(
+                QStringLiteral("background: %1; border-radius: 4px;")
+                    .arg(Theme::uiBadgeRed().name()));
+            badge->move(btn->width() - 12, 6);
+        }
+        badge->raise();
+        badge->show();
+    };
+    update(navBellBtn_, bellBadge_);
+    update(searchBellBtn_, searchBellBadge_);
+}
+
+void MainListWindow::addNotice(const QString &key, const QString &title, const QString &detail) {
+    const QString k = key.trimmed();
+    if (k.isEmpty()) {
         return;
     }
-
-    if (!bellBadge_) {
-        bellBadge_ = new QLabel(navBellBtn_);
-        bellBadge_->setFixedSize(8, 8);
-        bellBadge_->setAttribute(Qt::WA_TransparentForMouseEvents);
-        bellBadge_->setStyleSheet(
-            QStringLiteral("background: %1; border-radius: 4px;")
-                .arg(Theme::uiBadgeRed().name()));
-        bellBadge_->move(navBellBtn_->width() - 12, 6);
+    for (const auto &n : pendingNotices_) {
+        if (n.key == k) {
+            return;
+        }
     }
-    bellBadge_->raise();
-    bellBadge_->show();
+    PendingNotice n;
+    n.key = k;
+    n.title = title.trimmed();
+    n.detail = detail.trimmed();
+    n.receivedMs = QDateTime::currentMSecsSinceEpoch();
+    pendingNotices_.push_back(n);
+    updateNotificationBadge();
 }
 
 void MainListWindow::showAppMenu() {
@@ -1876,6 +1963,21 @@ void MainListWindow::initTray() {
                     raise();
                     activateWindow();
                 }
+            });
+
+    connect(&dlg, &NotificationCenterDialog::noticeDismissRequested, this,
+            [this, &dlg](const QString &key) {
+                const QString k = key.trimmed();
+                if (k.isEmpty()) {
+                    return;
+                }
+                for (int i = pendingNotices_.size() - 1; i >= 0; --i) {
+                    if (pendingNotices_[i].key == k) {
+                        pendingNotices_.removeAt(i);
+                    }
+                }
+                updateNotificationBadge();
+                dlg.removeNotice(k);
             });
 
     tray_->show();
@@ -3257,6 +3359,40 @@ void MainListWindow::handleGroupNoticeReceived(const QString &groupId, const QSt
         allowPreview ? preview : UiSettings::Tr(QStringLiteral("群成员变更"),
                                                 QStringLiteral("Group membership changed"));
     showTrayMessage(notifyTitle, notifyMsg);
+}
+
+void MainListWindow::handleGroupNoticeEvent(const QString &groupId, int kind,
+                                            const QString &actor, const QString &target) {
+    // Kind 3 means removed by admin/owner.
+    if (kind != 3) {
+        return;
+    }
+    if (!backend_) {
+        return;
+    }
+    const QString me = backend_->currentUser().trimmed();
+    if (me.isEmpty()) {
+        return;
+    }
+    const QString tgt = target.trimmed();
+    if (tgt != me) {
+        return;
+    }
+    const QString gid = groupId.trimmed();
+    if (gid.isEmpty()) {
+        return;
+    }
+    const QString who = actor.trimmed();
+    const QString detail =
+        who.isEmpty()
+            ? UiSettings::Tr(QStringLiteral("群 ID：%1").arg(gid),
+                             QStringLiteral("Group ID: %1").arg(gid))
+            : UiSettings::Tr(QStringLiteral("操作者：%1\n群 ID：%2").arg(who, gid),
+                             QStringLiteral("By: %1\nGroup ID: %2").arg(who, gid));
+    addNotice(QStringLiteral("group_kick|") + gid + QStringLiteral("|") + who,
+              UiSettings::Tr(QStringLiteral("被移出群聊"),
+                             QStringLiteral("Removed from group")),
+              detail);
 }
 
 void MainListWindow::handleConnectionStateChanged(bool online, const QString &detail) {
