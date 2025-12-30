@@ -562,77 +562,296 @@ std::uint8_t Xtime(std::uint8_t v) {
   return static_cast<std::uint8_t>((v << 1) ^ ((v & 0x80u) ? 0x1Bu : 0));
 }
 
-void SubBytes(std::uint8_t state[16]) {
-  for (std::size_t i = 0; i < 16; ++i) {
-    state[i] = kAesSbox[state[i]];
+struct WhiteboxAesTables {
+  std::array<std::array<std::array<std::array<std::uint32_t, 256>, 4>, 4>, 13>
+      rounds{};
+  std::array<std::array<std::array<std::uint32_t, 256>, 4>, 4> final{};
+};
+
+constexpr std::array<std::array<int, 4>, 4> kAesTboxInputIndex = {{
+    {{0, 5, 10, 15}},
+    {{4, 9, 14, 3}},
+    {{8, 13, 2, 7}},
+    {{12, 1, 6, 11}},
+}};
+
+void WordsToBytes(const std::array<std::uint32_t, 4>& words,
+                  std::array<std::uint8_t, 16>& out) {
+  for (std::size_t i = 0; i < words.size(); ++i) {
+    const std::uint32_t w = words[i];
+    out[i * 4 + 0] = static_cast<std::uint8_t>((w >> 24) & 0xFF);
+    out[i * 4 + 1] = static_cast<std::uint8_t>((w >> 16) & 0xFF);
+    out[i * 4 + 2] = static_cast<std::uint8_t>((w >> 8) & 0xFF);
+    out[i * 4 + 3] = static_cast<std::uint8_t>(w & 0xFF);
   }
 }
 
-void ShiftRows(std::uint8_t state[16]) {
-  std::uint8_t t[16];
-  t[0] = state[0];
-  t[1] = state[5];
-  t[2] = state[10];
-  t[3] = state[15];
-  t[4] = state[4];
-  t[5] = state[9];
-  t[6] = state[14];
-  t[7] = state[3];
-  t[8] = state[8];
-  t[9] = state[13];
-  t[10] = state[2];
-  t[11] = state[7];
-  t[12] = state[12];
-  t[13] = state[1];
-  t[14] = state[6];
-  t[15] = state[11];
-  std::memcpy(state, t, sizeof(t));
+std::uint32_t LoadBe32(const std::uint8_t* ptr) {
+  return (static_cast<std::uint32_t>(ptr[0]) << 24) |
+         (static_cast<std::uint32_t>(ptr[1]) << 16) |
+         (static_cast<std::uint32_t>(ptr[2]) << 8) |
+         static_cast<std::uint32_t>(ptr[3]);
 }
 
-void MixColumns(std::uint8_t state[16]) {
-  for (std::size_t c = 0; c < 4; ++c) {
-    const std::size_t base = c * 4;
-    const std::uint8_t a0 = state[base + 0];
-    const std::uint8_t a1 = state[base + 1];
-    const std::uint8_t a2 = state[base + 2];
-    const std::uint8_t a3 = state[base + 3];
-    const std::uint8_t x0 = Xtime(a0);
-    const std::uint8_t x1 = Xtime(a1);
-    const std::uint8_t x2 = Xtime(a2);
-    const std::uint8_t x3 = Xtime(a3);
-    state[base + 0] =
-        static_cast<std::uint8_t>(x0 ^ (x1 ^ a1) ^ a2 ^ a3);
-    state[base + 1] =
-        static_cast<std::uint8_t>(a0 ^ x1 ^ (x2 ^ a2) ^ a3);
-    state[base + 2] =
-        static_cast<std::uint8_t>(a0 ^ a1 ^ x2 ^ (x3 ^ a3));
-    state[base + 3] =
-        static_cast<std::uint8_t>((x0 ^ a0) ^ a1 ^ a2 ^ x3);
+void LoadRoundKeys(const Aes256KeySchedule& ks,
+                   std::array<std::uint32_t, 60>& out) {
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    out[i] = LoadBe32(ks.bytes.data() + i * 4);
   }
 }
 
-void AddRoundKey(std::uint8_t state[16], const std::uint8_t* rk) {
-  for (std::size_t i = 0; i < 16; ++i) {
-    state[i] = static_cast<std::uint8_t>(state[i] ^ rk[i]);
+void BuildBaseTables(
+    std::array<std::array<std::uint32_t, 256>, 4>& te,
+    std::array<std::array<std::uint32_t, 256>, 4>& fe) {
+  for (std::size_t i = 0; i < 256; ++i) {
+    const std::uint8_t s = kAesSbox[i];
+    const std::uint8_t s2 = Xtime(s);
+    const std::uint8_t s3 = static_cast<std::uint8_t>(s2 ^ s);
+    te[0][i] =
+        (static_cast<std::uint32_t>(s2) << 24) |
+        (static_cast<std::uint32_t>(s) << 16) |
+        (static_cast<std::uint32_t>(s) << 8) |
+        static_cast<std::uint32_t>(s3);
+    te[1][i] =
+        (static_cast<std::uint32_t>(s3) << 24) |
+        (static_cast<std::uint32_t>(s2) << 16) |
+        (static_cast<std::uint32_t>(s) << 8) |
+        static_cast<std::uint32_t>(s);
+    te[2][i] =
+        (static_cast<std::uint32_t>(s) << 24) |
+        (static_cast<std::uint32_t>(s3) << 16) |
+        (static_cast<std::uint32_t>(s2) << 8) |
+        static_cast<std::uint32_t>(s);
+    te[3][i] =
+        (static_cast<std::uint32_t>(s) << 24) |
+        (static_cast<std::uint32_t>(s) << 16) |
+        (static_cast<std::uint32_t>(s3) << 8) |
+        static_cast<std::uint32_t>(s2);
+    fe[0][i] = static_cast<std::uint32_t>(s) << 24;
+    fe[1][i] = static_cast<std::uint32_t>(s) << 16;
+    fe[2][i] = static_cast<std::uint32_t>(s) << 8;
+    fe[3][i] = static_cast<std::uint32_t>(s);
   }
 }
 
-void AesEncryptBlock(const Aes256KeySchedule& ks,
-                     const std::uint8_t in[16],
-                     std::uint8_t out[16]) {
-  std::uint8_t state[16];
-  std::memcpy(state, in, 16);
-  AddRoundKey(state, ks.bytes.data());
-  for (int round = 1; round < 14; ++round) {
-    SubBytes(state);
-    ShiftRows(state);
-    MixColumns(state);
-    AddRoundKey(state, ks.bytes.data() + round * 16);
+std::array<std::uint8_t, 32> Sha256Bytes(const std::vector<std::uint8_t>& in) {
+  mi::server::crypto::Sha256Digest d;
+  mi::server::crypto::Sha256(in.data(), in.size(), d);
+  return d.bytes;
+}
+
+std::array<std::uint32_t, 4> DeriveRoundMask(
+    const std::array<std::uint8_t, 32>& key,
+    std::uint32_t round) {
+  std::vector<std::uint8_t> buf;
+  static constexpr char kLabel[] = "MI_E2EE_WB_AES_OUTMASK_V1";
+  buf.insert(buf.end(), kLabel, kLabel + sizeof(kLabel) - 1);
+  buf.insert(buf.end(), key.begin(), key.end());
+  buf.push_back(static_cast<std::uint8_t>(round & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 8) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 16) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 24) & 0xFF));
+  const auto hash = Sha256Bytes(buf);
+  std::array<std::uint32_t, 4> out{};
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    out[i] = LoadBe32(hash.data() + i * 4);
   }
-  SubBytes(state);
-  ShiftRows(state);
-  AddRoundKey(state, ks.bytes.data() + 14 * 16);
-  std::memcpy(out, state, 16);
+  return out;
+}
+
+std::array<std::uint32_t, 3> DeriveShareMask(
+    const std::array<std::uint8_t, 32>& key,
+    std::uint32_t round,
+    std::uint32_t word,
+    bool final_round) {
+  std::vector<std::uint8_t> buf;
+  static constexpr char kLabel[] = "MI_E2EE_WB_AES_SHARE_V1";
+  static constexpr char kFinalLabel[] = "MI_E2EE_WB_AES_FSHARE_V1";
+  const char* label = final_round ? kFinalLabel : kLabel;
+  const std::size_t label_len =
+      final_round ? (sizeof(kFinalLabel) - 1) : (sizeof(kLabel) - 1);
+  buf.insert(buf.end(), label, label + label_len);
+  buf.insert(buf.end(), key.begin(), key.end());
+  buf.push_back(static_cast<std::uint8_t>(round & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 8) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 16) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((round >> 24) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>(word & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((word >> 8) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((word >> 16) & 0xFF));
+  buf.push_back(static_cast<std::uint8_t>((word >> 24) & 0xFF));
+  const auto hash = Sha256Bytes(buf);
+  std::array<std::uint32_t, 3> out{};
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    out[i] = LoadBe32(hash.data() + i * 4);
+  }
+  return out;
+}
+
+bool BuildWhiteboxTables(const std::array<std::uint8_t, 32>& key,
+                         WhiteboxAesTables& out,
+                         std::string& error) {
+  error.clear();
+  if (IsAllZero(key.data(), key.size())) {
+    error = "history key invalid";
+    return false;
+  }
+
+  Aes256KeySchedule ks;
+  Aes256KeyExpand(key, ks);
+  std::array<std::uint32_t, 60> round_keys{};
+  LoadRoundKeys(ks, round_keys);
+
+  std::array<std::array<std::uint32_t, 256>, 4> te{};
+  std::array<std::array<std::uint32_t, 256>, 4> fe{};
+  BuildBaseTables(te, fe);
+
+  std::array<std::uint8_t, 16> in_mask{};
+  {
+    std::array<std::uint32_t, 4> rk0{};
+    for (std::size_t w = 0; w < 4; ++w) {
+      rk0[w] = round_keys[w];
+    }
+    WordsToBytes(rk0, in_mask);
+  }
+
+  for (std::uint32_t round = 0; round < 13; ++round) {
+    const auto out_mask_words = DeriveRoundMask(key, round);
+    std::array<std::uint8_t, 16> next_mask{};
+    WordsToBytes(out_mask_words, next_mask);
+
+    for (std::uint32_t word = 0; word < 4; ++word) {
+      const auto shares = DeriveShareMask(key, round, word, false);
+      const std::uint32_t rk =
+          round_keys[(round + 1) * 4 + word];
+      const std::uint32_t share0 = shares[0] ^ rk;
+      const std::uint32_t share1 = shares[1];
+      const std::uint32_t share2 = shares[2];
+      const std::uint32_t share3 =
+          out_mask_words[word] ^ shares[0] ^ shares[1] ^ shares[2];
+      const std::uint32_t share[4] = {share0, share1, share2, share3};
+
+      for (std::size_t table = 0; table < 4; ++table) {
+        const int idx = kAesTboxInputIndex[word][table];
+        const std::uint8_t mask = in_mask[static_cast<std::size_t>(idx)];
+        for (std::size_t b = 0; b < 256; ++b) {
+          const std::uint8_t unmasked =
+              static_cast<std::uint8_t>(b) ^ mask;
+          out.rounds[round][word][table][b] =
+              te[table][unmasked] ^ share[table];
+        }
+      }
+    }
+    in_mask = next_mask;
+  }
+
+  const std::uint32_t final_round = 13;
+  for (std::uint32_t word = 0; word < 4; ++word) {
+    const auto shares = DeriveShareMask(key, final_round, word, true);
+    const std::uint32_t rk =
+        round_keys[14 * 4 + word];
+    const std::uint32_t share0 = shares[0] ^ rk;
+    const std::uint32_t share1 = shares[1];
+    const std::uint32_t share2 = shares[2];
+    const std::uint32_t share3 =
+        shares[0] ^ shares[1] ^ shares[2];
+    const std::uint32_t share[4] = {share0, share1, share2, share3};
+
+    for (std::size_t table = 0; table < 4; ++table) {
+      const int idx = kAesTboxInputIndex[word][table];
+      const std::uint8_t mask = in_mask[static_cast<std::size_t>(idx)];
+      for (std::size_t b = 0; b < 256; ++b) {
+        const std::uint8_t unmasked =
+            static_cast<std::uint8_t>(b) ^ mask;
+        out.final[word][table][b] =
+            fe[table][unmasked] ^ share[table];
+      }
+    }
+  }
+
+  crypto_wipe(ks.bytes.data(), ks.bytes.size());
+  crypto_wipe(round_keys.data(), round_keys.size() * sizeof(round_keys[0]));
+  return true;
+}
+
+void WipeWhiteboxTables(WhiteboxAesTables& tables) {
+  crypto_wipe(&tables, sizeof(tables));
+}
+
+void WhiteboxAesEncryptBlock(const WhiteboxAesTables& tables,
+                             const std::uint8_t in[16],
+                             std::uint8_t out[16]) {
+  std::uint32_t s0 = LoadBe32(in + 0);
+  std::uint32_t s1 = LoadBe32(in + 4);
+  std::uint32_t s2 = LoadBe32(in + 8);
+  std::uint32_t s3 = LoadBe32(in + 12);
+
+  for (std::size_t round = 0; round < 13; ++round) {
+    const auto& r = tables.rounds[round];
+    const std::uint32_t t0 =
+        r[0][0][s0 >> 24] ^
+        r[0][1][(s1 >> 16) & 0xFF] ^
+        r[0][2][(s2 >> 8) & 0xFF] ^
+        r[0][3][s3 & 0xFF];
+    const std::uint32_t t1 =
+        r[1][0][s1 >> 24] ^
+        r[1][1][(s2 >> 16) & 0xFF] ^
+        r[1][2][(s3 >> 8) & 0xFF] ^
+        r[1][3][s0 & 0xFF];
+    const std::uint32_t t2 =
+        r[2][0][s2 >> 24] ^
+        r[2][1][(s3 >> 16) & 0xFF] ^
+        r[2][2][(s0 >> 8) & 0xFF] ^
+        r[2][3][s1 & 0xFF];
+    const std::uint32_t t3 =
+        r[3][0][s3 >> 24] ^
+        r[3][1][(s0 >> 16) & 0xFF] ^
+        r[3][2][(s1 >> 8) & 0xFF] ^
+        r[3][3][s2 & 0xFF];
+    s0 = t0;
+    s1 = t1;
+    s2 = t2;
+    s3 = t3;
+  }
+
+  const auto& f = tables.final;
+  const std::uint32_t t0 =
+      f[0][0][s0 >> 24] ^
+      f[0][1][(s1 >> 16) & 0xFF] ^
+      f[0][2][(s2 >> 8) & 0xFF] ^
+      f[0][3][s3 & 0xFF];
+  const std::uint32_t t1 =
+      f[1][0][s1 >> 24] ^
+      f[1][1][(s2 >> 16) & 0xFF] ^
+      f[1][2][(s3 >> 8) & 0xFF] ^
+      f[1][3][s0 & 0xFF];
+  const std::uint32_t t2 =
+      f[2][0][s2 >> 24] ^
+      f[2][1][(s3 >> 16) & 0xFF] ^
+      f[2][2][(s0 >> 8) & 0xFF] ^
+      f[2][3][s1 & 0xFF];
+  const std::uint32_t t3 =
+      f[3][0][s3 >> 24] ^
+      f[3][1][(s0 >> 16) & 0xFF] ^
+      f[3][2][(s1 >> 8) & 0xFF] ^
+      f[3][3][s2 & 0xFF];
+
+  out[0] = static_cast<std::uint8_t>(t0 >> 24);
+  out[1] = static_cast<std::uint8_t>(t0 >> 16);
+  out[2] = static_cast<std::uint8_t>(t0 >> 8);
+  out[3] = static_cast<std::uint8_t>(t0);
+  out[4] = static_cast<std::uint8_t>(t1 >> 24);
+  out[5] = static_cast<std::uint8_t>(t1 >> 16);
+  out[6] = static_cast<std::uint8_t>(t1 >> 8);
+  out[7] = static_cast<std::uint8_t>(t1);
+  out[8] = static_cast<std::uint8_t>(t2 >> 24);
+  out[9] = static_cast<std::uint8_t>(t2 >> 16);
+  out[10] = static_cast<std::uint8_t>(t2 >> 8);
+  out[11] = static_cast<std::uint8_t>(t2);
+  out[12] = static_cast<std::uint8_t>(t3 >> 24);
+  out[13] = static_cast<std::uint8_t>(t3 >> 16);
+  out[14] = static_cast<std::uint8_t>(t3 >> 8);
+  out[15] = static_cast<std::uint8_t>(t3);
 }
 
 void StoreUint64Be(std::uint8_t* out, std::uint64_t v) {
@@ -750,12 +969,15 @@ bool Aes256GcmEncrypt(const std::array<std::uint8_t, 32>& key,
     return false;
   }
 
-  Aes256KeySchedule ks;
-  Aes256KeyExpand(key, ks);
+  WhiteboxAesTables tables;
+  if (!BuildWhiteboxTables(key, tables, error)) {
+    return false;
+  }
+  auto wipe = [&]() { WipeWhiteboxTables(tables); };
 
   std::uint8_t h[16]{};
   std::uint8_t zero[16]{};
-  AesEncryptBlock(ks, zero, h);
+  WhiteboxAesEncryptBlock(tables, zero, h);
 
   std::uint8_t j0[16]{};
   std::memcpy(j0, nonce.data(), nonce.size());
@@ -768,7 +990,7 @@ bool Aes256GcmEncrypt(const std::array<std::uint8_t, 32>& key,
   while (offset < plain.size()) {
     Increment32(counter);
     std::uint8_t stream[16];
-    AesEncryptBlock(ks, counter, stream);
+    WhiteboxAesEncryptBlock(tables, counter, stream);
     const std::size_t take =
         std::min<std::size_t>(16, plain.size() - offset);
     for (std::size_t i = 0; i < take; ++i) {
@@ -782,11 +1004,11 @@ bool Aes256GcmEncrypt(const std::array<std::uint8_t, 32>& key,
   GcmGhash(h, nullptr, 0, out_cipher.data(), out_cipher.size(), ghash);
 
   std::uint8_t s[16];
-  AesEncryptBlock(ks, j0, s);
+  WhiteboxAesEncryptBlock(tables, j0, s);
   for (std::size_t i = 0; i < out_tag.size(); ++i) {
     out_tag[i] = static_cast<std::uint8_t>(s[i] ^ ghash[i]);
   }
-  crypto_wipe(ks.bytes.data(), ks.bytes.size());
+  wipe();
   return true;
 }
 
@@ -803,12 +1025,15 @@ bool Aes256GcmDecrypt(const std::array<std::uint8_t, 32>& key,
     return false;
   }
 
-  Aes256KeySchedule ks;
-  Aes256KeyExpand(key, ks);
+  WhiteboxAesTables tables;
+  if (!BuildWhiteboxTables(key, tables, error)) {
+    return false;
+  }
+  auto wipe = [&]() { WipeWhiteboxTables(tables); };
 
   std::uint8_t h[16]{};
   std::uint8_t zero[16]{};
-  AesEncryptBlock(ks, zero, h);
+  WhiteboxAesEncryptBlock(tables, zero, h);
 
   std::uint8_t j0[16]{};
   std::memcpy(j0, nonce.data(), nonce.size());
@@ -818,14 +1043,14 @@ bool Aes256GcmDecrypt(const std::array<std::uint8_t, 32>& key,
   GcmGhash(h, nullptr, 0, cipher.data(), cipher.size(), ghash);
 
   std::uint8_t s[16];
-  AesEncryptBlock(ks, j0, s);
+  WhiteboxAesEncryptBlock(tables, j0, s);
   std::uint8_t expected[16];
   for (std::size_t i = 0; i < sizeof(expected); ++i) {
     expected[i] = static_cast<std::uint8_t>(s[i] ^ ghash[i]);
   }
 
   if (crypto_verify16(expected, tag.data()) != 0) {
-    crypto_wipe(ks.bytes.data(), ks.bytes.size());
+    wipe();
     error = "history auth failed";
     return false;
   }
@@ -837,7 +1062,7 @@ bool Aes256GcmDecrypt(const std::array<std::uint8_t, 32>& key,
   while (offset < cipher.size()) {
     Increment32(counter);
     std::uint8_t stream[16];
-    AesEncryptBlock(ks, counter, stream);
+    WhiteboxAesEncryptBlock(tables, counter, stream);
     const std::size_t take =
         std::min<std::size_t>(16, cipher.size() - offset);
     for (std::size_t i = 0; i < take; ++i) {
@@ -846,7 +1071,7 @@ bool Aes256GcmDecrypt(const std::array<std::uint8_t, 32>& key,
     }
     offset += take;
   }
-  crypto_wipe(ks.bytes.data(), ks.bytes.size());
+  wipe();
   return true;
 }
 
