@@ -115,7 +115,21 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime
+        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_rime_precompile
+
+      - name: Precompile Rime user data
+        run: |
+          $precompileExe = Get-ChildItem -Path $env:GITHUB_WORKSPACE\\build\\client -Recurse -Filter "mi_rime_precompile.exe" | Select-Object -First 1
+          if (-not $precompileExe) {
+            throw "mi_rime_precompile.exe not found"
+          }
+          $prebuiltRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_prebuilt"
+          New-Item -ItemType Directory -Force -Path $prebuiltRoot | Out-Null
+          $runtimeDir = $env:RIME_RUNTIME_DIR
+          if (-not $runtimeDir) {
+            $runtimeDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_runtime"
+          }
+          & $precompileExe.FullName --output-dir $prebuiltRoot --runtime-dir $runtimeDir
 
       - name: Configure server
         run: >
@@ -170,6 +184,13 @@ jobs:
           $serverDb = Join-Path $serverRoot "database"
           New-Item -ItemType Directory -Force -Path $clientDll, $clientConfig, $clientDb, $serverDll, $serverConfig, $serverDb | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $serverDb "offline_store") | Out-Null
+
+          $prebuiltSrc = Join-Path $workspace "build\\rime_prebuilt\\user"
+          $prebuiltDst = Join-Path $clientDb "rime\\prebuilt"
+          if (Test-Path $prebuiltSrc) {
+            New-Item -ItemType Directory -Force -Path $prebuiltDst | Out-Null
+            Copy-Item (Join-Path $prebuiltSrc "*") $prebuiltDst -Recurse -Force
+          }
 
           $keysDir = Join-Path $distRoot "keys"
           New-Item -ItemType Directory -Force -Path $keysDir | Out-Null

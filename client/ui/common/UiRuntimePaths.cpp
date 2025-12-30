@@ -74,6 +74,10 @@ QString ResolveRuntimeDir(const QString &appDir) {
     if (QDir(dllDir).exists()) {
         return dllDir;
     }
+    const QString runtimeDir = QDir(rootDir).filePath(QStringLiteral("runtime"));
+    if (QDir(runtimeDir).exists()) {
+        return runtimeDir;
+    }
     if (leaf.compare(QStringLiteral("runtime"), Qt::CaseInsensitive) == 0) {
         return dir.absolutePath();
     }

@@ -15,6 +15,15 @@ target_include_directories(mi_ime_rime PRIVATE
 
 target_compile_definitions(mi_ime_rime PRIVATE MI_IME_PLUGIN_BUILD)
 
+add_executable(mi_rime_precompile
+    RimePrecompile.cpp
+)
+target_include_directories(mi_rime_precompile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ../common
+)
+target_link_libraries(mi_rime_precompile PRIVATE mi_ui_common)
+
 option(MI_UI_RIME_DOWNLOAD "Download librime runtime when building UI" ON)
 set(MI_UI_RIME_VERSION "1.15.0" CACHE STRING "librime runtime version")
 set(MI_UI_RIME_ASSET "rime-75bc43a-Windows-msvc-x64.7z" CACHE STRING "librime runtime asset")

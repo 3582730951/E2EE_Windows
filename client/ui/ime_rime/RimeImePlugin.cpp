@@ -1,11 +1,13 @@
 #include "../common/ImePluginApi.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "third_party/rime_api.h"
@@ -29,7 +31,10 @@ using LibHandle = void *;
 LibHandle gRimeLib = nullptr;
 RimeApi *gApi = nullptr;
 bool gInitialized = false;
+bool gHasCompiledData = false;
 std::string gPreferredSchema;
+std::atomic_bool gDeploying{false};
+std::thread gDeployThread;
 
 bool HasCompiledData(const std::string &user_dir) {
     if (user_dir.empty()) {
@@ -161,6 +166,25 @@ bool LoadRime() {
     return true;
 }
 
+void StartDeployAsync() {
+    if (!gApi || !gApi->deploy) {
+        return;
+    }
+    bool expected = false;
+    if (!gDeploying.compare_exchange_strong(expected, true)) {
+        return;
+    }
+    if (gDeployThread.joinable()) {
+        gDeployThread.join();
+    }
+    gDeployThread = std::thread([]() {
+        if (gApi && gApi->deploy) {
+            gApi->deploy();
+        }
+        gDeploying.store(false);
+    });
+}
+
 std::string LoadPreferredSchema(const char *user_dir) {
     if (!user_dir || !*user_dir) {
         return {};
@@ -213,23 +237,20 @@ MI_IME_EXPORT bool MiImeInitialize(const char *shared_dir, const char *user_dir)
         gApi->deployer_initialize(&traits);
     }
     gApi->initialize(&traits);
-    const bool hasCompiled = HasCompiledData(user_dir);
+    gHasCompiledData = HasCompiledData(user_dir);
     bool forceDeploy = false;
     if (const char *env = std::getenv("MI_E2EE_RIME_FORCE_DEPLOY")) {
         if (*env != '\0' && std::strcmp(env, "0") != 0) {
             forceDeploy = true;
         }
     }
-    const bool needsDeploy = !hasCompiled || forceDeploy;
+    const bool needsDeploy = !gHasCompiledData || forceDeploy;
     bool maintenanceStarted = false;
     if (needsDeploy && gApi->start_maintenance) {
-        maintenanceStarted = gApi->start_maintenance(True) == True;
+        maintenanceStarted = gApi->start_maintenance(False) == True;
     }
-    if (!maintenanceStarted && needsDeploy && gApi->deploy) {
-        gApi->deploy();
-    }
-    if (maintenanceStarted && gApi->join_maintenance_thread) {
-        gApi->join_maintenance_thread();
+    if (!maintenanceStarted && needsDeploy) {
+        StartDeployAsync();
     }
     gPreferredSchema = LoadPreferredSchema(user_dir);
     gInitialized = true;
@@ -240,11 +261,19 @@ MI_IME_EXPORT void MiImeShutdown() {
     if (!gInitialized) {
         return;
     }
+    if (gDeployThread.joinable()) {
+        gDeployThread.join();
+    }
+    if (gApi && gApi->is_maintenance_mode && gApi->is_maintenance_mode() &&
+        gApi->join_maintenance_thread) {
+        gApi->join_maintenance_thread();
+    }
     if (gApi && gApi->finalize) {
         gApi->finalize();
     }
     gInitialized = false;
     gApi = nullptr;
+    gHasCompiledData = false;
     if (gRimeLib) {
         UnloadLib(gRimeLib);
         gRimeLib = nullptr;
@@ -264,8 +293,11 @@ MI_IME_EXPORT void *MiImeCreateSession() {
             if (!gApi->select_schema(session, gPreferredSchema.c_str())) {
                 gApi->select_schema(session, "rime_ice");
             }
-        } else if (!gApi->select_schema(session, "rime_ice")) {
-            gApi->select_schema(session, "mi_pinyin");
+        } else {
+            const char *primary = gHasCompiledData ? "rime_ice" : "mi_pinyin";
+            if (!gApi->select_schema(session, primary)) {
+                gApi->select_schema(session, "luna_pinyin");
+            }
         }
     }
     return reinterpret_cast<void *>(static_cast<uintptr_t>(session));
@@ -291,12 +323,7 @@ MI_IME_EXPORT int MiImeGetCandidates(void *session,
     out_buffer[0] = '\0';
     const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
     if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
-        if (gApi->join_maintenance_thread) {
-            gApi->join_maintenance_thread();
-        }
-        if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
-            return 0;
-        }
+        return 0;
     }
     if (*input == '\0') {
         if (gApi->clear_composition) {
@@ -400,6 +427,9 @@ MI_IME_EXPORT int MiImeGetPreedit(void *session, char *out_buffer, size_t out_si
     }
     out_buffer[0] = '\0';
     const RimeSessionId id = reinterpret_cast<RimeSessionId>(session);
+    if (gApi->is_maintenance_mode && gApi->is_maintenance_mode()) {
+        return 0;
+    }
     RIME_STRUCT(RimeContext, ctx);
     if (!gApi->get_context || !gApi->get_context(id, &ctx)) {
         return 0;
