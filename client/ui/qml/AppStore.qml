@@ -36,6 +36,11 @@ QtObject {
     property ListModel filteredDialogsModel: ListModel {}
     property ListModel filteredContactsModel: ListModel {}
     property ListModel friendRequestsModel: ListModel {}
+    property ListModel groupInvitesModel: ListModel {}
+    property ListModel noticesModel: ListModel {}
+    property int notificationCount: friendRequestsModel.count + groupInvitesModel.count + noticesModel.count
+    property var knownFriendIds: ({})
+    property bool friendIdsInitialized: false
 
     function init() {
         if (initialized) {
@@ -66,6 +71,8 @@ QtObject {
     function rebuildDialogs() {
         contactsModel.clear()
         var targets = {}
+        var nextFriendIds = {}
+        var friendNameMap = {}
 
         var friends = clientBridge ? clientBridge.friends : []
         for (var i = 0; i < friends.length; ++i) {
@@ -87,6 +94,29 @@ QtObject {
                 memberCount: 2,
                 avatarKey: display
             }
+            nextFriendIds[username] = true
+            friendNameMap[username] = display
+        }
+        if (clientBridge && clientBridge.loggedIn) {
+            if (friendIdsInitialized) {
+                for (var addId in nextFriendIds) {
+                    if (!knownFriendIds[addId]) {
+                        var displayName = friendNameMap[addId] || addId
+                        addNotice("friend_added|" + addId,
+                                  Ui.I18n.t("notice.friendAddedTitle"),
+                                  Ui.I18n.format("notice.friendAddedDetail", displayName))
+                    }
+                }
+                for (var rmId in knownFriendIds) {
+                    if (!nextFriendIds[rmId]) {
+                        addNotice("friend_removed|" + rmId,
+                                  Ui.I18n.t("notice.friendRemovedTitle"),
+                                  Ui.I18n.format("notice.friendRemovedDetail", rmId))
+                    }
+                }
+            }
+            knownFriendIds = nextFriendIds
+            friendIdsInitialized = true
         }
 
         var groups = clientBridge ? clientBridge.groups : []
@@ -126,13 +156,105 @@ QtObject {
     function refreshFriendRequests() {
         friendRequestsModel.clear()
         var requests = clientBridge ? clientBridge.friendRequests : []
+        var nowMs = Date.now()
         for (var i = 0; i < requests.length; ++i) {
             var r = requests[i]
             var name = r.username || ""
             friendRequestsModel.append({
                 username: name,
-                remark: r.remark || ""
+                remark: r.remark || "",
+                receivedMs: nowMs
             })
+        }
+    }
+
+    function buildInviteKey(groupId, fromUser, messageId) {
+        var gid = (groupId || "").trim()
+        var from = (fromUser || "").trim()
+        var mid = (messageId || "").trim()
+        return gid + "|" + (mid.length > 0 ? mid : from)
+    }
+
+    function addGroupInvite(groupId, fromUser, messageId) {
+        var gid = (groupId || "").trim()
+        if (gid.length === 0) {
+            return
+        }
+        var key = buildInviteKey(gid, fromUser, messageId)
+        for (var i = 0; i < groupInvitesModel.count; ++i) {
+            if (groupInvitesModel.get(i).key === key) {
+                return
+            }
+        }
+        groupInvitesModel.append({
+            key: key,
+            groupId: gid,
+            fromUser: fromUser || "",
+            messageId: messageId || "",
+            receivedMs: Date.now()
+        })
+    }
+
+    function removeGroupInviteByKey(key) {
+        for (var i = groupInvitesModel.count - 1; i >= 0; --i) {
+            if (groupInvitesModel.get(i).key === key) {
+                groupInvitesModel.remove(i)
+            }
+        }
+    }
+
+    function joinGroupInvite(key) {
+        if (!clientBridge) {
+            return false
+        }
+        for (var i = 0; i < groupInvitesModel.count; ++i) {
+            var inv = groupInvitesModel.get(i)
+            if (inv.key === key) {
+                var ok = clientBridge.joinGroup(inv.groupId)
+                if (ok) {
+                    removeGroupInviteByKey(key)
+                }
+                return ok
+            }
+        }
+        return false
+    }
+
+    function ignoreGroupInvite(key) {
+        removeGroupInviteByKey(key)
+    }
+
+    function copyGroupInviteId(groupId) {
+        var gid = (groupId || "").trim()
+        if (gid.length === 0) {
+            return
+        }
+        setInternalClipboard(gid)
+    }
+
+    function addNotice(key, title, detail) {
+        var k = (key || "").trim()
+        if (k.length === 0) {
+            return
+        }
+        for (var i = 0; i < noticesModel.count; ++i) {
+            if (noticesModel.get(i).key === k) {
+                return
+            }
+        }
+        noticesModel.append({
+            key: k,
+            title: title || "",
+            detail: detail || "",
+            receivedMs: Date.now()
+        })
+    }
+
+    function dismissNotice(key) {
+        for (var i = noticesModel.count - 1; i >= 0; --i) {
+            if (noticesModel.get(i).key === key) {
+                noticesModel.remove(i)
+            }
         }
     }
 
@@ -210,6 +332,22 @@ QtObject {
         var sender = message.sender || ""
         var msgId = message.messageId || nextMsgId()
         var timeText = message.time || formatTime(new Date())
+        if (kind === "group_invite" && !outgoing) {
+            addGroupInvite(convId, sender, msgId)
+        }
+        if (kind === "notice") {
+            var noticeKind = message.noticeKind || 0
+            var noticeTarget = message.noticeTarget || ""
+            if (noticeKind === 3 && clientBridge && noticeTarget === clientBridge.username) {
+                var actor = message.noticeActor || ""
+                var detail = actor.length > 0
+                             ? Ui.I18n.format("notice.groupKickedDetail", actor, convId)
+                             : Ui.I18n.format("notice.groupKickedDetailNoActor", convId)
+                addNotice("group_kick|" + convId + "|" + actor,
+                          Ui.I18n.t("notice.groupKickedTitle"),
+                          detail)
+            }
+        }
 
         var text = message.text || ""
         if (kind === "file") {

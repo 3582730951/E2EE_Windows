@@ -33,6 +33,7 @@ Item {
             onRequestNewChat: newChatDialog.open()
             onRequestAddContact: addContactDialog.open()
             onRequestCreateGroup: createGroupWizard.open()
+            onRequestNotifications: notificationDialog.open()
             onRequestSettings: settingsDialog.open()
             onRequestDeviceManager: deviceManagerDialog.open()
         }
@@ -46,6 +47,7 @@ Item {
     Dialogs.NewChatDialog { id: newChatDialog }
     Dialogs.AddContactDialog { id: addContactDialog }
     Dialogs.CreateGroupWizard { id: createGroupWizard }
+    Dialogs.NotificationCenterDialog { id: notificationDialog }
     Dialogs.SettingsDialog { id: settingsDialog }
     Dialogs.DeviceManagerDialog { id: deviceManagerDialog }
 
@@ -76,6 +78,10 @@ Item {
         }
         if (newChatDialog.visible) {
             newChatDialog.close()
+            return
+        }
+        if (notificationDialog.visible) {
+            notificationDialog.close()
             return
         }
         if (centerPane.clearChatSearch()) {

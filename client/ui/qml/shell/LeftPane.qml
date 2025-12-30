@@ -9,6 +9,7 @@ Item {
     signal requestNewChat()
     signal requestAddContact()
     signal requestCreateGroup()
+    signal requestNotifications()
     signal requestSettings()
     signal requestDeviceManager()
 
@@ -74,6 +75,42 @@ Item {
                 Layout.fillWidth: true
                 placeholderText: Ui.I18n.t("left.search")
                 onTextEdited: Ui.AppStore.setSearchQuery(text)
+            }
+
+            Item {
+                Layout.preferredWidth: Ui.Style.iconButtonSize
+                Layout.preferredHeight: Ui.Style.iconButtonSize
+
+                Components.IconButton {
+                    id: notificationsButton
+                    anchors.fill: parent
+                    icon.source: "qrc:/mi/e2ee/ui/icons/bell.svg"
+                    buttonSize: Ui.Style.iconButtonSize
+                    iconSize: 16
+                    onClicked: root.requestNotifications()
+                    ToolTip.visible: hovered
+                    ToolTip.text: Ui.I18n.t("left.notifications")
+                }
+
+                Rectangle {
+                    id: notificationsBadge
+                    visible: Ui.AppStore.notificationCount > 0
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.rightMargin: -2
+                    anchors.topMargin: -2
+                    radius: 8
+                    color: Ui.Style.unreadBadgeBg
+                    implicitWidth: Math.max(16, badgeText.paintedWidth + 8)
+                    implicitHeight: 16
+                    Text {
+                        id: badgeText
+                        anchors.centerIn: parent
+                        text: Ui.AppStore.notificationCount > 99 ? "99+" : Ui.AppStore.notificationCount
+                        color: Ui.Style.unreadBadgeFg
+                        font.pixelSize: 10
+                    }
+                }
             }
 
             Menu {

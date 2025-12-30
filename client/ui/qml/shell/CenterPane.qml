@@ -33,7 +33,10 @@ Item {
     property var imeCandidates: []
     property int imeCandidateIndex: 0
     property string imePreedit: ""
-    property bool imePopupVisible: Ui.AppStore.internalImeEnabled && imeComposing &&
+    property bool internalImeReady: Ui.AppStore.internalImeEnabled &&
+                                    clientBridge && clientBridge.imeAvailable &&
+                                    clientBridge.imeAvailable()
+    property bool imePopupVisible: internalImeReady && imeComposing &&
                                    imeCandidates && imeCandidates.length > 0
 
     function showSearch() {
@@ -202,6 +205,12 @@ Item {
         var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
         return internalText.length > 0 || systemText.length > 0
     }
+    function externalImeActive() {
+        if (messageInput && messageInput.inputMethodComposing) {
+            return true
+        }
+        return Qt.inputMethod && Qt.inputMethod.visible
+    }
     function resetImeState() {
         imeComposing = false
         imeShiftPressed = false
@@ -299,7 +308,7 @@ Item {
         resetImeState()
     }
     function handleImeKey(event) {
-        if (!Ui.AppStore.internalImeEnabled || !imeChineseMode) {
+        if (!internalImeReady || !imeChineseMode || externalImeActive()) {
             return false
         }
         if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) {
@@ -307,6 +316,9 @@ Item {
         }
         var key = event.key
         var text = event.text || ""
+        if (text.length === 0 && key >= Qt.Key_A && key <= Qt.Key_Z) {
+            text = String.fromCharCode(key)
+        }
         if (!imeComposing) {
             if (text.length === 1 && /[a-zA-Z]/.test(text)) {
                 startImeComposition(text.toLowerCase())
@@ -678,7 +690,8 @@ Item {
                                 background: Rectangle { color: "transparent" }
                                 enabled: Ui.AppStore.currentChatId.length > 0
                                 Keys.onPressed: function(event) {
-                                    if (Ui.AppStore.internalImeEnabled) {
+                                    var allowInternalIme = internalImeReady && !externalImeActive()
+                                    if (allowInternalIme) {
                                         if (event.key === Qt.Key_Shift && !event.isAutoRepeat) {
                                             imeShiftPressed = true
                                             imeShiftUsed = false
@@ -701,7 +714,7 @@ Item {
                                     }
                                 }
                                 Keys.onReleased: function(event) {
-                                    if (!Ui.AppStore.internalImeEnabled) {
+                                    if (!internalImeReady || externalImeActive()) {
                                         return
                                     }
                                     if (event.key === Qt.Key_Shift && !event.isAutoRepeat) {
@@ -725,9 +738,16 @@ Item {
                                 onActiveFocusChanged: {
                                     if (!activeFocus) {
                                         cancelImeComposition(true)
+                                        return
+                                    }
+                                    if (internalImeReady && Qt.inputMethod && Qt.inputMethod.reset) {
+                                        Qt.inputMethod.reset()
+                                        if (Qt.inputMethod.hide) {
+                                            Qt.inputMethod.hide()
+                                        }
                                     }
                                 }
-                                inputMethodHints: Ui.AppStore.internalImeEnabled
+                                inputMethodHints: internalImeReady
                                                     ? (Qt.ImhNoPredictiveText | Qt.ImhPreferLatin)
                                                     : Qt.ImhNone
                             }
@@ -915,7 +935,7 @@ Item {
             }
 
             function sendMessage() {
-                if (Ui.AppStore.internalImeEnabled && imeComposing) {
+                if (internalImeReady && imeComposing) {
                     commitImeCandidate(imeCandidateIndex)
                 }
                 if (messageInput.text.trim().length === 0) {

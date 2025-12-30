@@ -1522,23 +1522,21 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     if (AddGroupIfMissing(group_id)) {
       emit groupsChanged();
     }
+    const QString actor = QString::fromStdString(n.actor_username);
+    const QString target = QString::fromStdString(n.target_username);
     QString text;
     switch (n.kind) {
       case 1:
-        text = QStringLiteral("%1 加入群聊").arg(
-            QString::fromStdString(n.target_username));
+        text = QStringLiteral("%1 加入群聊").arg(target);
         break;
       case 2:
-        text = QStringLiteral("%1 离开群聊").arg(
-            QString::fromStdString(n.target_username));
+        text = QStringLiteral("%1 离开群聊").arg(target);
         break;
       case 3:
-        text = QStringLiteral("%1 被移出群聊").arg(
-            QString::fromStdString(n.target_username));
+        text = QStringLiteral("%1 被移出群聊").arg(target);
         break;
       case 4:
-        text = QStringLiteral("%1 权限变更").arg(
-            QString::fromStdString(n.target_username));
+        text = QStringLiteral("%1 权限变更").arg(target);
         break;
       default:
         text = QStringLiteral("群通知更新");
@@ -1546,12 +1544,14 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
-    msg.insert(QStringLiteral("sender"),
-               QString::fromStdString(n.actor_username));
+    msg.insert(QStringLiteral("sender"), actor);
     msg.insert(QStringLiteral("outgoing"), false);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("notice"));
     msg.insert(QStringLiteral("text"), text);
+    msg.insert(QStringLiteral("noticeKind"), static_cast<int>(n.kind));
+    msg.insert(QStringLiteral("noticeActor"), actor);
+    msg.insert(QStringLiteral("noticeTarget"), target);
     msg.insert(QStringLiteral("time"), now);
     EmitMessage(msg);
   }
