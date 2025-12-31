@@ -101,8 +101,9 @@ Item {
                     anchors.topMargin: -2
                     radius: 8
                     color: Ui.Style.unreadBadgeBg
-                    implicitWidth: Math.max(16, badgeText.paintedWidth + 8)
-                    implicitHeight: 16
+                    width: Math.max(16, badgeText.paintedWidth + 8)
+                    height: 16
+                    z: 2
                     Text {
                         id: badgeText
                         anchors.centerIn: parent

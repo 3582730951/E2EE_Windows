@@ -220,6 +220,7 @@ ApplicationWindow {
                                     id: mouseArea
                                     anchors.fill: parent
                                     hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
                                 }
                             }
                         }
@@ -328,6 +329,7 @@ ApplicationWindow {
                                     id: inviteMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
                                 }
                             }
                         }
@@ -424,6 +426,7 @@ ApplicationWindow {
                                     id: noticeMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
                                 }
                             }
                         }
