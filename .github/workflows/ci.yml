@@ -131,6 +131,9 @@ jobs:
       - name: Build client
         run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_rime_precompile
 
+      - name: Install Python deps
+        run: python -m pip install --upgrade pip wordfreq
+
       - name: Prepare Rime dictionaries
         run: |
           $overlayRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay"
