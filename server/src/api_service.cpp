@@ -50,7 +50,7 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
 namespace {
 
 #ifdef MI_E2EE_ENABLE_MYSQL
-MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
+MYSQL* ConnectMysql(const mi::server::MySqlConfig& cfg, std::string& error) {
   error.clear();
   constexpr int kMaxAttempts = 2;
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
