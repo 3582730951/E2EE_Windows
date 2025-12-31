@@ -151,9 +151,6 @@ bool PrepareRimeData(const QString &sharedDir, const QString &userDir) {
         QStringLiteral("key_bindings.yaml"),
         QStringLiteral("punctuation.yaml"),
         QStringLiteral("symbols.yaml"),
-        QStringLiteral("luna_pinyin.schema.yaml"),
-        QStringLiteral("stroke.schema.yaml"),
-        QStringLiteral("mi_pinyin.schema.yaml"),
         QStringLiteral("rime_ice.schema.yaml"),
         QStringLiteral("melt_eng.schema.yaml"),
         QStringLiteral("radical_pinyin.schema.yaml"),
@@ -197,8 +194,6 @@ bool PrepareRimeData(const QString &sharedDir, const QString &userDir) {
     }
     const QStringList optionalFiles = {
         QStringLiteral("pinyin.yaml"),
-        QStringLiteral("luna_pinyin.dict.yaml"),
-        QStringLiteral("stroke.dict.yaml"),
         QStringLiteral("rime_ice.dict.yaml"),
         QStringLiteral("cn_dicts/8105.dict.yaml"),
         QStringLiteral("cn_dicts/41448.dict.yaml"),
@@ -230,6 +225,22 @@ bool PrepareRimeData(const QString &sharedDir, const QString &userDir) {
     }
 
     if (!ImeLanguagePackManager::instance().applyRimePack(sharedDir, userDir)) {
+        return false;
+    }
+    return true;
+}
+
+bool WritePrecompileOverrides(const QString &userDir) {
+    const QString path = QDir(userDir).filePath(QStringLiteral("default.custom.yaml"));
+    const QByteArray data =
+        "patch:\n"
+        "  schema_list:\n"
+        "    - schema: rime_ice\n";
+    QFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    if (out.write(data) != data.size()) {
         return false;
     }
     return true;
@@ -310,6 +321,10 @@ int main(int argc, char *argv[]) {
         QTextStream(stderr) << "Failed to prepare rime data\n";
         return 3;
     }
+    if (!WritePrecompileOverrides(userDir)) {
+        QTextStream(stderr) << "Failed to write rime overrides\n";
+        return 3;
+    }
 
     const QStringList openccRoots = {
         QDir(runtimeDir).filePath(QStringLiteral("opencc")),
@@ -325,6 +340,7 @@ int main(int argc, char *argv[]) {
         QTextStream(stderr) << "Rime deploy failed\n";
         return 4;
     }
+    QFile::remove(QDir(userDir).filePath(QStringLiteral("default.custom.yaml")));
     if (!HasBinFiles(userDir)) {
         QTextStream(stderr) << "Rime deploy produced no .bin files\n";
         return 5;
