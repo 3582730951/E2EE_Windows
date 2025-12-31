@@ -61,6 +61,7 @@
   "chat.contact": "Contact",
   "ime.status.label": "IME",
   "ime.source.thirdParty": "Third-party",
+  "ime.source.rime": "Rime",
   "ime.source.custom": "Custom",
   "ime.lang.zh": "Chinese",
   "ime.lang.en": "English",

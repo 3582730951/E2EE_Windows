@@ -61,6 +61,7 @@
   "chat.contact": "对方",
   "ime.status.label": "输入法",
   "ime.source.thirdParty": "第三方库",
+  "ime.source.rime": "Rime",
   "ime.source.custom": "自实现输入法",
   "ime.lang.zh": "中文",
   "ime.lang.en": "英文",

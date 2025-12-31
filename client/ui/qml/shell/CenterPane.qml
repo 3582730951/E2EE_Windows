@@ -218,9 +218,15 @@ Item {
         var name = (Qt.inputMethod.locale.name || "").toLowerCase()
         return name.indexOf("zh") === 0 || name.indexOf("zh_") === 0 || name.indexOf("zh-") === 0
     }
+    function internalImeRimeAvailable() {
+        return internalImeReady && clientBridge && clientBridge.imeRimeAvailable &&
+               clientBridge.imeRimeAvailable()
+    }
     function imeStatusText() {
         var source = internalImeReady
-                     ? Ui.I18n.t("ime.source.custom")
+                     ? (internalImeRimeAvailable()
+                        ? Ui.I18n.t("ime.source.rime")
+                        : Ui.I18n.t("ime.source.custom"))
                      : Ui.I18n.t("ime.source.thirdParty")
         var lang = internalImeReady
                    ? (imeChineseMode ? Ui.I18n.t("ime.lang.zh") : Ui.I18n.t("ime.lang.en"))

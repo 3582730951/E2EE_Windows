@@ -972,6 +972,10 @@ bool QuickClient::imeAvailable() {
   return !GetPinyinIndex().dict.isEmpty();
 }
 
+bool QuickClient::imeRimeAvailable() {
+  return EnsureImeSession() != nullptr;
+}
+
 QVariantList QuickClient::imeCandidates(const QString& input,
                                         int maxCandidates) {
   QVariantList items;

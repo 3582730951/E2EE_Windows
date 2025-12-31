@@ -88,6 +88,7 @@ class QuickClient : public QObject {
   Q_INVOKABLE QString systemClipboardText() const;
   Q_INVOKABLE qint64 systemClipboardTimestamp() const;
   Q_INVOKABLE bool imeAvailable();
+  Q_INVOKABLE bool imeRimeAvailable();
   Q_INVOKABLE QVariantList imeCandidates(const QString& input, int maxCandidates);
   Q_INVOKABLE QString imePreedit();
   Q_INVOKABLE bool imeCommit(int index);
