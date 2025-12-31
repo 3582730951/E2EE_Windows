@@ -1,11 +1,13 @@
 #include "auth_provider.h"
 
 #include <array>
+#include <atomic>
+#include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <cctype>
-#include <atomic>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -430,6 +432,39 @@ namespace {
 
 std::atomic<bool> g_mysql_user_auth_ready{false};
 
+MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
+  error.clear();
+  constexpr int kMaxAttempts = 2;
+  for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+      error = "mysql_init failed";
+      return nullptr;
+    }
+    unsigned int timeout = 5;
+    mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    mysql_options(conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
+    mysql_options(conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+#ifdef MYSQL_OPT_RECONNECT
+    bool reconnect = true;
+    mysql_options(conn, MYSQL_OPT_RECONNECT, &reconnect);
+#endif
+    MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(),
+                                    cfg.username.c_str(),
+                                    cfg.password.get().c_str(),
+                                    cfg.database.c_str(), cfg.port, nullptr, 0);
+    if (res) {
+      return conn;
+    }
+    error = "mysql_connect failed";
+    mysql_close(conn);
+    if (attempt + 1 < kMaxAttempts) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+  }
+  return nullptr;
+}
+
 bool EnsureMySqlUserAuthTable(MYSQL* conn, std::string& error) {
   if (!conn) {
     error = "mysql connection missing";
@@ -616,19 +651,8 @@ bool MySqlAuthProvider::Validate(const std::string& username,
   error = "mysql provider not built (enable MI_E2EE_ENABLE_MYSQL)";
   return false;
 #else
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg_, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-
-  MYSQL* res = mysql_real_connect(conn, cfg_.host.c_str(),
-                                  cfg_.username.c_str(),
-                                  cfg_.password.get().c_str(),
-                                  cfg_.database.c_str(), cfg_.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
   if (!EnsureMySqlUserAuthTable(conn, error)) {
@@ -660,19 +684,8 @@ bool MySqlAuthProvider::GetStoredPassword(const std::string& username,
   error = "mysql provider not built (enable MI_E2EE_ENABLE_MYSQL)";
   return false;
 #else
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg_, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-
-  MYSQL* res = mysql_real_connect(conn, cfg_.host.c_str(),
-                                  cfg_.username.c_str(),
-                                  cfg_.password.get().c_str(),
-                                  cfg_.database.c_str(), cfg_.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
   if (!EnsureMySqlUserAuthTable(conn, error)) {
@@ -725,18 +738,8 @@ bool MySqlAuthProvider::UpsertOpaqueUserRecord(
   error = "mysql provider not built (enable MI_E2EE_ENABLE_MYSQL)";
   return false;
 #else
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg_, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-  MYSQL* res = mysql_real_connect(conn, cfg_.host.c_str(),
-                                  cfg_.username.c_str(),
-                                  cfg_.password.get().c_str(),
-                                  cfg_.database.c_str(), cfg_.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
   if (!EnsureMySqlUserAuthTable(conn, error)) {
@@ -757,19 +760,8 @@ bool MySqlAuthProvider::UserExists(const std::string& username,
   error = "mysql provider not built (enable MI_E2EE_ENABLE_MYSQL)";
   return false;
 #else
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg_, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-
-  MYSQL* res = mysql_real_connect(conn, cfg_.host.c_str(),
-                                  cfg_.username.c_str(),
-                                  cfg_.password.get().c_str(),
-                                  cfg_.database.c_str(), cfg_.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
   if (!EnsureMySqlUserAuthTable(conn, error)) {

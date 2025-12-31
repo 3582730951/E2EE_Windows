@@ -1,9 +1,11 @@
 #include "api_service.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -46,6 +48,41 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
 #endif
 
 namespace {
+
+#ifdef MI_E2EE_ENABLE_MYSQL
+MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
+  error.clear();
+  constexpr int kMaxAttempts = 2;
+  for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+      error = "mysql_init failed";
+      return nullptr;
+    }
+    unsigned int timeout = 5;
+    mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    mysql_options(conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
+    mysql_options(conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+#ifdef MYSQL_OPT_RECONNECT
+    bool reconnect = true;
+    mysql_options(conn, MYSQL_OPT_RECONNECT, &reconnect);
+#endif
+    MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(),
+                                    cfg.username.c_str(),
+                                    cfg.password.get().c_str(),
+                                    cfg.database.c_str(), cfg.port, nullptr, 0);
+    if (res) {
+      return conn;
+    }
+    error = "mysql_connect failed";
+    mysql_close(conn);
+    if (attempt + 1 < kMaxAttempts) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+  }
+  return nullptr;
+}
+#endif
 
 #ifdef _WIN32
 constexpr std::uint8_t kDpapiMagic[8] = {'M', 'I', 'D', 'P',
@@ -2901,17 +2938,8 @@ namespace {
 bool AreFriendsMysql(const MySqlConfig& cfg, const std::string& username,
                      const std::string& friend_username, std::string& error) {
   error.clear();
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-  MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(), cfg.username.c_str(),
-                                  cfg.password.get().c_str(),
-                                  cfg.database.c_str(), cfg.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
 
@@ -3013,17 +3041,8 @@ bool AreFriendsMysql(const MySqlConfig& cfg, const std::string& username,
 bool IsBlockedMysql(const MySqlConfig& cfg, const std::string& username,
                     const std::string& blocked_username, std::string& error) {
   error.clear();
-  MYSQL* conn = mysql_init(nullptr);
+  MYSQL* conn = ConnectMysql(cfg, error);
   if (!conn) {
-    error = "mysql_init failed";
-    return false;
-  }
-  MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(), cfg.username.c_str(),
-                                  cfg.password.get().c_str(),
-                                  cfg.database.c_str(), cfg.port, nullptr, 0);
-  if (!res) {
-    error = "mysql_connect failed";
-    mysql_close(conn);
     return false;
   }
 
