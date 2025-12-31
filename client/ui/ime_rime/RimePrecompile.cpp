@@ -230,6 +230,38 @@ bool PrepareRimeData(const QString &sharedDir, const QString &userDir) {
     return true;
 }
 
+bool ApplyOverlay(const QString &overlayDir, const QString &sharedDir) {
+    if (overlayDir.isEmpty() || !QDir(overlayDir).exists()) {
+        return true;
+    }
+    QDir baseDir(overlayDir);
+    QDirIterator it(overlayDir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo info = it.fileInfo();
+        const QString rel = baseDir.relativeFilePath(info.filePath());
+        const QString dstPath = QDir(sharedDir).filePath(rel);
+        if (info.isDir()) {
+            if (!EnsureDir(dstPath)) {
+                return false;
+            }
+            continue;
+        }
+        QFileInfo dstInfo(dstPath);
+        if (!dstInfo.dir().exists()) {
+            if (!EnsureDir(dstInfo.path())) {
+                return false;
+            }
+        }
+        QFile::remove(dstPath);
+        if (!QFile::copy(info.filePath(), dstPath)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool PatchDefaultSchemaList(const QString &sharedDir) {
     const QString path = QDir(sharedDir).filePath(QStringLiteral("default.yaml"));
     QFile in(path);
@@ -327,6 +359,7 @@ int main(int argc, char *argv[]) {
 
     QString outputDir;
     QString runtimeDir = qEnvironmentVariable("RIME_RUNTIME_DIR");
+    QString overlayDir = qEnvironmentVariable("MI_E2EE_RIME_OVERLAY_DIR");
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
         const QString arg = args.at(i);
@@ -334,10 +367,12 @@ int main(int argc, char *argv[]) {
             outputDir = args.at(++i);
         } else if (arg == "--runtime-dir" && i + 1 < args.size()) {
             runtimeDir = args.at(++i);
+        } else if (arg == "--overlay-dir" && i + 1 < args.size()) {
+            overlayDir = args.at(++i);
         } else if (arg == "--help") {
             QTextStream(stdout)
                 << "Usage: mi_rime_precompile --output-dir <dir> "
-                   "[--runtime-dir <dir>]\n";
+                   "[--runtime-dir <dir>] [--overlay-dir <dir>]\n";
             return 0;
         }
     }
@@ -352,6 +387,10 @@ int main(int argc, char *argv[]) {
 
     if (!PrepareRimeData(sharedDir, userDir)) {
         QTextStream(stderr) << "Failed to prepare rime data\n";
+        return 3;
+    }
+    if (!ApplyOverlay(overlayDir, sharedDir)) {
+        QTextStream(stderr) << "Failed to apply rime overlay\n";
         return 3;
     }
     if (!PatchDefaultSchemaList(sharedDir)) {

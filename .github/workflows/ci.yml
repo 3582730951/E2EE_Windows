@@ -131,6 +131,11 @@ jobs:
       - name: Build client
         run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_rime_precompile
 
+      - name: Prepare Rime dictionaries
+        run: |
+          $overlayRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay"
+          python .\\tools\\rime_dict_prepare.py --out $overlayRoot
+
       - name: Precompile Rime user data
         run: |
           $precompileExe = Get-ChildItem -Path $env:GITHUB_WORKSPACE\\build\\client -Recurse -Filter "mi_rime_precompile.exe" | Select-Object -First 1
@@ -140,10 +145,11 @@ jobs:
           $prebuiltRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_prebuilt"
           New-Item -ItemType Directory -Force -Path $prebuiltRoot | Out-Null
           $runtimeDir = $env:RIME_RUNTIME_DIR
+          $overlayDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay\\share"
           if (-not $runtimeDir) {
             $runtimeDir = Join-Path $env:GITHUB_WORKSPACE "build\\rime_runtime"
           }
-          & $precompileExe.FullName --output-dir $prebuiltRoot --runtime-dir $runtimeDir
+          & $precompileExe.FullName --output-dir $prebuiltRoot --runtime-dir $runtimeDir --overlay-dir $overlayDir
 
       - name: Configure server
         run: >
@@ -204,6 +210,12 @@ jobs:
           if (Test-Path $prebuiltSrc) {
             New-Item -ItemType Directory -Force -Path $prebuiltDst | Out-Null
             Copy-Item (Join-Path $prebuiltSrc "*") $prebuiltDst -Recurse -Force
+          }
+          $overlayShare = Join-Path $workspace "build\\rime_overlay\\share"
+          $overlayDst = Join-Path $clientDb "rime\\share"
+          if (Test-Path $overlayShare) {
+            New-Item -ItemType Directory -Force -Path $overlayDst | Out-Null
+            Copy-Item (Join-Path $overlayShare "*") $overlayDst -Recurse -Force
           }
 
           $keysDir = Join-Path $distRoot "keys"
