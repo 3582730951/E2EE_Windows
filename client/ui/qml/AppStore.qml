@@ -25,6 +25,10 @@ QtObject {
     property var membersByChatId: ({})
     property var typingByChatId: ({})
     property var presenceByChatId: ({})
+    property bool incomingCallActive: false
+    property string incomingCallPeer: ""
+    property string incomingCallId: ""
+    property bool incomingCallVideo: false
 
     signal currentChatChanged(string chatId)
     signal leftTabChanged(int tab)
@@ -57,6 +61,65 @@ QtObject {
             }
         }
         rebuildFiltered()
+    }
+
+    function isSingleEmoji(text) {
+        var value = (text || "").trim()
+        if (value.length === 0) {
+            return false
+        }
+        var count = 0
+        for (var i = 0; i < value.length; ) {
+            var code = value.codePointAt(i)
+            if (code !== 0xFE0F && code !== 0x200D) {
+                count += 1
+                if (count > 1) {
+                    return false
+                }
+            }
+            i += code > 0xFFFF ? 2 : 1
+        }
+        return count === 1
+    }
+
+    function detectFileKind(fileName) {
+        var name = (fileName || "").toLowerCase()
+        var dot = name.lastIndexOf(".")
+        var ext = dot >= 0 ? name.slice(dot + 1) : ""
+        if (ext === "gif") {
+            return "gif"
+        }
+        if (ext === "png" || ext === "jpg" || ext === "jpeg" ||
+            ext === "webp" || ext === "bmp") {
+            return "image"
+        }
+        if (ext === "mp4" || ext === "mov" || ext === "mkv" ||
+            ext === "webm" || ext === "avi") {
+            return "video"
+        }
+        return "file"
+    }
+
+    function parseLocationText(text) {
+        var value = (text || "").trim()
+        var pattern = /^【位置】(.*)\\nlat:([-\\d\\.]+),\\s*lon:([-\\d\\.]+)$/
+        var match = pattern.exec(value)
+        if (!match || match.length < 4) {
+            return null
+        }
+        var lat = parseFloat(match[2])
+        var lon = parseFloat(match[3])
+        if (isNaN(lat) || isNaN(lon)) {
+            return null
+        }
+        return { label: match[1], lat: lat, lon: lon }
+    }
+
+    function clearIncomingCall() {
+        incomingCallActive = false
+        incomingCallPeer = ""
+        incomingCallId = ""
+        incomingCallVideo = false
     }
 
     function bootstrapAfterLogin() {
@@ -356,10 +419,44 @@ QtObject {
         } else if (kind === "sticker") {
             var sticker = message.stickerId || ""
             text = sticker.length > 0 ? "[贴纸] " + sticker : "[贴纸]"
+        } else if (kind === "location") {
+            var label = message.locationLabel || ""
+            text = label.length > 0 ? "[位置] " + label : "[位置]"
         } else if (kind === "call_invite") {
-            text = message.video ? "视频通话邀请" : "语音通话邀请"
+            text = message.video ? Ui.I18n.t("chat.callIncomingVideo")
+                                 : Ui.I18n.t("chat.callIncomingVoice")
         } else if (kind === "group_invite") {
             text = "邀请加入群聊"
+        }
+
+        var contentKind = "text"
+        var locationLabel = ""
+        var locationLat = 0
+        var locationLon = 0
+        if (kind === "location") {
+            contentKind = "location"
+            locationLabel = message.locationLabel || ""
+            locationLat = message.locationLat || 0
+            locationLon = message.locationLon || 0
+        } else if (kind === "sticker") {
+            contentKind = "sticker"
+        } else if (kind === "file") {
+            contentKind = detectFileKind(message.fileName || "")
+            if (!message.fileUrl && !message.filePath) {
+                contentKind = "file"
+            }
+        } else if (kind === "call_invite") {
+            contentKind = "call"
+        } else if (kind === "text") {
+            var loc = parseLocationText(text)
+            if (loc) {
+                contentKind = "location"
+                locationLabel = loc.label
+                locationLat = loc.lat
+                locationLon = loc.lon
+            } else if (isSingleEmoji(text)) {
+                contentKind = "emoji"
+            }
         }
 
         ensureDialog(convId, isGroup ? "group" : "private",
@@ -379,14 +476,29 @@ QtObject {
             chatId: convId,
             msgId: msgId,
             kind: entryKind,
+            contentKind: contentKind,
             senderName: displaySender,
             text: text,
             timeText: timeText,
             statusTicks: outgoing ? "sent" : "none",
-            edited: false
+            edited: false,
+            fileName: message.fileName || "",
+            fileSize: message.fileSize || 0,
+            fileId: message.fileId || "",
+            fileKey: message.fileKey || "",
+            fileUrl: message.fileUrl || message.filePath || "",
+            stickerId: message.stickerId || "",
+            stickerUrl: message.stickerUrl || "",
+            stickerAnimated: message.stickerAnimated || false,
+            previewUrl: message.previewUrl || "",
+            locationLabel: locationLabel,
+            locationLat: locationLat,
+            locationLon: locationLon,
+            callId: message.callId || "",
+            callVideo: message.video === true
         }
 
-        if (msgId && hasMessageId(convId, msgId)) {
+        if (msgId && mergeMessageEntry(convId, msgId, entry)) {
             return
         }
         appendMessage(convId, entry, convId !== currentChatId)
@@ -400,6 +512,12 @@ QtObject {
             if (clientBridge) {
                 clientBridge.sendReadReceipt(convId, msgId)
             }
+        }
+        if (kind === "call_invite" && !outgoing && !isGroup) {
+            incomingCallActive = true
+            incomingCallPeer = convId
+            incomingCallId = message.callId || ""
+            incomingCallVideo = message.video === true
         }
     }
 
@@ -528,6 +646,29 @@ QtObject {
                 text = h.stickerId ? "[贴纸] " + h.stickerId : "[贴纸]"
             }
 
+            var contentKind = "text"
+            var locationLabel = ""
+            var locationLat = 0
+            var locationLon = 0
+            if (h.kind === "sticker") {
+                contentKind = "sticker"
+            } else if (h.kind === "file") {
+                contentKind = detectFileKind(h.fileName || "")
+                if (!h.fileUrl) {
+                    contentKind = "file"
+                }
+            } else if (h.kind === "text") {
+                var loc = parseLocationText(text)
+                if (loc) {
+                    contentKind = "location"
+                    locationLabel = loc.label
+                    locationLat = loc.lat
+                    locationLon = loc.lon
+                } else if (isSingleEmoji(text)) {
+                    contentKind = "emoji"
+                }
+            }
+
             var status = h.status || "sent"
             var ticks = "none"
             if (h.outgoing === true) {
@@ -544,11 +685,24 @@ QtObject {
                 chatId: chatId,
                 msgId: h.messageId || nextMsgId(),
                 kind: entryKind,
+                contentKind: contentKind,
                 senderName: h.outgoing ? Ui.I18n.t("chat.you") : (h.sender || ""),
                 text: text,
                 timeText: h.time || "",
                 statusTicks: ticks,
-                edited: false
+                edited: false,
+                fileName: h.fileName || "",
+                fileSize: h.fileSize || 0,
+                fileId: h.fileId || "",
+                fileKey: h.fileKey || "",
+                fileUrl: h.fileUrl || "",
+                stickerId: h.stickerId || "",
+                stickerUrl: h.stickerUrl || "",
+                stickerAnimated: h.stickerAnimated || false,
+                previewUrl: h.previewUrl || "",
+                locationLabel: locationLabel,
+                locationLat: locationLat,
+                locationLon: locationLon
             })
         }
     }
@@ -608,6 +762,24 @@ QtObject {
         return ok
     }
 
+    function sendSticker(stickerId) {
+        sendErrorMessage = ""
+        if (!currentChatId || !clientBridge) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var sid = (stickerId || "").trim()
+        if (sid.length === 0) {
+            return false
+        }
+        var ok = clientBridge.sendSticker(currentChatId, sid, currentChatType === "group")
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
+    }
+
     function sendFile(path) {
         sendErrorMessage = ""
         if (!currentChatId || !clientBridge) {
@@ -625,8 +797,53 @@ QtObject {
         return ok
     }
 
-    function sendLocation() {
-        return sendMessage("[" + Ui.I18n.t("attach.location") + "]")
+    function sendLocation(lat, lon, label) {
+        sendErrorMessage = ""
+        if (!currentChatId || !clientBridge) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var latNum = parseFloat(lat)
+        var lonNum = parseFloat(lon)
+        if (isNaN(latNum) || isNaN(lonNum)) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var ok = clientBridge.sendLocation(currentChatId, latNum, lonNum, label || "",
+                                           currentChatType === "group")
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
+    }
+
+    function startCall(video) {
+        if (!currentChatId || !clientBridge) {
+            return false
+        }
+        if (currentChatType === "group") {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var callId = video ? clientBridge.startVideoCall(currentChatId)
+                           : clientBridge.startVoiceCall(currentChatId)
+        return callId && callId.length > 0
+    }
+
+    function acceptIncomingCall() {
+        if (!incomingCallActive || !clientBridge) {
+            return false
+        }
+        var ok = clientBridge.joinCall(incomingCallPeer, incomingCallId, incomingCallVideo)
+        if (ok) {
+            clearIncomingCall()
+        }
+        return ok
+    }
+
+    function declineIncomingCall() {
+        clearIncomingCall()
     }
 
     function appendMessage(chatId, message, markUnread) {
@@ -846,35 +1063,120 @@ QtObject {
         return chatId
     }
 
-    function updateMessageStatus(chatId, messageId, status) {
+    function findMessageIndex(chatId, messageId) {
         if (!messageId) {
-            return
-        }
-        var model = messagesModel(chatId)
-        for (var i = model.count - 1; i >= 0; --i) {
-            var entry = model.get(i)
-            if (entry.msgId === messageId) {
-                if (status === "read") {
-                    model.setProperty(i, "statusTicks", "read")
-                } else if (status === "delivery") {
-                    model.setProperty(i, "statusTicks", "delivered")
-                }
-                break
-            }
-        }
-    }
-
-    function hasMessageId(chatId, messageId) {
-        if (!messageId) {
-            return false
+            return -1
         }
         var model = messagesModel(chatId)
         for (var i = model.count - 1; i >= 0; --i) {
             if (model.get(i).msgId === messageId) {
-                return true
+                return i
             }
         }
-        return false
+        return -1
+    }
+
+    function mergeMessageEntry(chatId, messageId, incoming) {
+        var idx = findMessageIndex(chatId, messageId)
+        if (idx < 0) {
+            return false
+        }
+        var model = messagesModel(chatId)
+        var updated = false
+        function setString(prop, value) {
+            if (!value || typeof value !== "string" || value.length === 0) {
+                return
+            }
+            if (model.get(idx)[prop] !== value) {
+                model.setProperty(idx, prop, value)
+                updated = true
+            }
+        }
+        function setContentKind(value) {
+            if (!value || typeof value !== "string" || value.length === 0) {
+                return
+            }
+            var currentKind = model.get(idx).contentKind || ""
+            if (value === "file" && currentKind !== "" && currentKind !== "file") {
+                return
+            }
+            if (currentKind !== value) {
+                model.setProperty(idx, "contentKind", value)
+                updated = true
+            }
+        }
+        function setNumber(prop, value) {
+            if (typeof value !== "number" || isNaN(value)) {
+                return
+            }
+            if (model.get(idx)[prop] !== value) {
+                model.setProperty(idx, prop, value)
+                updated = true
+            }
+        }
+        function setBoolTrue(prop, value) {
+            if (value !== true) {
+                return
+            }
+            if (model.get(idx)[prop] !== true) {
+                model.setProperty(idx, prop, true)
+                updated = true
+            }
+        }
+        function setUrl(prop, value) {
+            if (value === undefined || value === null) {
+                return
+            }
+            var text = value.toString ? value.toString() : "" + value
+            if (text.length === 0) {
+                return
+            }
+            var current = model.get(idx)[prop]
+            var currentText = current && current.toString ? current.toString()
+                                                         : (current !== undefined ? "" + current : "")
+            if (currentText !== text) {
+                model.setProperty(idx, prop, value)
+                updated = true
+            }
+        }
+
+        if (incoming) {
+            setContentKind(incoming.contentKind)
+            setString("text", incoming.text)
+            setString("senderName", incoming.senderName)
+            setString("fileName", incoming.fileName)
+            setNumber("fileSize", incoming.fileSize)
+            setString("fileId", incoming.fileId)
+            setString("fileKey", incoming.fileKey)
+            setUrl("fileUrl", incoming.fileUrl)
+            setUrl("previewUrl", incoming.previewUrl)
+            setString("stickerId", incoming.stickerId)
+            setUrl("stickerUrl", incoming.stickerUrl)
+            setBoolTrue("stickerAnimated", incoming.stickerAnimated)
+            setString("locationLabel", incoming.locationLabel)
+            setNumber("locationLat", incoming.locationLat)
+            setNumber("locationLon", incoming.locationLon)
+            setString("callId", incoming.callId)
+            setBoolTrue("callVideo", incoming.callVideo)
+        }
+        return true
+    }
+
+    function updateMessageStatus(chatId, messageId, status) {
+        var idx = findMessageIndex(chatId, messageId)
+        if (idx < 0) {
+            return
+        }
+        var model = messagesModel(chatId)
+        if (status === "read") {
+            model.setProperty(idx, "statusTicks", "read")
+        } else if (status === "delivery") {
+            model.setProperty(idx, "statusTicks", "delivered")
+        }
+    }
+
+    function hasMessageId(chatId, messageId) {
+        return findMessageIndex(chatId, messageId) >= 0
     }
 
     function nextMsgId() {
@@ -909,6 +1211,11 @@ QtObject {
         function onTokenChanged() {
             if (clientBridge && clientBridge.loggedIn) {
                 bootstrapAfterLogin()
+            }
+        }
+        function onCallStateChanged() {
+            if (clientBridge && clientBridge.activeCallId.length === 0) {
+                clearIncomingCall()
             }
         }
     }

@@ -12,6 +12,7 @@ ToolButton {
     property color pressedBg: Ui.Style.pressedBg
     property int buttonSize: 32
     property int iconSize: 18
+    signal rightClicked
 
     implicitWidth: buttonSize
     implicitHeight: buttonSize
@@ -26,5 +27,12 @@ ToolButton {
     background: Rectangle {
         radius: Ui.Style.radiusMedium
         color: root.down ? root.pressedBg : (root.hovered ? root.hoverBg : root.bgColor)
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        hoverEnabled: true
+        onClicked: root.rightClicked()
     }
 }

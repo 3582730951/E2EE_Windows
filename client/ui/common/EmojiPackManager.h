@@ -25,6 +25,7 @@ public:
     void Reload();
     QVector<Item> Items() const;
     const Item *Find(const QString &id) const;
+    bool ImportSticker(const QString &srcPath, QString *outId, QString *outError);
 
     QPixmap StickerPixmap(const QString &id, int size) const;
     QMovie *StickerMovie(const QString &id, int size, QWidget *viewport);

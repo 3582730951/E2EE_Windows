@@ -62,9 +62,19 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool sendText(const QString& convId, const QString& text, bool isGroup);
   Q_INVOKABLE bool sendFile(const QString& convId, const QString& path, bool isGroup);
   Q_INVOKABLE bool sendSticker(const QString& convId, const QString& stickerId, bool isGroup);
+  Q_INVOKABLE bool sendLocation(const QString& convId,
+                                double lat,
+                                double lon,
+                                const QString& label,
+                                bool isGroup);
+  Q_INVOKABLE QVariantMap ensureAttachmentCached(const QString& fileId,
+                                                const QString& fileKeyHex,
+                                                const QString& fileName,
+                                                qint64 fileSize);
   Q_INVOKABLE QVariantList loadHistory(const QString& convId, bool isGroup);
   Q_INVOKABLE QVariantList listGroupMembersInfo(const QString& groupId);
   Q_INVOKABLE QVariantList stickerItems();
+  Q_INVOKABLE QVariantMap importSticker(const QString& path);
   Q_INVOKABLE bool sendFriendRequest(const QString& targetUsername,
                                      const QString& remark);
   Q_INVOKABLE bool respondFriendRequest(const QString& requesterUsername,
@@ -183,6 +193,9 @@ class QuickClient : public QObject {
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
                            std::array<std::uint8_t, 16>& out);
+  static QString BytesToHex32(const std::array<std::uint8_t, 32>& bytes);
+  static bool HexToBytes32(const QString& hex,
+                           std::array<std::uint8_t, 32>& out);
 
   QString config_path_{QStringLiteral("config/client_config.ini")};
   mi::client::ClientCore core_;

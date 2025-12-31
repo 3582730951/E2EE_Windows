@@ -2,6 +2,8 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 6.2
+import QtMultimedia 6.2
+import QtPositioning 6.2
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
 
@@ -23,6 +25,9 @@ Item {
     property int emojiPopupWidth: 280
     property int emojiPopupHeight: 220
     property int emojiCellSize: 28
+    property int stickerCellSize: 54
+    property int stickerSize: 120
+    property int emojiTabIndex: 0
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -94,6 +99,28 @@ Item {
             emojiLoaded = false
         }
     }
+    function loadStickers() {
+        stickerModel.clear()
+        if (!clientBridge || !clientBridge.stickerItems) {
+            return
+        }
+        var items = clientBridge.stickerItems()
+        for (var i = 0; i < items.length; ++i) {
+            var item = items[i]
+            stickerModel.append({
+                stickerId: item.id,
+                title: item.title,
+                animated: item.animated,
+                path: item.path
+            })
+        }
+    }
+    function showStickerImport() {
+        if (!hasChat) {
+            return
+        }
+        stickerPicker.open()
+    }
     function showEmojiPopup() {
         if (!hasChat) {
             return
@@ -103,6 +130,7 @@ Item {
             return
         }
         loadEmoji()
+        loadStickers()
         var pos = emojiButton.mapToItem(root, 0, 0)
         var desiredX = pos.x + emojiButton.width - emojiPopup.width
         var minX = Ui.Style.paddingS
@@ -501,15 +529,19 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
+                        enabled: Ui.AppStore.currentChatType === "private"
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.call")
+                        onClicked: Ui.AppStore.startCall(false)
                     }
                     Components.IconButton {
                         icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
+                        enabled: Ui.AppStore.currentChatType === "private"
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.video")
+                        onClicked: Ui.AppStore.startCall(true)
                     }
                     Components.IconButton {
                         id: chatMoreButton
@@ -647,6 +679,176 @@ Item {
                 onClicked: messageList.positionViewAtEnd()
                 ToolTip.visible: hovered
                 ToolTip.text: Ui.I18n.t("chat.jumpBottom")
+            }
+
+            Item {
+                id: callOverlay
+                anchors.fill: parent
+                z: 5
+                visible: Ui.AppStore.incomingCallActive ||
+                         (clientBridge && clientBridge.activeCallId.length > 0)
+                property bool callVideo: clientBridge && clientBridge.activeCallVideo
+                property string callPeer: clientBridge ? clientBridge.activeCallPeer : ""
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: Qt.rgba(0, 0, 0, 0.55)
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                }
+
+                Rectangle {
+                    id: incomingPanel
+                    visible: Ui.AppStore.incomingCallActive &&
+                             (!clientBridge || clientBridge.activeCallId.length === 0)
+                    width: 320
+                    height: 210
+                    radius: 14
+                    color: Ui.Style.panelBgRaised
+                    border.color: Ui.Style.borderSubtle
+                    anchors.centerIn: parent
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+                        Text {
+                            text: Ui.AppStore.incomingCallVideo
+                                  ? Ui.I18n.t("chat.callIncomingVideo")
+                                  : Ui.I18n.t("chat.callIncomingVoice")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Ui.Style.textPrimary
+                        }
+                        Text {
+                            text: Ui.AppStore.resolveTitle(Ui.AppStore.incomingCallPeer)
+                            font.pixelSize: 12
+                            color: Ui.Style.textSecondary
+                            elide: Text.ElideRight
+                        }
+                        Item { Layout.fillHeight: true }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+                            Components.GhostButton {
+                                text: Ui.I18n.t("chat.callDecline")
+                                Layout.fillWidth: true
+                                onClicked: Ui.AppStore.declineIncomingCall()
+                            }
+                            Components.PrimaryButton {
+                                text: Ui.I18n.t("chat.callAccept")
+                                Layout.fillWidth: true
+                                onClicked: Ui.AppStore.acceptIncomingCall()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: activeCallPanel
+                    visible: clientBridge && clientBridge.activeCallId.length > 0
+                    width: Math.min(parent.width * 0.78, 760)
+                    height: Math.min(parent.height * 0.78, 520)
+                    radius: 14
+                    color: Ui.Style.panelBgRaised
+                    border.color: Ui.Style.borderSubtle
+                    anchors.centerIn: parent
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+                        Text {
+                            text: callOverlay.callVideo
+                                  ? Ui.I18n.t("chat.callActiveVideo")
+                                  : Ui.I18n.t("chat.callActiveVoice")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Ui.Style.textPrimary
+                        }
+                        Text {
+                            text: Ui.AppStore.resolveTitle(callOverlay.callPeer || "")
+                            font.pixelSize: 12
+                            color: Ui.Style.textSecondary
+                            elide: Text.ElideRight
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            visible: callOverlay.callVideo
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 12
+                                color: Ui.Style.panelBgAlt
+                                border.color: Ui.Style.borderSubtle
+                            }
+
+                            VideoOutput {
+                                id: remoteView
+                                anchors.fill: parent
+                                fillMode: VideoOutput.PreserveAspectFit
+                                Component.onCompleted: {
+                                    if (clientBridge && clientBridge.bindRemoteVideoSink) {
+                                        clientBridge.bindRemoteVideoSink(remoteView.videoSink)
+                                    }
+                                }
+                            }
+                            VideoOutput {
+                                id: localView
+                                width: 160
+                                height: 100
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: Ui.Style.paddingS
+                                fillMode: VideoOutput.PreserveAspectFit
+                                Component.onCompleted: {
+                                    if (clientBridge && clientBridge.bindLocalVideoSink) {
+                                        clientBridge.bindLocalVideoSink(localView.videoSink)
+                                    }
+                                }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 10
+                                    color: "transparent"
+                                    border.color: Ui.Style.borderSubtle
+                                }
+                            }
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            visible: !callOverlay.callVideo
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 12
+                                color: Ui.Style.panelBgAlt
+                                border.color: Ui.Style.borderSubtle
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Ui.I18n.t("chat.callActiveVoice")
+                                    font.pixelSize: 12
+                                    color: Ui.Style.textMuted
+                                }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+                            Item { Layout.fillWidth: true }
+                            Components.PrimaryButton {
+                                text: Ui.I18n.t("chat.callHangup")
+                                onClicked: {
+                                    if (clientBridge) {
+                                        clientBridge.endCall()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -812,6 +1014,7 @@ Item {
                         buttonSize: inputButtonSize
                         iconSize: inputIconSize
                         onClicked: root.showEmojiPopup()
+                        onRightClicked: root.showStickerImport()
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.emoji")
                     }
@@ -994,9 +1197,39 @@ Item {
             Ui.AppStore.sendFile(fileUrl.toString())
         }
     }
+    FileDialog {
+        id: mediaPicker
+        title: Ui.I18n.t("attach.photoVideo")
+        nameFilters: [
+            "媒体文件 (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.mp4 *.mov *.mkv *.webm *.avi)"
+        ]
+        onAccepted: {
+            Ui.AppStore.sendFile(fileUrl.toString())
+        }
+    }
+    FileDialog {
+        id: stickerPicker
+        title: Ui.I18n.t("chat.importSticker")
+        nameFilters: [
+            "媒体文件 (*.gif *.png *.jpg *.jpeg *.webp *.bmp *.mp4 *.mov *.mkv *.webm *.avi)"
+        ]
+        onAccepted: {
+            if (clientBridge && clientBridge.importSticker) {
+                var result = clientBridge.importSticker(fileUrl.toString())
+                if (result && result.ok) {
+                    loadStickers()
+                    emojiTabIndex = 1
+                    showEmojiPopup()
+                }
+            }
+        }
+    }
 
     ListModel {
         id: emojiModel
+    }
+    ListModel {
+        id: stickerModel
     }
 
     Popup {
@@ -1014,25 +1247,116 @@ Item {
             border.color: Ui.Style.borderSubtle
         }
 
-        contentItem: GridView {
-            id: emojiGrid
+        contentItem: ColumnLayout {
             anchors.fill: parent
-            cellWidth: emojiCellSize
-            cellHeight: emojiCellSize
-            model: emojiModel
-            clip: true
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
-            delegate: Item {
-                width: emojiGrid.cellWidth
-                height: emojiGrid.cellHeight
-                Text {
-                    anchors.centerIn: parent
-                    text: value
-                    font.pixelSize: 18
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 26
+                    radius: 8
+                    color: emojiTabIndex === 0 ? Ui.Style.accent : Ui.Style.panelBg
+                    border.color: Ui.Style.borderSubtle
+                    Text {
+                        anchors.centerIn: parent
+                        text: Ui.I18n.t("chat.emoji")
+                        font.pixelSize: 11
+                        color: emojiTabIndex === 0 ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: emojiTabIndex = 0
+                    }
                 }
-                MouseArea {
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 26
+                    radius: 8
+                    color: emojiTabIndex === 1 ? Ui.Style.accent : Ui.Style.panelBg
+                    border.color: Ui.Style.borderSubtle
+                    Text {
+                        anchors.centerIn: parent
+                        text: Ui.I18n.t("chat.sticker")
+                        font.pixelSize: 11
+                        color: emojiTabIndex === 1 ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: emojiTabIndex = 1
+                    }
+                }
+            }
+
+            StackLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: emojiTabIndex
+
+                GridView {
+                    id: emojiGrid
                     anchors.fill: parent
-                    onClicked: root.insertEmoji(value)
+                    cellWidth: emojiCellSize
+                    cellHeight: emojiCellSize
+                    model: emojiModel
+                    clip: true
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
+                    delegate: Item {
+                        width: emojiGrid.cellWidth
+                        height: emojiGrid.cellHeight
+                        Text {
+                            anchors.centerIn: parent
+                            text: value
+                            font.pixelSize: 18
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.insertEmoji(value)
+                        }
+                    }
+                }
+
+                GridView {
+                    id: stickerGrid
+                    anchors.fill: parent
+                    cellWidth: stickerCellSize
+                    cellHeight: stickerCellSize
+                    model: stickerModel
+                    clip: true
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
+                    delegate: Item {
+                        width: stickerGrid.cellWidth
+                        height: stickerGrid.cellHeight
+                        AnimatedImage {
+                            anchors.centerIn: parent
+                            width: stickerGrid.cellWidth - 10
+                            height: stickerGrid.cellHeight - 10
+                            visible: animated
+                            source: path
+                            playing: true
+                            cache: true
+                            fillMode: Image.PreserveAspectFit
+                        }
+                        Image {
+                            anchors.centerIn: parent
+                            width: stickerGrid.cellWidth - 10
+                            height: stickerGrid.cellHeight - 10
+                            visible: !animated
+                            source: path
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            antialiasing: true
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                Ui.AppStore.sendSticker(stickerId)
+                                emojiPopup.close()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1121,10 +1445,12 @@ Item {
                         hoverEnabled: true
                         onClicked: {
                             attachPopup.close()
-                            if (modelData.kind === "document" || modelData.kind === "photo") {
+                            if (modelData.kind === "photo") {
+                                mediaPicker.open()
+                            } else if (modelData.kind === "document") {
                                 filePicker.open()
                             } else if (modelData.kind === "location") {
-                                Ui.AppStore.sendLocation()
+                                locationDialog.open()
                             }
                         }
                     }
@@ -1152,6 +1478,133 @@ Item {
         }
     }
 
+    Popup {
+        id: locationDialog
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        width: 320
+        property string errorText: ""
+        property bool locationBusy: false
+        onOpened: {
+            errorText = ""
+            locationBusy = false
+            locationLabelField.text = ""
+            locationLatField.text = ""
+            locationLonField.text = ""
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: Ui.Style.panelBgRaised
+            border.color: Ui.Style.borderSubtle
+        }
+
+        contentItem: ColumnLayout {
+            anchors.margins: Ui.Style.paddingM
+            spacing: Ui.Style.paddingS
+            Text {
+                text: Ui.I18n.t("attach.locationTitle")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Ui.Style.textPrimary
+            }
+            Components.SecureTextField {
+                id: locationLabelField
+                Layout.fillWidth: true
+                placeholderText: Ui.I18n.t("attach.locationLabel")
+                font.pixelSize: 12
+            }
+            Components.SecureTextField {
+                id: locationLatField
+                Layout.fillWidth: true
+                placeholderText: Ui.I18n.t("attach.locationLat")
+                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                font.pixelSize: 12
+            }
+            Components.SecureTextField {
+                id: locationLonField
+                Layout.fillWidth: true
+                placeholderText: Ui.I18n.t("attach.locationLon")
+                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                font.pixelSize: 12
+            }
+            Components.GhostButton {
+                text: locationDialog.locationBusy
+                      ? Ui.I18n.t("attach.locationFetching")
+                      : Ui.I18n.t("attach.locationCurrent")
+                Layout.fillWidth: true
+                enabled: !locationDialog.locationBusy
+                onClicked: {
+                    locationDialog.errorText = ""
+                    locationDialog.locationBusy = true
+                    locationSource.update()
+                }
+            }
+            Text {
+                visible: locationDialog.errorText.length > 0
+                text: locationDialog.errorText
+                color: Ui.Style.danger
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Ui.Style.paddingS
+                Components.GhostButton {
+                    text: Ui.I18n.t("attach.locationCancel")
+                    Layout.fillWidth: true
+                    onClicked: locationDialog.close()
+                }
+                Components.PrimaryButton {
+                    text: Ui.I18n.t("attach.locationSend")
+                    Layout.fillWidth: true
+                    onClicked: {
+                        var lat = parseFloat(locationLatField.text)
+                        var lon = parseFloat(locationLonField.text)
+                        if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                            locationDialog.errorText = Ui.I18n.t("attach.locationInvalid")
+                            return
+                        }
+                        var ok = Ui.AppStore.sendLocation(lat, lon, locationLabelField.text)
+                        if (ok) {
+                            locationDialog.close()
+                        } else {
+                            locationDialog.errorText = Ui.AppStore.sendErrorMessage
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    PositionSource {
+        id: locationSource
+        active: false
+        updateInterval: 0
+        onPositionChanged: {
+            if (!position || !position.coordinate || !position.coordinate.isValid) {
+                locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+                locationDialog.locationBusy = false
+                return
+            }
+            locationLatField.text = position.coordinate.latitude.toFixed(6)
+            locationLonField.text = position.coordinate.longitude.toFixed(6)
+            if (locationLabelField.text.trim().length === 0) {
+                locationLabelField.text = Ui.I18n.t("attach.locationCurrentLabel")
+            }
+            locationDialog.errorText = ""
+            locationDialog.locationBusy = false
+        }
+        onErrorChanged: {
+            if (error !== PositionSource.NoError) {
+                locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+                locationDialog.locationBusy = false
+            }
+        }
+    }
+
     Component {
         id: messageDelegate
         Item {
@@ -1161,6 +1614,16 @@ Item {
             property bool isIncoming: kind === "in"
             property bool isOutgoing: kind === "out"
             property bool showSender: isIncoming && Ui.AppStore.currentChatType === "group"
+            property string contentKind: model.contentKind || "text"
+            property bool isEmoji: contentKind === "emoji"
+            property bool isSticker: contentKind === "sticker"
+            property bool isImage: contentKind === "image"
+            property bool isGif: contentKind === "gif"
+            property bool isVideo: contentKind === "video"
+            property bool isFile: contentKind === "file"
+            property bool isLocation: contentKind === "location"
+            property bool isCall: contentKind === "call"
+            property bool attachmentRequested: false
             property int senderAvatarSize: 26
             property int senderAvatarGap: 8
             property int senderLeftInset: showSender
@@ -1168,6 +1631,53 @@ Item {
                                             : Ui.Style.paddingL
 
             height: isDate || isSystem ? 32 : bubbleBlock.height + 10
+
+            function hasLocalUrl(value) {
+                if (!value) {
+                    return false
+                }
+                if (value.toString) {
+                    return value.toString().length > 0
+                }
+                return ("" + value).length > 0
+            }
+
+            function requestAttachmentCache() {
+                if (attachmentRequested) {
+                    return
+                }
+                var expectedKind = Ui.AppStore.detectFileKind(fileName || "")
+                if (expectedKind === "file") {
+                    return
+                }
+                if (!fileId || !fileKey || hasLocalUrl(fileUrl)) {
+                    return
+                }
+                if (!clientBridge || !clientBridge.ensureAttachmentCached) {
+                    return
+                }
+                attachmentRequested = true
+                Qt.callLater(function() {
+                    var result = clientBridge.ensureAttachmentCached(fileId, fileKey, fileName, fileSize)
+                    if (result && result.ok && ListView.view && ListView.view.model) {
+                        if (result.fileUrl) {
+                            ListView.view.model.setProperty(index, "fileUrl", result.fileUrl)
+                            if (expectedKind && expectedKind !== "file") {
+                                ListView.view.model.setProperty(index, "contentKind", expectedKind)
+                            }
+                        }
+                        if (result.previewUrl) {
+                            ListView.view.model.setProperty(index, "previewUrl", result.previewUrl)
+                        }
+                    }
+                })
+            }
+
+            Component.onCompleted: requestAttachmentCache()
+            onFileUrlChanged: requestAttachmentCache()
+            onFileIdChanged: requestAttachmentCache()
+            onFileKeyChanged: requestAttachmentCache()
+            onFileNameChanged: requestAttachmentCache()
 
             Rectangle {
                 visible: isDate
@@ -1221,12 +1731,18 @@ Item {
             Item {
                 id: bubbleBlock
                 visible: isIncoming || isOutgoing
-                property int hPadding: 12
-                property int vPadding: 8
+                property bool transparentBubble: isSticker || isImage || isGif
+                property int hPadding: transparentBubble ? 6 : 12
+                property int vPadding: transparentBubble ? 6 : 8
                 property real maxBubbleWidth: Math.max(260, (ListView.view ? ListView.view.width : root.width) * 0.62)
+                property real contentWidth: contentLoader.item
+                                             ? Math.min(maxBubbleWidth - hPadding * 2,
+                                                        contentLoader.item.implicitWidth)
+                                             : 0
+                property real contentHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
                 property real bubbleWidth: Math.min(maxBubbleWidth,
-                                                    Math.max(messageText.paintedWidth, metaRow.implicitWidth) + hPadding * 2)
-                property real bubbleHeight: messageText.paintedHeight + metaRow.implicitHeight +
+                                                    Math.max(contentWidth, metaRow.implicitWidth) + hPadding * 2)
+                property real bubbleHeight: contentHeight + metaRow.implicitHeight +
                                             vPadding * 2 + (senderLabel.visible ? senderLabel.implicitHeight + 4 : 0)
 
                 width: bubbleWidth
@@ -1234,11 +1750,278 @@ Item {
                 x: isOutgoing ? parent.width - bubbleWidth - Ui.Style.paddingL : senderLeftInset
                 y: 4
 
+                Component {
+                    id: textContent
+                    Item {
+                        implicitWidth: textBlock.paintedWidth
+                        implicitHeight: textBlock.paintedHeight
+                        width: bubbleBlock.maxBubbleWidth - bubbleBlock.hPadding * 2
+                        Text {
+                            id: textBlock
+                            text: model.text || ""
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
+                            font.pixelSize: 13
+                        }
+                    }
+                }
+
+                Component {
+                    id: emojiContent
+                    Item {
+                        implicitWidth: emojiText.paintedWidth
+                        implicitHeight: emojiText.paintedHeight
+                        Text {
+                            id: emojiText
+                            text: model.text || ""
+                            font.pixelSize: 32
+                            color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
+                            transformOrigin: Item.Center
+                            anchors.centerIn: parent
+                        }
+                        SequentialAnimation {
+                            running: isEmoji && isOutgoing
+                            loops: 1
+                            NumberAnimation { target: emojiText; property: "scale"; from: 0.85; to: 1.15; duration: 160; easing.type: Easing.OutQuad }
+                            NumberAnimation { target: emojiText; property: "scale"; from: 1.15; to: 1.0; duration: 140; easing.type: Easing.InOutQuad }
+                        }
+                    }
+                }
+
+                Component {
+                    id: stickerContent
+                    Item {
+                        implicitWidth: stickerSize
+                        implicitHeight: stickerSize
+                        AnimatedImage {
+                            anchors.centerIn: parent
+                            width: stickerSize
+                            height: stickerSize
+                            visible: stickerAnimated
+                            source: stickerUrl
+                            playing: true
+                            cache: true
+                            fillMode: Image.PreserveAspectFit
+                        }
+                        Image {
+                            anchors.centerIn: parent
+                            width: stickerSize
+                            height: stickerSize
+                            visible: !stickerAnimated
+                            source: stickerUrl
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            antialiasing: true
+                        }
+                    }
+                }
+
+                Component {
+                    id: imageContent
+                    Item {
+                        implicitWidth: 240
+                        implicitHeight: 180
+                        Image {
+                            anchors.centerIn: parent
+                            width: 240
+                            height: 180
+                            source: fileUrl
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            antialiasing: true
+                        }
+                    }
+                }
+
+                Component {
+                    id: gifContent
+                    Item {
+                        implicitWidth: 240
+                        implicitHeight: 180
+                        AnimatedImage {
+                            anchors.centerIn: parent
+                            width: 240
+                            height: 180
+                            source: fileUrl
+                            playing: true
+                            cache: true
+                            fillMode: Image.PreserveAspectFit
+                        }
+                    }
+                }
+
+                Component {
+                    id: videoContent
+                    Item {
+                        id: videoItem
+                        implicitWidth: 260
+                        implicitHeight: 180
+                        property bool hasSource: fileUrl && fileUrl.toString ? fileUrl.toString().length > 0
+                                               : (fileUrl && ("" + fileUrl).length > 0)
+                        property bool previewAvailable: previewUrl && previewUrl.toString
+                                                        ? previewUrl.toString().length > 0
+                                                        : (previewUrl && ("" + previewUrl).length > 0)
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 12
+                            color: Ui.Style.panelBgAlt
+                            border.color: Ui.Style.borderSubtle
+                        }
+
+                        MediaPlayer {
+                            id: videoPlayer
+                            source: fileUrl
+                            audioOutput: AudioOutput {
+                                volume: 1.0
+                            }
+                        }
+
+                        VideoOutput {
+                            anchors.fill: parent
+                            source: videoPlayer
+                            fillMode: VideoOutput.PreserveAspectFit
+                            visible: videoItem.hasSource
+                        }
+
+                        Image {
+                            anchors.fill: parent
+                            source: previewUrl || ""
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            antialiasing: true
+                            visible: !videoItem.hasSource
+                                     ? true
+                                     : (videoPlayer.playbackState !== MediaPlayer.PlayingState &&
+                                        videoItem.previewAvailable)
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 48
+                            height: 48
+                            radius: 24
+                            color: Qt.rgba(0, 0, 0, 0.45)
+                            visible: videoItem.hasSource &&
+                                     videoPlayer.playbackState !== MediaPlayer.PlayingState
+                            Image {
+                                anchors.centerIn: parent
+                                source: "qrc:/mi/e2ee/ui/icons/video.svg"
+                                width: 20
+                                height: 20
+                                opacity: 0.9
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (!videoItem.hasSource) {
+                                    return
+                                }
+                                if (videoPlayer.playbackState === MediaPlayer.PlayingState) {
+                                    videoPlayer.pause()
+                                } else {
+                                    videoPlayer.play()
+                                }
+                            }
+                        }
+
+                        onVisibleChanged: {
+                            if (!visible && videoPlayer.playbackState === MediaPlayer.PlayingState) {
+                                videoPlayer.pause()
+                            }
+                        }
+                    }
+                }
+
+                Component {
+                    id: fileContent
+                    Item {
+                        implicitWidth: 220
+                        implicitHeight: 60
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 10
+                            color: Ui.Style.panelBgAlt
+                            border.color: Ui.Style.borderSubtle
+                        }
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
+                            Rectangle {
+                                width: 32
+                                height: 32
+                                radius: 8
+                                color: Ui.Style.hoverBg
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "FILE"
+                                    font.pixelSize: 9
+                                    color: Ui.Style.textMuted
+                                }
+                            }
+                            Column {
+                                spacing: 2
+                                width: parent.width - 48
+                                Text {
+                                    text: fileName || ""
+                                    font.pixelSize: 11
+                                    color: Ui.Style.textPrimary
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: fileSize > 0 ? (Math.round(fileSize / 1024) + " KB") : ""
+                                    font.pixelSize: 10
+                                    color: Ui.Style.textMuted
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Component {
+                    id: locationContent
+                    Item {
+                        implicitWidth: 220
+                        implicitHeight: 72
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 10
+                            color: Ui.Style.panelBgAlt
+                            border.color: Ui.Style.borderSubtle
+                        }
+                        Column {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 4
+                            Text {
+                                text: (locationLabel && locationLabel.length > 0)
+                                      ? locationLabel
+                                      : Ui.I18n.t("attach.location")
+                                font.pixelSize: 12
+                                color: Ui.Style.textPrimary
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: "lat:" + Number(locationLat).toFixed(5) + ", lon:" + Number(locationLon).toFixed(5)
+                                font.pixelSize: 10
+                                color: Ui.Style.textMuted
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+
                 Rectangle {
                     id: bubble
                     anchors.fill: parent
                     radius: 12
-                    color: isOutgoing ? Ui.Style.bubbleOutBg : Ui.Style.bubbleInBg
+                    color: bubbleBlock.transparentBubble
+                           ? "transparent"
+                           : (isOutgoing ? Ui.Style.bubbleOutBg : Ui.Style.bubbleInBg)
                     border.width: 0
 
                     Column {
@@ -1254,13 +2037,16 @@ Item {
                             color: Ui.Style.link
                         }
 
-                        Text {
-                            id: messageText
-                            text: model.text || ""
+                        Loader {
+                            id: contentLoader
                             width: bubbleBlock.maxBubbleWidth - bubbleBlock.hPadding * 2
-                            wrapMode: Text.Wrap
-                            color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
-                            font.pixelSize: 13
+                            sourceComponent: isSticker ? stickerContent
+                                            : (isGif ? gifContent
+                                            : (isImage ? imageContent
+                                            : (isVideo ? videoContent
+                                            : (isFile ? fileContent
+                                            : (isLocation ? locationContent
+                                            : (isEmoji ? emojiContent : textContent))))))
                         }
 
                         Row {
@@ -1293,7 +2079,7 @@ Item {
                     anchors.bottomMargin: 8
                     anchors.left: bubble.left
                     anchors.leftMargin: -4
-                    visible: isIncoming
+                    visible: isIncoming && !bubbleBlock.transparentBubble
                 }
 
                 Rectangle {
@@ -1307,7 +2093,7 @@ Item {
                     anchors.bottomMargin: 8
                     anchors.right: bubble.right
                     anchors.rightMargin: -4
-                    visible: isOutgoing
+                    visible: isOutgoing && !bubbleBlock.transparentBubble
                 }
             }
 

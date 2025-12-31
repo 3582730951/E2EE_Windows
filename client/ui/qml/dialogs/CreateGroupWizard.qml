@@ -126,6 +126,7 @@ ApplicationWindow {
                                 anchors.margins: Ui.Style.paddingS
                                 spacing: 0
                                 CheckBox {
+                                    id: memberCheck
                                     checked: selectedIds.indexOf(contactId) !== -1
                                     onClicked: toggleSelection(contactId, checked)
                                 }
@@ -166,7 +167,23 @@ ApplicationWindow {
                                 id: mouseArea
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                acceptedButtons: Qt.NoButton
+                                acceptedButtons: Qt.LeftButton
+                                cursorShape: Qt.PointingHandCursor
+                                propagateComposedEvents: true
+                                onPressed: {
+                                    var local = memberCheck.mapFromItem(parent, mouse.x, mouse.y)
+                                    if (memberCheck.contains(Qt.point(local.x, local.y))) {
+                                        mouse.accepted = false
+                                    }
+                                }
+                                onClicked: {
+                                    var local = memberCheck.mapFromItem(parent, mouse.x, mouse.y)
+                                    if (memberCheck.contains(Qt.point(local.x, local.y))) {
+                                        return
+                                    }
+                                    var checked = selectedIds.indexOf(contactId) === -1
+                                    toggleSelection(contactId, checked)
+                                }
                             }
                         }
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }

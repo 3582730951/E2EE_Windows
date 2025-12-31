@@ -10,14 +10,17 @@
 #include <QCoreApplication>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHash>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
+#include <QProcess>
 #include <QRandomGenerator>
 #include <QSet>
+#include <QStandardPaths>
 #include <QStringConverter>
 #include <QTextStream>
 #include <QUrl>
@@ -324,6 +327,79 @@ CallInvite ParseCallInvite(const QString& text) {
   return invite;
 }
 
+QString FormatCoordE7(std::int32_t v_e7) {
+  const qint64 v64 = static_cast<qint64>(v_e7);
+  const bool neg = v64 < 0;
+  const quint64 abs = static_cast<quint64>(neg ? -v64 : v64);
+  const quint64 deg = abs / 10000000ULL;
+  const quint64 frac = abs % 10000000ULL;
+  return QStringLiteral("%1%2.%3")
+      .arg(neg ? QStringLiteral("-") : QString())
+      .arg(deg)
+      .arg(frac, 7, 10, QChar('0'));
+}
+
+QString FormatLocationText(double lat, double lon, const QString& label) {
+  const auto lat_e7 = static_cast<std::int32_t>(std::llround(lat * 10000000.0));
+  const auto lon_e7 = static_cast<std::int32_t>(std::llround(lon * 10000000.0));
+  const QString safeLabel =
+      label.trimmed().isEmpty() ? QStringLiteral("（未命名）") : label.trimmed();
+  return QStringLiteral("【位置】%1\nlat:%2, lon:%3")
+      .arg(safeLabel, FormatCoordE7(lat_e7), FormatCoordE7(lon_e7));
+}
+
+QString SanitizeFileId(const QString& fileId) {
+  QString out;
+  out.reserve(fileId.size());
+  for (const QChar ch : fileId) {
+    if ((ch >= QLatin1Char('a') && ch <= QLatin1Char('z')) ||
+        (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z')) ||
+        (ch >= QLatin1Char('0') && ch <= QLatin1Char('9')) ||
+        ch == QLatin1Char('_') || ch == QLatin1Char('-')) {
+      out.append(ch);
+    } else {
+      out.append(QLatin1Char('_'));
+    }
+  }
+  if (out.isEmpty()) {
+    out = QStringLiteral("file");
+  }
+  if (out.size() > 64) {
+    out = out.left(64);
+  }
+  return out;
+}
+
+bool IsVideoExt(const QString& ext) {
+  const QString e = ext.toLower();
+  return e == QStringLiteral("mp4") || e == QStringLiteral("mov") ||
+         e == QStringLiteral("mkv") || e == QStringLiteral("webm") ||
+         e == QStringLiteral("avi");
+}
+
+QString FindFfmpegPath() {
+  QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+  if (!ffmpeg.isEmpty()) {
+    return ffmpeg;
+  }
+  QString baseDir = UiRuntimePaths::AppRootDir();
+  if (baseDir.isEmpty()) {
+    baseDir = QCoreApplication::applicationDirPath();
+  }
+  const QString local = QDir(baseDir).filePath(QStringLiteral("ffmpeg.exe"));
+  if (QFileInfo::exists(local)) {
+    return local;
+  }
+  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
+  if (!runtimeDir.isEmpty()) {
+    const QString runtime = QDir(runtimeDir).filePath(QStringLiteral("ffmpeg.exe"));
+    if (QFileInfo::exists(runtime)) {
+      return runtime;
+    }
+  }
+  return {};
+}
+
 class Nv12VideoBuffer final : public QAbstractVideoBuffer {
  public:
   Nv12VideoBuffer(std::vector<std::uint8_t>&& data,
@@ -622,6 +698,9 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   msg.insert(QStringLiteral("kind"), QStringLiteral("file"));
   msg.insert(QStringLiteral("fileName"), info.fileName());
   msg.insert(QStringLiteral("fileSize"), info.size());
+  msg.insert(QStringLiteral("filePath"), info.absoluteFilePath());
+  msg.insert(QStringLiteral("fileUrl"),
+             QUrl::fromLocalFile(info.absoluteFilePath()));
   msg.insert(QStringLiteral("time"), NowTimeString());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
@@ -665,6 +744,167 @@ bool QuickClient::sendSticker(const QString& convId,
   msg.insert(QStringLiteral("stickerAnimated"), meta.value(QStringLiteral("stickerAnimated")));
   EmitMessage(msg);
   return true;
+}
+
+bool QuickClient::sendLocation(const QString& convId,
+                               double lat,
+                               double lon,
+                               const QString& label,
+                               bool isGroup) {
+  const QString trimmed = convId.trimmed();
+  if (trimmed.isEmpty()) {
+    return false;
+  }
+  if (isGroup) {
+    if (!std::isfinite(lat) || !std::isfinite(lon)) {
+      emit status(QStringLiteral("位置参数无效"));
+      UpdateLastError(QStringLiteral("位置参数无效"));
+      return false;
+    }
+    if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
+      emit status(QStringLiteral("位置超出范围"));
+      UpdateLastError(QStringLiteral("位置超出范围"));
+      return false;
+    }
+    const QString text = FormatLocationText(lat, lon, label);
+    std::string msg_id;
+    const bool ok = core_.SendGroupChatText(trimmed.toStdString(),
+                                            text.toStdString(), msg_id);
+    if (!ok) {
+      emit status(QStringLiteral("位置发送失败"));
+      UpdateLastError(QString::fromStdString(core_.last_error()));
+      return false;
+    }
+    UpdateLastError(QString());
+    QVariantMap msg;
+    msg.insert(QStringLiteral("convId"), trimmed);
+    msg.insert(QStringLiteral("sender"), username_);
+    msg.insert(QStringLiteral("outgoing"), true);
+    msg.insert(QStringLiteral("isGroup"), true);
+    msg.insert(QStringLiteral("kind"), QStringLiteral("location"));
+    msg.insert(QStringLiteral("locationLabel"), label);
+    msg.insert(QStringLiteral("locationLat"), lat);
+    msg.insert(QStringLiteral("locationLon"), lon);
+    msg.insert(QStringLiteral("text"), text);
+    msg.insert(QStringLiteral("time"), NowTimeString());
+    msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
+    EmitMessage(msg);
+    return true;
+  }
+  if (!std::isfinite(lat) || !std::isfinite(lon)) {
+    emit status(QStringLiteral("位置参数无效"));
+    UpdateLastError(QStringLiteral("位置参数无效"));
+    return false;
+  }
+  if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) {
+    emit status(QStringLiteral("位置超出范围"));
+    UpdateLastError(QStringLiteral("位置超出范围"));
+    return false;
+  }
+  const auto lat_e7 = static_cast<std::int32_t>(std::llround(lat * 10000000.0));
+  const auto lon_e7 = static_cast<std::int32_t>(std::llround(lon * 10000000.0));
+  std::string msg_id;
+  const bool ok = core_.SendChatLocation(trimmed.toStdString(), lat_e7, lon_e7,
+                                         label.toStdString(), msg_id);
+  if (!ok) {
+    emit status(QStringLiteral("位置发送失败"));
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+    return false;
+  }
+
+  UpdateLastError(QString());
+  QVariantMap msg;
+  msg.insert(QStringLiteral("convId"), trimmed);
+  msg.insert(QStringLiteral("sender"), username_);
+  msg.insert(QStringLiteral("outgoing"), true);
+  msg.insert(QStringLiteral("isGroup"), false);
+  msg.insert(QStringLiteral("kind"), QStringLiteral("location"));
+  msg.insert(QStringLiteral("locationLabel"), label);
+  msg.insert(QStringLiteral("locationLat"), lat);
+  msg.insert(QStringLiteral("locationLon"), lon);
+  msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
+  EmitMessage(msg);
+  return true;
+}
+
+QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
+                                                const QString& fileKeyHex,
+                                                const QString& fileName,
+                                                qint64 fileSize) {
+  QVariantMap out;
+  out.insert(QStringLiteral("ok"), false);
+  const QString fid = fileId.trimmed();
+  if (fid.isEmpty()) {
+    out.insert(QStringLiteral("error"), QStringLiteral("file id empty"));
+    return out;
+  }
+  std::array<std::uint8_t, 32> file_key{};
+  if (!HexToBytes32(fileKeyHex.trimmed(), file_key)) {
+    out.insert(QStringLiteral("error"), QStringLiteral("invalid file key"));
+    return out;
+  }
+
+  QString baseDir = UiRuntimePaths::AppRootDir();
+  if (baseDir.isEmpty()) {
+    baseDir = QCoreApplication::applicationDirPath();
+  }
+  QDir cacheDir(baseDir);
+  if (!cacheDir.mkpath(QStringLiteral("database/attachments_cache"))) {
+    out.insert(QStringLiteral("error"), QStringLiteral("cache dir failed"));
+    return out;
+  }
+  cacheDir.cd(QStringLiteral("database/attachments_cache"));
+
+  const QString safeId = SanitizeFileId(fid);
+  QString ext = QFileInfo(fileName).suffix().toLower();
+  if (ext.isEmpty()) {
+    ext = QStringLiteral("bin");
+  }
+  const QString filePath = cacheDir.filePath(safeId + QStringLiteral(".") + ext);
+  const QString previewPath =
+      cacheDir.filePath(safeId + QStringLiteral(".preview.jpg"));
+
+  if (!QFileInfo::exists(filePath)) {
+    ClientCore::ChatFileMessage file;
+    file.file_id = fid.toStdString();
+    file.file_key = file_key;
+    file.file_name = fileName.toStdString();
+    if (fileSize > 0) {
+      file.file_size = static_cast<std::uint64_t>(fileSize);
+    }
+    if (!core_.DownloadChatFileToPath(file, filePath.toStdString(), true)) {
+      out.insert(QStringLiteral("error"),
+                 QString::fromStdString(core_.last_error()));
+      return out;
+    }
+  }
+
+  out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(filePath));
+  if (IsVideoExt(ext)) {
+    if (!QFileInfo::exists(previewPath)) {
+      const QString ffmpeg = FindFfmpegPath();
+      if (!ffmpeg.isEmpty()) {
+        QStringList args;
+        args << QStringLiteral("-y")
+             << QStringLiteral("-ss") << QStringLiteral("0.2")
+             << QStringLiteral("-i") << filePath
+             << QStringLiteral("-frames:v") << QStringLiteral("1")
+             << QStringLiteral("-vf") << QStringLiteral("scale=480:-1")
+             << previewPath;
+        QProcess::execute(ffmpeg, args);
+      }
+    }
+    if (QFileInfo::exists(previewPath)) {
+      out.insert(QStringLiteral("previewUrl"),
+                 QUrl::fromLocalFile(previewPath));
+    }
+  } else {
+    out.insert(QStringLiteral("previewUrl"), QUrl::fromLocalFile(filePath));
+  }
+
+  out.insert(QStringLiteral("ok"), true);
+  return out;
 }
 
 QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {
@@ -712,6 +952,23 @@ QVariantList QuickClient::stickerItems() {
     map.insert(QStringLiteral("animated"), item.animated);
     map.insert(QStringLiteral("path"), QUrl::fromLocalFile(item.filePath));
     out.push_back(map);
+  }
+  return out;
+}
+
+QVariantMap QuickClient::importSticker(const QString& path) {
+  QVariantMap out;
+  QString id;
+  QString err;
+  const bool ok = EmojiPackManager::Instance().ImportSticker(path, &id, &err);
+  out.insert(QStringLiteral("ok"), ok);
+  if (ok) {
+    out.insert(QStringLiteral("stickerId"), id);
+    emit status(QStringLiteral("贴纸已导入"));
+  } else {
+    out.insert(QStringLiteral("error"),
+               err.isEmpty() ? QStringLiteral("贴纸导入失败") : err);
+    emit status(err.isEmpty() ? QStringLiteral("贴纸导入失败") : err);
   }
   return out;
 }
@@ -864,6 +1121,7 @@ QString QuickClient::startVoiceCall(const QString& peerUsername) {
   msg.insert(QStringLiteral("callId"), call_hex);
   msg.insert(QStringLiteral("video"), false);
   msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   emit status(QStringLiteral("语音通话已发起"));
   return call_hex;
@@ -899,6 +1157,7 @@ QString QuickClient::startVideoCall(const QString& peerUsername) {
   msg.insert(QStringLiteral("callId"), call_hex);
   msg.insert(QStringLiteral("video"), true);
   msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   emit status(QStringLiteral("视频通话已发起"));
   return call_hex;
@@ -1281,6 +1540,7 @@ QVariantMap QuickClient::BuildHistoryMessage(
       msg.insert(QStringLiteral("fileSize"),
                  static_cast<qint64>(entry.file_size));
       msg.insert(QStringLiteral("fileId"), QString::fromStdString(entry.file_id));
+      msg.insert(QStringLiteral("fileKey"), BytesToHex32(entry.file_key));
       break;
     case ClientCore::HistoryKind::kSticker: {
       msg.insert(QStringLiteral("kind"), QStringLiteral("sticker"));
@@ -1402,6 +1662,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("fileSize"),
                static_cast<qint64>(f.file_size));
     msg.insert(QStringLiteral("fileId"), QString::fromStdString(f.file_id));
+    msg.insert(QStringLiteral("fileKey"), BytesToHex32(f.file_key));
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(f.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -1420,6 +1681,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("fileSize"),
                static_cast<qint64>(f.file_size));
     msg.insert(QStringLiteral("fileId"), QString::fromStdString(f.file_id));
+    msg.insert(QStringLiteral("fileKey"), BytesToHex32(f.file_key));
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(f.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -1479,6 +1741,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("fileSize"),
                static_cast<qint64>(f.file_size));
     msg.insert(QStringLiteral("fileId"), QString::fromStdString(f.file_id));
+    msg.insert(QStringLiteral("fileKey"), BytesToHex32(f.file_key));
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(f.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -1500,6 +1763,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("fileSize"),
                static_cast<qint64>(f.file_size));
     msg.insert(QStringLiteral("fileId"), QString::fromStdString(f.file_id));
+    msg.insert(QStringLiteral("fileKey"), BytesToHex32(f.file_key));
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(f.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -2252,6 +2516,22 @@ QString QuickClient::BytesToHex(const std::array<std::uint8_t, 16>& bytes) {
 
 bool QuickClient::HexToBytes16(const QString& hex,
                                std::array<std::uint8_t, 16>& out) {
+  const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
+  if (raw.size() != static_cast<int>(out.size())) {
+    return false;
+  }
+  std::memcpy(out.data(), raw.data(), out.size());
+  return true;
+}
+
+QString QuickClient::BytesToHex32(const std::array<std::uint8_t, 32>& bytes) {
+  const QByteArray raw(reinterpret_cast<const char*>(bytes.data()),
+                       static_cast<int>(bytes.size()));
+  return QString::fromLatin1(raw.toHex());
+}
+
+bool QuickClient::HexToBytes32(const QString& hex,
+                               std::array<std::uint8_t, 32>& out) {
   const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
   if (raw.size() != static_cast<int>(out.size())) {
     return false;

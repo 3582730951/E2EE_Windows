@@ -13,6 +13,12 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QWidget>
+#include <QImageWriter>
+#include <QProcess>
+#include <QRandomGenerator>
+#include <QSaveFile>
+#include <QStandardPaths>
+#include <QUrl>
 
 #include "UiRuntimePaths.h"
 
@@ -30,6 +36,16 @@ QSet<QString> AllowedStickerExts() {
             QStringLiteral("gif"), QStringLiteral("webp")};
 }
 
+QSet<QString> AllowedImportImageExts() {
+    return {QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
+            QStringLiteral("gif"), QStringLiteral("webp"), QStringLiteral("bmp")};
+}
+
+QSet<QString> AllowedImportVideoExts() {
+    return {QStringLiteral("mp4"), QStringLiteral("mov"), QStringLiteral("mkv"),
+            QStringLiteral("webm"), QStringLiteral("avi")};
+}
+
 QString CleanPath(const QString &path) {
     return QDir::cleanPath(path);
 }
@@ -40,6 +56,118 @@ bool IsUnderDir(const QString &filePath, const QString &dirPath) {
     }
     const QString base = dirPath + QDir::separator();
     return filePath == dirPath || filePath.startsWith(base, Qt::CaseInsensitive);
+}
+
+QString MakeStickerId() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const quint32 rnd = QRandomGenerator::global()->generate();
+    return QStringLiteral("u_%1_%2").arg(now).arg(rnd, 8, 16, QChar('0'));
+}
+
+bool WriteJsonFile(const QString &path, const QJsonObject &obj, QString *outError) {
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (outError) {
+            *outError = QStringLiteral("Failed to write sticker manifest");
+        }
+        return false;
+    }
+    QJsonDocument doc(obj);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    if (!file.commit()) {
+        if (outError) {
+            *outError = QStringLiteral("Sticker manifest commit failed");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ConvertImageToGif(const QString &srcPath, const QString &dstPath,
+                       QString *outError) {
+    QImageReader reader(srcPath);
+    if (!reader.canRead()) {
+        if (outError) {
+            *outError = QStringLiteral("Image read failed");
+        }
+        return false;
+    }
+    QSize size = reader.size();
+    if (!size.isValid()) {
+        const QImage img = reader.read();
+        size = img.size();
+    }
+    if (!size.isValid()) {
+        if (outError) {
+            *outError = QStringLiteral("Invalid image size");
+        }
+        return false;
+    }
+    if (size.width() > kMaxStickerDim || size.height() > kMaxStickerDim) {
+        const qreal scale =
+            qMin(static_cast<qreal>(kMaxStickerDim) / size.width(),
+                 static_cast<qreal>(kMaxStickerDim) / size.height());
+        const QSize scaled(qMax(1, static_cast<int>(size.width() * scale)),
+                           qMax(1, static_cast<int>(size.height() * scale)));
+        reader.setScaledSize(scaled);
+    }
+    const QImage img = reader.read();
+    if (img.isNull()) {
+        if (outError) {
+            *outError = QStringLiteral("Image decode failed");
+        }
+        return false;
+    }
+    QImageWriter writer(dstPath, "gif");
+    if (!writer.canWrite()) {
+        if (outError) {
+            *outError = QStringLiteral("GIF writer unavailable");
+        }
+        return false;
+    }
+    if (!writer.write(img)) {
+        if (outError) {
+            *outError = QStringLiteral("GIF encode failed");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ConvertVideoToGif(const QString &srcPath, const QString &dstPath,
+                       QString *outError) {
+    QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (ffmpeg.isEmpty()) {
+        QString baseDir = UiRuntimePaths::AppRootDir();
+        if (baseDir.isEmpty()) {
+            baseDir = QCoreApplication::applicationDirPath();
+        }
+        const QString local = QDir(baseDir).filePath(QStringLiteral("ffmpeg.exe"));
+        if (QFileInfo::exists(local)) {
+            ffmpeg = local;
+        }
+    }
+    if (ffmpeg.isEmpty()) {
+        if (outError) {
+            *outError = QStringLiteral("ffmpeg not found");
+        }
+        return false;
+    }
+    QStringList args;
+    args << QStringLiteral("-y")
+         << QStringLiteral("-i") << srcPath
+         << QStringLiteral("-t") << QStringLiteral("4")
+         << QStringLiteral("-vf")
+         << QStringLiteral("fps=12,scale=512:-1:flags=lanczos")
+         << dstPath;
+    const int code = QProcess::execute(ffmpeg, args);
+    if (code != 0) {
+        if (outError) {
+            *outError = QStringLiteral("Video to GIF failed");
+        }
+        return false;
+    }
+    return QFileInfo::exists(dstPath);
 }
 }  // namespace
 
@@ -255,6 +383,151 @@ const EmojiPackManager::Item *EmojiPackManager::Find(const QString &id) const {
         return nullptr;
     }
     return &items_[idx];
+}
+
+bool EmojiPackManager::ImportSticker(const QString &srcPath, QString *outId,
+                                     QString *outError) {
+    if (outId) {
+        outId->clear();
+    }
+    if (outError) {
+        outError->clear();
+    }
+    QString input = srcPath.trimmed();
+    if (input.startsWith(QStringLiteral("file:"))) {
+        input = QUrl(input).toLocalFile();
+    }
+    QFileInfo inputInfo(input);
+    if (!inputInfo.exists() || !inputInfo.isFile()) {
+        if (outError) {
+            *outError = QStringLiteral("Source file missing");
+        }
+        return false;
+    }
+    const QString ext = inputInfo.suffix().toLower();
+    const bool isVideo = AllowedImportVideoExts().contains(ext);
+    const bool isImage = AllowedImportImageExts().contains(ext);
+    if (!isVideo && !isImage) {
+        if (outError) {
+            *outError = QStringLiteral("Unsupported file type");
+        }
+        return false;
+    }
+
+    QDir root(packRootDir());
+    if (!root.exists() && !root.mkpath(QStringLiteral("."))) {
+        if (outError) {
+            *outError = QStringLiteral("Unable to create sticker directory");
+        }
+        return false;
+    }
+    const QString packName = QStringLiteral("user");
+    if (!root.exists(packName) && !root.mkpath(packName)) {
+        if (outError) {
+            *outError = QStringLiteral("Unable to create sticker pack");
+        }
+        return false;
+    }
+    QDir packDir(root.filePath(packName));
+    const QString manifestPath = packDir.filePath(QStringLiteral("manifest.json"));
+
+    QJsonObject manifestObj;
+    QJsonArray itemsArray;
+    if (QFile::exists(manifestPath)) {
+        QFile file(manifestPath);
+        if (file.open(QIODevice::ReadOnly)) {
+            QJsonParseError jsonErr;
+            const QJsonDocument doc =
+                QJsonDocument::fromJson(file.readAll(), &jsonErr);
+            if (!doc.isNull() && doc.isObject()) {
+                manifestObj = doc.object();
+                itemsArray = manifestObj.value(QStringLiteral("items")).toArray();
+            }
+            file.close();
+        }
+    }
+
+    if (itemsArray.size() >= kMaxStickerItems) {
+        if (outError) {
+            *outError = QStringLiteral("Sticker limit reached");
+        }
+        return false;
+    }
+
+    QString id;
+    for (int attempt = 0; attempt < 6; ++attempt) {
+        const QString candidate = MakeStickerId();
+        if (index_.contains(candidate)) {
+            continue;
+        }
+        id = candidate;
+        break;
+    }
+    if (id.isEmpty()) {
+        if (outError) {
+            *outError = QStringLiteral("Failed to generate sticker id");
+        }
+        return false;
+    }
+
+    QString outExt = ext;
+    const bool needsConvert = isVideo || (isImage && ext != QStringLiteral("gif") &&
+                                          ext != QStringLiteral("webp"));
+    if (needsConvert) {
+        outExt = QStringLiteral("gif");
+    }
+    const QString fileName = id + QStringLiteral(".") + outExt;
+    const QString destPath = packDir.filePath(fileName);
+
+    bool ok = false;
+    if (isVideo) {
+        ok = ConvertVideoToGif(inputInfo.absoluteFilePath(), destPath, outError);
+    } else if (needsConvert) {
+        ok = ConvertImageToGif(inputInfo.absoluteFilePath(), destPath, outError);
+    } else {
+        ok = QFile::copy(inputInfo.absoluteFilePath(), destPath);
+        if (!ok && outError) {
+            *outError = QStringLiteral("Failed to copy sticker");
+        }
+    }
+    if (!ok) {
+        if (QFileInfo::exists(destPath)) {
+            QFile::remove(destPath);
+        }
+        return false;
+    }
+
+    QFileInfo outInfo(destPath);
+    if (!outInfo.exists() || !outInfo.isFile()) {
+        if (outError) {
+            *outError = QStringLiteral("Sticker output missing");
+        }
+        return false;
+    }
+    if (outInfo.size() > kMaxStickerBytes) {
+        QFile::remove(destPath);
+        if (outError) {
+            *outError = QStringLiteral("Sticker file too large");
+        }
+        return false;
+    }
+
+    QJsonObject item;
+    item.insert(QStringLiteral("id"), id);
+    item.insert(QStringLiteral("title"), inputInfo.baseName());
+    item.insert(QStringLiteral("file"), fileName);
+    itemsArray.append(item);
+    manifestObj.insert(QStringLiteral("items"), itemsArray);
+    if (!WriteJsonFile(manifestPath, manifestObj, outError)) {
+        QFile::remove(destPath);
+        return false;
+    }
+
+    Reload();
+    if (outId) {
+        *outId = id;
+    }
+    return true;
 }
 
 QPixmap EmojiPackManager::StickerPixmap(const QString &id, int size) const {

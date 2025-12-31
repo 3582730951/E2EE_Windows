@@ -28,7 +28,7 @@ jobs:
         with:
           version: 6.10.1
           arch: win64_msvc2022_64
-          modules: qtmultimedia
+          modules: qtmultimedia qtpositioning
           archives: qtbase qtdeclarative qtsvg qttools qttranslations
           cache: true
           use-official: true
@@ -101,6 +101,20 @@ jobs:
             Copy-Item $rimeDll (Join-Path $rimeDir "rime.dll") -Force
           }
           "RIME_RUNTIME_DIR=$rimeDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Fetch FFmpeg runtime
+        run: |
+          $ffmpegRoot = Join-Path $env:GITHUB_WORKSPACE "build\\ffmpeg"
+          New-Item -ItemType Directory -Force -Path $ffmpegRoot | Out-Null
+          $ffmpegZip = Join-Path $ffmpegRoot "ffmpeg.zip"
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegRoot -Force
+          $ffmpegExe = Get-ChildItem -Path $ffmpegRoot -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          if (-not $ffmpegExe) {
+            throw "ffmpeg.exe not found"
+          }
+          "FFMPEG_RUNTIME_DIR=$($ffmpegExe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure client
         run: >
@@ -318,6 +332,18 @@ jobs:
           }
           if (Test-Path (Join-Path $rimeRuntime "opencc")) {
             Copy-Item (Join-Path $rimeRuntime "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
+          }
+          $ffmpegRuntime = $env:FFMPEG_RUNTIME_DIR
+          if (-not $ffmpegRuntime) {
+            $ffmpegExe = Get-ChildItem -Path (Join-Path $workspace "build\\ffmpeg") -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($ffmpegExe) {
+              $ffmpegRuntime = $ffmpegExe.Directory.FullName
+            }
+          }
+          if ($ffmpegRuntime -and (Test-Path $ffmpegRuntime)) {
+            Get-ChildItem -Path $ffmpegRuntime -File | ForEach-Object {
+              Copy-Item $_.FullName $clientRoot -Force
+            }
           }
           $skipDirs = @("qml", "translations", "icon", "assets", "runtime", "qmltooling")
           Get-ChildItem -Path $uiRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name } | ForEach-Object {
