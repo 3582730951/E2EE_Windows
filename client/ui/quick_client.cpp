@@ -9,6 +9,7 @@
 #include <QCameraDevice>
 #include <QCoreApplication>
 #include <QClipboard>
+#include <QDataStream>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -19,8 +20,12 @@
 #include <QMediaDevices>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QRunnable>
+#include <QSaveFile>
+#include <QPointer>
 #include <QSet>
 #include <QStandardPaths>
+#include <QThread>
 #include <QStringConverter>
 #include <QTextStream>
 #include <QUrl>
@@ -28,9 +33,11 @@
 #include <QVideoFrame>
 #include <QVideoFrameFormat>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <utility>
 
@@ -377,6 +384,760 @@ bool IsVideoExt(const QString& ext) {
          e == QStringLiteral("avi");
 }
 
+bool IsImageExt(const QString& ext) {
+  const QString e = ext.toLower();
+  return e == QStringLiteral("png") || e == QStringLiteral("jpg") ||
+         e == QStringLiteral("jpeg") || e == QStringLiteral("webp") ||
+         e == QStringLiteral("bmp");
+}
+
+bool IsGifExt(const QString& ext) {
+  return ext.toLower() == QStringLiteral("gif");
+}
+
+bool IsAlreadyCompressedExt(const QString& ext) {
+  const QString e = ext.toLower();
+  static const QSet<QString> kCompressed = {
+      QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
+      QStringLiteral("gif"),  QStringLiteral("webp"), QStringLiteral("bmp"),
+      QStringLiteral("ico"),  QStringLiteral("heic"),
+      QStringLiteral("mp4"),  QStringLiteral("mkv"),  QStringLiteral("mov"),
+      QStringLiteral("webm"), QStringLiteral("avi"),  QStringLiteral("flv"),
+      QStringLiteral("m4v"),  QStringLiteral("mp3"),  QStringLiteral("m4a"),
+      QStringLiteral("aac"),  QStringLiteral("ogg"),  QStringLiteral("opus"),
+      QStringLiteral("flac"), QStringLiteral("wav"),  QStringLiteral("zip"),
+      QStringLiteral("rar"),  QStringLiteral("7z"),   QStringLiteral("gz"),
+      QStringLiteral("bz2"),  QStringLiteral("xz"),   QStringLiteral("zst"),
+      QStringLiteral("pdf"),  QStringLiteral("docx"), QStringLiteral("xlsx"),
+      QStringLiteral("pptx")
+  };
+  return kCompressed.contains(e);
+}
+
+constexpr quint64 kMaxAttachmentCacheBytes = 200ull * 1024ull * 1024ull * 1024ull;
+constexpr quint64 kTier128M = 128ull * 1024ull * 1024ull;
+constexpr quint64 kTier256M = 256ull * 1024ull * 1024ull;
+constexpr quint64 kTier512M = 512ull * 1024ull * 1024ull;
+constexpr quint64 kTier1G = 1024ull * 1024ull * 1024ull;
+constexpr quint64 kTier2G = 2ull * 1024ull * 1024ull * 1024ull;
+constexpr quint64 kTier10G = 10ull * 1024ull * 1024ull * 1024ull;
+
+constexpr char kAttachmentCacheMagic[8] = {'M', 'I', 'A', 'C',
+                                           'A', 'C', 'H', 'E'};
+constexpr quint8 kAttachmentCacheVersion = 1;
+constexpr char kAttachmentChunkMagic[4] = {'M', 'I', 'A', 'C'};
+constexpr quint8 kAttachmentChunkVersion = 1;
+
+enum class CacheChunkMethod : quint8 {
+  kRaw = 0,
+  kDeflate = 1,
+  kDeflate2 = 2
+};
+
+struct CachePolicy {
+  int level{1};
+  int passes{1};
+  quint64 chunkBytes{4ull * 1024ull * 1024ull};
+  bool keepRaw{false};
+  bool forceRaw{false};
+};
+
+struct CacheIndex {
+  quint64 fileSize{0};
+  quint64 chunkBytes{0};
+  quint32 chunkCount{0};
+  quint8 flags{0};
+  quint8 level{0};
+  quint8 passes{1};
+  QString fileName;
+  QString rawName;
+};
+
+constexpr quint8 kCacheFlagKeepRaw = 0x1;
+constexpr quint8 kCacheFlagForceRaw = 0x2;
+
+class LambdaTask final : public QRunnable {
+ public:
+  explicit LambdaTask(std::function<void()> fn) : fn_(std::move(fn)) {}
+  void run() override { fn_(); }
+
+ private:
+  std::function<void()> fn_;
+};
+
+CachePolicy SelectCachePolicy(quint64 fileSize) {
+  CachePolicy policy;
+  if (fileSize == 0) {
+    policy.level = 5;
+    policy.passes = 1;
+    policy.chunkBytes = 8ull * 1024ull * 1024ull;
+    policy.keepRaw = false;
+    return policy;
+  }
+  if (fileSize <= kTier128M) {
+    policy.level = 1;
+    policy.passes = 1;
+    policy.chunkBytes = 4ull * 1024ull * 1024ull;
+    policy.keepRaw = true;
+  } else if (fileSize <= kTier256M) {
+    policy.level = 3;
+    policy.passes = 1;
+    policy.chunkBytes = 8ull * 1024ull * 1024ull;
+  } else if (fileSize <= kTier512M) {
+    policy.level = 5;
+    policy.passes = 1;
+    policy.chunkBytes = 16ull * 1024ull * 1024ull;
+  } else if (fileSize <= kTier1G) {
+    policy.level = 7;
+    policy.passes = 1;
+    policy.chunkBytes = 32ull * 1024ull * 1024ull;
+  } else if (fileSize <= kTier2G) {
+    policy.level = 9;
+    policy.passes = 1;
+    policy.chunkBytes = 32ull * 1024ull * 1024ull;
+  } else if (fileSize <= kTier10G) {
+    policy.level = 9;
+    policy.passes = 2;
+    policy.chunkBytes = 64ull * 1024ull * 1024ull;
+  } else {
+    policy.level = 9;
+    policy.passes = 2;
+    policy.chunkBytes = 128ull * 1024ull * 1024ull;
+  }
+  return policy;
+}
+
+QString CacheChunkName(int index) {
+  return QStringLiteral("chunk_%1.bin").arg(index, 8, 10, QLatin1Char('0'));
+}
+
+QString CacheIndexPath(const QDir& dir) {
+  return dir.filePath(QStringLiteral("cache.idx"));
+}
+
+bool ReadCacheIndex(const QString& path, CacheIndex& out, QString& error) {
+  out = CacheIndex{};
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    error = QStringLiteral("cache index read failed");
+    return false;
+  }
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
+  char magic[sizeof(kAttachmentCacheMagic)] = {};
+  if (stream.readRawData(magic, sizeof(magic)) != sizeof(magic)) {
+    error = QStringLiteral("cache index read failed");
+    return false;
+  }
+  if (std::memcmp(magic, kAttachmentCacheMagic, sizeof(magic)) != 0) {
+    error = QStringLiteral("cache index magic mismatch");
+    return false;
+  }
+  quint8 version = 0;
+  stream >> version;
+  if (version != kAttachmentCacheVersion) {
+    error = QStringLiteral("cache index version mismatch");
+    return false;
+  }
+  stream >> out.flags;
+  stream >> out.level;
+  stream >> out.passes;
+  stream >> out.fileSize;
+  stream >> out.chunkBytes;
+  stream >> out.chunkCount;
+  quint16 nameLen = 0;
+  stream >> nameLen;
+  if (nameLen > 0) {
+    QByteArray name;
+    name.resize(nameLen);
+    if (stream.readRawData(name.data(), name.size()) != name.size()) {
+      error = QStringLiteral("cache index read failed");
+      return false;
+    }
+    out.fileName = QString::fromUtf8(name);
+  }
+  quint16 rawLen = 0;
+  stream >> rawLen;
+  if (rawLen > 0) {
+    QByteArray raw;
+    raw.resize(rawLen);
+    if (stream.readRawData(raw.data(), raw.size()) != raw.size()) {
+      error = QStringLiteral("cache index read failed");
+      return false;
+    }
+    out.rawName = QString::fromUtf8(raw);
+  }
+  return true;
+}
+
+bool WriteCacheIndex(const QString& path, const CacheIndex& index, QString& error) {
+  QSaveFile file(path);
+  if (!file.open(QIODevice::WriteOnly)) {
+    error = QStringLiteral("cache index write failed");
+    return false;
+  }
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
+  stream.writeRawData(kAttachmentCacheMagic, sizeof(kAttachmentCacheMagic));
+  stream << static_cast<quint8>(kAttachmentCacheVersion);
+  stream << index.flags;
+  stream << index.level;
+  stream << index.passes;
+  stream << index.fileSize;
+  stream << index.chunkBytes;
+  stream << index.chunkCount;
+  const QByteArray name = index.fileName.toUtf8();
+  stream << static_cast<quint16>(name.size());
+  if (!name.isEmpty()) {
+    stream.writeRawData(name.constData(), name.size());
+  }
+  const QByteArray raw = index.rawName.toUtf8();
+  stream << static_cast<quint16>(raw.size());
+  if (!raw.isEmpty()) {
+    stream.writeRawData(raw.constData(), raw.size());
+  }
+  if (!file.commit()) {
+    error = QStringLiteral("cache index write failed");
+    return false;
+  }
+  return true;
+}
+
+bool CacheChunksReady(const QDir& dir, const CacheIndex& index) {
+  if (index.chunkCount == 0) {
+    return index.fileSize == 0;
+  }
+  for (quint32 i = 0; i < index.chunkCount; ++i) {
+    if (!QFileInfo::exists(dir.filePath(CacheChunkName(static_cast<int>(i))))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool WriteChunkFile(const QString& path,
+                    const QByteArray& payload,
+                    CacheChunkMethod method,
+                    int level,
+                    quint32 rawSize,
+                    QString& error) {
+  QSaveFile file(path);
+  if (!file.open(QIODevice::WriteOnly)) {
+    error = QStringLiteral("cache chunk write failed");
+    return false;
+  }
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
+  stream.writeRawData(kAttachmentChunkMagic, sizeof(kAttachmentChunkMagic));
+  stream << static_cast<quint8>(kAttachmentChunkVersion);
+  stream << static_cast<quint8>(method);
+  stream << static_cast<quint8>(level);
+  stream << static_cast<quint8>(0);
+  stream << rawSize;
+  stream << static_cast<quint32>(payload.size());
+  if (!payload.isEmpty()) {
+    if (file.write(payload) != payload.size()) {
+      error = QStringLiteral("cache chunk write failed");
+      return false;
+    }
+  }
+  if (!file.commit()) {
+    error = QStringLiteral("cache chunk write failed");
+    return false;
+  }
+  return true;
+}
+
+bool CompressChunk(const QByteArray& input,
+                   const CachePolicy& policy,
+                   QByteArray& output,
+                   CacheChunkMethod& method) {
+  if (policy.forceRaw) {
+    output = input;
+    method = CacheChunkMethod::kRaw;
+    return true;
+  }
+  QByteArray compressed = qCompress(input, policy.level);
+  if (policy.passes > 1) {
+    compressed = qCompress(compressed, policy.level);
+  }
+  if (compressed.size() >= input.size()) {
+    output = input;
+    method = CacheChunkMethod::kRaw;
+    return true;
+  }
+  output = compressed;
+  method = policy.passes > 1 ? CacheChunkMethod::kDeflate2
+                             : CacheChunkMethod::kDeflate;
+  return true;
+}
+
+bool BuildChunkedCache(const QString& sourcePath,
+                       const CachePolicy& policy,
+                       QDir& dir,
+                       quint64& outFileSize,
+                       quint32& outChunkCount,
+                       QString& error) {
+  if (policy.chunkBytes == 0) {
+    error = QStringLiteral("cache chunk size invalid");
+    return false;
+  }
+  QFile source(sourcePath);
+  if (!source.open(QIODevice::ReadOnly)) {
+    error = QStringLiteral("cache source open failed");
+    return false;
+  }
+  const quint64 totalSize = static_cast<quint64>(source.size());
+  if (totalSize > kMaxAttachmentCacheBytes) {
+    error = QStringLiteral("cache file too large");
+    return false;
+  }
+  outFileSize = totalSize;
+  outChunkCount = 0;
+  quint64 remaining = totalSize;
+  while (remaining > 0) {
+    const quint64 want = std::min(policy.chunkBytes, remaining);
+    const qint64 wantRead = static_cast<qint64>(want);
+    QByteArray chunk = source.read(wantRead);
+    if (chunk.size() != wantRead) {
+      error = QStringLiteral("cache source read failed");
+      return false;
+    }
+    QByteArray payload;
+    CacheChunkMethod method = CacheChunkMethod::kRaw;
+    if (!CompressChunk(chunk, policy, payload, method)) {
+      error = QStringLiteral("cache compress failed");
+      return false;
+    }
+    const QString chunkPath =
+        dir.filePath(CacheChunkName(static_cast<int>(outChunkCount)));
+    if (!WriteChunkFile(chunkPath,
+                        payload,
+                        method,
+                        policy.level,
+                        static_cast<quint32>(chunk.size()),
+                        error)) {
+      return false;
+    }
+    remaining -= static_cast<quint64>(chunk.size());
+    ++outChunkCount;
+  }
+  return true;
+}
+
+bool EnsureCacheRootDir(QDir& out, QString& error) {
+  QString baseDir = UiRuntimePaths::AppRootDir();
+  if (baseDir.isEmpty()) {
+    baseDir = QCoreApplication::applicationDirPath();
+  }
+  QDir root(baseDir);
+  if (!root.mkpath(QStringLiteral("database/attachments_cache"))) {
+    error = QStringLiteral("cache dir failed");
+    return false;
+  }
+  root.cd(QStringLiteral("database/attachments_cache"));
+  out = root;
+  return true;
+}
+
+bool CopyFileToPath(const QString& src,
+                    const QString& dest,
+                    QString& error) {
+  if (src.isEmpty() || dest.isEmpty()) {
+    error = QStringLiteral("cache copy failed");
+    return false;
+  }
+  if (QFileInfo(src).absoluteFilePath() == QFileInfo(dest).absoluteFilePath()) {
+    return true;
+  }
+  if (QFileInfo::exists(dest)) {
+    QFile::remove(dest);
+  }
+  if (!QFile::copy(src, dest)) {
+    error = QStringLiteral("cache copy failed");
+    return false;
+  }
+  return true;
+}
+
+bool ReadChunkFile(const QString& path,
+                   CacheChunkMethod& method,
+                   quint32& rawSize,
+                   QByteArray& payload,
+                   QString& error) {
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    error = QStringLiteral("cache chunk read failed");
+    return false;
+  }
+  QDataStream stream(&file);
+  stream.setByteOrder(QDataStream::LittleEndian);
+  char magic[sizeof(kAttachmentChunkMagic)] = {};
+  if (stream.readRawData(magic, sizeof(magic)) != sizeof(magic)) {
+    error = QStringLiteral("cache chunk read failed");
+    return false;
+  }
+  if (std::memcmp(magic, kAttachmentChunkMagic, sizeof(magic)) != 0) {
+    error = QStringLiteral("cache chunk invalid");
+    return false;
+  }
+  quint8 version = 0;
+  quint8 methodByte = 0;
+  quint8 level = 0;
+  quint8 reserved = 0;
+  quint32 payloadSize = 0;
+  stream >> version;
+  stream >> methodByte;
+  stream >> level;
+  stream >> reserved;
+  stream >> rawSize;
+  stream >> payloadSize;
+  (void)level;
+  (void)reserved;
+  if (version != kAttachmentChunkVersion) {
+    error = QStringLiteral("cache chunk invalid");
+    return false;
+  }
+  if (payloadSize == 0 && rawSize == 0) {
+    payload.clear();
+    method = static_cast<CacheChunkMethod>(methodByte);
+    return true;
+  }
+  if (payloadSize >
+      static_cast<quint32>(file.size() - file.pos())) {
+    error = QStringLiteral("cache chunk invalid");
+    return false;
+  }
+  payload = file.read(static_cast<qint64>(payloadSize));
+  if (payload.size() != static_cast<int>(payloadSize)) {
+    error = QStringLiteral("cache chunk read failed");
+    return false;
+  }
+  method = static_cast<CacheChunkMethod>(methodByte);
+  return true;
+}
+
+bool DecompressChunk(CacheChunkMethod method,
+                     const QByteArray& payload,
+                     quint32 rawSize,
+                     QByteArray& out,
+                     QString& error) {
+  out.clear();
+  if (rawSize == 0) {
+    return true;
+  }
+  if (method == CacheChunkMethod::kRaw) {
+    out = payload;
+  } else if (method == CacheChunkMethod::kDeflate) {
+    out = qUncompress(payload);
+  } else if (method == CacheChunkMethod::kDeflate2) {
+    const QByteArray stage1 = qUncompress(payload);
+    out = qUncompress(stage1);
+  } else {
+    error = QStringLiteral("cache chunk invalid");
+    return false;
+  }
+  if (out.size() != static_cast<int>(rawSize)) {
+    error = QStringLiteral("cache chunk invalid");
+    return false;
+  }
+  return true;
+}
+
+bool RestoreChunkedCache(const QDir& dir,
+                         const CacheIndex& index,
+                         const QString& destPath,
+                         const std::function<void(double)>& onProgress,
+                         QString& error) {
+  QFile out(destPath);
+  if (QFileInfo::exists(destPath)) {
+    QFile::remove(destPath);
+  }
+  if (!out.open(QIODevice::WriteOnly)) {
+    error = QStringLiteral("cache restore failed");
+    return false;
+  }
+  if (index.chunkCount == 0) {
+    out.close();
+    if (onProgress) {
+      onProgress(1.0);
+    }
+    return true;
+  }
+  for (quint32 i = 0; i < index.chunkCount; ++i) {
+    const QString chunkPath = dir.filePath(CacheChunkName(static_cast<int>(i)));
+    CacheChunkMethod method = CacheChunkMethod::kRaw;
+    quint32 rawSize = 0;
+    QByteArray payload;
+    if (!ReadChunkFile(chunkPath, method, rawSize, payload, error)) {
+      out.close();
+      QFile::remove(destPath);
+      return false;
+    }
+    QByteArray plain;
+    if (!DecompressChunk(method, payload, rawSize, plain, error)) {
+      out.close();
+      QFile::remove(destPath);
+      return false;
+    }
+    if (!plain.isEmpty()) {
+      if (out.write(plain) != plain.size()) {
+        error = QStringLiteral("cache restore failed");
+        out.close();
+        QFile::remove(destPath);
+        return false;
+      }
+    }
+    if (onProgress) {
+      onProgress(static_cast<double>(i + 1) /
+                 static_cast<double>(index.chunkCount));
+    }
+  }
+  out.close();
+  if (index.fileSize > 0 &&
+      static_cast<quint64>(QFileInfo(destPath).size()) != index.fileSize) {
+    error = QStringLiteral("cache restore failed");
+    QFile::remove(destPath);
+    return false;
+  }
+  return true;
+}
+
+struct CacheTaskResult {
+  bool ok{false};
+  QString fileUrl;
+  QString previewUrl;
+  QString error;
+};
+
+QString FindFfmpegPath();
+
+CacheTaskResult BuildAttachmentCache(ClientCore& core,
+                                     const QString& fileId,
+                                     const std::array<std::uint8_t, 32>& fileKey,
+                                     const QString& fileName,
+                                     qint64 fileSize) {
+  CacheTaskResult result;
+  QDir cacheRoot;
+  QString error;
+  if (!EnsureCacheRootDir(cacheRoot, error)) {
+    result.error = error;
+    return result;
+  }
+
+  const QString safeId = SanitizeFileId(fileId);
+  QString ext = QFileInfo(fileName).suffix().toLower();
+  if (ext.isEmpty()) {
+    ext = QStringLiteral("bin");
+  }
+  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+
+  if (isMedia) {
+    const QString filePath =
+        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
+    const QString previewPath =
+        cacheRoot.filePath(safeId + QStringLiteral(".preview.jpg"));
+    if (!QFileInfo::exists(filePath)) {
+      ClientCore::ChatFileMessage file;
+      file.file_id = fileId.toStdString();
+      file.file_key = fileKey;
+      file.file_name = fileName.toStdString();
+      if (fileSize > 0) {
+        file.file_size = static_cast<std::uint64_t>(fileSize);
+      }
+      if (!core.DownloadChatFileToPath(file, filePath.toStdString(), true)) {
+        result.error = QString::fromStdString(core.last_error());
+        return result;
+      }
+    }
+    result.fileUrl = filePath;
+    if (IsVideoExt(ext)) {
+      if (!QFileInfo::exists(previewPath)) {
+        const QString ffmpeg = FindFfmpegPath();
+        if (!ffmpeg.isEmpty()) {
+          QStringList args;
+          args << QStringLiteral("-y")
+               << QStringLiteral("-ss") << QStringLiteral("0.2")
+               << QStringLiteral("-i") << filePath
+               << QStringLiteral("-frames:v") << QStringLiteral("1")
+               << QStringLiteral("-vf") << QStringLiteral("scale=480:-1")
+               << previewPath;
+          QProcess::execute(ffmpeg, args);
+        }
+      }
+      if (QFileInfo::exists(previewPath)) {
+        result.previewUrl = previewPath;
+      }
+    } else {
+      result.previewUrl = filePath;
+    }
+    result.ok = true;
+    return result;
+  }
+
+  QDir fileDir(cacheRoot.filePath(safeId));
+  if (!fileDir.exists()) {
+    if (!cacheRoot.mkpath(safeId)) {
+      result.error = QStringLiteral("cache dir failed");
+      return result;
+    }
+  }
+  fileDir.setPath(cacheRoot.filePath(safeId));
+
+  const QString indexPath = CacheIndexPath(fileDir);
+  CacheIndex existing;
+  if (QFileInfo::exists(indexPath)) {
+    if (ReadCacheIndex(indexPath, existing, error) &&
+        CacheChunksReady(fileDir, existing)) {
+      if ((existing.flags & kCacheFlagKeepRaw) && !existing.rawName.isEmpty()) {
+        const QString rawPath = fileDir.filePath(existing.rawName);
+        if (QFileInfo::exists(rawPath)) {
+          result.fileUrl = rawPath;
+        }
+      }
+      result.ok = true;
+      return result;
+    }
+  }
+
+  const QFileInfoList oldFiles =
+      fileDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+  for (const auto& entry : oldFiles) {
+    QFile::remove(entry.absoluteFilePath());
+  }
+
+  const QString tempPath = fileDir.filePath(QStringLiteral("download.tmp"));
+  if (QFileInfo::exists(tempPath)) {
+    QFile::remove(tempPath);
+  }
+
+  ClientCore::ChatFileMessage file;
+  file.file_id = fileId.toStdString();
+  file.file_key = fileKey;
+  file.file_name = fileName.toStdString();
+  if (fileSize > 0) {
+    file.file_size = static_cast<std::uint64_t>(fileSize);
+  }
+  if (!core.DownloadChatFileToPath(file, tempPath.toStdString(), true)) {
+    result.error = QString::fromStdString(core.last_error());
+    return result;
+  }
+
+  const quint64 tempSize =
+      static_cast<quint64>(QFileInfo(tempPath).size());
+  if (tempSize > kMaxAttachmentCacheBytes) {
+    QFile::remove(tempPath);
+    result.error = QStringLiteral("file too large");
+    return result;
+  }
+
+  quint64 actualSize = 0;
+  quint32 chunkCount = 0;
+  CachePolicy policy = SelectCachePolicy(tempSize);
+  if (IsAlreadyCompressedExt(ext)) {
+    policy.forceRaw = true;
+  }
+  if (!BuildChunkedCache(tempPath, policy, fileDir, actualSize, chunkCount,
+                         error)) {
+    QFile::remove(tempPath);
+    result.error = error;
+    return result;
+  }
+
+  QString rawName;
+  if (policy.keepRaw && actualSize > 0) {
+    rawName = QStringLiteral("raw.") + ext;
+    const QString rawPath = fileDir.filePath(rawName);
+    if (QFileInfo::exists(rawPath)) {
+      QFile::remove(rawPath);
+    }
+    QFile::rename(tempPath, rawPath);
+    result.fileUrl = rawPath;
+  } else {
+    QFile::remove(tempPath);
+  }
+
+  CacheIndex index;
+  index.fileSize = actualSize;
+  index.chunkBytes = policy.chunkBytes;
+  index.chunkCount = chunkCount;
+  index.level = static_cast<quint8>(policy.level);
+  index.passes = static_cast<quint8>(policy.passes);
+  index.fileName = fileName;
+  index.rawName = rawName;
+  if (policy.keepRaw) {
+    index.flags |= kCacheFlagKeepRaw;
+  }
+  if (policy.forceRaw) {
+    index.flags |= kCacheFlagForceRaw;
+  }
+  if (!WriteCacheIndex(indexPath, index, error)) {
+    result.error = error;
+    return result;
+  }
+
+  result.ok = true;
+  return result;
+}
+
+bool RestoreAttachmentFromCache(const QString& fileId,
+                                const QString& fileName,
+                                const QString& savePath,
+                                const std::function<void(double)>& onProgress,
+                                QString& error) {
+  QDir cacheRoot;
+  if (!EnsureCacheRootDir(cacheRoot, error)) {
+    return false;
+  }
+  const QString safeId = SanitizeFileId(fileId);
+  QString ext = QFileInfo(fileName).suffix().toLower();
+  if (ext.isEmpty()) {
+    ext = QStringLiteral("bin");
+  }
+  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+  if (isMedia) {
+    const QString filePath =
+        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
+    if (!QFileInfo::exists(filePath)) {
+      error = QStringLiteral("cache missing");
+      return false;
+    }
+    if (!CopyFileToPath(filePath, savePath, error)) {
+      return false;
+    }
+    if (onProgress) {
+      onProgress(1.0);
+    }
+    return true;
+  }
+
+  const QDir fileDir(cacheRoot.filePath(safeId));
+  const QString indexPath = CacheIndexPath(fileDir);
+  CacheIndex index;
+  if (!QFileInfo::exists(indexPath) ||
+      !ReadCacheIndex(indexPath, index, error)) {
+    error = QStringLiteral("cache missing");
+    return false;
+  }
+  if ((index.flags & kCacheFlagKeepRaw) && !index.rawName.isEmpty()) {
+    const QString rawPath = fileDir.filePath(index.rawName);
+    if (QFileInfo::exists(rawPath)) {
+      if (!CopyFileToPath(rawPath, savePath, error)) {
+        return false;
+      }
+      if (onProgress) {
+        onProgress(1.0);
+      }
+      return true;
+    }
+  }
+  if (!CacheChunksReady(fileDir, index)) {
+    error = QStringLiteral("cache missing");
+    return false;
+  }
+  return RestoreChunkedCache(fileDir, index, savePath, onProgress, error);
+}
+
 QString FindFfmpegPath() {
   QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
   if (!ffmpeg.isEmpty()) {
@@ -454,6 +1215,12 @@ QuickClient::QuickClient(QObject* parent) : QObject(parent) {
   connect(&media_timer_, &QTimer::timeout, this, &QuickClient::PumpMedia);
   local_video_sink_ = new QVideoSink(this);
   remote_video_sink_ = new QVideoSink(this);
+  int ideal = QThread::idealThreadCount();
+  if (ideal < 1) {
+    ideal = 2;
+  }
+  cache_pool_.setMaxThreadCount(std::clamp(ideal, 4, 12));
+  cache_pool_.setExpiryTimeout(30000);
   if (auto* clipboard = QGuiApplication::clipboard()) {
     last_system_clipboard_text_ = clipboard->text();
     last_system_clipboard_ms_ = QDateTime::currentMSecsSinceEpoch();
@@ -467,6 +1234,8 @@ QuickClient::QuickClient(QObject* parent) : QObject(parent) {
 }
 
 QuickClient::~QuickClient() {
+  cache_pool_.clear();
+  cache_pool_.waitForDone();
   if (ime_session_) {
     ImePluginLoader::instance().destroySession(ime_session_);
     ime_session_ = nullptr;
@@ -844,67 +1613,274 @@ QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
     out.insert(QStringLiteral("error"), QStringLiteral("invalid file key"));
     return out;
   }
-
-  QString baseDir = UiRuntimePaths::AppRootDir();
-  if (baseDir.isEmpty()) {
-    baseDir = QCoreApplication::applicationDirPath();
-  }
-  QDir cacheDir(baseDir);
-  if (!cacheDir.mkpath(QStringLiteral("database/attachments_cache"))) {
-    out.insert(QStringLiteral("error"), QStringLiteral("cache dir failed"));
+  if (fileSize > 0 &&
+      static_cast<quint64>(fileSize) > kMaxAttachmentCacheBytes) {
+    out.insert(QStringLiteral("error"), QStringLiteral("file too large"));
     return out;
   }
-  cacheDir.cd(QStringLiteral("database/attachments_cache"));
+
+  QDir cacheRoot;
+  QString rootErr;
+  if (!EnsureCacheRootDir(cacheRoot, rootErr)) {
+    out.insert(QStringLiteral("error"), rootErr);
+    return out;
+  }
 
   const QString safeId = SanitizeFileId(fid);
   QString ext = QFileInfo(fileName).suffix().toLower();
   if (ext.isEmpty()) {
     ext = QStringLiteral("bin");
   }
-  const QString filePath = cacheDir.filePath(safeId + QStringLiteral(".") + ext);
-  const QString previewPath =
-      cacheDir.filePath(safeId + QStringLiteral(".preview.jpg"));
+  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
 
-  if (!QFileInfo::exists(filePath)) {
-    ClientCore::ChatFileMessage file;
-    file.file_id = fid.toStdString();
-    file.file_key = file_key;
-    file.file_name = fileName.toStdString();
-    if (fileSize > 0) {
-      file.file_size = static_cast<std::uint64_t>(fileSize);
+  if (isMedia) {
+    const QString filePath =
+        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
+    const QString previewPath =
+        cacheRoot.filePath(safeId + QStringLiteral(".preview.jpg"));
+    if (QFileInfo::exists(filePath)) {
+      out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(filePath));
+      if (IsVideoExt(ext)) {
+        if (QFileInfo::exists(previewPath)) {
+          out.insert(QStringLiteral("previewUrl"),
+                     QUrl::fromLocalFile(previewPath));
+        } else if (!cache_inflight_.contains(fid)) {
+          cache_inflight_.insert(fid);
+          QueueAttachmentCacheTask(fid, file_key, fileName, fileSize, false);
+        }
+      } else {
+        out.insert(QStringLiteral("previewUrl"), QUrl::fromLocalFile(filePath));
+      }
+      out.insert(QStringLiteral("ok"), true);
+      return out;
     }
-    if (!core_.DownloadChatFileToPath(file, filePath.toStdString(), true)) {
-      out.insert(QStringLiteral("error"),
-                 QString::fromStdString(core_.last_error()));
+  } else {
+    QDir fileDir(cacheRoot.filePath(safeId));
+    const QString indexPath = CacheIndexPath(fileDir);
+    CacheIndex existing;
+    QString readErr;
+    if (QFileInfo::exists(indexPath) &&
+        ReadCacheIndex(indexPath, existing, readErr) &&
+        CacheChunksReady(fileDir, existing)) {
+      if ((existing.flags & kCacheFlagKeepRaw) && !existing.rawName.isEmpty()) {
+        const QString rawPath = fileDir.filePath(existing.rawName);
+        if (QFileInfo::exists(rawPath)) {
+          out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(rawPath));
+        }
+      }
+      out.insert(QStringLiteral("ok"), true);
       return out;
     }
   }
 
-  out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(filePath));
-  if (IsVideoExt(ext)) {
-    if (!QFileInfo::exists(previewPath)) {
-      const QString ffmpeg = FindFfmpegPath();
-      if (!ffmpeg.isEmpty()) {
-        QStringList args;
-        args << QStringLiteral("-y")
-             << QStringLiteral("-ss") << QStringLiteral("0.2")
-             << QStringLiteral("-i") << filePath
-             << QStringLiteral("-frames:v") << QStringLiteral("1")
-             << QStringLiteral("-vf") << QStringLiteral("scale=480:-1")
-             << previewPath;
-        QProcess::execute(ffmpeg, args);
-      }
-    }
-    if (QFileInfo::exists(previewPath)) {
-      out.insert(QStringLiteral("previewUrl"),
-                 QUrl::fromLocalFile(previewPath));
-    }
-  } else {
-    out.insert(QStringLiteral("previewUrl"), QUrl::fromLocalFile(filePath));
+  if (!cache_inflight_.contains(fid)) {
+    cache_inflight_.insert(fid);
+    QueueAttachmentCacheTask(fid, file_key, fileName, fileSize, false);
+  }
+  out.insert(QStringLiteral("pending"), true);
+  return out;
+}
+
+bool QuickClient::requestAttachmentDownload(const QString& fileId,
+                                            const QString& fileKeyHex,
+                                            const QString& fileName,
+                                            qint64 fileSize,
+                                            const QString& savePath) {
+  const QString fid = fileId.trimmed();
+  if (fid.isEmpty()) {
+    UpdateLastError(QStringLiteral("file id empty"));
+    return false;
+  }
+  std::array<std::uint8_t, 32> file_key{};
+  if (!HexToBytes32(fileKeyHex.trimmed(), file_key)) {
+    UpdateLastError(QStringLiteral("invalid file key"));
+    return false;
+  }
+  QString resolved = savePath.trimmed();
+  if (resolved.startsWith(QStringLiteral("file:"))) {
+    resolved = QUrl(resolved).toLocalFile();
+  }
+  if (resolved.isEmpty()) {
+    UpdateLastError(QStringLiteral("save path empty"));
+    return false;
+  }
+  QFileInfo destInfo(resolved);
+  if (destInfo.isDir() || resolved.endsWith(QLatin1Char('/')) ||
+      resolved.endsWith(QLatin1Char('\\'))) {
+    const QString fallbackName =
+        fileName.trimmed().isEmpty()
+            ? (SanitizeFileId(fid) + QStringLiteral(".bin"))
+            : fileName.trimmed();
+    resolved = QDir(resolved).filePath(fallbackName);
+    destInfo = QFileInfo(resolved);
+  }
+  QDir destDir = destInfo.dir();
+  if (!destDir.exists() && !destDir.mkpath(QStringLiteral("."))) {
+    UpdateLastError(QStringLiteral("save path invalid"));
+    return false;
+  }
+  emit attachmentDownloadProgress(fid, resolved, 0.0);
+  if (fileSize > 0 &&
+      static_cast<quint64>(fileSize) > kMaxAttachmentCacheBytes) {
+    UpdateLastError(QStringLiteral("file too large"));
+    return false;
   }
 
-  out.insert(QStringLiteral("ok"), true);
-  return out;
+  const QString safeId = SanitizeFileId(fid);
+  QString ext = QFileInfo(fileName).suffix().toLower();
+  if (ext.isEmpty()) {
+    ext = QStringLiteral("bin");
+  }
+  QString effectiveName = fileName.trimmed();
+  if (effectiveName.isEmpty()) {
+    effectiveName = safeId + QStringLiteral(".") + ext;
+  }
+
+  QDir cacheRoot;
+  QString rootErr;
+  if (!EnsureCacheRootDir(cacheRoot, rootErr)) {
+    UpdateLastError(rootErr);
+    return false;
+  }
+  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+
+  if (isMedia) {
+    const QString filePath =
+        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
+    if (QFileInfo::exists(filePath)) {
+      QueueAttachmentRestoreTask(fid, effectiveName, resolved, true);
+      return true;
+    }
+  } else {
+    const QDir fileDir(cacheRoot.filePath(safeId));
+    const QString indexPath = CacheIndexPath(fileDir);
+    CacheIndex existing;
+    QString readErr;
+    if (QFileInfo::exists(indexPath) &&
+        ReadCacheIndex(indexPath, existing, readErr) &&
+        CacheChunksReady(fileDir, existing)) {
+      QueueAttachmentRestoreTask(fid, effectiveName, resolved, true);
+      return true;
+    }
+  }
+
+  pending_downloads_[fid].append(resolved);
+  if (!pending_download_names_.contains(fid) ||
+      pending_download_names_.value(fid).isEmpty()) {
+    pending_download_names_.insert(fid, effectiveName);
+  }
+  if (!cache_inflight_.contains(fid)) {
+    cache_inflight_.insert(fid);
+    QueueAttachmentCacheTask(fid, file_key, effectiveName, fileSize, true);
+  }
+  return true;
+}
+
+void QuickClient::QueueAttachmentCacheTask(
+    const QString& fileId,
+    const std::array<std::uint8_t, 32>& fileKey,
+    const QString& fileName,
+    qint64 fileSize,
+    bool highPriority) {
+  QPointer<QuickClient> self(this);
+  auto task = new LambdaTask([self, fileId, fileKey, fileName, fileSize]() {
+    if (!self) {
+      return;
+    }
+    const CacheTaskResult result =
+        BuildAttachmentCache(self->core_, fileId, fileKey, fileName, fileSize);
+    QMetaObject::invokeMethod(
+        self,
+        [self, fileId, result]() {
+          if (!self) {
+            return;
+          }
+          self->HandleCacheTaskFinished(
+              fileId,
+              result.fileUrl.isEmpty() ? QUrl() : QUrl::fromLocalFile(result.fileUrl),
+              result.previewUrl.isEmpty() ? QUrl() : QUrl::fromLocalFile(result.previewUrl),
+              result.error,
+              result.ok);
+        },
+        Qt::QueuedConnection);
+  });
+  task->setAutoDelete(true);
+  cache_pool_.start(task, highPriority ? 1 : 0);
+}
+
+void QuickClient::QueueAttachmentRestoreTask(const QString& fileId,
+                                             const QString& fileName,
+                                             const QString& savePath,
+                                             bool highPriority) {
+  QPointer<QuickClient> self(this);
+  auto task = new LambdaTask([self, fileId, fileName, savePath]() {
+    if (!self) {
+      return;
+    }
+    QString error;
+    const bool ok = RestoreAttachmentFromCache(
+        fileId, fileName, savePath,
+        [self, fileId, savePath](double progress) {
+          if (!self) {
+            return;
+          }
+          QMetaObject::invokeMethod(
+              self,
+              [self, fileId, savePath, progress]() {
+                if (!self) {
+                  return;
+                }
+                emit self->attachmentDownloadProgress(fileId, savePath,
+                                                      progress);
+              },
+              Qt::QueuedConnection);
+        },
+        error);
+    QMetaObject::invokeMethod(
+        self,
+        [self, fileId, savePath, ok, error]() {
+          if (!self) {
+            return;
+          }
+          self->HandleRestoreTaskFinished(fileId, savePath, ok, error);
+        },
+        Qt::QueuedConnection);
+  });
+  task->setAutoDelete(true);
+  cache_pool_.start(task, highPriority ? 1 : 0);
+}
+
+void QuickClient::HandleCacheTaskFinished(const QString& fileId,
+                                          const QUrl& fileUrl,
+                                          const QUrl& previewUrl,
+                                          const QString& error,
+                                          bool ok) {
+  cache_inflight_.remove(fileId);
+  emit attachmentCacheReady(fileId, fileUrl, previewUrl, error);
+  if (!pending_downloads_.contains(fileId)) {
+    return;
+  }
+  const QStringList paths = pending_downloads_.take(fileId);
+  const QString name = pending_download_names_.take(fileId);
+  if (!ok) {
+    for (const auto& path : paths) {
+      emit attachmentDownloadFinished(fileId, path, false, error);
+    }
+    return;
+  }
+  for (const auto& path : paths) {
+    QueueAttachmentRestoreTask(fileId, name, path, true);
+  }
+}
+
+void QuickClient::HandleRestoreTaskFinished(const QString& fileId,
+                                            const QString& savePath,
+                                            bool ok,
+                                            const QString& error) {
+  if (!ok && !error.isEmpty()) {
+    UpdateLastError(error);
+  }
+  emit attachmentDownloadFinished(fileId, savePath, ok, error);
 }
 
 QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {

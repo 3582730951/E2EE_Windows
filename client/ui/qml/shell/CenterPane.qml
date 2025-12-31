@@ -28,6 +28,10 @@ Item {
     property int stickerCellSize: 54
     property int stickerSize: 120
     property int emojiTabIndex: 0
+    property string pendingDownloadId: ""
+    property string pendingDownloadKey: ""
+    property string pendingDownloadName: ""
+    property int pendingDownloadSize: 0
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -73,6 +77,16 @@ Item {
         var desiredY = pos.y - attachPopup.implicitHeight - 8
         attachPopup.y = Math.max(Ui.Style.paddingS, desiredY)
         attachPopup.open()
+    }
+    function promptFileDownload(fileId, fileKey, fileName, fileSize) {
+        pendingDownloadId = fileId || ""
+        pendingDownloadKey = fileKey || ""
+        pendingDownloadName = fileName && fileName.length > 0 ? fileName : (fileId || "")
+        pendingDownloadSize = fileSize || 0
+        if (pendingDownloadId.length === 0 || pendingDownloadKey.length === 0) {
+            return
+        }
+        downloadConfirm.open()
     }
     function loadEmoji() {
         if (emojiLoaded) {
@@ -1224,6 +1238,71 @@ Item {
             }
         }
     }
+    Popup {
+        id: downloadConfirm
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        width: 320
+
+        background: Rectangle {
+            radius: 12
+            color: Ui.Style.panelBgRaised
+            border.color: Ui.Style.borderSubtle
+        }
+
+        contentItem: ColumnLayout {
+            anchors.margins: Ui.Style.paddingM
+            spacing: Ui.Style.paddingS
+            Text {
+                text: Ui.I18n.t("chat.fileDownloadTitle")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Ui.Style.textPrimary
+            }
+            Text {
+                text: Ui.I18n.format("chat.fileDownloadPrompt", pendingDownloadName)
+                font.pixelSize: 12
+                color: Ui.Style.textSecondary
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Ui.Style.paddingS
+                Components.GhostButton {
+                    text: Ui.I18n.t("chat.fileDownloadCancel")
+                    Layout.fillWidth: true
+                    onClicked: downloadConfirm.close()
+                }
+                Components.PrimaryButton {
+                    text: Ui.I18n.t("chat.fileDownloadConfirm")
+                    Layout.fillWidth: true
+                    onClicked: {
+                        downloadConfirm.close()
+                        downloadSaveDialog.open()
+                    }
+                }
+            }
+        }
+    }
+    FileDialog {
+        id: downloadSaveDialog
+        title: Ui.I18n.t("chat.fileDownloadPick")
+        fileMode: FileDialog.SaveFile
+        onAccepted: {
+            if (!clientBridge || !clientBridge.requestAttachmentDownload) {
+                return
+            }
+            var path = fileUrl.toString()
+            clientBridge.requestAttachmentDownload(
+                        pendingDownloadId,
+                        pendingDownloadKey,
+                        pendingDownloadName,
+                        pendingDownloadSize,
+                        path)
+        }
+    }
 
     ListModel {
         id: emojiModel
@@ -1647,9 +1726,6 @@ Item {
                     return
                 }
                 var expectedKind = Ui.AppStore.detectFileKind(fileName || "")
-                if (expectedKind === "file") {
-                    return
-                }
                 if (!fileId || !fileKey || hasLocalUrl(fileUrl)) {
                     return
                 }
@@ -1941,6 +2017,9 @@ Item {
                     Item {
                         implicitWidth: 220
                         implicitHeight: 60
+                        property real progressValue: (downloadProgress !== undefined
+                                                       && downloadProgress !== null)
+                                                      ? downloadProgress : 0
                         Rectangle {
                             anchors.fill: parent
                             radius: 10
@@ -1978,6 +2057,43 @@ Item {
                                     color: Ui.Style.textMuted
                                 }
                             }
+                        }
+                        Canvas {
+                            id: downloadRing
+                            width: 18
+                            height: 18
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 6
+                            property real progress: Math.max(0, Math.min(1, fileContent.progressValue))
+                            onProgressChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                var cx = width / 2
+                                var cy = height / 2
+                                var r = Math.min(width, height) / 2 - 1.5
+                                ctx.lineWidth = 3
+                                ctx.lineCap = "round"
+                                ctx.strokeStyle = Qt.rgba(1, 1, 1, 0.25)
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, r, 0, Math.PI * 2)
+                                ctx.stroke()
+                                if (progress > 0) {
+                                    ctx.strokeStyle = progress >= 0.999
+                                            ? Ui.Style.accent
+                                            : Ui.Style.link
+                                    ctx.beginPath()
+                                    ctx.arc(cx, cy, r,
+                                            -Math.PI / 2,
+                                            -Math.PI / 2 + progress * Math.PI * 2)
+                                    ctx.stroke()
+                                }
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.promptFileDownload(fileId, fileKey, fileName, fileSize)
                         }
                     }
                 }

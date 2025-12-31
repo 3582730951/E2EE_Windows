@@ -487,6 +487,7 @@ QtObject {
             fileId: message.fileId || "",
             fileKey: message.fileKey || "",
             fileUrl: message.fileUrl || message.filePath || "",
+            downloadProgress: message.downloadProgress || 0,
             stickerId: message.stickerId || "",
             stickerUrl: message.stickerUrl || "",
             stickerAnimated: message.stickerAnimated || false,
@@ -696,6 +697,7 @@ QtObject {
                 fileId: h.fileId || "",
                 fileKey: h.fileKey || "",
                 fileUrl: h.fileUrl || "",
+                downloadProgress: h.downloadProgress || 0,
                 stickerId: h.stickerId || "",
                 stickerUrl: h.stickerUrl || "",
                 stickerAnimated: h.stickerAnimated || false,
@@ -1175,6 +1177,62 @@ QtObject {
         }
     }
 
+    function applyAttachmentCache(fileId, fileUrl, previewUrl) {
+        if (!fileId) {
+            return
+        }
+        for (var chatId in messagesByChatId) {
+            if (!messagesByChatId.hasOwnProperty(chatId)) {
+                continue
+            }
+            var model = messagesByChatId[chatId]
+            if (!model) {
+                continue
+            }
+            for (var i = model.count - 1; i >= 0; --i) {
+                var entry = model.get(i)
+                if (entry.fileId !== fileId) {
+                    continue
+                }
+                if (fileUrl) {
+                    model.setProperty(i, "fileUrl", fileUrl)
+                    var detected = detectFileKind(entry.fileName || "")
+                    if (detected && detected !== "file") {
+                        model.setProperty(i, "contentKind", detected)
+                    }
+                }
+                if (previewUrl) {
+                    model.setProperty(i, "previewUrl", previewUrl)
+                }
+            }
+        }
+    }
+
+    function updateDownloadProgress(fileId, progress) {
+        if (!fileId) {
+            return
+        }
+        var value = progress
+        if (typeof value !== "number" || isNaN(value)) {
+            value = 0
+        }
+        value = Math.max(0, Math.min(1, value))
+        for (var chatId in messagesByChatId) {
+            if (!messagesByChatId.hasOwnProperty(chatId)) {
+                continue
+            }
+            var model = messagesByChatId[chatId]
+            if (!model) {
+                continue
+            }
+            for (var i = model.count - 1; i >= 0; --i) {
+                if (model.get(i).fileId === fileId) {
+                    model.setProperty(i, "downloadProgress", value)
+                }
+            }
+        }
+    }
+
     function hasMessageId(chatId, messageId) {
         return findMessageIndex(chatId, messageId) >= 0
     }
@@ -1216,6 +1274,22 @@ QtObject {
         function onCallStateChanged() {
             if (clientBridge && clientBridge.activeCallId.length === 0) {
                 clearIncomingCall()
+            }
+        }
+        function onAttachmentCacheReady(fileId, fileUrl, previewUrl, error) {
+            if (error && error.length > 0) {
+                return
+            }
+            applyAttachmentCache(fileId, fileUrl, previewUrl)
+        }
+        function onAttachmentDownloadProgress(fileId, savePath, progress) {
+            updateDownloadProgress(fileId, progress)
+        }
+        function onAttachmentDownloadFinished(fileId, savePath, ok, error) {
+            if (ok) {
+                updateDownloadProgress(fileId, 1)
+            } else {
+                updateDownloadProgress(fileId, 0)
             }
         }
     }

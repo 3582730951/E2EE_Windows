@@ -2,12 +2,17 @@
 #define MI_E2EE_CLIENT_UI_QUICK_CLIENT_H
 
 #include <QObject>
+#include <QHash>
+#include <QSet>
 #include <QString>
+#include <QStringList>
+#include <QThreadPool>
 #include <QTimer>
 #include <QVariant>
 #include <QVideoSink>
 #include <QMediaCaptureSession>
 #include <memory>
+#include <mutex>
 
 #include "client_core.h"
 #include "media_pipeline.h"
@@ -71,6 +76,11 @@ class QuickClient : public QObject {
                                                 const QString& fileKeyHex,
                                                 const QString& fileName,
                                                 qint64 fileSize);
+  Q_INVOKABLE bool requestAttachmentDownload(const QString& fileId,
+                                             const QString& fileKeyHex,
+                                             const QString& fileName,
+                                             qint64 fileSize,
+                                             const QString& savePath);
   Q_INVOKABLE QVariantList loadHistory(const QString& convId, bool isGroup);
   Q_INVOKABLE QVariantList listGroupMembersInfo(const QString& groupId);
   Q_INVOKABLE QVariantList stickerItems();
@@ -148,6 +158,17 @@ class QuickClient : public QObject {
   void status(const QString& message);
   void messageEvent(const QVariantMap& message);
   void callStateChanged();
+  void attachmentCacheReady(const QString& fileId,
+                            const QUrl& fileUrl,
+                            const QUrl& previewUrl,
+                            const QString& error);
+  void attachmentDownloadFinished(const QString& fileId,
+                                  const QString& savePath,
+                                  bool ok,
+                                  const QString& error);
+  void attachmentDownloadProgress(const QString& fileId,
+                                  const QString& savePath,
+                                  double progress);
 
  private:
   void StartPolling();
@@ -189,6 +210,24 @@ class QuickClient : public QObject {
   bool SelectCameraFormat();
   QMediaCaptureSession* EnsureCaptureSession();
   void* EnsureImeSession();
+  void QueueAttachmentCacheTask(const QString& fileId,
+                                const std::array<std::uint8_t, 32>& fileKey,
+                                const QString& fileName,
+                                qint64 fileSize,
+                                bool highPriority);
+  void QueueAttachmentRestoreTask(const QString& fileId,
+                                  const QString& fileName,
+                                  const QString& savePath,
+                                  bool highPriority);
+  void HandleCacheTaskFinished(const QString& fileId,
+                               const QUrl& fileUrl,
+                               const QUrl& previewUrl,
+                               const QString& error,
+                               bool ok);
+  void HandleRestoreTaskFinished(const QString& fileId,
+                                 const QString& savePath,
+                                 bool ok,
+                                 const QString& error);
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -240,6 +279,10 @@ class QuickClient : public QObject {
   QString active_call_id_;
   QString active_call_peer_;
   bool active_call_video_{false};
+  QThreadPool cache_pool_;
+  QSet<QString> cache_inflight_;
+  QHash<QString, QStringList> pending_downloads_;
+  QHash<QString, QString> pending_download_names_;
 };
 
 }  // namespace mi::client::ui
