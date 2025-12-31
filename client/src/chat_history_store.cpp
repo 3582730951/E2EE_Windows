@@ -51,9 +51,10 @@ namespace {
 
 constexpr std::uint8_t kContainerMagic[8] = {'M', 'I', 'H', 'D',
                                              'B', '0', '1', 0};
-constexpr std::uint8_t kContainerVersionV1 = 1;
+[[maybe_unused]] constexpr std::uint8_t kContainerVersionV1 = 1;
 constexpr std::uint8_t kContainerVersionV2 = 2;
-constexpr std::size_t kPeStubSize = 512;
+[[maybe_unused]] constexpr std::size_t kPeStubSize = 512;
+constexpr bool kEnableLegacyHistoryCompat = false;
 constexpr std::size_t kMaxConversationsPerFile = 3;
 constexpr std::uint64_t kMaxRecordsPerFile = 200000;
 constexpr std::size_t kSeqWidth = 6;
@@ -1402,7 +1403,7 @@ void WriteSectionHeader(std::vector<std::uint8_t>& buf,
   WriteLe32(buf, off + 36, characteristics);
 }
 
-void ShuffleSections(std::vector<std::array<char, 8>>& names,
+[[maybe_unused]] void ShuffleSections(std::vector<std::array<char, 8>>& names,
                      std::vector<std::uint32_t>& vsize,
                      std::vector<std::uint32_t>& vaddr,
                      std::vector<std::uint32_t>& raw_size,
@@ -1441,66 +1442,40 @@ std::array<char, 8> PickSectionName(
   return options[static_cast<std::size_t>(r % options.size())];
 }
 
-std::vector<std::uint8_t> BuildPeContainer(std::uint32_t& out_hist_offset) {
-  out_hist_offset = 0xC00;
-  std::vector<std::uint8_t> buf(out_hist_offset, 0);
-  buf[0] = 'M';
-  buf[1] = 'Z';
-  WriteLe32(buf, 0x3C, 0x80);
-  buf[0x80] = 'P';
-  buf[0x81] = 'E';
-  buf[0x82] = 0;
-  buf[0x83] = 0;
-  WriteLe16(buf, 0x84, 0x14c);
-  WriteLe16(buf, 0x86, 6);
-  std::uint32_t ts = 0;
-  RandomUint32(ts);
-  WriteLe32(buf, 0x88, ts);
-  WriteLe32(buf, 0x8C, 0);
-  WriteLe32(buf, 0x90, 0);
-  WriteLe16(buf, 0x94, 0xE0);
-  WriteLe16(buf, 0x96, 0x2102);
-  WriteLe16(buf, 0x98, 0x10B);
-  buf[0x9A] = 0;
-  buf[0x9B] = 0;
-  WriteLe32(buf, 0x9C, 0x200);
-  WriteLe32(buf, 0xA0, 0xA00);
-  WriteLe32(buf, 0xA4, 0);
-  WriteLe32(buf, 0xA8, 0x1000);
-  WriteLe32(buf, 0xAC, 0x1000);
-  WriteLe32(buf, 0xB0, 0x2000);
-  std::uint32_t image_base = 0x400000;
-  std::uint32_t base_rand = 0;
-  if (RandomUint32(base_rand)) {
-    image_base += (base_rand & 0xFFu) * 0x10000u;
+std::uint32_t AlignUp(std::uint32_t value, std::uint32_t alignment) {
+  if (alignment == 0) {
+    return value;
   }
-  WriteLe32(buf, 0xB4, image_base);
-  WriteLe32(buf, 0xB8, 0x1000);
-  WriteLe32(buf, 0xBC, 0x200);
-  WriteLe16(buf, 0xC0, 6);
-  WriteLe16(buf, 0xC2, 0);
-  WriteLe16(buf, 0xC4, 0);
-  WriteLe16(buf, 0xC6, 0);
-  WriteLe16(buf, 0xC8, 6);
-  WriteLe16(buf, 0xCA, 0);
-  WriteLe32(buf, 0xCC, 0);
-  WriteLe32(buf, 0xD0, 0x7000);
-  WriteLe32(buf, 0xD4, 0x200);
-  WriteLe32(buf, 0xD8, 0);
-  WriteLe16(buf, 0xDC, 2);
-  WriteLe16(buf, 0xDE, 0x0140);
-  WriteLe32(buf, 0xE0, 0x100000);
-  WriteLe32(buf, 0xE4, 0x1000);
-  WriteLe32(buf, 0xE8, 0x100000);
-  WriteLe32(buf, 0xEC, 0x1000);
-  WriteLe32(buf, 0xF0, 0);
-  WriteLe32(buf, 0xF4, 16);
-  WriteLe32(buf, 0x100, 0x2000);
-  WriteLe32(buf, 0x104, 0x28);
-  WriteLe32(buf, 0x108, 0x4000);
-  WriteLe32(buf, 0x10C, 0x20);
-  WriteLe32(buf, 0x120, 0x5000);
-  WriteLe32(buf, 0x124, 0x10);
+  const std::uint32_t mask = alignment - 1;
+  return (value + mask) & ~mask;
+}
+
+bool IsPowerOfTwo(std::uint32_t value) {
+  return value != 0 && (value & (value - 1)) == 0;
+}
+
+std::vector<std::uint8_t> BuildPeContainer(std::uint32_t& out_hist_offset) {
+  struct PeSection {
+    std::array<char, 8> name{};
+    std::uint32_t vsize{0};
+    std::uint32_t vaddr{0};
+    std::uint32_t raw_size{0};
+    std::uint32_t raw_ptr{0};
+    std::uint32_t characteristics{0};
+    bool is_text{false};
+    bool is_data{false};
+  };
+
+  constexpr std::uint32_t kFileAlignment = 0x200;
+  constexpr std::uint32_t kSectionAlignment = 0x1000;
+  constexpr std::uint32_t kPeOffset = 0x80;
+  constexpr std::uint16_t kSectionCount = 6;
+  constexpr std::uint16_t kOptSize = 0xE0;
+  constexpr std::uint32_t kRawSize = 0x200;
+
+  const std::uint32_t header_size =
+      AlignUp(kPeOffset + 4 + 20 + kOptSize + kSectionCount * 40,
+              kFileAlignment);
 
   const std::vector<std::array<char, 8>> text_names = {
       {'.', 't', 'e', 'x', 't', 0, 0, 0},
@@ -1523,73 +1498,145 @@ std::vector<std::uint8_t> BuildPeContainer(std::uint32_t& out_hist_offset) {
       {'.', 'r', 'e', 'l', 'o', 'c', 0, 0},
       {'.', 'r', 'e', 'l', '1', 0, 0, 0},
   };
-  std::vector<std::array<char, 8>> names = {
-      PickSectionName(text_names),
-      PickSectionName(rdata_names),
-      PickSectionName(data_names),
-      PickSectionName(rsrc_names),
-      PickSectionName(reloc_names),
+
+  std::vector<PeSection> sections;
+  sections.reserve(5);
+  std::uint32_t raw_ptr = header_size;
+  sections.push_back(
+      {PickSectionName(text_names), kRawSize, 0x1000, kRawSize, raw_ptr,
+       0x60000020, true, false});
+  raw_ptr += kRawSize;
+  sections.push_back(
+      {PickSectionName(rdata_names), kRawSize, 0x2000, kRawSize, raw_ptr,
+       0x40000040, false, false});
+  raw_ptr += kRawSize;
+  sections.push_back(
+      {PickSectionName(data_names), kRawSize, 0x3000, kRawSize, raw_ptr,
+       0xC0000040, false, true});
+  raw_ptr += kRawSize;
+  sections.push_back(
+      {PickSectionName(rsrc_names), kRawSize, 0x4000, kRawSize, raw_ptr,
+       0x40000040, false, false});
+  raw_ptr += kRawSize;
+  sections.push_back(
+      {PickSectionName(reloc_names), kRawSize, 0x5000, kRawSize, raw_ptr,
+       0x42000040, false, false});
+  raw_ptr += kRawSize;
+
+  PeSection hist_section{
+      {'.', 'h', 'i', 's', 't', 0, 0, 0},
+      kRawSize,
+      0x6000,
+      kRawSize,
+      raw_ptr,
+      0x40000040,
+      false,
+      false,
   };
-  std::vector<std::uint32_t> vsize = {0x200, 0x200, 0x200, 0x200, 0x200};
-  std::vector<std::uint32_t> vaddr = {0x1000, 0x2000, 0x3000, 0x4000, 0x5000};
-  std::vector<std::uint32_t> raw_size = {0x200, 0x200, 0x200, 0x200, 0x200};
-  std::vector<std::uint32_t> raw_ptr = {0x200, 0x400, 0x600, 0x800, 0xA00};
-  std::vector<std::uint32_t> chars = {0x60000020, 0x40000040, 0xC0000040,
-                                      0x40000040, 0x42000040};
-  ShuffleSections(names, vsize, vaddr, raw_size, raw_ptr, chars);
-  names.push_back({'.', 'h', 'i', 's', 't', 0, 0, 0});
-  vsize.push_back(0x200);
-  vaddr.push_back(0x6000);
-  raw_size.push_back(0x200);
-  raw_ptr.push_back(0xC00);
-  chars.push_back(0x40000040);
-  std::size_t sec = 0x178;
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    WriteSectionHeader(buf, sec, names[i].data(), vsize[i], vaddr[i],
-                       raw_size[i], raw_ptr[i], chars[i]);
-    sec += 40;
+
+  out_hist_offset = hist_section.raw_ptr;
+  std::vector<std::uint8_t> buf(out_hist_offset, 0);
+
+  buf[0] = 'M';
+  buf[1] = 'Z';
+  WriteLe32(buf, 0x3C, kPeOffset);
+  buf[kPeOffset] = 'P';
+  buf[kPeOffset + 1] = 'E';
+  buf[kPeOffset + 2] = 0;
+  buf[kPeOffset + 3] = 0;
+
+  const std::size_t coff_off = kPeOffset + 4;
+  WriteLe16(buf, coff_off + 0, 0x14c);
+  WriteLe16(buf, coff_off + 2, kSectionCount);
+  std::uint32_t ts = 0;
+  RandomUint32(ts);
+  WriteLe32(buf, coff_off + 4, ts);
+  WriteLe32(buf, coff_off + 8, 0);
+  WriteLe32(buf, coff_off + 12, 0);
+  WriteLe16(buf, coff_off + 16, kOptSize);
+  WriteLe16(buf, coff_off + 18, 0x2102);
+
+  std::uint32_t image_base = 0x400000;
+  std::uint32_t base_rand = 0;
+  if (RandomUint32(base_rand)) {
+    image_base += (base_rand & 0xFFu) * 0x10000u;
   }
 
-  FillVmText(buf, 0x200, 0x200);
-  FillRandomBytes(buf, 0x400, 0x200);
-  FillRandomBytes(buf, 0x600, 0x200);
-  FillRandomBytes(buf, 0x800, 0x200);
-  FillRandomBytes(buf, 0xA00, 0x200);
-
-  const std::uint32_t rdata_off = 0x400;
-  const std::uint32_t rdata_rva = 0x2000;
-  WriteLe32(buf, rdata_off + 12, rdata_rva + 0x20);
-  WriteLe32(buf, rdata_off + 16, rdata_rva + 0x30);
-  for (std::size_t i = 0; i < 20; ++i) {
-    buf[rdata_off + 0x14 + i] = 0;
+  std::uint32_t base_of_code = 0x1000;
+  std::uint32_t base_of_data = 0x3000;
+  std::uint32_t size_of_code = 0;
+  std::uint32_t size_of_init_data = 0;
+  std::uint32_t size_of_image = 0;
+  for (const auto& sec : sections) {
+    if (sec.is_text) {
+      base_of_code = sec.vaddr;
+      size_of_code += sec.raw_size;
+    } else {
+      size_of_init_data += sec.raw_size;
+    }
+    if (sec.is_data) {
+      base_of_data = sec.vaddr;
+    }
+    size_of_image = std::max(
+        size_of_image,
+        AlignUp(sec.vaddr + sec.vsize, kSectionAlignment));
   }
-  for (std::size_t i = 0; i < 8; ++i) {
-    buf[rdata_off + 0x30 + i] = 0;
-  }
-  const char k32[] = "KERNEL32.dll";
-  std::memcpy(buf.data() + rdata_off + 0x20, k32, sizeof(k32));
+  size_of_init_data += hist_section.raw_size;
+  size_of_image =
+      std::max(size_of_image,
+               AlignUp(hist_section.vaddr + hist_section.vsize,
+                       kSectionAlignment));
 
-  const std::uint32_t debug_dir_rva = rdata_rva + 0x80;
-  const std::uint32_t debug_dir_raw = rdata_off + 0x80;
-  WriteLe32(buf, 0x128, debug_dir_rva);
-  WriteLe32(buf, 0x12C, 0x38);
-  WriteLe32(buf, debug_dir_raw + 4, ts);
-  WriteLe16(buf, debug_dir_raw + 8, 1);
-  WriteLe16(buf, debug_dir_raw + 10, 0);
-  WriteLe32(buf, debug_dir_raw + 12, 2);
-  WriteLe32(buf, debug_dir_raw + 16, 0x20);
-  WriteLe32(buf, debug_dir_raw + 20, debug_dir_rva + 0x1C);
-  WriteLe32(buf, debug_dir_raw + 24, debug_dir_raw + 0x1C);
-  FillRandomBytes(buf, debug_dir_raw + 0x1C, 0x20);
-  const std::uint32_t debug2 = debug_dir_raw + 0x1C;
-  WriteLe32(buf, debug2 + 4, ts ^ 0x5A5A5A5A);
-  WriteLe16(buf, debug2 + 8, 1);
-  WriteLe16(buf, debug2 + 10, 0);
-  WriteLe32(buf, debug2 + 12, 2);
-  WriteLe32(buf, debug2 + 16, 0x20);
-  WriteLe32(buf, debug2 + 20, debug_dir_rva + 0x38);
-  WriteLe32(buf, debug2 + 24, debug_dir_raw + 0x38);
-  FillRandomBytes(buf, debug_dir_raw + 0x38, 0x20);
+  const std::size_t opt_off = coff_off + 20;
+  WriteLe16(buf, opt_off + 0, 0x10B);
+  buf[opt_off + 2] = 0;
+  buf[opt_off + 3] = 0;
+  WriteLe32(buf, opt_off + 4, size_of_code);
+  WriteLe32(buf, opt_off + 8, size_of_init_data);
+  WriteLe32(buf, opt_off + 12, 0);
+  WriteLe32(buf, opt_off + 16, base_of_code);
+  WriteLe32(buf, opt_off + 20, base_of_code);
+  WriteLe32(buf, opt_off + 24, base_of_data);
+  WriteLe32(buf, opt_off + 28, image_base);
+  WriteLe32(buf, opt_off + 32, kSectionAlignment);
+  WriteLe32(buf, opt_off + 36, kFileAlignment);
+  WriteLe16(buf, opt_off + 40, 6);
+  WriteLe16(buf, opt_off + 42, 0);
+  WriteLe16(buf, opt_off + 44, 0);
+  WriteLe16(buf, opt_off + 46, 0);
+  WriteLe16(buf, opt_off + 48, 6);
+  WriteLe16(buf, opt_off + 50, 0);
+  WriteLe32(buf, opt_off + 52, 0);
+  WriteLe32(buf, opt_off + 56, size_of_image);
+  WriteLe32(buf, opt_off + 60, header_size);
+  WriteLe32(buf, opt_off + 64, 0);
+  WriteLe16(buf, opt_off + 68, 2);
+  WriteLe16(buf, opt_off + 70, 0x0140);
+  WriteLe32(buf, opt_off + 72, 0x100000);
+  WriteLe32(buf, opt_off + 76, 0x1000);
+  WriteLe32(buf, opt_off + 80, 0x100000);
+  WriteLe32(buf, opt_off + 84, 0x1000);
+  WriteLe32(buf, opt_off + 88, 0);
+  WriteLe32(buf, opt_off + 92, 16);
+
+  std::size_t sec_off = opt_off + kOptSize;
+  for (const auto& sec : sections) {
+    WriteSectionHeader(buf, sec_off, sec.name.data(), sec.vsize, sec.vaddr,
+                       sec.raw_size, sec.raw_ptr, sec.characteristics);
+    sec_off += 40;
+  }
+  WriteSectionHeader(buf, sec_off, hist_section.name.data(),
+                     hist_section.vsize, hist_section.vaddr,
+                     hist_section.raw_size, hist_section.raw_ptr,
+                     hist_section.characteristics);
+
+  for (const auto& sec : sections) {
+    if (sec.is_text) {
+      FillVmText(buf, sec.raw_ptr, sec.raw_size);
+    } else {
+      FillRandomBytes(buf, sec.raw_ptr, sec.raw_size);
+    }
+  }
   return buf;
 }
 
@@ -1651,6 +1698,18 @@ bool LocateContainerOffset(std::ifstream& in,
     return false;
   }
   in.clear();
+  in.seekg(0, std::ios::end);
+  const std::streampos end_pos = in.tellg();
+  if (end_pos <= 0) {
+    error = "history pe invalid";
+    return false;
+  }
+  const std::size_t file_size = static_cast<std::size_t>(end_pos);
+  if (file_size < 0x100) {
+    error = "history pe invalid";
+    return false;
+  }
+
   in.seekg(0, std::ios::beg);
   std::array<std::uint8_t, 64> dos{};
   if (!ReadExact(in, dos.data(), dos.size())) {
@@ -1658,7 +1717,7 @@ bool LocateContainerOffset(std::ifstream& in,
     return false;
   }
   if (dos[0] != 'M' || dos[1] != 'Z') {
-    error = "history magic mismatch";
+    error = "history pe invalid";
     return false;
   }
   const std::uint32_t pe_off =
@@ -1666,58 +1725,164 @@ bool LocateContainerOffset(std::ifstream& in,
       (static_cast<std::uint32_t>(dos[0x3D]) << 8) |
       (static_cast<std::uint32_t>(dos[0x3E]) << 16) |
       (static_cast<std::uint32_t>(dos[0x3F]) << 24);
-  if (pe_off < 0x40 || pe_off > 0x100000) {
-    out_offset = static_cast<std::uint32_t>(kPeStubSize);
-    return true;
+  if (pe_off < 0x40 || pe_off > file_size - (4 + 20)) {
+    error = "history pe invalid";
+    return false;
   }
   in.seekg(pe_off, std::ios::beg);
   std::uint8_t sig[4]{};
   if (!ReadExact(in, sig, sizeof(sig)) ||
       sig[0] != 'P' || sig[1] != 'E' || sig[2] != 0 || sig[3] != 0) {
-    out_offset = static_cast<std::uint32_t>(kPeStubSize);
-    return true;
+    error = "history pe invalid";
+    return false;
   }
   std::uint8_t coff[20]{};
   if (!ReadExact(in, coff, sizeof(coff))) {
-    out_offset = static_cast<std::uint32_t>(kPeStubSize);
-    return true;
+    error = "history pe invalid";
+    return false;
   }
   const std::uint16_t section_count =
       static_cast<std::uint16_t>(coff[2] | (coff[3] << 8));
   const std::uint16_t opt_size =
       static_cast<std::uint16_t>(coff[16] | (coff[17] << 8));
   if (section_count == 0 || section_count > 96) {
-    out_offset = static_cast<std::uint32_t>(kPeStubSize);
-    return true;
+    error = "history pe invalid";
+    return false;
   }
-  if (opt_size > 0) {
-    in.seekg(opt_size, std::ios::cur);
+  if (opt_size < 0xE0 || opt_size > 0x1000) {
+    error = "history pe invalid";
+    return false;
   }
-  if (!in.good()) {
-    out_offset = static_cast<std::uint32_t>(kPeStubSize);
-    return true;
+  const std::size_t sections_end =
+      static_cast<std::size_t>(pe_off) + 4 + 20 + opt_size +
+      static_cast<std::size_t>(section_count) * 40;
+  if (sections_end > file_size) {
+    error = "history pe invalid";
+    return false;
   }
+  std::vector<std::uint8_t> opt(opt_size);
+  if (!ReadExact(in, opt.data(), opt.size())) {
+    error = "history pe invalid";
+    return false;
+  }
+  const auto read16 = [&](std::size_t off) -> std::uint16_t {
+    if (off + 1 >= opt.size()) {
+      return 0;
+    }
+    return static_cast<std::uint16_t>(opt[off] | (opt[off + 1] << 8));
+  };
+  const auto read32 = [&](std::size_t off) -> std::uint32_t {
+    if (off + 3 >= opt.size()) {
+      return 0;
+    }
+    return static_cast<std::uint32_t>(opt[off]) |
+           (static_cast<std::uint32_t>(opt[off + 1]) << 8) |
+           (static_cast<std::uint32_t>(opt[off + 2]) << 16) |
+           (static_cast<std::uint32_t>(opt[off + 3]) << 24);
+  };
+  const std::uint16_t magic = read16(0);
+  if (magic != 0x10B) {
+    error = "history pe invalid";
+    return false;
+  }
+  const std::uint32_t section_align = read32(0x20);
+  const std::uint32_t file_align = read32(0x24);
+  const std::uint32_t size_of_image = read32(0x38);
+  const std::uint32_t size_of_headers = read32(0x3C);
+  if (!IsPowerOfTwo(section_align) || !IsPowerOfTwo(file_align) ||
+      file_align < 0x200 || section_align < file_align) {
+    error = "history pe invalid";
+    return false;
+  }
+  if (size_of_image == 0 || (size_of_image % section_align) != 0) {
+    error = "history pe invalid";
+    return false;
+  }
+  if (size_of_headers == 0 ||
+      (size_of_headers % file_align) != 0 ||
+      size_of_headers > file_size) {
+    error = "history pe invalid";
+    return false;
+  }
+  const std::uint32_t min_headers =
+      AlignUp(static_cast<std::uint32_t>(sections_end), file_align);
+  if (size_of_headers < min_headers) {
+    error = "history pe invalid";
+    return false;
+  }
+
+  bool found_hist = false;
+  std::uint32_t hist_ptr = 0;
+  std::uint32_t hist_size = 0;
+  std::uint32_t max_end = 0;
   for (std::uint16_t i = 0; i < section_count; ++i) {
     std::uint8_t sec[40]{};
     if (!ReadExact(in, sec, sizeof(sec))) {
-      break;
+      error = "history pe invalid";
+      return false;
+    }
+    const std::uint32_t vsize =
+        static_cast<std::uint32_t>(sec[8]) |
+        (static_cast<std::uint32_t>(sec[9]) << 8) |
+        (static_cast<std::uint32_t>(sec[10]) << 16) |
+        (static_cast<std::uint32_t>(sec[11]) << 24);
+    const std::uint32_t vaddr =
+        static_cast<std::uint32_t>(sec[12]) |
+        (static_cast<std::uint32_t>(sec[13]) << 8) |
+        (static_cast<std::uint32_t>(sec[14]) << 16) |
+        (static_cast<std::uint32_t>(sec[15]) << 24);
+    const std::uint32_t raw_size =
+        static_cast<std::uint32_t>(sec[16]) |
+        (static_cast<std::uint32_t>(sec[17]) << 8) |
+        (static_cast<std::uint32_t>(sec[18]) << 16) |
+        (static_cast<std::uint32_t>(sec[19]) << 24);
+    const std::uint32_t raw_ptr =
+        static_cast<std::uint32_t>(sec[20]) |
+        (static_cast<std::uint32_t>(sec[21]) << 8) |
+        (static_cast<std::uint32_t>(sec[22]) << 16) |
+        (static_cast<std::uint32_t>(sec[23]) << 24);
+    if (raw_size == 0) {
+      if (raw_ptr != 0) {
+        error = "history pe invalid";
+        return false;
+      }
+    } else {
+      if ((raw_ptr % file_align) != 0 ||
+          (raw_size % file_align) != 0 ||
+          raw_ptr < size_of_headers ||
+          raw_ptr > file_size ||
+          raw_ptr + raw_size > file_size) {
+        error = "history pe invalid";
+        return false;
+      }
+    }
+    if ((vaddr % section_align) != 0) {
+      error = "history pe invalid";
+      return false;
+    }
+    const std::uint32_t end =
+        vaddr + std::max<std::uint32_t>(vsize, raw_size);
+    if (end > max_end) {
+      max_end = end;
     }
     const bool is_hist =
         sec[0] == '.' && sec[1] == 'h' && sec[2] == 'i' && sec[3] == 's' &&
         sec[4] == 't';
     if (is_hist) {
-      const std::uint32_t raw_ptr =
-          static_cast<std::uint32_t>(sec[20]) |
-          (static_cast<std::uint32_t>(sec[21]) << 8) |
-          (static_cast<std::uint32_t>(sec[22]) << 16) |
-          (static_cast<std::uint32_t>(sec[23]) << 24);
-      if (raw_ptr != 0) {
-        out_offset = raw_ptr;
-        return true;
-      }
+      found_hist = true;
+      hist_ptr = raw_ptr;
+      hist_size = raw_size;
     }
   }
-  out_offset = static_cast<std::uint32_t>(kPeStubSize);
+  if (AlignUp(max_end, section_align) > size_of_image) {
+    error = "history pe invalid";
+    return false;
+  }
+  if (!found_hist || hist_ptr == 0 || hist_size == 0) {
+    error = "history pe missing hist";
+    return false;
+  }
+  out_offset = hist_ptr;
   return true;
 }
 
@@ -3819,6 +3984,10 @@ bool ChatHistoryStore::Init(const std::filesystem::path& e2ee_state_dir,
   if (legacy_tag_alt_ == user_tag_ || legacy_tag_alt_ == legacy_tag_) {
     legacy_tag_alt_.clear();
   }
+  if (!kEnableLegacyHistoryCompat) {
+    legacy_tag_.clear();
+    legacy_tag_alt_.clear();
+  }
 
   user_dir_ = history_root / ("profile_" + user_tag_);
   key_path_ = user_dir_ / "history_key.bin";
@@ -4722,8 +4891,7 @@ bool ChatHistoryStore::LoadHistoryIndex(std::string& error) {
     if (!ReadContainerHeader(fin, real_ver, hdr_err)) {
       return false;
     }
-    if (real_ver != kContainerVersionV1 &&
-        real_ver != kContainerVersionV2) {
+    if (real_ver != kContainerVersionV2) {
       return false;
     }
     entry.version = real_ver;
@@ -5006,7 +5174,7 @@ bool ChatHistoryStore::ScanFileForConversations(HistoryFileEntry& entry,
   if (!ReadContainerHeader(in, version, hdr_err)) {
     return false;
   }
-  if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+  if (version != kContainerVersionV2) {
     return false;
   }
   entry.version = version;
@@ -5066,7 +5234,7 @@ bool ChatHistoryStore::ScanFileForConvStats(HistoryFileEntry& entry,
   if (!ReadContainerHeader(in, version, hdr_err)) {
     return false;
   }
-  if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+  if (version != kContainerVersionV2) {
     return false;
   }
   entry.version = version;
@@ -6195,7 +6363,7 @@ bool ChatHistoryStore::LoadHistoryFiles(std::string& error) {
         if (!ReadContainerHeader(in, version, hdr_err)) {
           continue;
         }
-        if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+        if (version != kContainerVersionV2) {
           continue;
         }
         file.version = version;
@@ -7188,7 +7356,7 @@ bool ChatHistoryStore::DeleteConversation(bool is_group,
       error = "history read failed";
       return false;
     }
-    if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+    if (version != kContainerVersionV2) {
       error = "history read failed";
       return false;
     }
@@ -7548,7 +7716,7 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
   }
 
   if (!EnsureConversationMapped(is_group, conv_id, error)) {
-    return LoadLegacyConversation(is_group, conv_id, limit, out_messages, error);
+    return true;
   }
   const std::string conv_key_id = MakeConvKey(is_group, conv_id);
   auto it = conv_to_file_.find(conv_key_id);
@@ -7583,7 +7751,7 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     return false;
   }
   (void)ConsumeMih3Header(in, master_key_, nullptr);
-  if (version != kContainerVersionV1 && version != kContainerVersionV2) {
+  if (version != kContainerVersionV2) {
     error = "history version mismatch";
     return false;
   }

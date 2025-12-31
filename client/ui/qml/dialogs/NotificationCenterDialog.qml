@@ -164,7 +164,7 @@ ApplicationWindow {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: Ui.Style.radiusMedium
-                                    color: mouseArea.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
+                                    color: requestHover.hovered ? Ui.Style.dialogHoverBg : "transparent"
                                 }
                                 RowLayout {
                                     anchors.fill: parent
@@ -216,11 +216,9 @@ ApplicationWindow {
                                         onClicked: Ui.AppStore.respondFriendRequest(username, true)
                                     }
                                 }
-                                MouseArea {
-                                    id: mouseArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.NoButton
+                                HoverHandler {
+                                    id: requestHover
+                                    acceptedDevices: PointerDevice.Mouse
                                 }
                             }
                         }
@@ -266,7 +264,7 @@ ApplicationWindow {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: Ui.Style.radiusMedium
-                                    color: inviteMouse.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
+                                    color: inviteHover.hovered ? Ui.Style.dialogHoverBg : "transparent"
                                 }
                                 RowLayout {
                                     anchors.fill: parent
@@ -325,11 +323,9 @@ ApplicationWindow {
                                         onClicked: Ui.AppStore.joinGroupInvite(key)
                                     }
                                 }
-                                MouseArea {
-                                    id: inviteMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.NoButton
+                                HoverHandler {
+                                    id: inviteHover
+                                    acceptedDevices: PointerDevice.Mouse
                                 }
                             }
                         }
@@ -375,7 +371,7 @@ ApplicationWindow {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: Ui.Style.radiusMedium
-                                    color: noticeMouse.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
+                                    color: noticeHover.hovered ? Ui.Style.dialogHoverBg : "transparent"
                                 }
                                 RowLayout {
                                     anchors.fill: parent
@@ -422,11 +418,9 @@ ApplicationWindow {
                                         onClicked: Ui.AppStore.dismissNotice(key)
                                     }
                                 }
-                                MouseArea {
-                                    id: noticeMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.NoButton
+                                HoverHandler {
+                                    id: noticeHover
+                                    acceptedDevices: PointerDevice.Mouse
                                 }
                             }
                         }

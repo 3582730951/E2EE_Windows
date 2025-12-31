@@ -73,6 +73,7 @@ Item {
             Components.SearchField {
                 id: searchField
                 Layout.fillWidth: true
+                Layout.minimumWidth: 120
                 placeholderText: Ui.I18n.t("left.search")
                 onTextEdited: Ui.AppStore.setSearchQuery(text)
             }
@@ -80,6 +81,11 @@ Item {
             Item {
                 Layout.preferredWidth: Ui.Style.iconButtonSize
                 Layout.preferredHeight: Ui.Style.iconButtonSize
+                Layout.minimumWidth: Ui.Style.iconButtonSize
+                Layout.minimumHeight: Ui.Style.iconButtonSize
+                Layout.maximumWidth: Ui.Style.iconButtonSize
+                Layout.maximumHeight: Ui.Style.iconButtonSize
+                clip: false
 
                 Components.IconButton {
                     id: notificationsButton
@@ -100,10 +106,10 @@ Item {
                     anchors.rightMargin: -2
                     anchors.topMargin: -2
                     radius: 8
-                    color: Ui.Style.unreadBadgeBg
+                    color: Ui.Style.danger
                     width: Math.max(16, badgeText.paintedWidth + 8)
                     height: 16
-                    z: 2
+                    z: 3
                     Text {
                         id: badgeText
                         anchors.centerIn: parent
