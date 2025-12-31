@@ -230,17 +230,50 @@ bool PrepareRimeData(const QString &sharedDir, const QString &userDir) {
     return true;
 }
 
-bool WritePrecompileOverrides(const QString &userDir) {
-    const QString path = QDir(userDir).filePath(QStringLiteral("default.custom.yaml"));
-    const QByteArray data =
-        "patch:\n"
-        "  schema_list:\n"
-        "    - schema: rime_ice\n";
-    QFile out(path);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+bool PatchDefaultSchemaList(const QString &sharedDir) {
+    const QString path = QDir(sharedDir).filePath(QStringLiteral("default.yaml"));
+    QFile in(path);
+    if (!in.open(QIODevice::ReadOnly)) {
         return false;
     }
-    if (out.write(data) != data.size()) {
+    const QByteArray data = in.readAll();
+    if (data.isEmpty()) {
+        return false;
+    }
+    const QList<QByteArray> lines = data.split('\n');
+    QByteArray out;
+    bool skipping = false;
+    bool replaced = false;
+    for (const auto &line : lines) {
+        if (!skipping) {
+            if (line.startsWith("schema_list:")) {
+                out.append("schema_list:\n  - schema: rime_ice\n");
+                skipping = true;
+                replaced = true;
+            } else {
+                out.append(line);
+                out.append('\n');
+            }
+            continue;
+        }
+        if (line.isEmpty()) {
+            continue;
+        }
+        if (line.startsWith(' ') || line.startsWith('\t')) {
+            continue;
+        }
+        out.append(line);
+        out.append('\n');
+        skipping = false;
+    }
+    if (!replaced) {
+        return false;
+    }
+    QFile outFile(path);
+    if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    if (outFile.write(out) != out.size()) {
         return false;
     }
     return true;
@@ -321,8 +354,8 @@ int main(int argc, char *argv[]) {
         QTextStream(stderr) << "Failed to prepare rime data\n";
         return 3;
     }
-    if (!WritePrecompileOverrides(userDir)) {
-        QTextStream(stderr) << "Failed to write rime overrides\n";
+    if (!PatchDefaultSchemaList(sharedDir)) {
+        QTextStream(stderr) << "Failed to patch rime config\n";
         return 3;
     }
 
@@ -340,7 +373,6 @@ int main(int argc, char *argv[]) {
         QTextStream(stderr) << "Rime deploy failed\n";
         return 4;
     }
-    QFile::remove(QDir(userDir).filePath(QStringLiteral("default.custom.yaml")));
     if (!HasBinFiles(userDir)) {
         QTextStream(stderr) << "Rime deploy produced no .bin files\n";
         return 5;
