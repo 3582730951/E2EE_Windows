@@ -211,6 +211,22 @@ Item {
         }
         return Qt.inputMethod && Qt.inputMethod.visible
     }
+    function externalImeChineseMode() {
+        if (!Qt.inputMethod || !Qt.inputMethod.locale) {
+            return false
+        }
+        var name = (Qt.inputMethod.locale.name || "").toLowerCase()
+        return name.indexOf("zh") === 0 || name.indexOf("zh_") === 0 || name.indexOf("zh-") === 0
+    }
+    function imeStatusText() {
+        var source = internalImeReady
+                     ? Ui.I18n.t("ime.source.custom")
+                     : Ui.I18n.t("ime.source.thirdParty")
+        var lang = internalImeReady
+                   ? (imeChineseMode ? Ui.I18n.t("ime.lang.zh") : Ui.I18n.t("ime.lang.en"))
+                   : (externalImeChineseMode() ? Ui.I18n.t("ime.lang.zh") : Ui.I18n.t("ime.lang.en"))
+        return Ui.I18n.t("ime.status.label") + ":" + source + " :" + lang
+    }
     function resetImeState() {
         imeComposing = false
         imeShiftPressed = false
@@ -496,6 +512,19 @@ Item {
                         onClicked: chatMoreMenu.popup(chatMoreButton, 0, chatMoreButton.height + 4)
                     }
                 }
+            }
+
+            Text {
+                id: imeStatusLabel
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                text: imeStatusText()
+                color: Ui.Style.textSecondary
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                width: Math.min(parent.width * 0.4, 300)
+                horizontalAlignment: Text.AlignHCenter
+                visible: hasChat
             }
 
             Menu {
