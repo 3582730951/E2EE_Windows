@@ -1676,8 +1676,8 @@ Item {
             locationDialog.errorText = ""
             locationDialog.locationBusy = false
         }
-        onErrorChanged: {
-            if (error !== PositionSource.NoError) {
+        onSourceErrorChanged: {
+            if (sourceError !== PositionSource.NoError) {
                 locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
                 locationDialog.locationBusy = false
             }
