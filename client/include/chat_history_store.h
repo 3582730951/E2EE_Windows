@@ -133,6 +133,15 @@ class ChatHistoryStore {
     std::unordered_map<std::string, ChatHistoryConvStats> conv_stats;
     bool conv_stats_complete{false};
   };
+  static std::uint32_t EffectiveSeq(const HistoryFileEntry& entry);
+  static void UpdateEntryStats(HistoryFileEntry& entry,
+                               std::uint64_t ts,
+                               bool is_message);
+  static void UpdateConvStats(HistoryFileEntry& entry,
+                              const std::string& conv_key,
+                              std::uint64_t ts,
+                              bool is_message);
+  static void ValidateFileChain(std::vector<HistoryFileEntry>& files);
 
   bool EnsureKeyLoaded(std::string& error);
   bool EnsureTagKeyLoaded(std::string& error);

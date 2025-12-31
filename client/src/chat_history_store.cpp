@@ -19,6 +19,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -171,6 +174,18 @@ constexpr std::size_t kMih3HeaderBytes =
     sizeof(kMih3Magic) + 1 + 1 + 2 + kMih3NonceBytes + 4 + kMih3MacBytes +
     kMih3PlainBytes;
 constexpr std::uint8_t kMih3FlagTrailer = 0x01;
+
+bool ReadExact(std::ifstream& in, void* dst, std::size_t len);
+bool LocateContainerOffset(std::ifstream& in,
+                           std::uint32_t& out_offset,
+                           std::string& error);
+bool DecodeAesLayer(const std::array<std::uint8_t, 32>& conv_key,
+                    bool is_group,
+                    const std::string& conv_id,
+                    const std::vector<std::uint8_t>& input,
+                    std::vector<std::uint8_t>& out_plain,
+                    bool& out_used_aes,
+                    std::string& error);
 
 bool IsAllZero(const std::uint8_t* data, std::size_t len) {
   if (!data || len == 0) {
@@ -441,10 +456,6 @@ std::array<std::uint8_t, 32> ComputeFileChainHash(
   mi::server::crypto::Sha256Digest d;
   mi::server::crypto::Sha256(buf.data(), buf.size(), d);
   return d.bytes;
-}
-
-std::uint32_t EffectiveSeq(const ChatHistoryStore::HistoryFileEntry& entry) {
-  return entry.has_internal_seq ? entry.internal_seq : entry.seq;
 }
 
 struct Mih3Summary {
@@ -759,59 +770,6 @@ bool UpdateMih3HeaderOnDisk(const std::filesystem::path& path,
   }
   return true;
 }
-void UpdateEntryStats(ChatHistoryStore::HistoryFileEntry& entry,
-                      std::uint64_t ts,
-                      bool is_message) {
-  if (ts != 0) {
-    if (entry.min_ts == 0 || ts < entry.min_ts) {
-      entry.min_ts = ts;
-    }
-    if (ts > entry.max_ts) {
-      entry.max_ts = ts;
-    }
-  }
-  entry.record_count++;
-  if (is_message) {
-    entry.message_count++;
-  }
-}
-
-void ValidateFileChain(std::vector<ChatHistoryStore::HistoryFileEntry>& files) {
-  std::array<std::uint8_t, 32> prev_hash{};
-  std::array<std::uint8_t, 16> prev_uuid{};
-  std::uint32_t prev_seq = 0;
-  bool have_prev = false;
-  for (auto& entry : files) {
-    entry.chain_valid = true;
-    const bool have_uuid =
-        !IsAllZero(entry.file_uuid.data(), entry.file_uuid.size());
-    if (!have_uuid) {
-      entry.chain_valid = false;
-    }
-    if (!have_prev) {
-      if (entry.has_prev_hash &&
-          !IsAllZero(entry.prev_hash.data(), entry.prev_hash.size())) {
-        entry.chain_valid = false;
-      }
-    } else {
-      if (!entry.has_prev_hash) {
-        entry.chain_valid = false;
-      } else {
-        const auto expected =
-            ComputeFileChainHash(prev_uuid, prev_seq, prev_hash);
-        if (expected != entry.prev_hash) {
-          entry.chain_valid = false;
-        }
-      }
-    }
-    prev_uuid = entry.file_uuid;
-    prev_seq = EffectiveSeq(entry);
-    prev_hash = entry.has_prev_hash ? entry.prev_hash
-                                    : std::array<std::uint8_t, 32>{};
-    have_prev = true;
-  }
-}
-
 void BestEffortWipeFile(const std::filesystem::path& path) {
   if (path.empty()) {
     return;
@@ -847,32 +805,6 @@ void BestEffortWipeFile(const std::filesystem::path& path) {
   }
   std::filesystem::resize_file(path, 0, ec);
   std::filesystem::remove(path, ec);
-}
-
-void UpdateConvStats(ChatHistoryStore::HistoryFileEntry& entry,
-                     const std::string& conv_key,
-                     std::uint64_t ts,
-                     bool is_message) {
-  if (conv_key.empty()) {
-    return;
-  }
-  auto& stats = entry.conv_stats[conv_key];
-  if (ts != 0) {
-    if (stats.min_ts == 0 || ts < stats.min_ts) {
-      stats.min_ts = ts;
-    }
-    if (ts > stats.max_ts) {
-      stats.max_ts = ts;
-    }
-  }
-  stats.record_count++;
-  if (is_message) {
-    stats.message_count++;
-  }
-  if (!entry.conv_keys.empty() &&
-      entry.conv_stats.size() >= entry.conv_keys.size()) {
-    entry.conv_stats_complete = true;
-  }
 }
 
 bool ReadExact(std::ifstream& in, void* dst, std::size_t len) {
@@ -3709,6 +3641,89 @@ bool ReadLegacyRecord(std::ifstream& in,
 }
 
 }  // namespace
+
+std::uint32_t ChatHistoryStore::EffectiveSeq(const HistoryFileEntry& entry) {
+  return entry.has_internal_seq ? entry.internal_seq : entry.seq;
+}
+
+void ChatHistoryStore::UpdateEntryStats(HistoryFileEntry& entry,
+                                        std::uint64_t ts,
+                                        bool is_message) {
+  if (ts != 0) {
+    if (entry.min_ts == 0 || ts < entry.min_ts) {
+      entry.min_ts = ts;
+    }
+    if (ts > entry.max_ts) {
+      entry.max_ts = ts;
+    }
+  }
+  entry.record_count++;
+  if (is_message) {
+    entry.message_count++;
+  }
+}
+
+void ChatHistoryStore::UpdateConvStats(HistoryFileEntry& entry,
+                                       const std::string& conv_key,
+                                       std::uint64_t ts,
+                                       bool is_message) {
+  if (conv_key.empty()) {
+    return;
+  }
+  auto& stats = entry.conv_stats[conv_key];
+  if (ts != 0) {
+    if (stats.min_ts == 0 || ts < stats.min_ts) {
+      stats.min_ts = ts;
+    }
+    if (ts > stats.max_ts) {
+      stats.max_ts = ts;
+    }
+  }
+  stats.record_count++;
+  if (is_message) {
+    stats.message_count++;
+  }
+  if (!entry.conv_keys.empty() &&
+      entry.conv_stats.size() >= entry.conv_keys.size()) {
+    entry.conv_stats_complete = true;
+  }
+}
+
+void ChatHistoryStore::ValidateFileChain(std::vector<HistoryFileEntry>& files) {
+  std::array<std::uint8_t, 32> prev_hash{};
+  std::array<std::uint8_t, 16> prev_uuid{};
+  std::uint32_t prev_seq = 0;
+  bool have_prev = false;
+  for (auto& entry : files) {
+    entry.chain_valid = true;
+    const bool have_uuid =
+        !IsAllZero(entry.file_uuid.data(), entry.file_uuid.size());
+    if (!have_uuid) {
+      entry.chain_valid = false;
+    }
+    if (!have_prev) {
+      if (entry.has_prev_hash &&
+          !IsAllZero(entry.prev_hash.data(), entry.prev_hash.size())) {
+        entry.chain_valid = false;
+      }
+    } else {
+      if (!entry.has_prev_hash) {
+        entry.chain_valid = false;
+      } else {
+        const auto expected =
+            ComputeFileChainHash(prev_uuid, prev_seq, prev_hash);
+        if (expected != entry.prev_hash) {
+          entry.chain_valid = false;
+        }
+      }
+    }
+    prev_uuid = entry.file_uuid;
+    prev_seq = EffectiveSeq(entry);
+    prev_hash = entry.has_prev_hash ? entry.prev_hash
+                                    : std::array<std::uint8_t, 32>{};
+    have_prev = true;
+  }
+}
 
 ChatHistoryStore::ChatHistoryStore() = default;
 
