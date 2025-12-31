@@ -1982,6 +1982,133 @@ std::string FormatRichAsText(const RichDecoded& msg) {
   return out;
 }
 
+struct HistorySummaryDecoded {
+  ChatHistorySummaryKind kind{ChatHistorySummaryKind::kNone};
+  std::string text;
+  std::string file_id;
+  std::string file_name;
+  std::uint64_t file_size{0};
+  std::string sticker_id;
+  std::int32_t lat_e7{0};
+  std::int32_t lon_e7{0};
+  std::string location_label;
+  std::string card_username;
+  std::string card_display;
+  std::string group_id;
+};
+
+bool DecodeHistorySummary(const std::vector<std::uint8_t>& payload,
+                          HistorySummaryDecoded& out) {
+  out = HistorySummaryDecoded{};
+  const std::size_t header_len = kHistorySummaryMagic.size() + 2;
+  if (payload.size() < header_len) {
+    return false;
+  }
+  if (std::memcmp(payload.data(), kHistorySummaryMagic.data(),
+                  kHistorySummaryMagic.size()) != 0) {
+    return false;
+  }
+  std::size_t off = kHistorySummaryMagic.size();
+  const std::uint8_t version = payload[off++];
+  if (version != kHistorySummaryVersion) {
+    return false;
+  }
+  out.kind = static_cast<ChatHistorySummaryKind>(payload[off++]);
+
+  if (out.kind == ChatHistorySummaryKind::kText) {
+    return mi::server::proto::ReadString(payload, off, out.text) &&
+           off == payload.size();
+  }
+  if (out.kind == ChatHistorySummaryKind::kFile) {
+    return mi::server::proto::ReadUint64(payload, off, out.file_size) &&
+           mi::server::proto::ReadString(payload, off, out.file_name) &&
+           mi::server::proto::ReadString(payload, off, out.file_id) &&
+           off == payload.size();
+  }
+  if (out.kind == ChatHistorySummaryKind::kSticker) {
+    return mi::server::proto::ReadString(payload, off, out.sticker_id) &&
+           off == payload.size();
+  }
+  if (out.kind == ChatHistorySummaryKind::kLocation) {
+    std::uint32_t lat_u = 0;
+    std::uint32_t lon_u = 0;
+    if (!mi::server::proto::ReadUint32(payload, off, lat_u) ||
+        !mi::server::proto::ReadUint32(payload, off, lon_u) ||
+        !mi::server::proto::ReadString(payload, off, out.location_label) ||
+        off != payload.size()) {
+      return false;
+    }
+    out.lat_e7 = static_cast<std::int32_t>(lat_u);
+    out.lon_e7 = static_cast<std::int32_t>(lon_u);
+    return true;
+  }
+  if (out.kind == ChatHistorySummaryKind::kContactCard) {
+    return mi::server::proto::ReadString(payload, off, out.card_username) &&
+           mi::server::proto::ReadString(payload, off, out.card_display) &&
+           off == payload.size();
+  }
+  if (out.kind == ChatHistorySummaryKind::kGroupInvite) {
+    return mi::server::proto::ReadString(payload, off, out.group_id) &&
+           off == payload.size();
+  }
+  return false;
+}
+
+std::string FormatSummaryAsText(const HistorySummaryDecoded& summary) {
+  if (summary.kind == ChatHistorySummaryKind::kLocation ||
+      summary.kind == ChatHistorySummaryKind::kContactCard) {
+    RichDecoded rich;
+    rich.kind = (summary.kind == ChatHistorySummaryKind::kLocation)
+                    ? kRichKindLocation
+                    : kRichKindContactCard;
+    rich.location_label = summary.location_label;
+    rich.lat_e7 = summary.lat_e7;
+    rich.lon_e7 = summary.lon_e7;
+    rich.card_username = summary.card_username;
+    rich.card_display = summary.card_display;
+    return FormatRichAsText(rich);
+  }
+  if (summary.kind == ChatHistorySummaryKind::kGroupInvite) {
+    return summary.group_id.empty()
+               ? std::string("Group invite")
+               : (std::string("Group invite: ") + summary.group_id);
+  }
+  return summary.text;
+}
+
+bool ApplyHistorySummary(const std::vector<std::uint8_t>& summary,
+                         ClientCore::HistoryEntry& entry) {
+  HistorySummaryDecoded decoded;
+  if (!DecodeHistorySummary(summary, decoded)) {
+    return false;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kText) {
+    entry.kind = ClientCore::HistoryKind::kText;
+    entry.text_utf8 = std::move(decoded.text);
+    return true;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kFile) {
+    entry.kind = ClientCore::HistoryKind::kFile;
+    entry.file_id = std::move(decoded.file_id);
+    entry.file_name = std::move(decoded.file_name);
+    entry.file_size = decoded.file_size;
+    return true;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kSticker) {
+    entry.kind = ClientCore::HistoryKind::kSticker;
+    entry.sticker_id = std::move(decoded.sticker_id);
+    return true;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kLocation ||
+      decoded.kind == ChatHistorySummaryKind::kContactCard ||
+      decoded.kind == ChatHistorySummaryKind::kGroupInvite) {
+    entry.kind = ClientCore::HistoryKind::kText;
+    entry.text_utf8 = FormatSummaryAsText(decoded);
+    return true;
+  }
+  return false;
+}
+
 bool DecodeChatHeader(const std::vector<std::uint8_t>& payload,
                       std::uint8_t& out_type,
                       std::array<std::uint8_t, 16>& out_id,
@@ -7242,6 +7369,67 @@ void ClientCore::BestEffortPersistHistoryStatus(
   last_error_ = saved_err;
 }
 
+void ClientCore::BestEffortStoreAttachmentPreviewBytes(
+    const std::string& file_id,
+    const std::string& file_name,
+    std::uint64_t file_size,
+    const std::vector<std::uint8_t>& bytes) {
+  if (!history_store_ || file_id.empty() || bytes.empty()) {
+    return;
+  }
+  const std::string saved_err = last_error_;
+  const std::size_t max_bytes = 256u * 1024u;
+  const std::size_t take = std::min(bytes.size(), max_bytes);
+  if (take == 0) {
+    return;
+  }
+  std::vector<std::uint8_t> preview(bytes.begin(), bytes.begin() + take);
+  std::string hist_err;
+  (void)history_store_->StoreAttachmentPreview(file_id, file_name, file_size,
+                                               preview, hist_err);
+  crypto_wipe(preview.data(), preview.size());
+  last_error_ = saved_err;
+}
+
+void ClientCore::BestEffortStoreAttachmentPreviewFromPath(
+    const std::string& file_id,
+    const std::string& file_name,
+    std::uint64_t file_size,
+    const std::filesystem::path& path) {
+  if (!history_store_ || file_id.empty() || path.empty()) {
+    return;
+  }
+  const std::string saved_err = last_error_;
+  const std::size_t max_bytes = 256u * 1024u;
+  std::size_t want = max_bytes;
+  if (file_size > 0 &&
+      file_size <= static_cast<std::uint64_t>(
+                       (std::numeric_limits<std::size_t>::max)())) {
+    want = std::min<std::size_t>(max_bytes, static_cast<std::size_t>(file_size));
+  }
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    last_error_ = saved_err;
+    return;
+  }
+  std::vector<std::uint8_t> preview;
+  preview.resize(want);
+  ifs.read(reinterpret_cast<char*>(preview.data()),
+           static_cast<std::streamsize>(preview.size()));
+  const std::streamsize got = ifs.gcount();
+  if (got <= 0) {
+    crypto_wipe(preview.data(), preview.size());
+    last_error_ = saved_err;
+    return;
+  }
+  preview.resize(static_cast<std::size_t>(got));
+  std::string hist_err;
+  (void)history_store_->StoreAttachmentPreview(file_id, file_name, file_size,
+                                               preview, hist_err);
+  crypto_wipe(preview.data(), preview.size());
+  last_error_ = saved_err;
+}
+
 void ClientCore::WarmupHistoryOnStartup() {
   if (!history_store_) {
     return;
@@ -10007,6 +10195,28 @@ bool ClientCore::DeleteFriend(const std::string& friend_username) {
     last_error_ = server_err.empty() ? "friend delete failed" : server_err;
     return false;
   }
+  return true;
+}
+
+bool ClientCore::DeleteChatHistory(const std::string& conv_id,
+                                   bool is_group,
+                                   bool delete_attachments,
+                                   bool secure_wipe) {
+  last_error_.clear();
+  if (!history_store_) {
+    return true;
+  }
+  if (conv_id.empty()) {
+    last_error_ = "conv id empty";
+    return false;
+  }
+  std::string err;
+  if (!history_store_->DeleteConversation(is_group, conv_id, delete_attachments,
+                                          secure_wipe, err)) {
+    last_error_ = err.empty() ? "history delete failed" : err;
+    return false;
+  }
+  last_error_.clear();
   return true;
 }
 
@@ -13142,8 +13352,14 @@ bool ClientCore::DownloadChatFileToPath(const ChatFileMessage& file,
   }
 
   if (file.file_size > (8u * 1024u * 1024u)) {
-    return DownloadE2eeFileBlobV3ToPath(file.file_id, file.file_key, out_path,
-                                        wipe_after_read);
+    const bool ok =
+        DownloadE2eeFileBlobV3ToPath(file.file_id, file.file_key, out_path,
+                                     wipe_after_read);
+    if (ok) {
+      BestEffortStoreAttachmentPreviewFromPath(file.file_id, file.file_name,
+                                               file.file_size, out_path);
+    }
+    return ok;
   }
 
   std::vector<std::uint8_t> blob;
@@ -13156,6 +13372,8 @@ bool ClientCore::DownloadChatFileToPath(const ChatFileMessage& file,
     last_error_ = "file decrypt failed";
     return false;
   }
+  BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
+                                        file.file_size, plaintext);
 
   std::error_code ec;
   const auto parent =
@@ -13204,6 +13422,8 @@ bool ClientCore::DownloadChatFileToBytes(const ChatFileMessage& file,
   }
 
   out_bytes = std::move(plaintext);
+  BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
+                                        file.file_size, out_bytes);
   return true;
 }
 
@@ -13243,10 +13463,19 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       continue;
     }
 
+    const auto trySummary = [&]() -> bool {
+      if (ApplyHistorySummary(m.summary, e)) {
+        out.push_back(std::move(e));
+        return true;
+      }
+      return false;
+    };
+
     std::uint8_t type = 0;
     std::array<std::uint8_t, 16> msg_id{};
     std::size_t off = 0;
     if (!DecodeChatHeader(m.envelope, type, msg_id, off)) {
+      (void)trySummary();
       continue;
     }
     e.message_id_hex = BytesToHexLower(msg_id.data(), msg_id.size());
@@ -13255,6 +13484,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       std::string text;
       if (!mi::server::proto::ReadString(m.envelope, off, text) ||
           off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kText;
@@ -13266,6 +13496,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
     if (type == kChatTypeRich) {
       RichDecoded rich;
       if (!DecodeChatRich(m.envelope, off, rich) || off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kText;
@@ -13282,6 +13513,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       if (!DecodeChatFile(m.envelope, off, file_size, file_name, file_id,
                           file_key) ||
           off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kFile;
@@ -13297,6 +13529,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       std::string sticker_id;
       if (!mi::server::proto::ReadString(m.envelope, off, sticker_id) ||
           off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kSticker;
@@ -13311,6 +13544,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       if (!mi::server::proto::ReadString(m.envelope, off, group_id) ||
           !mi::server::proto::ReadString(m.envelope, off, text) ||
           off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kText;
@@ -13328,6 +13562,7 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       if (!DecodeChatGroupFile(m.envelope, off, group_id, file_size, file_name,
                                file_id, file_key) ||
           off != m.envelope.size()) {
+        (void)trySummary();
         continue;
       }
       e.kind = HistoryKind::kFile;
@@ -13338,6 +13573,8 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
       out.push_back(std::move(e));
       continue;
     }
+
+    (void)trySummary();
   }
   return out;
 }
@@ -14343,8 +14580,13 @@ bool ClientCore::UploadChatFileFromPath(const std::filesystem::path& file_path,
   }
 
   if (file_size > (8u * 1024u * 1024u)) {
-    return UploadE2eeFileBlobV3FromPath(file_path, file_size, out_file_key,
-                                        out_file_id);
+    const bool ok = UploadE2eeFileBlobV3FromPath(file_path, file_size,
+                                                 out_file_key, out_file_id);
+    if (ok) {
+      BestEffortStoreAttachmentPreviewFromPath(out_file_id, file_name,
+                                               file_size, file_path);
+    }
+    return ok;
   }
 
   if (file_size > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
@@ -14368,6 +14610,13 @@ bool ClientCore::UploadChatFileFromPath(const std::filesystem::path& file_path,
     return false;
   }
 
+  std::vector<std::uint8_t> preview;
+  const std::size_t max_preview = 256u * 1024u;
+  const std::size_t take = std::min(plaintext.size(), max_preview);
+  if (take > 0) {
+    preview.assign(plaintext.begin(), plaintext.begin() + take);
+  }
+
   std::vector<std::uint8_t> blob;
   const bool encrypted_ok =
       EncryptFileBlobAdaptive(plaintext, out_file_key, file_name, blob);
@@ -14380,6 +14629,11 @@ bool ClientCore::UploadChatFileFromPath(const std::filesystem::path& file_path,
 
   if (!UploadE2eeFileBlob(blob, out_file_id)) {
     return false;
+  }
+  if (!preview.empty()) {
+    BestEffortStoreAttachmentPreviewBytes(out_file_id, file_name, file_size,
+                                          preview);
+    crypto_wipe(preview.data(), preview.size());
   }
   return true;
 }

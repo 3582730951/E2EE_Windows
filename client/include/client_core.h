@@ -262,6 +262,10 @@ class ClientCore {
   std::vector<FriendRequestEntry> ListFriendRequests();
   bool RespondFriendRequest(const std::string& requester_username, bool accept);
   bool DeleteFriend(const std::string& friend_username);
+  bool DeleteChatHistory(const std::string& conv_id,
+                         bool is_group,
+                         bool delete_attachments,
+                         bool secure_wipe);
   bool SetUserBlocked(const std::string& blocked_username, bool blocked);
 
   bool PublishPreKeyBundle();
@@ -489,6 +493,16 @@ class ClientCore {
       const std::array<std::uint8_t, 16>& msg_id,
       HistoryStatus status,
       std::uint64_t timestamp_sec);
+  void BestEffortStoreAttachmentPreviewBytes(
+      const std::string& file_id,
+      const std::string& file_name,
+      std::uint64_t file_size,
+      const std::vector<std::uint8_t>& bytes);
+  void BestEffortStoreAttachmentPreviewFromPath(
+      const std::string& file_id,
+      const std::string& file_name,
+      std::uint64_t file_size,
+      const std::filesystem::path& path);
 
   bool UploadE2eeFileBlob(const std::vector<std::uint8_t>& blob,
                           std::string& out_file_id);

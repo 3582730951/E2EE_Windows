@@ -3,21 +3,34 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QBuffer>
 #include <QDir>
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
+#include <QImageReader>
+#include <QEventLoop>
 #include <QSettings>
 #include <QMessageBox>
+#include <QMutexLocker>
 #include <QPointer>
 #include <QRandomGenerator>
+#include <QStringList>
 #include <QTimer>
+#include <QUrl>
 #include <QDateTime>
 #include <QByteArray>
 #include <QProcess>
+#include <algorithm>
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#if defined(MI_UI_HAS_QT_MULTIMEDIA)
+#include <QMediaPlayer>
+#include <QVideoFrame>
+#include <QVideoSink>
+#endif
 
 #include "../common/UiSettings.h"
 #include "../common/UiRuntimePaths.h"
@@ -68,6 +81,152 @@ QString GenerateMessageIdHex() {
         bytes[i] = static_cast<char>(QRandomGenerator::global()->generate() & 0xFF);
     }
     return QString::fromLatin1(bytes.toHex());
+}
+
+constexpr int kPreviewMaxBytes = 240 * 1024;
+constexpr int kPreviewMaxDim = 256;
+constexpr int kPreviewMinDim = 64;
+
+bool IsImageExtension(const QString &suffix) {
+    static const QStringList kImageExt = {
+        QStringLiteral("png"),  QStringLiteral("jpg"), QStringLiteral("jpeg"),
+        QStringLiteral("bmp"),  QStringLiteral("gif"), QStringLiteral("webp"),
+        QStringLiteral("ico"),  QStringLiteral("heic")
+    };
+    return kImageExt.contains(suffix, Qt::CaseInsensitive);
+}
+
+bool IsVideoExtension(const QString &suffix) {
+    static const QStringList kVideoExt = {
+        QStringLiteral("mp4"),  QStringLiteral("mov"), QStringLiteral("mkv"),
+        QStringLiteral("webm"), QStringLiteral("avi"), QStringLiteral("mpg"),
+        QStringLiteral("mpeg"), QStringLiteral("m4v"), QStringLiteral("3gp")
+    };
+    return kVideoExt.contains(suffix, Qt::CaseInsensitive);
+}
+
+bool EncodePreviewImage(const QImage &source, QByteArray &outBytes) {
+    outBytes.clear();
+    if (source.isNull()) {
+        return false;
+    }
+    int dim = kPreviewMaxDim;
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        QImage scaled = source;
+        if (scaled.width() > dim || scaled.height() > dim) {
+            scaled = scaled.scaled(dim, dim, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        }
+        QByteArray encoded;
+        QBuffer buffer(&encoded);
+        buffer.open(QIODevice::WriteOnly);
+        bool ok = false;
+        if (scaled.hasAlphaChannel()) {
+            ok = scaled.save(&buffer, "PNG");
+            if ((!ok || encoded.size() > kPreviewMaxBytes) && !scaled.isNull()) {
+                encoded.clear();
+                QBuffer jpegBuffer(&encoded);
+                jpegBuffer.open(QIODevice::WriteOnly);
+                const QImage rgb = scaled.convertToFormat(QImage::Format_RGB32);
+                ok = rgb.save(&jpegBuffer, "JPG", 70);
+            }
+        } else {
+            ok = scaled.save(&buffer, "JPG", 80);
+        }
+        if (ok && !encoded.isEmpty() && encoded.size() <= kPreviewMaxBytes) {
+            outBytes = encoded;
+            return true;
+        }
+        dim = std::max(kPreviewMinDim, dim * 3 / 4);
+    }
+    return false;
+}
+
+bool BuildImagePreviewBytes(const QString &filePath, QByteArray &outBytes) {
+    QImageReader reader(filePath);
+    reader.setAutoTransform(true);
+    const QSize size = reader.size();
+    if (size.isValid()) {
+        const int maxDim = std::max(kPreviewMinDim, kPreviewMaxDim);
+        const QSize target = size.scaled(maxDim, maxDim, Qt::KeepAspectRatio);
+        if (target.isValid()) {
+            reader.setScaledSize(target);
+        }
+    }
+    const QImage image = reader.read();
+    return EncodePreviewImage(image, outBytes);
+}
+
+#if defined(MI_UI_HAS_QT_MULTIMEDIA)
+bool ExtractVideoFrame(const QString &filePath, QImage &outImage) {
+    outImage = QImage();
+    QMediaPlayer player;
+    QVideoSink sink;
+    player.setVideoOutput(&sink);
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(&sink, &QVideoSink::videoFrameChanged, &loop,
+                     [&](const QVideoFrame &frame) {
+                         if (!frame.isValid()) {
+                             return;
+                         }
+                         const QImage image = frame.toImage();
+                         if (image.isNull()) {
+                             return;
+                         }
+                         outImage = image;
+                         loop.quit();
+                     });
+    player.setSource(QUrl::fromLocalFile(filePath));
+    player.play();
+    timer.start(600);
+    loop.exec();
+    player.stop();
+    return !outImage.isNull();
+}
+
+bool BuildVideoPreviewBytes(const QString &filePath, QByteArray &outBytes) {
+    QImage frame;
+    if (!ExtractVideoFrame(filePath, frame)) {
+        return false;
+    }
+    return EncodePreviewImage(frame, outBytes);
+}
+#else
+bool BuildVideoPreviewBytes(const QString &, QByteArray &) {
+    return false;
+}
+#endif
+
+bool BuildRawPreviewBytes(const QString &filePath, QByteArray &outBytes) {
+    outBytes.clear();
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    outBytes = file.read(static_cast<qint64>(kPreviewMaxBytes));
+    return !outBytes.isEmpty();
+}
+
+bool BuildAttachmentPreviewBytes(const QString &filePath, QByteArray &outBytes) {
+    outBytes.clear();
+    const QFileInfo info(filePath);
+    const QString suffix = info.suffix().trimmed().toLower();
+    if (suffix.isEmpty()) {
+        return BuildRawPreviewBytes(filePath, outBytes);
+    }
+    if (IsImageExtension(suffix)) {
+        if (BuildImagePreviewBytes(filePath, outBytes)) {
+            return true;
+        }
+    }
+    if (IsVideoExtension(suffix)) {
+        if (BuildVideoPreviewBytes(filePath, outBytes)) {
+            return true;
+        }
+    }
+    return BuildRawPreviewBytes(filePath, outBytes);
 }
 
 struct ServerEndpoint {
@@ -909,6 +1068,26 @@ bool BackendAdapter::deleteFriend(const QString &account, QString &err) {
     return true;
 }
 
+bool BackendAdapter::deleteChatHistory(const QString &convId, bool isGroup,
+                                       bool deleteAttachments, bool secureWipe,
+                                       QString &err) {
+    const QString cid = convId.trimmed();
+    if (cid.isEmpty()) {
+        err = QStringLiteral("会话 ID 为空");
+        return false;
+    }
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!core_.DeleteChatHistory(cid.toStdString(), isGroup, deleteAttachments, secureWipe)) {
+        const std::string coreErr = core_.last_error();
+        err = coreErr.empty() ? QStringLiteral("删除聊天记录失败") : QString::fromStdString(coreErr);
+        return false;
+    }
+    err.clear();
+    return true;
+}
+
 bool BackendAdapter::setUserBlocked(const QString &account, bool blocked, QString &err) {
     const QString target = account.trimmed();
     if (target.isEmpty()) {
@@ -1130,6 +1309,7 @@ bool BackendAdapter::sendFile(const QString &targetId, const QString &filePath, 
     }
 
     outMessageId = GenerateMessageIdHex();
+    cacheAttachmentPreviewForSend(targetId, outMessageId, filePath);
     startAsyncFileSend(targetId.trimmed(), false, outMessageId, filePath, false);
     err.clear();
     return true;
@@ -1158,6 +1338,7 @@ bool BackendAdapter::resendFile(const QString &targetId, const QString &messageI
         return false;
     }
 
+    cacheAttachmentPreviewForSend(targetId, messageId, filePath);
     startAsyncFileSend(targetId.trimmed(), false, messageId.trimmed(), filePath, true);
     err.clear();
     return true;
@@ -1218,8 +1399,13 @@ void BackendAdapter::startAsyncFileSend(const QString &convId, bool isGroup,
                     self->pendingOutgoing_[mid.toStdString()] = std::move(p);
                 }
             }
+            {
+                const QString key = cid.trimmed() + QStringLiteral("|") + mid.trimmed();
+                QMutexLocker locker(&self->pendingAttachmentPreviewLock_);
+                self->pendingAttachmentPreviews_.remove(key);
+            }
             emit self->fileSendFinished(cid, mid, false,
-                                       err.isEmpty() ? QStringLiteral("文件发送失败") : err);
+                                        err.isEmpty() ? QStringLiteral("文件发送失败") : err);
             self->maybeEmitPeerTrustRequired(true);
             self->maybeEmitServerTrustRequired(true);
         }, Qt::QueuedConnection);
@@ -1227,9 +1413,9 @@ void BackendAdapter::startAsyncFileSend(const QString &convId, bool isGroup,
 }
 
 void BackendAdapter::startAsyncFileSave(const QString &convId,
-                                       const QString &messageId,
-                                       const mi::client::ClientCore::ChatFileMessage &file,
-                                       const QString &outPath) {
+                                        const QString &messageId,
+                                        const mi::client::ClientCore::ChatFileMessage &file,
+                                        const QString &outPath) {
     bool expected = false;
     if (!fileTransferActive_.compare_exchange_strong(expected, true)) {
         emit fileSaveFinished(convId, messageId, false, QStringLiteral("已有文件传输在进行"), outPath);
@@ -1253,14 +1439,17 @@ void BackendAdapter::startAsyncFileSave(const QString &convId,
         coreErr = self->core_.last_error();
 
         const QString err = coreErr.empty() ? QString() : QString::fromStdString(coreErr);
-        QMetaObject::invokeMethod(self, [self, cid, mid, outPathStr, ok, err]() {
+        QMetaObject::invokeMethod(self, [self, cid, mid, outPathStr, ok, err, fileCopy]() {
             if (!self) {
                 return;
             }
             self->fileTransferActive_.store(false);
             emit self->fileSaveFinished(cid, mid, ok,
-                                       ok ? QString() : (err.isEmpty() ? QStringLiteral("保存失败") : err),
-                                       outPathStr);
+                                        ok ? QString() : (err.isEmpty() ? QStringLiteral("保存失败") : err),
+                                        outPathStr);
+            if (ok) {
+                self->storeAttachmentPreviewForPath(fileCopy, outPathStr);
+            }
             if (!ok) {
                 self->maybeEmitPeerTrustRequired(true);
                 self->maybeEmitServerTrustRequired(true);
@@ -1269,9 +1458,76 @@ void BackendAdapter::startAsyncFileSave(const QString &convId,
     }).detach();
 }
 
+void BackendAdapter::cacheAttachmentPreviewForSend(const QString &convId,
+                                                   const QString &messageId,
+                                                   const QString &filePath) {
+    const QString cid = convId.trimmed();
+    const QString mid = messageId.trimmed();
+    const QString path = filePath.trimmed();
+    if (cid.isEmpty() || mid.isEmpty() || path.isEmpty()) {
+        return;
+    }
+    QByteArray preview;
+    if (!BuildAttachmentPreviewBytes(path, preview) || preview.isEmpty()) {
+        return;
+    }
+    const QString key = cid + QStringLiteral("|") + mid;
+    QMutexLocker locker(&pendingAttachmentPreviewLock_);
+    if (pendingAttachmentPreviews_.size() > 64) {
+        pendingAttachmentPreviews_.clear();
+    }
+    pendingAttachmentPreviews_.insert(key, preview);
+}
+
+void BackendAdapter::applyCachedAttachmentPreview(
+    const QString &convId,
+    const QString &messageId,
+    const mi::client::ClientCore::ChatFileMessage &file) {
+    if (convId.trimmed().isEmpty() || messageId.trimmed().isEmpty() ||
+        file.file_id.empty()) {
+        return;
+    }
+    const QString key = convId.trimmed() + QStringLiteral("|") + messageId.trimmed();
+    QByteArray preview;
+    {
+        QMutexLocker locker(&pendingAttachmentPreviewLock_);
+        auto it = pendingAttachmentPreviews_.find(key);
+        if (it == pendingAttachmentPreviews_.end()) {
+            return;
+        }
+        preview = it.value();
+        pendingAttachmentPreviews_.erase(it);
+    }
+    if (preview.isEmpty()) {
+        return;
+    }
+    std::vector<std::uint8_t> bytes(preview.begin(), preview.end());
+    core_.BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
+                                                file.file_size, bytes);
+}
+
+void BackendAdapter::storeAttachmentPreviewForPath(
+    const mi::client::ClientCore::ChatFileMessage &file,
+    const QString &filePath) {
+    if (file.file_id.empty()) {
+        return;
+    }
+    const QString path = filePath.trimmed();
+    if (path.isEmpty()) {
+        return;
+    }
+    QByteArray preview;
+    if (!BuildAttachmentPreviewBytes(path, preview) || preview.isEmpty()) {
+        return;
+    }
+    std::vector<std::uint8_t> bytes(preview.begin(), preview.end());
+    core_.BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
+                                                file.file_size, bytes);
+}
+
 bool BackendAdapter::sendLocation(const QString &targetId,
-                                 qint32 latE7,
-                                 qint32 lonE7,
+                                  qint32 latE7,
+                                  qint32 lonE7,
                                  const QString &label,
                                  QString &outMessageId,
                                  QString &err) {
@@ -2036,6 +2292,7 @@ bool BackendAdapter::sendGroupFile(const QString &groupId, const QString &filePa
     }
 
     outMessageId = GenerateMessageIdHex();
+    cacheAttachmentPreviewForSend(gid, outMessageId, path);
     if (!outMessageId.isEmpty()) {
         const std::string id = outMessageId.toStdString();
         groupPendingDeliveries_[id] = gid.toStdString();
@@ -2073,6 +2330,7 @@ bool BackendAdapter::resendGroupFile(const QString &groupId, const QString &mess
         return false;
     }
 
+    cacheAttachmentPreviewForSend(gid, mid, path);
     startAsyncFileSend(gid, true, mid, filePath, true);
     err.clear();
     return true;
@@ -2370,6 +2628,7 @@ void BackendAdapter::maybeRetryPendingOutgoing() {
                 continue;
             }
 
+            cacheAttachmentPreviewForSend(p.convId, p.messageId, p.filePath);
             startAsyncFileSend(p.convId, p.isGroup, p.messageId, p.filePath, true);
             ++it;
             return;
@@ -2564,6 +2823,9 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
         asFile.file_size = f.file_size;
         const std::string k = f.peer_username + "|" + f.message_id_hex;
         receivedFiles_[k] = asFile;
+        applyCachedAttachmentPreview(QString::fromStdString(f.peer_username),
+                                     QString::fromStdString(f.message_id_hex),
+                                     asFile);
         emit syncedOutgoingMessage(QString::fromStdString(f.peer_username),
                                    false,
                                    QString(),
@@ -2603,6 +2865,9 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
         asFile.file_size = f.file_size;
         const std::string k = f.group_id + "|" + f.message_id_hex;
         receivedFiles_[k] = asFile;
+        applyCachedAttachmentPreview(QString::fromStdString(f.group_id),
+                                     QString::fromStdString(f.message_id_hex),
+                                     asFile);
 
         const std::string id = f.message_id_hex;
         groupPendingDeliveries_[id] = f.group_id;

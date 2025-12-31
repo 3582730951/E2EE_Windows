@@ -5,6 +5,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -997,15 +998,48 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
         }
 
         if (picked == del) {
-            if (QMessageBox::question(this, QStringLiteral("删除好友"),
-                                      QStringLiteral("确认删除好友：%1？").arg(id)) != QMessageBox::Yes) {
+            QDialog dialog(this);
+            dialog.setWindowTitle(QStringLiteral("删除好友"));
+            QVBoxLayout layout(&dialog);
+            QLabel label(QStringLiteral("确认删除好友：%1？").arg(id));
+            label.setWordWrap(true);
+            QCheckBox deleteHistory(QStringLiteral("删除聊天记录"));
+            QCheckBox deleteAttachments(QStringLiteral("同时删除附件/缓存"));
+            deleteHistory.setChecked(false);
+            deleteAttachments.setChecked(true);
+            deleteAttachments.setEnabled(false);
+            QObject::connect(&deleteHistory, &QCheckBox::toggled,
+                             &deleteAttachments, &QCheckBox::setEnabled);
+            QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+            if (auto *okBtn = buttons.button(QDialogButtonBox::Ok)) {
+                okBtn->setText(QStringLiteral("确认删除"));
+            }
+            if (auto *cancelBtn = buttons.button(QDialogButtonBox::Cancel)) {
+                cancelBtn->setText(QStringLiteral("取消"));
+            }
+            QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+            layout.addWidget(&label);
+            layout.addWidget(&deleteHistory);
+            layout.addWidget(&deleteAttachments);
+            layout.addWidget(&buttons);
+            if (dialog.exec() != QDialog::Accepted) {
                 return;
             }
+            const bool removeHistory = deleteHistory.isChecked();
+            const bool removeAttachments = removeHistory && deleteAttachments.isChecked();
             QString err;
             if (!backend_->deleteFriend(id, err)) {
                 QMessageBox::warning(this, QStringLiteral("删除好友"),
                                      err.isEmpty() ? QStringLiteral("删除失败") : err);
                 return;
+            }
+            if (removeHistory) {
+                QString histErr;
+                if (!backend_->deleteChatHistory(id, false, removeAttachments, true, histErr)) {
+                    QMessageBox::warning(this, QStringLiteral("删除聊天记录"),
+                                         histErr.isEmpty() ? QStringLiteral("聊天记录删除失败") : histErr);
+                }
             }
             localFriendRemovals_.insert(id);
             for (int i = model_->rowCount() - 1; i >= 0; --i) {

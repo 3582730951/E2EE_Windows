@@ -4,7 +4,9 @@
 #include <QString>
 #include <QVector>
 #include <QByteArray>
+#include <QHash>
 #include <QMetaType>
+#include <QMutex>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -51,6 +53,8 @@ public:
     QVector<FriendRequestEntry> listFriendRequests(QString &err);
     bool respondFriendRequest(const QString &requester, bool accept, QString &err);
     bool deleteFriend(const QString &account, QString &err);
+    bool deleteChatHistory(const QString &convId, bool isGroup,
+                           bool deleteAttachments, bool secureWipe, QString &err);
     bool setUserBlocked(const QString &account, bool blocked, QString &err);
     bool setFriendRemark(const QString &account, const QString &remark, QString &err);
     bool sendText(const QString &targetId, const QString &text, QString &outMessageId, QString &err);
@@ -223,6 +227,14 @@ private:
                             const QString &messageId,
                             const mi::client::ClientCore::ChatFileMessage &file,
                             const QString &outPath);
+    void cacheAttachmentPreviewForSend(const QString &convId,
+                                       const QString &messageId,
+                                       const QString &filePath);
+    void applyCachedAttachmentPreview(const QString &convId,
+                                      const QString &messageId,
+                                      const mi::client::ClientCore::ChatFileMessage &file);
+    void storeAttachmentPreviewForPath(const mi::client::ClientCore::ChatFileMessage &file,
+                                       const QString &filePath);
 
     mi::client::ClientCore core_;
     bool inited_{false};
@@ -248,6 +260,8 @@ private:
     std::unordered_set<std::string> seenFriendRequests_;
     std::unordered_map<std::string, std::string> groupPendingDeliveries_;
     std::vector<std::string> groupPendingOrder_;
+    QHash<QString, QByteArray> pendingAttachmentPreviews_;
+    QMutex pendingAttachmentPreviewLock_;
     QVector<FriendEntry> lastFriends_;
     std::atomic<qint64> lastFriendSyncAtMs_{0};
     int friendSyncIntervalMs_{2000};
