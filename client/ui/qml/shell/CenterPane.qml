@@ -206,6 +206,9 @@ Item {
         return internalText.length > 0 || systemText.length > 0
     }
     function externalImeActive() {
+        if (internalImeReady) {
+            return false
+        }
         if (messageInput && messageInput.inputMethodComposing) {
             return true
         }
