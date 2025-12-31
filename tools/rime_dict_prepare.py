@@ -33,6 +33,49 @@ def http_download(url, dst_path):
             f.write(chunk)
 
 
+def is_cjk_char(ch):
+    code = ord(ch)
+    if code == 0x3007:
+        return True
+    if 0x3400 <= code <= 0x4DBF:
+        return True
+    if 0x4E00 <= code <= 0x9FFF:
+        return True
+    if 0xF900 <= code <= 0xFAFF:
+        return True
+    if 0x20000 <= code <= 0x2A6DF:
+        return True
+    if 0x2A700 <= code <= 0x2B73F:
+        return True
+    if 0x2B740 <= code <= 0x2B81F:
+        return True
+    if 0x2B820 <= code <= 0x2CEAF:
+        return True
+    if 0x2CEB0 <= code <= 0x2EBEF:
+        return True
+    if 0x30000 <= code <= 0x3134F:
+        return True
+    return False
+
+
+def is_cjk_word(word):
+    if not word:
+        return False
+    return all(is_cjk_char(ch) for ch in word)
+
+
+def is_allowed_english(word):
+    if not word:
+        return False
+    for ch in word:
+        if ch == "'" or ch == "-":
+            continue
+        if "a" <= ch <= "z":
+            continue
+        return False
+    return any("a" <= ch <= "z" for ch in word)
+
+
 def sanitize_dict_yaml(path):
     text = path.read_text(encoding="utf-8", errors="replace").splitlines()
     out = []
@@ -51,7 +94,13 @@ def sanitize_dict_yaml(path):
             out.append("# " + line)
             changed = True
             continue
-        out.append(line)
+        word, rest = line.split("\t", 1)
+        word = word.lstrip("\ufeff").strip()
+        if not is_cjk_word(word):
+            out.append("# " + line)
+            changed = True
+            continue
+        out.append(word + "\t" + rest)
     if changed:
         path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
@@ -106,7 +155,7 @@ def read_english_words(path):
             if not word:
                 continue
             word = word.lower()
-            if any(ch for ch in word if not (ch.isalnum() or ch in "-'")):
+            if not is_allowed_english(word):
                 continue
             words.add(word)
     return words
@@ -129,9 +178,7 @@ def read_scowl_words(path):
             word = word.strip().lower()
             if not word:
                 continue
-            if any(ch for ch in word if not (ch.isalnum() or ch in "-'")):
-                continue
-            if not any(ch.isalnum() for ch in word):
+            if not is_allowed_english(word):
                 continue
             words.add(word)
     return words
@@ -183,6 +230,11 @@ def prepare_english_dict(out_root, out_share):
     wf_words = wordfreq.top_n_list("en", 1000000)
     weight_base = len(wf_words) + 1
     for idx, word in enumerate(wf_words):
+        if not word:
+            continue
+        word = word.lower()
+        if not is_allowed_english(word):
+            continue
         weight = weight_base - idx
         current = word_weights.get(word)
         if current is None or weight > current:
@@ -241,8 +293,10 @@ def prepare_thuocl_dict(out_root, out_share):
                 parts = line.split()
                 if len(parts) < 2:
                     continue
-                word = parts[0].strip()
+                word = parts[0].strip().lstrip("\ufeff")
                 if not word:
+                    continue
+                if not is_cjk_word(word):
                     continue
                 try:
                     weight = int(parts[1])
