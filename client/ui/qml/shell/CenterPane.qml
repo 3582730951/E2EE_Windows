@@ -1702,6 +1702,11 @@ Item {
             property bool isFile: contentKind === "file"
             property bool isLocation: contentKind === "location"
             property bool isCall: contentKind === "call"
+            property string fileName: model.fileName || ""
+            property string fileId: model.fileId || ""
+            property string fileKey: model.fileKey || ""
+            property var fileUrl: model.fileUrl || ""
+            property int fileSize: model.fileSize || 0
             property bool attachmentRequested: false
             property int senderAvatarSize: 26
             property int senderAvatarGap: 8
