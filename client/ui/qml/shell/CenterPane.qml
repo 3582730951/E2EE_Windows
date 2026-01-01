@@ -1954,14 +1954,15 @@ Item {
                         MediaPlayer {
                             id: videoPlayer
                             source: fileUrl
+                            videoOutput: videoView
                             audioOutput: AudioOutput {
                                 volume: 1.0
                             }
                         }
 
                         VideoOutput {
+                            id: videoView
                             anchors.fill: parent
-                            source: videoPlayer
                             fillMode: VideoOutput.PreserveAspectFit
                             visible: videoItem.hasSource
                         }
