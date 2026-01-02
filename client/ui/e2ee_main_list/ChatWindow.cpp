@@ -1003,22 +1003,36 @@ void ChatWindow::buildUi() {
     };
 
     addTitleAction(QStringLiteral(":/mi/e2ee/ui/icons/phone.svg"),
-                   UiSettings::Tr(QStringLiteral("语音通话（未实现）"),
-                                  QStringLiteral("Voice call (TODO)")),
+                   UiSettings::Tr(QStringLiteral("语音通话"),
+                                  QStringLiteral("Voice call")),
                    [this]() {
-                       Toast::Show(this,
-                                   UiSettings::Tr(QStringLiteral("暂未实现语音通话"),
-                                                  QStringLiteral("Voice call is not implemented yet.")),
-                                   Toast::Level::Info);
+                       if (!ensureConversationSelected()) {
+                           return;
+                       }
+                       if (isGroup_) {
+                           Toast::Show(this,
+                                       UiSettings::Tr(QStringLiteral("群聊暂不支持语音通话"),
+                                                      QStringLiteral("Group calls are not supported yet.")),
+                                       Toast::Level::Info);
+                           return;
+                       }
+                       emit startVoiceCallRequested(conversationId_);
                    });
     addTitleAction(QStringLiteral(":/mi/e2ee/ui/icons/video.svg"),
-                   UiSettings::Tr(QStringLiteral("视频通话（未实现）"),
-                                  QStringLiteral("Video call (TODO)")),
+                   UiSettings::Tr(QStringLiteral("视频通话"),
+                                  QStringLiteral("Video call")),
                    [this]() {
-                       Toast::Show(this,
-                                   UiSettings::Tr(QStringLiteral("暂未实现视频通话"),
-                                                  QStringLiteral("Video call is not implemented yet.")),
-                                   Toast::Level::Info);
+                       if (!ensureConversationSelected()) {
+                           return;
+                       }
+                       if (isGroup_) {
+                           Toast::Show(this,
+                                       UiSettings::Tr(QStringLiteral("群聊暂不支持视频通话"),
+                                                      QStringLiteral("Group calls are not supported yet.")),
+                                       Toast::Level::Info);
+                           return;
+                       }
+                       emit startVideoCallRequested(conversationId_);
                    });
     addTitleAction(QStringLiteral(":/mi/e2ee/ui/icons/search.svg"),
                    UiSettings::Tr(QStringLiteral("会话内搜索"),
@@ -1189,6 +1203,8 @@ void ChatWindow::buildUi() {
     messageView_->setFocusPolicy(Qt::NoFocus);
     messageView_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     messageView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    messageView_->setLayoutMode(QListView::Batched);
+    messageView_->setBatchSize(120);
     messageView_->setStyleSheet(
         QStringLiteral(
             "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 10px; }"

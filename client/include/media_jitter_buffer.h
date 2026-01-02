@@ -3,7 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <map>
+#include <vector>
 
 #include "../../shard/media_frame.h"
 
@@ -28,9 +28,14 @@ class MediaJitterBuffer {
   const MediaJitterStats& stats() const { return stats_; }
 
  private:
-  void DropOldest();
+ void DropOldest();
 
-  std::multimap<std::uint64_t, mi::media::MediaFrame> frames_;
+  struct FrameEntry {
+    std::uint64_t ts{0};
+    mi::media::MediaFrame frame;
+  };
+
+  std::vector<FrameEntry> frames_;
   std::uint64_t target_delay_ms_{0};
   std::size_t max_frames_{0};
   std::uint64_t base_timestamp_ms_{0};

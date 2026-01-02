@@ -41,9 +41,17 @@ class MediaRelay {
     std::chrono::steady_clock::time_point last_seen{};
   };
 
-  std::mutex mutex_;
-  std::condition_variable cv_;
-  std::unordered_map<std::string, Queue> queues_;
+  struct Bucket {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::unordered_map<std::string, Queue> queues;
+  };
+
+  static constexpr std::size_t kBucketCount = 64;
+
+  Bucket& BucketForKey(const std::string& key);
+
+  std::array<Bucket, kBucketCount> buckets_;
   std::size_t max_queue_{0};
   std::chrono::milliseconds ttl_{0};
 };

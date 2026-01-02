@@ -84,12 +84,15 @@ bool MediaSession::SendFrame(mi::media::StreamKind kind,
   }
 
   MediaRatchet* ratchet = nullptr;
+  std::vector<std::uint8_t>* packet = nullptr;
   if (kind == mi::media::StreamKind::kAudio) {
     ratchet = audio_send_.get();
+    packet = &audio_packet_buf_;
   } else if (kind == mi::media::StreamKind::kVideo) {
     ratchet = video_send_.get();
+    packet = &video_packet_buf_;
   }
-  if (!ratchet) {
+  if (!ratchet || !packet) {
     return false;
   }
 
@@ -100,12 +103,11 @@ bool MediaSession::SendFrame(mi::media::StreamKind kind,
   frame.timestamp_ms = timestamp_ms;
   frame.payload = payload;
 
-  std::vector<std::uint8_t> packet;
   std::string err;
-  if (!ratchet->EncryptFrame(frame, packet, err)) {
+  if (!ratchet->EncryptFrame(frame, *packet, err)) {
     return false;
   }
-  if (!core_.PushMedia(config_.peer_username, config_.call_id, packet)) {
+  if (!core_.PushMedia(config_.peer_username, config_.call_id, *packet)) {
     return false;
   }
   StatsForKind(stats_, kind).frames_sent++;

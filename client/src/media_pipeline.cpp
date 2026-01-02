@@ -488,27 +488,31 @@ class VideoPipeline::MfVideoCodecImpl {
     const std::size_t y_bytes = stride * height_;
     const std::size_t uv_bytes = stride * height_ / 2;
     const std::size_t total = y_bytes + uv_bytes;
-    Microsoft::WRL::ComPtr<IMFSample> sample;
-    Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
-    if (FAILED(MFCreateSample(&sample)) ||
-        FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(total), &buffer))) {
-      return false;
+    if (!enc_in_buf_ || enc_in_capacity_ < total) {
+      enc_in_sample_.Reset();
+      enc_in_buf_.Reset();
+      if (FAILED(MFCreateSample(&enc_in_sample_)) ||
+          FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(total),
+                                      &enc_in_buf_))) {
+        return false;
+      }
+      enc_in_capacity_ = static_cast<DWORD>(total);
+      enc_in_sample_->AddBuffer(enc_in_buf_.Get());
     }
     std::uint8_t* dst = nullptr;
     DWORD max_len = 0;
     DWORD cur_len = 0;
-    if (FAILED(buffer->Lock(reinterpret_cast<BYTE**>(&dst), &max_len,
-                            &cur_len))) {
+    if (FAILED(enc_in_buf_->Lock(reinterpret_cast<BYTE**>(&dst), &max_len,
+                                 &cur_len))) {
       return false;
     }
     std::memcpy(dst, nv12, total);
-    buffer->Unlock();
-    buffer->SetCurrentLength(static_cast<DWORD>(total));
-    sample->AddBuffer(buffer.Get());
+    enc_in_buf_->Unlock();
+    enc_in_buf_->SetCurrentLength(static_cast<DWORD>(total));
     const LONGLONG ts = static_cast<LONGLONG>(timestamp_ms) * 10000;
-    sample->SetSampleTime(ts);
-    sample->SetSampleDuration(frame_duration_100ns_);
-    if (FAILED(encoder_->ProcessInput(0, sample.Get(), 0))) {
+    enc_in_sample_->SetSampleTime(ts);
+    enc_in_sample_->SetSampleDuration(frame_duration_100ns_);
+    if (FAILED(encoder_->ProcessInput(0, enc_in_sample_.Get(), 0))) {
       return false;
     }
     out.clear();
@@ -517,15 +521,19 @@ class VideoPipeline::MfVideoCodecImpl {
       if (FAILED(encoder_->GetOutputStreamInfo(0, &info))) {
         return false;
       }
-      Microsoft::WRL::ComPtr<IMFSample> out_sample;
-      Microsoft::WRL::ComPtr<IMFMediaBuffer> out_buf;
-      if (FAILED(MFCreateSample(&out_sample)) ||
-          FAILED(MFCreateMemoryBuffer(info.cbSize, &out_buf))) {
-        return false;
+      if (!enc_out_buf_ || enc_out_capacity_ < info.cbSize) {
+        enc_out_sample_.Reset();
+        enc_out_buf_.Reset();
+        if (FAILED(MFCreateSample(&enc_out_sample_)) ||
+            FAILED(MFCreateMemoryBuffer(info.cbSize, &enc_out_buf_))) {
+          return false;
+        }
+        enc_out_capacity_ = info.cbSize;
+        enc_out_sample_->AddBuffer(enc_out_buf_.Get());
       }
-      out_sample->AddBuffer(out_buf.Get());
+      enc_out_buf_->SetCurrentLength(0);
       MFT_OUTPUT_DATA_BUFFER output{};
-      output.pSample = out_sample.Get();
+      output.pSample = enc_out_sample_.Get();
       DWORD status = 0;
       const HRESULT hr = encoder_->ProcessOutput(0, 1, &output, &status);
       if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
@@ -537,12 +545,12 @@ class VideoPipeline::MfVideoCodecImpl {
       std::uint8_t* data = nullptr;
       DWORD max_len2 = 0;
       DWORD cur_len2 = 0;
-      if (FAILED(out_buf->Lock(reinterpret_cast<BYTE**>(&data), &max_len2,
-                               &cur_len2))) {
+      if (FAILED(enc_out_buf_->Lock(reinterpret_cast<BYTE**>(&data), &max_len2,
+                                    &cur_len2))) {
         return false;
       }
       out.insert(out.end(), data, data + cur_len2);
-      out_buf->Unlock();
+      enc_out_buf_->Unlock();
       if (output.pEvents) {
         output.pEvents->Release();
       }
@@ -557,29 +565,32 @@ class VideoPipeline::MfVideoCodecImpl {
     if (!decoder_ || (!data && len != 0)) {
       return false;
     }
-    Microsoft::WRL::ComPtr<IMFSample> sample;
-    Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
-    if (FAILED(MFCreateSample(&sample)) ||
-        FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(len), &buffer))) {
-      return false;
+    if (!dec_in_buf_ || dec_in_capacity_ < len) {
+      dec_in_sample_.Reset();
+      dec_in_buf_.Reset();
+      if (FAILED(MFCreateSample(&dec_in_sample_)) ||
+          FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(len), &dec_in_buf_))) {
+        return false;
+      }
+      dec_in_capacity_ = static_cast<DWORD>(len);
+      dec_in_sample_->AddBuffer(dec_in_buf_.Get());
     }
     std::uint8_t* dst = nullptr;
     DWORD max_len = 0;
     DWORD cur_len = 0;
-    if (FAILED(buffer->Lock(reinterpret_cast<BYTE**>(&dst), &max_len,
-                            &cur_len))) {
+    if (FAILED(dec_in_buf_->Lock(reinterpret_cast<BYTE**>(&dst), &max_len,
+                                 &cur_len))) {
       return false;
     }
     if (len > 0) {
       std::memcpy(dst, data, len);
     }
-    buffer->Unlock();
-    buffer->SetCurrentLength(static_cast<DWORD>(len));
-    sample->AddBuffer(buffer.Get());
+    dec_in_buf_->Unlock();
+    dec_in_buf_->SetCurrentLength(static_cast<DWORD>(len));
     const LONGLONG ts = static_cast<LONGLONG>(timestamp_ms) * 10000;
-    sample->SetSampleTime(ts);
-    sample->SetSampleDuration(frame_duration_100ns_);
-    if (FAILED(decoder_->ProcessInput(0, sample.Get(), 0))) {
+    dec_in_sample_->SetSampleTime(ts);
+    dec_in_sample_->SetSampleDuration(frame_duration_100ns_);
+    if (FAILED(decoder_->ProcessInput(0, dec_in_sample_.Get(), 0))) {
       return false;
     }
     out.clear();
@@ -588,15 +599,19 @@ class VideoPipeline::MfVideoCodecImpl {
       if (FAILED(decoder_->GetOutputStreamInfo(0, &info))) {
         return false;
       }
-      Microsoft::WRL::ComPtr<IMFSample> out_sample;
-      Microsoft::WRL::ComPtr<IMFMediaBuffer> out_buf;
-      if (FAILED(MFCreateSample(&out_sample)) ||
-          FAILED(MFCreateMemoryBuffer(info.cbSize, &out_buf))) {
-        return false;
+      if (!dec_out_buf_ || dec_out_capacity_ < info.cbSize) {
+        dec_out_sample_.Reset();
+        dec_out_buf_.Reset();
+        if (FAILED(MFCreateSample(&dec_out_sample_)) ||
+            FAILED(MFCreateMemoryBuffer(info.cbSize, &dec_out_buf_))) {
+          return false;
+        }
+        dec_out_capacity_ = info.cbSize;
+        dec_out_sample_->AddBuffer(dec_out_buf_.Get());
       }
-      out_sample->AddBuffer(out_buf.Get());
+      dec_out_buf_->SetCurrentLength(0);
       MFT_OUTPUT_DATA_BUFFER output{};
-      output.pSample = out_sample.Get();
+      output.pSample = dec_out_sample_.Get();
       DWORD status = 0;
       const HRESULT hr = decoder_->ProcessOutput(0, 1, &output, &status);
       if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
@@ -608,12 +623,12 @@ class VideoPipeline::MfVideoCodecImpl {
       std::uint8_t* data_ptr = nullptr;
       DWORD max_len2 = 0;
       DWORD cur_len2 = 0;
-      if (FAILED(out_buf->Lock(reinterpret_cast<BYTE**>(&data_ptr), &max_len2,
-                               &cur_len2))) {
+      if (FAILED(dec_out_buf_->Lock(reinterpret_cast<BYTE**>(&data_ptr),
+                                    &max_len2, &cur_len2))) {
         return false;
       }
       out.insert(out.end(), data_ptr, data_ptr + cur_len2);
-      out_buf->Unlock();
+      dec_out_buf_->Unlock();
       if (output.pEvents) {
         output.pEvents->Release();
       }
@@ -794,6 +809,18 @@ class VideoPipeline::MfVideoCodecImpl {
 
   Microsoft::WRL::ComPtr<IMFTransform> encoder_;
   Microsoft::WRL::ComPtr<IMFTransform> decoder_;
+  Microsoft::WRL::ComPtr<IMFSample> enc_in_sample_;
+  Microsoft::WRL::ComPtr<IMFMediaBuffer> enc_in_buf_;
+  DWORD enc_in_capacity_{0};
+  Microsoft::WRL::ComPtr<IMFSample> enc_out_sample_;
+  Microsoft::WRL::ComPtr<IMFMediaBuffer> enc_out_buf_;
+  DWORD enc_out_capacity_{0};
+  Microsoft::WRL::ComPtr<IMFSample> dec_in_sample_;
+  Microsoft::WRL::ComPtr<IMFMediaBuffer> dec_in_buf_;
+  DWORD dec_in_capacity_{0};
+  Microsoft::WRL::ComPtr<IMFSample> dec_out_sample_;
+  Microsoft::WRL::ComPtr<IMFMediaBuffer> dec_out_buf_;
+  DWORD dec_out_capacity_{0};
   std::uint32_t width_{0};
   std::uint32_t height_{0};
   std::uint32_t fps_{0};

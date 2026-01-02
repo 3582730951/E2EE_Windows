@@ -16,6 +16,10 @@ set(UI_MAIN_LIST_SOURCES
     AuthFlowWidget.h
     BackendAdapter.cpp
     BackendAdapter.h
+    CallController.cpp
+    CallController.h
+    CallDialog.cpp
+    CallDialog.h
     TrustPromptDialog.cpp
     TrustPromptDialog.h
     NotificationCenterDialog.cpp

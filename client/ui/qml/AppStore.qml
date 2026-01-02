@@ -496,7 +496,8 @@ QtObject {
             locationLat: locationLat,
             locationLon: locationLon,
             callId: message.callId || "",
-            callVideo: message.video === true
+            callVideo: message.video === true,
+            animateEmoji: contentKind === "emoji"
         }
 
         if (msgId && mergeMessageEntry(convId, msgId, entry)) {
@@ -704,7 +705,8 @@ QtObject {
                 previewUrl: h.previewUrl || "",
                 locationLabel: locationLabel,
                 locationLat: locationLat,
-                locationLon: locationLon
+                locationLon: locationLon,
+                animateEmoji: false
             })
         }
     }

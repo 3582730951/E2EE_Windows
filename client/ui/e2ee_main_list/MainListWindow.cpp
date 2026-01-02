@@ -32,6 +32,7 @@
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
 #include <QRegularExpression>
+#include <QRandomGenerator>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -47,6 +48,8 @@
 #include "../common/UiSettings.h"
 #include "../common/UiStyle.h"
 #include "../common/Toast.h"
+#include "CallDialog.h"
+#include "CallInviteUtils.h"
 #include "ChatWindow.h"
 #include "BackendAdapter.h"
 #include "ConversationDetailsDialog.h"
@@ -57,6 +60,45 @@ namespace {
 
 QString PinnedSettingsKey() { return QStringLiteral("ui/pinned_conversations"); }
 QString ModePlaceholderId() { return QStringLiteral("__mode_placeholder__"); }
+
+QString CallPreviewText(bool video, bool outgoing) {
+    if (outgoing) {
+        return video
+            ? UiSettings::Tr(QStringLiteral("我: [视频通话]"),
+                             QStringLiteral("Me: [Video call]"))
+            : UiSettings::Tr(QStringLiteral("我: [语音通话]"),
+                             QStringLiteral("Me: [Voice call]"));
+    }
+    return video
+        ? UiSettings::Tr(QStringLiteral("[视频通话邀请]"),
+                         QStringLiteral("[Video call invite]"))
+        : UiSettings::Tr(QStringLiteral("[语音通话邀请]"),
+                         QStringLiteral("[Voice call invite]"));
+}
+
+QString CallSystemText(bool video, bool outgoing) {
+    if (outgoing) {
+        return video
+            ? UiSettings::Tr(QStringLiteral("已发起视频通话"),
+                             QStringLiteral("Video call started"))
+            : UiSettings::Tr(QStringLiteral("已发起语音通话"),
+                             QStringLiteral("Voice call started"));
+    }
+    return video
+        ? UiSettings::Tr(QStringLiteral("视频通话邀请"),
+                         QStringLiteral("Incoming video call"))
+        : UiSettings::Tr(QStringLiteral("语音通话邀请"),
+                         QStringLiteral("Incoming voice call"));
+}
+
+QString GenerateCallIdHex() {
+    QByteArray bytes;
+    bytes.resize(16);
+    for (int i = 0; i < bytes.size(); ++i) {
+        bytes[i] = static_cast<char>(QRandomGenerator::global()->generate() & 0xFF);
+    }
+    return QString::fromLatin1(bytes.toHex());
+}
 
 enum Roles {
     IdRole = Qt::UserRole + 1,
@@ -644,6 +686,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     listView_->setSpacing(1);
     listView_->setUniformItemSizes(true);
     listView_->setSelectionMode(QAbstractItemView::SingleSelection);
+    listView_->setLayoutMode(QListView::Batched);
+    listView_->setBatchSize(80);
     listView_->setStyleSheet(
         QStringLiteral(
             "QListView { background: transparent; outline: none; border: 1px solid transparent; border-radius: 10px; }"
@@ -1168,6 +1212,8 @@ MainListWindow::MainListWindow(BackendAdapter *backend, QWidget *parent)
     updateInputModeLabel(embeddedChat_->isChineseInputMode());
     connect(embeddedChat_, &ChatWindow::imeSourceChanged, this, &MainListWindow::updateImeSourceLabel);
     updateImeSourceLabel(embeddedChat_->isThirdPartyImeActive());
+    connect(embeddedChat_, &ChatWindow::startVoiceCallRequested, this, &MainListWindow::handleStartVoiceCall);
+    connect(embeddedChat_, &ChatWindow::startVideoCallRequested, this, &MainListWindow::handleStartVideoCall);
     setTabOrder(listView_, embeddedChat_);
     splitter->addWidget(embeddedChat_);
     splitter->setStretchFactor(0, 0);
@@ -2164,6 +2210,8 @@ void MainListWindow::openChatForIndex(const QModelIndex &index) {
     win->setConversation(id, title, isGroup);
     win->setPresenceEnabled(presenceEnabled());
     connect(win, &ChatWindow::inputModeChanged, this, &MainListWindow::updateInputModeLabel);
+    connect(win, &ChatWindow::startVoiceCallRequested, this, &MainListWindow::handleStartVoiceCall);
+    connect(win, &ChatWindow::startVideoCallRequested, this, &MainListWindow::handleStartVideoCall);
     chatWindows_[id] = win;
     connect(win, &QObject::destroyed, this, [this, id]() { chatWindows_.remove(id); });
     win->show();
@@ -2736,10 +2784,138 @@ void MainListWindow::handleSearchTextChanged(const QString &text) {
     }
 }
 
+void MainListWindow::handleStartVoiceCall(const QString &convId) {
+    startCall(convId, false);
+}
+
+void MainListWindow::handleStartVideoCall(const QString &convId) {
+    startCall(convId, true);
+}
+
+void MainListWindow::startCall(const QString &peer, bool video) {
+    if (!backend_) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("未连接后端"),
+                                   QStringLiteral("Backend is offline")),
+                    Toast::Level::Warning);
+        return;
+    }
+    if (!backend_->isLoggedIn()) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("尚未登录"),
+                                   QStringLiteral("Not logged in")),
+                    Toast::Level::Warning);
+        return;
+    }
+    const QString target = peer.trimmed();
+    if (target.isEmpty()) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("会话无效"),
+                                   QStringLiteral("Invalid chat")),
+                    Toast::Level::Warning);
+        return;
+    }
+    if (auto *item = findItemById(target)) {
+        if (item->data(IsGroupRole).toBool()) {
+            Toast::Show(this,
+                        UiSettings::Tr(QStringLiteral("群聊暂不支持通话"),
+                                       QStringLiteral("Group calls are not supported yet.")),
+                        Toast::Level::Info);
+            return;
+        }
+    }
+    if (callDialog_) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("已有通话进行中"),
+                                   QStringLiteral("Another call is active")),
+                    Toast::Level::Info);
+        return;
+    }
+    const QString callId = GenerateCallIdHex();
+    auto *dlg = new CallDialog(backend_->core(), this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+    QString err;
+    if (!dlg->startOutgoing(target, callId, video, err)) {
+        Toast::Show(this,
+                    err.isEmpty()
+                        ? UiSettings::Tr(QStringLiteral("通话初始化失败"),
+                                         QStringLiteral("Call setup failed"))
+                        : err,
+                    Toast::Level::Error);
+        dlg->deleteLater();
+        return;
+    }
+
+    QString msgId;
+    QString sendErr;
+    const QString payload = mi::ui::BuildCallInvitePayload(video, callId);
+    if (!backend_->sendText(target, payload, msgId, sendErr)) {
+        dlg->close();
+        const QString shown = sendErr.isEmpty()
+                                  ? UiSettings::Tr(QStringLiteral("通话邀请发送失败"),
+                                                   QStringLiteral("Failed to send call invite"))
+                                  : sendErr.trimmed();
+        Toast::Show(this, shown, Toast::Level::Error);
+        return;
+    }
+
+    callDialog_ = dlg;
+    connect(dlg, &CallDialog::callEnded, this, [this]() { callDialog_ = nullptr; });
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+}
+
+bool MainListWindow::ensureCallDialog(bool incoming,
+                                      const QString &peer,
+                                      const QString &callIdHex,
+                                      bool video) {
+    if (!backend_) {
+        return false;
+    }
+    if (callDialog_) {
+        Toast::Show(this,
+                    UiSettings::Tr(QStringLiteral("已有通话进行中"),
+                                   QStringLiteral("Another call is active")),
+                    Toast::Level::Info);
+        return false;
+    }
+    auto *dlg = new CallDialog(backend_->core(), this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+    callDialog_ = dlg;
+    connect(dlg, &CallDialog::callEnded, this, [this]() { callDialog_ = nullptr; });
+
+    if (incoming) {
+        dlg->showIncoming(peer, callIdHex, video);
+        return true;
+    }
+
+    QString err;
+    if (!dlg->startOutgoing(peer, callIdHex, video, err)) {
+        Toast::Show(this,
+                    err.isEmpty()
+                        ? UiSettings::Tr(QStringLiteral("通话初始化失败"),
+                                         QStringLiteral("Call setup failed"))
+                        : err,
+                    Toast::Level::Error);
+        dlg->close();
+        return false;
+    }
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+    return true;
+}
+
+
 void MainListWindow::handleIncomingMessage(const QString &convId, bool isGroup, const QString &sender,
                                            const QString &messageId, const QString &text, bool isFile, qint64 fileSize) {
+    const auto invite = (!isGroup && !isFile) ? mi::ui::ParseCallInvite(text) : mi::ui::CallInvite{};
+    const bool isCallInvite = invite.ok;
     QString preview;
-    if (isFile) {
+    if (isCallInvite) {
+        preview = CallPreviewText(invite.video, false);
+    } else if (isFile) {
         const QString tag = FilePreviewTag(text);
         preview = isGroup && !sender.trimmed().isEmpty()
                       ? QStringLiteral("%1 %2: %3").arg(tag, sender, text)
@@ -2782,13 +2958,28 @@ void MainListWindow::handleIncomingMessage(const QString &convId, bool isGroup, 
 
     const QDateTime now = QDateTime::currentDateTime();
     bool hasActiveView = false;
-    if (embeddedChat_ && embeddedConvId_ == convId) {
-        embeddedChat_->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
-        hasActiveView = true;
-    }
-    if (chatWindows_.contains(convId) && chatWindows_[convId]) {
-        chatWindows_[convId]->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
-        hasActiveView = true;
+    if (isCallInvite) {
+        const QString systemText = CallSystemText(invite.video, false);
+        if (embeddedChat_ && embeddedConvId_ == convId) {
+            embeddedChat_->appendSystemMessage(systemText, now);
+            hasActiveView = true;
+        }
+        if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+            chatWindows_[convId]->appendSystemMessage(systemText, now);
+            hasActiveView = true;
+        }
+        if (ensureCallDialog(true, convId, invite.callId, invite.video)) {
+            // handled
+        }
+    } else {
+        if (embeddedChat_ && embeddedConvId_ == convId) {
+            embeddedChat_->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
+            hasActiveView = true;
+        }
+        if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+            chatWindows_[convId]->appendIncomingMessage(sender, messageId, text, isFile, fileSize, now);
+            hasActiveView = true;
+        }
     }
     if (hasActiveView) {
         if (rowIndex >= 0) {
@@ -2916,8 +3107,12 @@ void MainListWindow::handleIncomingSticker(const QString &convId, const QString 
 void MainListWindow::handleSyncedOutgoingMessage(const QString &convId, bool isGroup, const QString &sender,
                                                  const QString &messageId, const QString &text, bool isFile, qint64 fileSize) {
     Q_UNUSED(sender);
+    const auto invite = (!isGroup && !isFile) ? mi::ui::ParseCallInvite(text) : mi::ui::CallInvite{};
+    const bool isCallInvite = invite.ok;
     QString preview;
-    if (isFile) {
+    if (isCallInvite) {
+        preview = CallPreviewText(invite.video, true);
+    } else if (isFile) {
         const QString tag = FilePreviewTag(text);
         preview = UiSettings::Tr(QStringLiteral("我 %1 %2").arg(tag, text),
                                  QStringLiteral("Me %1 %2").arg(tag, text));
@@ -2961,11 +3156,21 @@ void MainListWindow::handleSyncedOutgoingMessage(const QString &convId, bool isG
     }
 
     const QDateTime now = QDateTime::currentDateTime();
-    if (embeddedChat_ && embeddedConvId_ == convId) {
-        embeddedChat_->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
-    }
-    if (chatWindows_.contains(convId) && chatWindows_[convId]) {
-        chatWindows_[convId]->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
+    if (isCallInvite) {
+        const QString systemText = CallSystemText(invite.video, true);
+        if (embeddedChat_ && embeddedConvId_ == convId) {
+            embeddedChat_->appendSystemMessage(systemText, now);
+        }
+        if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+            chatWindows_[convId]->appendSystemMessage(systemText, now);
+        }
+    } else {
+        if (embeddedChat_ && embeddedConvId_ == convId) {
+            embeddedChat_->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
+        }
+        if (chatWindows_.contains(convId) && chatWindows_[convId]) {
+            chatWindows_[convId]->appendSyncedOutgoingMessage(messageId, text, isFile, fileSize, now);
+        }
     }
 }
 

@@ -14,6 +14,7 @@
 
 class ChatWindow;
 class BackendAdapter;
+class CallDialog;
 class QLabel;
 class QToolButton;
 class IconButton;
@@ -52,6 +53,8 @@ private slots:
     void handleSyncedOutgoingMessage(const QString &convId, bool isGroup, const QString &sender,
                                      const QString &messageId, const QString &text, bool isFile, qint64 fileSize);
     void handleSyncedOutgoingSticker(const QString &convId, const QString &messageId, const QString &stickerId);
+    void handleStartVoiceCall(const QString &convId);
+    void handleStartVideoCall(const QString &convId);
     void handleDelivered(const QString &convId, const QString &messageId);
     void handleRead(const QString &convId, const QString &messageId);
     void handleTypingChanged(const QString &convId, bool typing);
@@ -116,6 +119,8 @@ private:
     void updatePresenceLabel();
     bool presenceEnabled() const;
     void addNotice(const QString &key, const QString &title, const QString &detail);
+    void startCall(const QString &peer, bool video);
+    bool ensureCallDialog(bool incoming, const QString &peer, const QString &callIdHex, bool video);
 
     QListView *listView_{nullptr};
     QStandardItemModel *model_{nullptr};
@@ -123,6 +128,7 @@ private:
     QHash<QString, QPointer<ChatWindow>> chatWindows_;
     QPointer<ChatWindow> embeddedChat_;
     QString embeddedConvId_;
+    QPointer<CallDialog> callDialog_;
     QLineEdit *searchEdit_{nullptr};
     BackendAdapter *backend_{nullptr};
     QToolButton *statusBtn_{nullptr};

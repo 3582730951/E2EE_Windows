@@ -38,7 +38,7 @@ struct ServerSection {
   std::uint32_t max_io_threads{0};
   std::uint32_t max_pending_tasks{1024};
 #ifdef _WIN32
-  bool iocp_enable{false};
+  bool iocp_enable{true};
 #endif
 #ifdef _WIN32
   bool tls_enable{true};

@@ -1,5 +1,7 @@
 #include "media_relay.h"
 
+#include <functional>
+
 namespace mi::server {
 
 namespace {
@@ -21,6 +23,11 @@ std::string MakeKey(const std::string& recipient,
 MediaRelay::MediaRelay(std::size_t max_queue, std::chrono::milliseconds ttl)
     : max_queue_(max_queue), ttl_(ttl) {}
 
+MediaRelay::Bucket& MediaRelay::BucketForKey(const std::string& key) {
+  const std::size_t idx = std::hash<std::string>{}(key) % kBucketCount;
+  return buckets_[idx];
+}
+
 void MediaRelay::Enqueue(const std::string& recipient,
                          const std::array<std::uint8_t, 16>& call_id,
                          MediaRelayPacket packet) {
@@ -29,16 +36,18 @@ void MediaRelay::Enqueue(const std::string& recipient,
   }
   const auto now = std::chrono::steady_clock::now();
   packet.created_at = now;
+  const std::string key = MakeKey(recipient, call_id);
+  auto& bucket = BucketForKey(key);
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto& q = queues_[MakeKey(recipient, call_id)];
+    std::lock_guard<std::mutex> lock(bucket.mutex);
+    auto& q = bucket.queues[key];
     q.last_seen = now;
     q.packets.push_back(std::move(packet));
     while (q.packets.size() > max_queue_) {
       q.packets.pop_front();
     }
   }
-  cv_.notify_all();
+  bucket.cv.notify_all();
 }
 
 void MediaRelay::Pull(const std::string& recipient,
@@ -51,17 +60,18 @@ void MediaRelay::Pull(const std::string& recipient,
     return;
   }
   const auto deadline = std::chrono::steady_clock::now() + wait;
-  std::unique_lock<std::mutex> lock(mutex_);
   const std::string key = MakeKey(recipient, call_id);
+  auto& bucket = BucketForKey(key);
+  std::unique_lock<std::mutex> lock(bucket.mutex);
   const auto has_data = [&]() {
-    const auto it = queues_.find(key);
-    return it != queues_.end() && !it->second.packets.empty();
+    const auto it = bucket.queues.find(key);
+    return it != bucket.queues.end() && !it->second.packets.empty();
   };
   if (!has_data() && wait.count() > 0) {
-    cv_.wait_until(lock, deadline, has_data);
+    bucket.cv.wait_until(lock, deadline, has_data);
   }
-  auto it = queues_.find(key);
-  if (it == queues_.end() || it->second.packets.empty()) {
+  auto it = bucket.queues.find(key);
+  if (it == bucket.queues.end() || it->second.packets.empty()) {
     return;
   }
   auto& q = it->second;
@@ -77,21 +87,23 @@ void MediaRelay::Pull(const std::string& recipient,
 
 void MediaRelay::Cleanup() {
   const auto now = std::chrono::steady_clock::now();
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (auto it = queues_.begin(); it != queues_.end();) {
-    auto& q = it->second;
-    while (!q.packets.empty()) {
-      const auto age = now - q.packets.front().created_at;
-      if (age <= ttl_) {
-        break;
+  for (auto& bucket : buckets_) {
+    std::lock_guard<std::mutex> lock(bucket.mutex);
+    for (auto it = bucket.queues.begin(); it != bucket.queues.end();) {
+      auto& q = it->second;
+      while (!q.packets.empty()) {
+        const auto age = now - q.packets.front().created_at;
+        if (age <= ttl_) {
+          break;
+        }
+        q.packets.pop_front();
       }
-      q.packets.pop_front();
+      if (q.packets.empty() && now - q.last_seen > ttl_) {
+        it = bucket.queues.erase(it);
+        continue;
+      }
+      ++it;
     }
-    if (q.packets.empty() && now - q.last_seen > ttl_) {
-      it = queues_.erase(it);
-      continue;
-    }
-    ++it;
   }
 }
 

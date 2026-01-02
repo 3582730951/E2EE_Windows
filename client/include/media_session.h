@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "client_core.h"
 #include "media_crypto.h"
@@ -86,6 +87,8 @@ class MediaSession {
   MediaJitterBuffer video_jitter_;
   MediaSessionStats stats_{};
   bool ready_{false};
+  std::vector<std::uint8_t> audio_packet_buf_;
+  std::vector<std::uint8_t> video_packet_buf_;
 };
 
 }  // namespace mi::client::media

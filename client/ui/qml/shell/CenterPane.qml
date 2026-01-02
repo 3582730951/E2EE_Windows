@@ -1812,9 +1812,9 @@ Item {
             Item {
                 id: bubbleBlock
                 visible: isIncoming || isOutgoing
-                property bool transparentBubble: isSticker || isImage || isGif
-                property int hPadding: transparentBubble ? 6 : 12
-                property int vPadding: transparentBubble ? 6 : 8
+                property bool transparentBubble: isSticker || isImage || isGif || isEmoji
+                property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
+                property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
                 property real maxBubbleWidth: Math.max(260, (ListView.view ? ListView.view.width : root.width) * 0.62)
                 property real contentWidth: contentLoader.item
                                              ? Math.min(maxBubbleWidth - hPadding * 2,
@@ -1853,19 +1853,26 @@ Item {
                     Item {
                         implicitWidth: emojiText.paintedWidth
                         implicitHeight: emojiText.paintedHeight
+                        width: implicitWidth
+                        height: implicitHeight
                         Text {
                             id: emojiText
                             text: model.text || ""
-                            font.pixelSize: 32
+                            font.pixelSize: 40
                             color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
                             transformOrigin: Item.Center
                             anchors.centerIn: parent
                         }
                         SequentialAnimation {
-                            running: isEmoji && isOutgoing
+                            running: isEmoji && (model.animateEmoji === true)
                             loops: 1
                             NumberAnimation { target: emojiText; property: "scale"; from: 0.85; to: 1.15; duration: 160; easing.type: Easing.OutQuad }
                             NumberAnimation { target: emojiText; property: "scale"; from: 1.15; to: 1.0; duration: 140; easing.type: Easing.InOutQuad }
+                            onStopped: {
+                                if (model.animateEmoji === true && ListView.view && ListView.view.model) {
+                                    ListView.view.model.setProperty(index, "animateEmoji", false)
+                                }
+                            }
                         }
                     }
                 }

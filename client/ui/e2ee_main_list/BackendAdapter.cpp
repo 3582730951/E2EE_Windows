@@ -1,5 +1,6 @@
 #include "BackendAdapter.h"
 #include "TrustPromptDialog.h"
+#include "CallInviteUtils.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -18,6 +19,7 @@
 #include <QRandomGenerator>
 #include <QStringList>
 #include <QTimer>
+#include <QRunnable>
 #include <QUrl>
 #include <QDateTime>
 #include <QByteArray>
@@ -36,7 +38,15 @@
 #include "../common/UiRuntimePaths.h"
 #include "key_transparency.h"
 
-BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {}
+BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {
+    core_pool_.setMaxThreadCount(1);
+    core_pool_.setExpiryTimeout(30000);
+}
+
+BackendAdapter::~BackendAdapter() {
+    core_pool_.clear();
+    core_pool_.waitForDone();
+}
 
 namespace {
 QString ResolveConfigPath(const QString& name) {
@@ -1902,10 +1912,31 @@ bool BackendAdapter::loadChatHistory(const QString &convId, bool isGroup, int li
         }
 
         switch (e.kind) {
-        case mi::client::ClientCore::HistoryKind::kText:
-            h.kind = 1;
-            h.text = QString::fromUtf8(e.text_utf8.data(), static_cast<int>(e.text_utf8.size()));
+        case mi::client::ClientCore::HistoryKind::kText: {
+            const QString text =
+                QString::fromUtf8(e.text_utf8.data(), static_cast<int>(e.text_utf8.size()));
+            const auto invite = mi::ui::ParseCallInvite(text);
+            if (!isGroup && invite.ok) {
+                h.kind = 4;
+                if (e.outgoing) {
+                    h.text = invite.video
+                                 ? UiSettings::Tr(QStringLiteral("已发起视频通话"),
+                                                  QStringLiteral("Video call started"))
+                                 : UiSettings::Tr(QStringLiteral("已发起语音通话"),
+                                                  QStringLiteral("Voice call started"));
+                } else {
+                    h.text = invite.video
+                                 ? UiSettings::Tr(QStringLiteral("视频通话邀请"),
+                                                  QStringLiteral("Incoming video call"))
+                                 : UiSettings::Tr(QStringLiteral("语音通话邀请"),
+                                                  QStringLiteral("Incoming voice call"));
+                }
+            } else {
+                h.kind = 1;
+                h.text = text;
+            }
             break;
+        }
         case mi::client::ClientCore::HistoryKind::kFile: {
             h.kind = 2;
             h.fileName = QString::fromUtf8(e.file_name.data(), static_cast<int>(e.file_name.size()));
@@ -2754,47 +2785,62 @@ void BackendAdapter::pollMessages() {
     }
 
     QPointer<BackendAdapter> self(this);
-    std::thread([self]() {
-        if (!self) {
-            return;
+    class PollTask final : public QRunnable {
+    public:
+        explicit PollTask(QPointer<BackendAdapter> target) : target_(std::move(target)) {
+            setAutoDelete(true);
         }
 
-        if (self->core_.token().empty() && !self->core_.HasPendingServerTrust()) {
-            self->core_.Relogin();
-        }
-        auto events = self->core_.PollChat();
-        auto reqs = self->core_.ListFriendRequests();
-        std::vector<mi::client::ClientCore::FriendEntry> syncedFriends;
-        bool syncChanged = false;
-        std::string syncErr;
-        bool didSync = false;
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        const qint64 last = self->lastFriendSyncAtMs_.load();
-        const bool force = self->friendSyncForced_.load();
-        if (force || (last == 0) || (now - last >= self->friendSyncIntervalMs_)) {
-            didSync = true;
-            if (!self->core_.SyncFriends(syncedFriends, syncChanged)) {
-                syncErr = self->core_.last_error();
-            }
-            self->lastFriendSyncAtMs_.store(now);
-            self->friendSyncForced_.store(false);
-        }
-
-        QMetaObject::invokeMethod(self, [self, events = std::move(events),
-                                         reqs = std::move(reqs),
-                                         syncedFriends = std::move(syncedFriends),
-                                         syncChanged, syncErr, didSync]() mutable {
-            if (!self) {
+        void run() override {
+            if (!target_) {
                 return;
             }
-            self->handlePollResult(std::move(events), std::move(reqs));
-            if (didSync) {
-                const QString err =
-                    syncErr.empty() ? QString() : QString::fromStdString(syncErr).trimmed();
-                self->applyFriendSync(syncedFriends, syncChanged, err, false);
+
+            if (target_->core_.token().empty() && !target_->core_.HasPendingServerTrust()) {
+                target_->core_.Relogin();
             }
-        }, Qt::QueuedConnection);
-    }).detach();
+            auto events = target_->core_.PollChat();
+            auto reqs = target_->core_.ListFriendRequests();
+            std::vector<mi::client::ClientCore::FriendEntry> syncedFriends;
+            bool syncChanged = false;
+            std::string syncErr;
+            bool didSync = false;
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            const qint64 last = target_->lastFriendSyncAtMs_.load();
+            const bool force = target_->friendSyncForced_.load();
+            if (force || (last == 0) || (now - last >= target_->friendSyncIntervalMs_)) {
+                didSync = true;
+                if (!target_->core_.SyncFriends(syncedFriends, syncChanged)) {
+                    syncErr = target_->core_.last_error();
+                }
+                target_->lastFriendSyncAtMs_.store(now);
+                target_->friendSyncForced_.store(false);
+            }
+
+            QMetaObject::invokeMethod(
+                target_,
+                [target = target_, events = std::move(events),
+                 reqs = std::move(reqs),
+                 syncedFriends = std::move(syncedFriends),
+                 syncChanged, syncErr, didSync]() mutable {
+                    if (!target) {
+                        return;
+                    }
+                    target->handlePollResult(std::move(events), std::move(reqs));
+                    if (didSync) {
+                        const QString err =
+                            syncErr.empty() ? QString() : QString::fromStdString(syncErr).trimmed();
+                        target->applyFriendSync(syncedFriends, syncChanged, err, false);
+                    }
+                },
+                Qt::QueuedConnection);
+        }
+
+    private:
+        QPointer<BackendAdapter> target_;
+    };
+
+    core_pool_.start(new PollTask(self));
 }
 
 void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult events,

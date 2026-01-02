@@ -1,5 +1,7 @@
 #include "media_jitter_buffer.h"
 
+#include <algorithm>
+
 namespace mi::client::media {
 
 MediaJitterBuffer::MediaJitterBuffer(std::uint64_t target_delay_ms,
@@ -21,7 +23,11 @@ void MediaJitterBuffer::DropOldest() {
   if (frames_.empty()) {
     return;
   }
-  frames_.erase(frames_.begin());
+  std::pop_heap(frames_.begin(), frames_.end(),
+                [](const FrameEntry& a, const FrameEntry& b) {
+                  return a.ts > b.ts;
+                });
+  frames_.pop_back();
   stats_.dropped++;
 }
 
@@ -36,7 +42,11 @@ void MediaJitterBuffer::Push(const mi::media::MediaFrame& frame,
     stats_.late++;
     return;
   }
-  frames_.emplace(frame.timestamp_ms, frame);
+  frames_.push_back(FrameEntry{frame.timestamp_ms, frame});
+  std::push_heap(frames_.begin(), frames_.end(),
+                 [](const FrameEntry& a, const FrameEntry& b) {
+                   return a.ts > b.ts;
+                 });
   stats_.pushed++;
   while (frames_.size() > max_frames_) {
     DropOldest();
@@ -48,8 +58,8 @@ bool MediaJitterBuffer::PopReady(std::uint64_t now_ms,
   if (frames_.empty() || !has_base_) {
     return false;
   }
-  auto it = frames_.begin();
-  const std::uint64_t ts = it->first;
+  const auto& top = frames_.front();
+  const std::uint64_t ts = top.ts;
   std::uint64_t expected = base_local_ms_ + target_delay_ms_;
   if (ts >= base_timestamp_ms_) {
     expected += (ts - base_timestamp_ms_);
@@ -57,8 +67,12 @@ bool MediaJitterBuffer::PopReady(std::uint64_t now_ms,
   if (now_ms < expected) {
     return false;
   }
-  out = std::move(it->second);
-  frames_.erase(it);
+  std::pop_heap(frames_.begin(), frames_.end(),
+                [](const FrameEntry& a, const FrameEntry& b) {
+                  return a.ts > b.ts;
+                });
+  out = std::move(frames_.back().frame);
+  frames_.pop_back();
   last_pop_ts_ = ts;
   stats_.popped++;
   return true;

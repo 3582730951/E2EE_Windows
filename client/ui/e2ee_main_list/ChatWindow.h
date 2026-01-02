@@ -64,6 +64,8 @@ public:
 signals:
     void inputModeChanged(bool chinese);
     void imeSourceChanged(bool thirdParty);
+    void startVoiceCallRequested(const QString &convId);
+    void startVideoCallRequested(const QString &convId);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

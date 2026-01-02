@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QMetaType>
 #include <QMutex>
+#include <QThreadPool>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -22,6 +23,7 @@ class BackendAdapter : public QObject {
 
 public:
     explicit BackendAdapter(QObject *parent = nullptr);
+    ~BackendAdapter() override;
 
     struct FriendEntry {
         QString username;
@@ -145,6 +147,8 @@ public:
 
     bool deviceSyncEnabled() const { return core_.device_sync_enabled(); }
     bool deviceSyncIsPrimary() const { return core_.device_sync_is_primary(); }
+    mi::client::ClientCore &core() { return core_; }
+    const mi::client::ClientCore &core() const { return core_; }
 
     struct DevicePairingRequestEntry {
         QString deviceId;
@@ -266,6 +270,7 @@ private:
     std::atomic<qint64> lastFriendSyncAtMs_{0};
     int friendSyncIntervalMs_{2000};
     std::atomic_bool friendSyncForced_{false};
+    QThreadPool core_pool_;
 };
 
 Q_DECLARE_METATYPE(BackendAdapter::FriendEntry)
