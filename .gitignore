@@ -37,6 +37,14 @@
 *.log.old.old
 *.md
 *.txt
+*.zip
+*.doc
+*.docx
+*.pdf
+*.xls
+*.xlsx
+*.pptx
+*.ppt
 !README.md
 !**/README.md
 
@@ -46,3 +54,4 @@
 
 # Rust build artifacts
 /shard/opaque_pake/target/
+2026-1-2性能优化_1.txt
