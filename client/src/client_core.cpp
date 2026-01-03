@@ -6415,7 +6415,7 @@ bool ClientCore::Login(const std::string& username,
     if (e2ee_inited_) {
       e2ee_.SetLocalUsername(username_);
     }
-    if (!e2ee_state_dir_.empty()) {
+    if (history_enabled_ && !e2ee_state_dir_.empty()) {
       auto store = std::make_unique<ChatHistoryStore>();
       std::string hist_err;
       if (store->Init(e2ee_state_dir_, username_, hist_err)) {
@@ -6594,7 +6594,7 @@ bool ClientCore::Login(const std::string& username,
   if (e2ee_inited_) {
     e2ee_.SetLocalUsername(username_);
   }
-  if (!e2ee_state_dir_.empty()) {
+  if (history_enabled_ && !e2ee_state_dir_.empty()) {
     auto store = std::make_unique<ChatHistoryStore>();
     std::string hist_err;
     if (store->Init(e2ee_state_dir_, username_, hist_err)) {
@@ -13600,6 +13600,50 @@ bool ClientCore::AddHistorySystemMessage(const std::string& conv_id,
   if (!history_store_->AppendSystem(is_group, conv_id, text_utf8, NowUnixSeconds(),
                                     err)) {
     last_error_ = err.empty() ? "history write failed" : err;
+    return false;
+  }
+  return true;
+}
+
+void ClientCore::SetHistoryEnabled(bool enabled) {
+  history_enabled_ = enabled;
+  if (!history_enabled_) {
+    history_store_.reset();
+    return;
+  }
+  if (history_store_ || username_.empty() || e2ee_state_dir_.empty()) {
+    return;
+  }
+  auto store = std::make_unique<ChatHistoryStore>();
+  std::string hist_err;
+  if (store->Init(e2ee_state_dir_, username_, hist_err)) {
+    history_store_ = std::move(store);
+    WarmupHistoryOnStartup();
+  } else {
+    history_store_.reset();
+  }
+}
+
+bool ClientCore::ClearAllHistory(bool delete_attachments,
+                                 bool secure_wipe,
+                                 std::string& error) {
+  error.clear();
+  if (username_.empty() || e2ee_state_dir_.empty()) {
+    error = "history user empty";
+    return false;
+  }
+  if (history_store_) {
+    if (!history_store_->ClearAll(delete_attachments, secure_wipe, error)) {
+      return false;
+    }
+    history_store_.reset();
+    return true;
+  }
+  auto store = std::make_unique<ChatHistoryStore>();
+  if (!store->Init(e2ee_state_dir_, username_, error)) {
+    return false;
+  }
+  if (!store->ClearAll(delete_attachments, secure_wipe, error)) {
     return false;
   }
   return true;

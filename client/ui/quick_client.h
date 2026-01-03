@@ -131,6 +131,8 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool aiEnhanceX4Confirmed() const;
   Q_INVOKABLE void setAiEnhanceX4Confirmed(bool confirmed);
   Q_INVOKABLE QVariantMap aiEnhanceRecommendations() const;
+  Q_INVOKABLE bool historySaveEnabled() const;
+  Q_INVOKABLE void setHistorySaveEnabled(bool enabled);
   Q_INVOKABLE bool clipboardIsolation() const;
   Q_INVOKABLE void setClipboardIsolation(bool enabled);
 
@@ -285,6 +287,7 @@ class QuickClient : public QObject {
   bool clipboard_isolation_enabled_{true};
   bool internal_ime_enabled_{true};
   bool ai_enhance_enabled_{false};
+  bool history_save_enabled_{true};
   int ai_enhance_quality_{2};
   bool ai_enhance_x4_confirmed_{false};
   bool ai_gpu_available_{false};

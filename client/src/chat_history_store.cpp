@@ -7749,6 +7749,102 @@ bool ChatHistoryStore::DeleteConversation(bool is_group,
   return true;
 }
 
+bool ChatHistoryStore::ClearAll(bool delete_attachments,
+                                bool secure_wipe,
+                                std::string& error) {
+  error.clear();
+  if (read_only_) {
+    return true;
+  }
+  if (history_dir_.empty() || user_tag_.empty()) {
+    error = "history dir empty";
+    return false;
+  }
+  std::string lock_err;
+  (void)AcquireProfileLock(lock_err);
+
+  const std::string prefix = "main_" + user_tag_ + "_";
+  std::error_code ec;
+  if (std::filesystem::exists(history_dir_, ec) && !ec) {
+    for (const auto& entry : std::filesystem::directory_iterator(history_dir_, ec)) {
+      if (ec) {
+        break;
+      }
+      if (!entry.is_regular_file(ec)) {
+        continue;
+      }
+      const auto name = entry.path().filename().string();
+      if (name.rfind(prefix, 0) != 0 || name.size() <= prefix.size() + 4 ||
+          name.substr(name.size() - 4) != ".dll") {
+        continue;
+      }
+      if (secure_wipe) {
+        BestEffortWipeFile(entry.path());
+      } else {
+        std::filesystem::remove(entry.path(), ec);
+      }
+    }
+  }
+
+  if (!index_path_.empty()) {
+    if (secure_wipe) {
+      BestEffortWipeFile(index_path_);
+    } else {
+      std::filesystem::remove(index_path_, ec);
+    }
+  }
+  if (!journal_path_.empty()) {
+    if (secure_wipe) {
+      BestEffortWipeFile(journal_path_);
+    } else {
+      std::filesystem::remove(journal_path_, ec);
+    }
+  }
+  if (!key_path_.empty()) {
+    if (secure_wipe) {
+      BestEffortWipeFile(key_path_);
+    } else {
+      std::filesystem::remove(key_path_, ec);
+    }
+  }
+  if (delete_attachments) {
+    if (!attachments_index_path_.empty()) {
+      if (secure_wipe) {
+        BestEffortWipeFile(attachments_index_path_);
+      } else {
+        std::filesystem::remove(attachments_index_path_, ec);
+      }
+    }
+    if (!attachments_dir_.empty() && std::filesystem::exists(attachments_dir_, ec) &&
+        !ec) {
+      for (const auto& entry :
+           std::filesystem::directory_iterator(attachments_dir_, ec)) {
+        if (ec) {
+          break;
+        }
+        if (!entry.is_regular_file(ec)) {
+          continue;
+        }
+        if (secure_wipe) {
+          BestEffortWipeFile(entry.path());
+        } else {
+          std::filesystem::remove(entry.path(), ec);
+        }
+      }
+      std::filesystem::remove_all(attachments_dir_, ec);
+    }
+  }
+
+  history_files_.clear();
+  conv_to_file_.clear();
+  attachments_.clear();
+  attachments_loaded_ = false;
+  attachments_dirty_ = false;
+  index_dirty_ = false;
+  next_seq_ = 1;
+  return true;
+}
+
 bool ChatHistoryStore::LoadConversation(bool is_group,
                                         const std::string& conv_id,
                                         std::size_t limit,

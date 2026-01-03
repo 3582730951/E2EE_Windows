@@ -96,6 +96,9 @@ class ChatHistoryStore {
                           bool delete_attachments,
                           bool secure_wipe,
                           std::string& error);
+  bool ClearAll(bool delete_attachments,
+                bool secure_wipe,
+                std::string& error);
 
   bool LoadConversation(bool is_group,
                         const std::string& conv_id,

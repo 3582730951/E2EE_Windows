@@ -104,6 +104,7 @@ ApplicationWindow {
             model: [Ui.I18n.t("settings.section.appearance"),
                     Ui.I18n.t("settings.section.notifications"),
                     Ui.I18n.t("settings.section.privacy"),
+                    Ui.I18n.t("settings.section.aiModel"),
                     Ui.I18n.t("settings.section.about")]
             currentIndex: 0
             delegate: Item {
@@ -223,6 +224,26 @@ ApplicationWindow {
                     }
 
                     Text {
+                        text: Ui.I18n.t("settings.privacy.saveHistory")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.saveHistoryHint")
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Switch {
+                            checked: Ui.AppStore.historySaveEnabled
+                            onToggled: Ui.AppStore.setHistorySaveEnabled(checked)
+                        }
+                    }
+
+                    Text {
                         text: Ui.I18n.t("settings.privacy.aiEnhance")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
@@ -241,58 +262,85 @@ ApplicationWindow {
                             onToggled: Ui.AppStore.setAiEnhanceEnabled(checked)
                         }
                     }
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            Item {
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: Ui.Style.paddingM
+
                     Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
+                        text: Ui.I18n.t("settings.privacy.aiEnhance")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
                     }
-                    RowLayout {
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.aiEnhanceHint")
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        ComboBox {
-                            id: aiQualityCombo
-                            model: aiQualityOptions
-                            textRole: "label"
-                            Layout.preferredWidth: 220
-                            enabled: Ui.AppStore.aiEnhanceEnabled
-                            currentIndex: aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
-                            onActivated: requestAiQuality(model[currentIndex].scale)
+                        Layout.leftMargin: 16
+                        spacing: Ui.Style.paddingXS
+                        enabled: Ui.AppStore.aiEnhanceEnabled
+                        opacity: Ui.AppStore.aiEnhanceEnabled ? 1.0 : 0.45
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
+                            color: Ui.Style.textSecondary
+                            font.pixelSize: 12
                         }
-                    }
-                    Text {
-                        text: Ui.AppStore.aiEnhanceGpuName.length > 0
-                              ? Ui.I18n.t("settings.privacy.aiEnhanceGpu").arg(
-                                    Ui.AppStore.aiEnhanceGpuName +
-                                    (Ui.AppStore.aiEnhanceGpuSeries > 0
-                                     ? (" (" + Ui.AppStore.aiEnhanceGpuSeries + Ui.I18n.t("settings.privacy.aiEnhanceGpuSeriesSuffix") + ")")
-                                     : ""))
-                              : ""
-                        visible: Ui.AppStore.aiEnhanceGpuName.length > 0
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        text: Ui.AppStore.aiEnhanceGpuAvailable
-                              ? ""
-                              : Ui.I18n.t("settings.privacy.aiEnhanceGpuUnavailable")
-                        visible: !Ui.AppStore.aiEnhanceGpuAvailable
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendPerf")
-                              .arg(Ui.AppStore.aiEnhancePerfScale)
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendQuality")
-                              .arg(Ui.AppStore.aiEnhanceQualityScale)
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                id: aiQualityCombo
+                                model: aiQualityOptions
+                                textRole: "label"
+                                Layout.preferredWidth: 220
+                                enabled: Ui.AppStore.aiEnhanceEnabled
+                                currentIndex: aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
+                                onActivated: requestAiQuality(model[currentIndex].scale)
+                            }
+                        }
+                        Text {
+                            text: Ui.AppStore.aiEnhanceGpuName.length > 0
+                                  ? Ui.I18n.t("settings.privacy.aiEnhanceGpu").arg(
+                                        Ui.AppStore.aiEnhanceGpuName +
+                                        (Ui.AppStore.aiEnhanceGpuSeries > 0
+                                         ? (" (" + Ui.AppStore.aiEnhanceGpuSeries + Ui.I18n.t("settings.privacy.aiEnhanceGpuSeriesSuffix") + ")")
+                                         : ""))
+                                  : ""
+                            visible: Ui.AppStore.aiEnhanceGpuName.length > 0
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            text: Ui.AppStore.aiEnhanceGpuAvailable
+                                  ? ""
+                                  : Ui.I18n.t("settings.privacy.aiEnhanceGpuUnavailable")
+                            visible: !Ui.AppStore.aiEnhanceGpuAvailable
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendPerf")
+                                  .arg(Ui.AppStore.aiEnhancePerfScale)
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendQuality")
+                                  .arg(Ui.AppStore.aiEnhanceQualityScale)
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
                     }
                     Item { Layout.fillHeight: true }
                 }

@@ -367,6 +367,11 @@ class ClientCore {
   bool AddHistorySystemMessage(const std::string& conv_id,
                                bool is_group,
                                const std::string& text_utf8);
+  bool history_enabled() const { return history_enabled_; }
+  void SetHistoryEnabled(bool enabled);
+  bool ClearAllHistory(bool delete_attachments,
+                       bool secure_wipe,
+                       std::string& error);
 
   const std::string& token() const { return token_; }
   const std::string& last_error() const { return last_error_; }
@@ -591,6 +596,7 @@ class ClientCore {
   bool e2ee_inited_{false};
   bool prekey_published_{false};
   std::filesystem::path e2ee_state_dir_;
+  bool history_enabled_{true};
   std::unique_ptr<ChatHistoryStore> history_store_;
   std::filesystem::path kt_state_path_;
   std::uint64_t kt_tree_size_{0};

@@ -19,6 +19,7 @@ QtObject {
     property string sendErrorMessage: ""
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
+    property bool historySaveEnabled: true
     property bool aiEnhanceEnabled: false
     property int aiEnhanceQualityLevel: 2
     property bool aiEnhanceX4Confirmed: false
@@ -67,6 +68,9 @@ QtObject {
             }
             if (clientBridge.setInternalImeEnabled) {
                 clientBridge.setInternalImeEnabled(internalImeEnabled)
+            }
+            if (clientBridge.historySaveEnabled) {
+                historySaveEnabled = clientBridge.historySaveEnabled()
             }
             if (clientBridge.aiEnhanceRecommendations) {
                 var rec = clientBridge.aiEnhanceRecommendations()
@@ -1088,6 +1092,16 @@ QtObject {
         }
     }
 
+    function setHistorySaveEnabled(enabled) {
+        historySaveEnabled = enabled === true
+        if (clientBridge && clientBridge.setHistorySaveEnabled) {
+            clientBridge.setHistorySaveEnabled(historySaveEnabled)
+        }
+        if (!historySaveEnabled) {
+            clearAllMessages()
+        }
+    }
+
     function setAiEnhanceEnabled(enabled) {
         aiEnhanceEnabled = enabled === true
         if (clientBridge && clientBridge.setAiEnhanceEnabled) {
@@ -1112,6 +1126,23 @@ QtObject {
     function setInternalClipboard(text) {
         internalClipboardText = text || ""
         internalClipboardMs = Date.now()
+    }
+
+    function clearAllMessages() {
+        for (var chatId in messagesByChatId) {
+            if (!messagesByChatId.hasOwnProperty(chatId)) {
+                continue
+            }
+            var model = messagesByChatId[chatId]
+            if (model && model.clear) {
+                model.clear()
+            }
+        }
+        for (var i = 0; i < dialogsModel.count; ++i) {
+            dialogsModel.setProperty(i, "preview", "")
+            dialogsModel.setProperty(i, "timeText", "")
+            dialogsModel.setProperty(i, "subtitle", "")
+        }
     }
 
     function clearSendError() {

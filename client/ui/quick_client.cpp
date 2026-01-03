@@ -136,6 +136,14 @@ QString AiSettingsPath() {
   return QDir(dataDir).filePath(QStringLiteral("ai_settings.ini"));
 }
 
+QString PrivacySettingsPath() {
+  const QString dataDir = ResolveUiDataDir();
+  if (dataDir.isEmpty()) {
+    return {};
+  }
+  return QDir(dataDir).filePath(QStringLiteral("privacy_settings.ini"));
+}
+
 struct AiEnhanceRecommendation {
   int perf_scale{kAiEnhanceScaleX2};
   int quality_scale{kAiEnhanceScaleX2};
@@ -416,6 +424,28 @@ void SaveAiEnhanceSettings(bool enabled, int quality, bool x4Confirmed) {
   settings.setValue(QStringLiteral("ai/enabled"), enabled);
   settings.setValue(QStringLiteral("ai/quality"), ClampEnhanceScale(quality));
   settings.setValue(QStringLiteral("ai/x4_confirmed"), x4Confirmed);
+  settings.sync();
+}
+
+bool LoadPrivacySettings(bool& historySaveEnabled) {
+  const QString path = PrivacySettingsPath();
+  if (path.isEmpty() || !QFileInfo::exists(path)) {
+    historySaveEnabled = true;
+    return false;
+  }
+  QSettings settings(path, QSettings::IniFormat);
+  historySaveEnabled =
+      settings.value(QStringLiteral("privacy/save_history"), true).toBool();
+  return true;
+}
+
+void SavePrivacySettings(bool historySaveEnabled) {
+  const QString path = PrivacySettingsPath();
+  if (path.isEmpty()) {
+    return;
+  }
+  QSettings settings(path, QSettings::IniFormat);
+  settings.setValue(QStringLiteral("privacy/save_history"), historySaveEnabled);
   settings.sync();
 }
 
@@ -2017,6 +2047,10 @@ bool QuickClient::init(const QString& configPath) {
     UpdateLastError(QString());
     emit deviceChanged();
   }
+  bool historySave = history_save_enabled_;
+  LoadPrivacySettings(historySave);
+  history_save_enabled_ = historySave;
+  core_.SetHistoryEnabled(history_save_enabled_);
   return ok;
 }
 
@@ -2051,8 +2085,16 @@ bool QuickClient::login(const QString& user, const QString& pass) {
   } else {
     token_ = QString::fromStdString(core_.token());
     username_ = user.trimmed();
+    QString historyErr;
+    if (!history_save_enabled_) {
+      std::string hist_err;
+      if (!core_.ClearAllHistory(true, false, hist_err)) {
+        historyErr = QString::fromStdString(hist_err);
+      }
+      core_.SetHistoryEnabled(false);
+    }
     emit status(QStringLiteral("登录成功"));
-    UpdateLastError(QString());
+    UpdateLastError(historyErr);
     StartPolling();
     UpdateFriendList(core_.ListFriends());
     UpdateFriendRequests(core_.ListFriendRequests());
@@ -3323,6 +3365,22 @@ QVariantMap QuickClient::aiEnhanceRecommendations() const {
   out.insert(QStringLiteral("perfScale"), ai_rec_perf_scale_);
   out.insert(QStringLiteral("qualityScale"), ai_rec_quality_scale_);
   return out;
+}
+
+bool QuickClient::historySaveEnabled() const {
+  return history_save_enabled_;
+}
+
+void QuickClient::setHistorySaveEnabled(bool enabled) {
+  history_save_enabled_ = enabled;
+  SavePrivacySettings(history_save_enabled_);
+  core_.SetHistoryEnabled(history_save_enabled_);
+  if (!history_save_enabled_ && loggedIn()) {
+    std::string err;
+    if (!core_.ClearAllHistory(true, false, err)) {
+      UpdateLastError(QString::fromStdString(err));
+    }
+  }
 }
 
 bool QuickClient::clipboardIsolation() const {
