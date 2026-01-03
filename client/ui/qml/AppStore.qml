@@ -19,6 +19,7 @@ QtObject {
     property string sendErrorMessage: ""
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
+    property bool aiEnhanceEnabled: true
     property string internalClipboardText: ""
     property double internalClipboardMs: 0
     property var messagesByChatId: ({})
@@ -1055,6 +1056,10 @@ QtObject {
         if (clientBridge && clientBridge.setInternalImeEnabled) {
             clientBridge.setInternalImeEnabled(internalImeEnabled)
         }
+    }
+
+    function setAiEnhanceEnabled(enabled) {
+        aiEnhanceEnabled = enabled === true
     }
 
     function setInternalClipboard(text) {

@@ -121,7 +121,7 @@ jobs:
           $esrganRoot = Join-Path $env:GITHUB_WORKSPACE "build\\realesrgan"
           New-Item -ItemType Directory -Force -Path $esrganRoot | Out-Null
           $esrganZip = Join-Path $esrganRoot "realesrgan.zip"
-          $esrganUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5/realesrgan-ncnn-vulkan-20220424-windows.zip"
+          $esrganUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip"
           Invoke-WebRequest -Uri $esrganUrl -OutFile $esrganZip
           Expand-Archive -Path $esrganZip -DestinationPath $esrganRoot -Force
           $esrganExe = Get-ChildItem -Path $esrganRoot -Recurse -Filter "realesrgan-ncnn-vulkan.exe" | Select-Object -First 1

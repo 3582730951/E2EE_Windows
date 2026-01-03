@@ -197,6 +197,26 @@ ApplicationWindow {
                             onToggled: Ui.AppStore.setInternalImeEnabled(checked)
                         }
                     }
+
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.aiEnhance")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: Ui.I18n.t("settings.privacy.aiEnhanceHint")
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Switch {
+                            checked: Ui.AppStore.aiEnhanceEnabled
+                            onToggled: Ui.AppStore.setAiEnhanceEnabled(checked)
+                        }
+                    }
                     Item { Layout.fillHeight: true }
                 }
             }

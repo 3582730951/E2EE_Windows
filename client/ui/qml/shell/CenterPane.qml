@@ -135,22 +135,26 @@ Item {
     }
     function requestImageEnhance() {
         previewEnhanceHint = ""
+        if (!Ui.AppStore.aiEnhanceEnabled) {
+            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceDisabled")
+            return
+        }
         if (!clientBridge || !clientBridge.requestImageEnhance) {
-            previewEnhanceHint = "AI超清暂未接入"
+            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceUnavailable")
             return
         }
         if (previewEnhancing) {
             return
         }
         previewEnhancing = true
-        previewEnhanceHint = "正在进行超清优化..."
+        previewEnhanceHint = Ui.I18n.t("image.preview.enhanceRunning")
         var ok = clientBridge.requestImageEnhance(previewImageUrl, previewImageName)
         if (!ok) {
             var err = clientBridge.lastError || ""
-            previewEnhanceHint = err.length > 0 ? err : "AI超清暂未接入"
+            previewEnhanceHint = err.length > 0 ? err : Ui.I18n.t("image.preview.enhanceUnavailable")
             previewEnhancing = false
         } else {
-            previewEnhanceHint = "已提交超清优化请求"
+            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceSubmitted")
         }
     }
     function loadEmoji() {
@@ -1424,9 +1428,10 @@ Item {
                         var w = sourceSize.width
                         var h = sourceSize.height
                         if (w > 0 && h > 0) {
-                            previewSuggestEnhance = Math.min(w, h) < 900
+                            previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled &&
+                                                    Math.min(w, h) < 900
                         } else {
-                            previewSuggestEnhance = true
+                            previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
                         }
                     } else {
                         previewSuggestEnhance = false
@@ -1436,7 +1441,7 @@ Item {
 
             Rectangle {
                 id: enhanceBanner
-                visible: previewSuggestEnhance
+                visible: previewSuggestEnhance && Ui.AppStore.aiEnhanceEnabled
                 anchors.top: parent.top
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.topMargin: 16
@@ -1451,19 +1456,21 @@ Item {
                     anchors.margins: 6
                     spacing: 8
                     Text {
-                        text: "图片不够清晰？试试 AI 超清优化"
+                        text: Ui.I18n.t("image.preview.enhancePrompt")
                         font.pixelSize: 12
                         color: Ui.Style.textPrimary
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
                     Components.GhostButton {
-                        text: "稍后"
+                        text: Ui.I18n.t("image.preview.enhanceLater")
                         height: 24
                         onClicked: previewSuggestEnhance = false
                     }
                     Components.PrimaryButton {
-                        text: previewEnhancing ? "处理中" : "立即优化"
+                        text: previewEnhancing
+                              ? Ui.I18n.t("image.preview.enhanceProcessing")
+                              : Ui.I18n.t("image.preview.enhanceNow")
                         height: 24
                         enabled: !previewEnhancing
                         onClicked: requestImageEnhance()
@@ -1482,7 +1489,7 @@ Item {
             }
 
             Components.GhostButton {
-                text: "关闭"
+                text: Ui.I18n.t("image.preview.close")
                 width: 60
                 height: 28
                 anchors.top: parent.top
@@ -1508,10 +1515,12 @@ Item {
             previewEnhancing = false
             if (ok && outputUrl && outputUrl.length > 0) {
                 previewImageUrl = outputUrl
-                previewEnhanceHint = "超清优化完成"
+                previewEnhanceHint = Ui.I18n.t("image.preview.enhanceDone")
                 previewSuggestEnhance = false
             } else {
-                previewEnhanceHint = error && error.length > 0 ? error : "超清优化失败"
+                previewEnhanceHint = error && error.length > 0
+                                     ? error
+                                     : Ui.I18n.t("image.preview.enhanceFailed")
             }
         }
     }
