@@ -129,7 +129,7 @@ Item {
         }
         previewImageUrl = resolved
         previewImageName = name || ""
-        previewSuggestEnhance = false
+        previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
         previewEnhanceHint = ""
         imagePreview.open()
     }
