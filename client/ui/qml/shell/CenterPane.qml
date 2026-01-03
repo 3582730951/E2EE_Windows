@@ -1,7 +1,9 @@
 import QtQuick 2.15
+import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 6.2
+import QtQuick.Window 2.15
 import QtMultimedia 6.2
 import QtPositioning 6.2
 import "qrc:/mi/e2ee/ui/qml" as Ui
@@ -32,8 +34,6 @@ Item {
     property string pendingDownloadKey: ""
     property string pendingDownloadName: ""
     property int pendingDownloadSize: 0
-    property string previewImageUrl: ""
-    property string previewImageName: ""
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -124,9 +124,7 @@ Item {
         if (!resolved || resolved.length === 0) {
             return
         }
-        previewImageUrl = resolved
-        previewImageName = name || ""
-        imagePreview.open()
+        imageViewer.openWith(resolved, name || "")
     }
     function requestImageEnhanceForMessage(messageId, url, name) {
         if (!Ui.AppStore.aiEnhanceEnabled) {
@@ -1365,48 +1363,101 @@ Item {
                         path)
         }
     }
-    Popup {
-        id: imagePreview
-        modal: true
-        focus: true
-        padding: 0
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        x: 0
-        y: 0
-        width: root.width
-        height: root.height
-        onClosed: {
-            previewImageUrl = ""
-            previewImageName = ""
+    Window {
+        id: imageViewer
+        visible: false
+        flags: Qt.Window | Qt.FramelessWindowHint
+        modality: Qt.ApplicationModal
+        color: "transparent"
+        width: Screen.width
+        height: Screen.height
+        x: Screen.virtualX
+        y: Screen.virtualY
+
+        property string sourceUrl: ""
+        property string imageName: ""
+        property real zoom: 1.0
+        property real minZoom: 0.2
+        property real maxZoom: 6.0
+        property real imageBaseWidth: 0
+        property real imageBaseHeight: 0
+        property int edgeMargin: 48
+
+        function clampZoom(value) {
+            return Math.max(minZoom, Math.min(maxZoom, value))
         }
 
-        background: Rectangle {
-            color: Qt.rgba(0, 0, 0, 0.72)
+        function updateBaseSize() {
+            if (imageItem.implicitWidth <= 0 || imageItem.implicitHeight <= 0) {
+                return
+            }
+            var availableW = Math.max(1, width - edgeMargin * 2)
+            var availableH = Math.max(1, height - edgeMargin * 2)
+            var scale = Math.min(availableW / imageItem.implicitWidth,
+                                 availableH / imageItem.implicitHeight)
+            imageBaseWidth = imageItem.implicitWidth * scale
+            imageBaseHeight = imageItem.implicitHeight * scale
         }
 
-        contentItem: Item {
+        function openWith(url, name) {
+            sourceUrl = url
+            imageName = name || ""
+            zoom = 1.0
+            updateBaseSize()
+            visible = true
+            raise()
+            requestActivate()
+        }
+
+        function closeViewer() {
+            close()
+        }
+
+        onClosing: {
+            sourceUrl = ""
+            imageName = ""
+            zoom = 1.0
+        }
+        onWidthChanged: updateBaseSize()
+        onHeightChanged: updateBaseSize()
+
+        Keys.onEscapePressed: closeViewer()
+
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(0, 0, 0, 0.76)
+        }
+
+        Item {
+            id: viewerLayer
             anchors.fill: parent
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    var p = mapToItem(previewImage, mouse.x, mouse.y)
-                    if (p.x < 0 || p.y < 0 ||
-                        p.x > previewImage.width || p.y > previewImage.height) {
-                        imagePreview.close()
-                    }
+            WheelHandler {
+                target: viewerLayer
+                onWheel: {
+                    var factor = wheel.angleDelta.y < 0 ? 1.1 : (1.0 / 1.1)
+                    imageViewer.zoom = imageViewer.clampZoom(imageViewer.zoom * factor)
+                    wheel.accepted = true
                 }
             }
 
             Image {
-                id: previewImage
-                anchors.fill: parent
-                anchors.margins: 48
-                source: previewImageUrl
+                id: imageItem
+                anchors.centerIn: parent
+                width: imageViewer.imageBaseWidth
+                height: imageViewer.imageBaseHeight
+                source: imageViewer.sourceUrl
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 antialiasing: true
                 cache: true
+                transformOrigin: Item.Center
+                scale: imageViewer.zoom
+                onStatusChanged: {
+                    if (status === Image.Ready) {
+                        imageViewer.updateBaseSize()
+                    }
+                }
             }
 
             Components.GhostButton {
@@ -1416,7 +1467,7 @@ Item {
                 anchors.top: parent.top
                 anchors.right: parent.right
                 anchors.margins: 16
-                onClicked: imagePreview.close()
+                onClicked: imageViewer.closeViewer()
             }
         }
     }
