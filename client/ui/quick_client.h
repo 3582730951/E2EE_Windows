@@ -84,6 +84,9 @@ class QuickClient : public QObject {
                                              const QString& savePath);
   Q_INVOKABLE bool requestImageEnhance(const QString& fileUrl,
                                        const QString& fileName);
+  Q_INVOKABLE bool requestImageEnhanceForMessage(const QString& messageId,
+                                                 const QString& fileUrl,
+                                                 const QString& fileName);
   Q_INVOKABLE QVariantList loadHistory(const QString& convId, bool isGroup);
   Q_INVOKABLE QVariantList listGroupMembersInfo(const QString& groupId);
   Q_INVOKABLE QVariantList stickerItems();
@@ -120,6 +123,9 @@ class QuickClient : public QObject {
   Q_INVOKABLE void imeReset();
   Q_INVOKABLE bool internalImeEnabled() const;
   Q_INVOKABLE void setInternalImeEnabled(bool enabled);
+  Q_INVOKABLE bool aiEnhanceGpuAvailable() const;
+  Q_INVOKABLE bool aiEnhanceEnabled() const;
+  Q_INVOKABLE void setAiEnhanceEnabled(bool enabled);
   Q_INVOKABLE bool clipboardIsolation() const;
   Q_INVOKABLE void setClipboardIsolation(bool enabled);
 
@@ -173,7 +179,8 @@ class QuickClient : public QObject {
   void attachmentDownloadProgress(const QString& fileId,
                                   const QString& savePath,
                                   double progress);
-  void imageEnhanceFinished(const QString& sourceUrl,
+  void imageEnhanceFinished(const QString& messageId,
+                            const QString& sourceUrl,
                             const QString& outputUrl,
                             bool ok,
                             const QString& error);
@@ -239,6 +246,9 @@ class QuickClient : public QObject {
                                  const QString& savePath,
                                  bool ok,
                                  const QString& error);
+  void MaybeAutoEnhanceImage(const QString& messageId,
+                             const QString& filePath,
+                             const QString& fileName);
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -269,6 +279,7 @@ class QuickClient : public QObject {
   void* ime_session_{nullptr};
   bool clipboard_isolation_enabled_{true};
   bool internal_ime_enabled_{true};
+  bool ai_enhance_enabled_{false};
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;
@@ -292,6 +303,7 @@ class QuickClient : public QObject {
   bool active_call_video_{false};
   QThreadPool cache_pool_;
   QSet<QString> cache_inflight_;
+  QSet<QString> enhance_inflight_;
   QHash<QString, QStringList> pending_downloads_;
   QHash<QString, QString> pending_download_names_;
   QHash<QString, double> download_progress_base_;

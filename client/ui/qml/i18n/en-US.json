@@ -92,6 +92,8 @@
   "image.preview.enhanceFailed": "Enhance failed",
   "image.preview.enhanceDisabled": "AI enhance is disabled",
   "image.preview.close": "Close",
+  "image.context.enhance": "AI enhance",
+  "image.context.enhanced": "Enhanced",
   "notice.friendAddedTitle": "Friend added",
   "notice.friendAddedDetail": "You are now connected with %1",
   "notice.friendRemovedTitle": "Friend removed",

@@ -19,7 +19,7 @@ QtObject {
     property string sendErrorMessage: ""
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
-    property bool aiEnhanceEnabled: true
+    property bool aiEnhanceEnabled: false
     property string internalClipboardText: ""
     property double internalClipboardMs: 0
     property var messagesByChatId: ({})
@@ -60,6 +60,12 @@ QtObject {
             }
             if (clientBridge.setInternalImeEnabled) {
                 clientBridge.setInternalImeEnabled(internalImeEnabled)
+            }
+            if (clientBridge.aiEnhanceGpuAvailable) {
+                aiEnhanceEnabled = clientBridge.aiEnhanceGpuAvailable()
+            }
+            if (clientBridge.setAiEnhanceEnabled) {
+                clientBridge.setAiEnhanceEnabled(aiEnhanceEnabled)
             }
         }
         rebuildFiltered()
@@ -560,6 +566,7 @@ QtObject {
             fileKey: message.fileKey || "",
             fileUrl: fileUrlValue,
             downloadProgress: progressValue,
+            imageEnhanced: message.imageEnhanced === true,
             stickerId: message.stickerId || "",
             stickerUrl: message.stickerUrl || "",
             stickerAnimated: message.stickerAnimated || false,
@@ -785,6 +792,7 @@ QtObject {
                 fileKey: h.fileKey || "",
                 fileUrl: fileUrlValue,
                 downloadProgress: progressValue,
+                imageEnhanced: h.imageEnhanced === true,
                 stickerId: h.stickerId || "",
                 stickerUrl: h.stickerUrl || "",
                 stickerAnimated: h.stickerAnimated || false,
@@ -1060,6 +1068,9 @@ QtObject {
 
     function setAiEnhanceEnabled(enabled) {
         aiEnhanceEnabled = enabled === true
+        if (clientBridge && clientBridge.setAiEnhanceEnabled) {
+            clientBridge.setAiEnhanceEnabled(aiEnhanceEnabled)
+        }
     }
 
     function setInternalClipboard(text) {
@@ -1248,6 +1259,7 @@ QtObject {
             setString("fileKey", incoming.fileKey)
             setUrl("fileUrl", incoming.fileUrl)
             setUrl("previewUrl", incoming.previewUrl)
+            setBoolTrue("imageEnhanced", incoming.imageEnhanced)
             setString("stickerId", incoming.stickerId)
             setUrl("stickerUrl", incoming.stickerUrl)
             setBoolTrue("stickerAnimated", incoming.stickerAnimated)
@@ -1303,6 +1315,34 @@ QtObject {
             }
         }
         updateDownloadProgress(fileId, 1)
+    }
+
+    function applyImageEnhance(messageId, outputUrl) {
+        if (!messageId) {
+            return
+        }
+        var urlText = outputUrl && outputUrl.toString
+                      ? outputUrl.toString()
+                      : (outputUrl ? "" + outputUrl : "")
+        if (urlText.length === 0) {
+            return
+        }
+        for (var chatId in messagesByChatId) {
+            if (!messagesByChatId.hasOwnProperty(chatId)) {
+                continue
+            }
+            var model = messagesByChatId[chatId]
+            if (!model) {
+                continue
+            }
+            for (var i = model.count - 1; i >= 0; --i) {
+                if (model.get(i).msgId === messageId) {
+                    model.setProperty(i, "fileUrl", outputUrl)
+                    model.setProperty(i, "contentKind", "image")
+                    model.setProperty(i, "imageEnhanced", true)
+                }
+            }
+        }
     }
 
     function updateDownloadProgress(fileId, progress) {
@@ -1388,6 +1428,11 @@ QtObject {
                 updateDownloadProgress(fileId, 1)
             } else {
                 updateDownloadProgress(fileId, 0)
+            }
+        }
+        function onImageEnhanceFinished(messageId, sourceUrl, outputUrl, ok, error) {
+            if (ok && outputUrl) {
+                applyImageEnhance(messageId, outputUrl)
             }
         }
     }

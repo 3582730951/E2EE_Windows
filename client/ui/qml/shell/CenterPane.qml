@@ -34,9 +34,6 @@ Item {
     property int pendingDownloadSize: 0
     property string previewImageUrl: ""
     property string previewImageName: ""
-    property bool previewSuggestEnhance: false
-    property string previewEnhanceHint: ""
-    property bool previewEnhancing: false
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -129,33 +126,23 @@ Item {
         }
         previewImageUrl = resolved
         previewImageName = name || ""
-        previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
-        previewEnhanceHint = ""
         imagePreview.open()
     }
-    function requestImageEnhance() {
-        previewEnhanceHint = ""
+    function requestImageEnhanceForMessage(messageId, url, name) {
         if (!Ui.AppStore.aiEnhanceEnabled) {
-            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceDisabled")
             return
         }
-        if (!clientBridge || !clientBridge.requestImageEnhance) {
-            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceUnavailable")
+        if (!clientBridge || !clientBridge.requestImageEnhanceForMessage) {
             return
         }
-        if (previewEnhancing) {
+        if (!messageId || messageId.length === 0) {
             return
         }
-        previewEnhancing = true
-        previewEnhanceHint = Ui.I18n.t("image.preview.enhanceRunning")
-        var ok = clientBridge.requestImageEnhance(previewImageUrl, previewImageName)
-        if (!ok) {
-            var err = clientBridge.lastError || ""
-            previewEnhanceHint = err.length > 0 ? err : Ui.I18n.t("image.preview.enhanceUnavailable")
-            previewEnhancing = false
-        } else {
-            previewEnhanceHint = Ui.I18n.t("image.preview.enhanceSubmitted")
+        var targetUrl = url && url.toString ? url.toString() : (url ? "" + url : "")
+        if (!targetUrl || targetUrl.length === 0) {
+            return
         }
+        clientBridge.requestImageEnhanceForMessage(messageId, targetUrl, name || "")
     }
     function loadEmoji() {
         if (emojiLoaded) {
@@ -1391,9 +1378,6 @@ Item {
         onClosed: {
             previewImageUrl = ""
             previewImageName = ""
-            previewSuggestEnhance = false
-            previewEnhanceHint = ""
-            previewEnhancing = false
         }
 
         background: Rectangle {
@@ -1423,62 +1407,6 @@ Item {
                 smooth: true
                 antialiasing: true
                 cache: true
-                onStatusChanged: {
-                    if (status === Image.Ready) {
-                        previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
-                    } else {
-                        previewSuggestEnhance = false
-                    }
-                }
-            }
-
-            Rectangle {
-                id: enhanceBanner
-                visible: previewSuggestEnhance && Ui.AppStore.aiEnhanceEnabled
-                anchors.top: parent.top
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 16
-                width: Math.min(parent.width - 80, 540)
-                height: 36
-                radius: 18
-                color: Ui.Style.panelBgRaised
-                border.color: Ui.Style.borderSubtle
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    spacing: 8
-                    Text {
-                        text: Ui.I18n.t("image.preview.enhancePrompt")
-                        font.pixelSize: 12
-                        color: Ui.Style.textPrimary
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                    Components.GhostButton {
-                        text: Ui.I18n.t("image.preview.enhanceLater")
-                        height: 24
-                        onClicked: previewSuggestEnhance = false
-                    }
-                    Components.PrimaryButton {
-                        text: previewEnhancing
-                              ? Ui.I18n.t("image.preview.enhanceProcessing")
-                              : Ui.I18n.t("image.preview.enhanceNow")
-                        height: 24
-                        enabled: !previewEnhancing
-                        onClicked: requestImageEnhance()
-                    }
-                }
-            }
-
-            Text {
-                visible: previewEnhanceHint.length > 0
-                anchors.top: enhanceBanner.bottom
-                anchors.topMargin: 8
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: previewEnhanceHint
-                font.pixelSize: 12
-                color: Ui.Style.textSecondary
             }
 
             Components.GhostButton {
@@ -1489,31 +1417,6 @@ Item {
                 anchors.right: parent.right
                 anchors.margins: 16
                 onClicked: imagePreview.close()
-            }
-        }
-    }
-
-    Connections {
-        target: clientBridge
-        function onImageEnhanceFinished(sourceUrl, outputUrl, ok, error) {
-            if (!imagePreview.visible) {
-                return
-            }
-            var src = sourceUrl && sourceUrl.toString ? sourceUrl.toString() : (sourceUrl ? "" + sourceUrl : "")
-            var current = previewImageUrl && previewImageUrl.toString ? previewImageUrl.toString()
-                                                                      : (previewImageUrl ? "" + previewImageUrl : "")
-            if (src.length === 0 || current.length === 0 || src !== current) {
-                return
-            }
-            previewEnhancing = false
-            if (ok && outputUrl && outputUrl.length > 0) {
-                previewImageUrl = outputUrl
-                previewEnhanceHint = Ui.I18n.t("image.preview.enhanceDone")
-                previewSuggestEnhance = false
-            } else {
-                previewEnhanceHint = error && error.length > 0
-                                     ? error
-                                     : Ui.I18n.t("image.preview.enhanceFailed")
             }
         }
     }
@@ -1916,11 +1819,13 @@ Item {
             property bool isFile: contentKind === "file"
             property bool isLocation: contentKind === "location"
             property bool isCall: contentKind === "call"
+            property string msgId: model.msgId || ""
             property string fileName: model.fileName || ""
             property string fileId: model.fileId || ""
             property string fileKey: model.fileKey || ""
             property var fileUrl: model.fileUrl || ""
             property int fileSize: model.fileSize || 0
+            property bool imageEnhanced: model.imageEnhanced === true
             property bool attachmentRequested: false
             property int senderAvatarSize: 26
             property int senderAvatarGap: 8
@@ -2139,11 +2044,32 @@ Item {
                             smooth: true
                             antialiasing: true
                         }
+                        Menu {
+                            id: imageContextMenu
+                            MenuItem {
+                                text: imageEnhanced
+                                      ? Ui.I18n.t("image.context.enhanced")
+                                      : Ui.I18n.t("image.context.enhance")
+                                enabled: !imageEnhanced &&
+                                         Ui.AppStore.aiEnhanceEnabled &&
+                                         hasLocalUrl(fileUrl)
+                                onTriggered: root.requestImageEnhanceForMessage(
+                                                 msgId, fileUrl, fileName)
+                            }
+                        }
                         MouseArea {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.openImagePreview(fileUrl, fileName)
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: {
+                                if (mouse.button === Qt.RightButton) {
+                                    var pos = mapToItem(root, mouse.x, mouse.y)
+                                    imageContextMenu.popup(root, pos.x, pos.y)
+                                    return
+                                }
+                                root.openImagePreview(fileUrl, fileName)
+                            }
                         }
                     }
                 }

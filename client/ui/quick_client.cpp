@@ -16,6 +16,8 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHash>
+#include <QImage>
+#include <QImageReader>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QProcess>
@@ -634,6 +636,169 @@ QString SanitizeFileId(const QString& fileId) {
     out = out.left(64);
   }
   return out;
+}
+
+QString ResolveAiUpscaleDir() {
+  const QString dataDir = ResolveUiDataDir();
+  if (dataDir.isEmpty()) {
+    return {};
+  }
+  return QDir(dataDir).filePath(QStringLiteral("ai_upscale"));
+}
+
+bool EnsureAiUpscaleDir(QDir& outDir, QString& error) {
+  const QString dirPath = ResolveAiUpscaleDir();
+  if (dirPath.isEmpty()) {
+    error = QStringLiteral("存储目录无效");
+    return false;
+  }
+  QDir dir(dirPath);
+  if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+    error = QStringLiteral("创建超清目录失败");
+    return false;
+  }
+  outDir = dir;
+  return true;
+}
+
+QString BuildEnhancedImagePath(const QString& messageId, QString& error) {
+  const QString trimmed = messageId.trimmed();
+  if (trimmed.isEmpty()) {
+    error = QStringLiteral("图片标识无效");
+    return {};
+  }
+  QDir outDir;
+  if (!EnsureAiUpscaleDir(outDir, error)) {
+    return {};
+  }
+  const QString token = SanitizeFileId(trimmed);
+  if (token.isEmpty()) {
+    error = QStringLiteral("图片标识无效");
+    return {};
+  }
+  return outDir.filePath(
+      QStringLiteral("msg_%1_x4.png").arg(token));
+}
+
+QString EnhancedImagePathIfExists(const QString& messageId) {
+  QString error;
+  const QString path = BuildEnhancedImagePath(messageId, error);
+  if (path.isEmpty()) {
+    return {};
+  }
+  if (!QFileInfo::exists(path)) {
+    return {};
+  }
+  return path;
+}
+
+struct ImageQualityMetrics {
+  bool valid{false};
+  int width{0};
+  int height{0};
+  bool low_res{false};
+  double sharpness{0.0};
+  double noise{0.0};
+};
+
+ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
+  ImageQualityMetrics metrics;
+  QImageReader reader(path);
+  reader.setAutoTransform(true);
+  QSize size = reader.size();
+  QImage image;
+  constexpr int kAnalyzeMaxDim = 256;
+
+  if (size.isValid()) {
+    metrics.width = size.width();
+    metrics.height = size.height();
+    QSize scaled = size;
+    if (std::max(scaled.width(), scaled.height()) > kAnalyzeMaxDim) {
+      scaled.scale(kAnalyzeMaxDim, kAnalyzeMaxDim, Qt::KeepAspectRatio);
+      reader.setScaledSize(scaled);
+    }
+    image = reader.read();
+  } else {
+    image = reader.read();
+    if (!image.isNull()) {
+      size = image.size();
+      metrics.width = size.width();
+      metrics.height = size.height();
+      if (std::max(size.width(), size.height()) > kAnalyzeMaxDim) {
+        image = image.scaled(kAnalyzeMaxDim, kAnalyzeMaxDim,
+                             Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+      }
+    }
+  }
+
+  if (metrics.width > 0 && metrics.height > 0) {
+    const int minSide = std::min(metrics.width, metrics.height);
+    const std::int64_t area =
+        static_cast<std::int64_t>(metrics.width) *
+        static_cast<std::int64_t>(metrics.height);
+    constexpr int kLowResMinSide = 900;
+    constexpr std::int64_t kLowResArea = 1000000;
+    metrics.low_res = (minSide < kLowResMinSide) || (area < kLowResArea);
+  }
+
+  if (image.isNull()) {
+    return metrics;
+  }
+
+  QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
+  const int w = gray.width();
+  const int h = gray.height();
+  if (w < 3 || h < 3) {
+    metrics.valid = true;
+    return metrics;
+  }
+
+  double sum = 0.0;
+  double sum2 = 0.0;
+  double noiseSum = 0.0;
+  int count = 0;
+
+  for (int y = 1; y < h - 1; ++y) {
+    const uchar* prev = gray.constScanLine(y - 1);
+    const uchar* cur = gray.constScanLine(y);
+    const uchar* next = gray.constScanLine(y + 1);
+    for (int x = 1; x < w - 1; ++x) {
+      const int center = cur[x];
+      const int lap =
+          -4 * center + cur[x - 1] + cur[x + 1] + prev[x] + next[x];
+      sum += lap;
+      sum2 += static_cast<double>(lap) * static_cast<double>(lap);
+      const int mean =
+          (center + cur[x - 1] + cur[x + 1] + prev[x] + next[x] +
+           prev[x - 1] + prev[x + 1] + next[x - 1] + next[x + 1]) /
+          9;
+      noiseSum += std::abs(center - mean);
+      ++count;
+    }
+  }
+
+  if (count > 0) {
+    const double mean = sum / count;
+    metrics.sharpness = (sum2 / count) - (mean * mean);
+    metrics.noise = noiseSum / count;
+  }
+  metrics.valid = true;
+  return metrics;
+}
+
+bool ShouldAutoEnhanceImage(const QString& path) {
+  const ImageQualityMetrics metrics = AnalyzeImageQuality(path);
+  if (!metrics.valid) {
+    return false;
+  }
+  if (metrics.low_res) {
+    return true;
+  }
+  constexpr double kSharpnessThreshold = 100.0;
+  constexpr double kNoiseThreshold = 12.0;
+  return metrics.sharpness < kSharpnessThreshold ||
+         metrics.noise > kNoiseThreshold;
 }
 
 bool IsVideoExt(const QString& ext) {
@@ -1754,6 +1919,9 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   msg.insert(QStringLiteral("time"), NowTimeString());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
+  MaybeAutoEnhanceImage(QString::fromStdString(msg_id),
+                        info.absoluteFilePath(),
+                        info.fileName());
   return true;
 }
 
@@ -2066,6 +2234,16 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
 
 bool QuickClient::requestImageEnhance(const QString& fileUrl,
                                       const QString& fileName) {
+  return requestImageEnhanceForMessage(QString(), fileUrl, fileName);
+}
+
+bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
+                                                const QString& fileUrl,
+                                                const QString& fileName) {
+  if (!ai_enhance_enabled_) {
+    UpdateLastError(QStringLiteral("AI超清已关闭"));
+    return false;
+  }
   const QString sourceUrl = fileUrl.trimmed();
   const QString sourcePath = ResolveLocalFilePath(sourceUrl);
   if (sourcePath.isEmpty()) {
@@ -2077,37 +2255,65 @@ bool QuickClient::requestImageEnhance(const QString& fileUrl,
     UpdateLastError(QStringLiteral("图片不存在"));
     return false;
   }
-
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
-    UpdateLastError(QStringLiteral("存储目录无效"));
-    return false;
-  }
-  QDir outDir(QDir(dataDir).filePath(QStringLiteral("ai_upscale")));
-  if (!outDir.exists() && !outDir.mkpath(QStringLiteral("."))) {
-    UpdateLastError(QStringLiteral("创建超清目录失败"));
+  if (!IsImageExt(sourceInfo.suffix())) {
+    UpdateLastError(QStringLiteral("仅支持图片优化"));
     return false;
   }
 
-  const QString stem = SanitizeFileStem(
-      fileName.trimmed().isEmpty() ? sourceInfo.fileName() : fileName);
-  QString outPath = outDir.filePath(stem + QStringLiteral("_x4.png"));
-  if (QFileInfo::exists(outPath)) {
-    int suffix = 2;
-    while (suffix < 1000) {
-      const QString candidate =
-          outDir.filePath(stem + QStringLiteral("_x4_") +
-                          QString::number(suffix) + QStringLiteral(".png"));
-      if (!QFileInfo::exists(candidate)) {
-        outPath = candidate;
-        break;
-      }
-      ++suffix;
+  const QString trimmedMsg = messageId.trimmed();
+  const QString inflightKey = trimmedMsg.isEmpty() ? sourcePath : trimmedMsg;
+  if (!inflightKey.isEmpty() && enhance_inflight_.contains(inflightKey)) {
+    return true;
+  }
+
+  QString outPath;
+  QString pathError;
+  if (!trimmedMsg.isEmpty()) {
+    outPath = BuildEnhancedImagePath(trimmedMsg, pathError);
+  } else {
+    QDir outDir;
+    if (!EnsureAiUpscaleDir(outDir, pathError)) {
+      UpdateLastError(pathError);
+      return false;
     }
+    const QString stem = SanitizeFileStem(
+        fileName.trimmed().isEmpty() ? sourceInfo.fileName() : fileName);
+    outPath = outDir.filePath(stem + QStringLiteral("_x4.png"));
+    if (QFileInfo::exists(outPath)) {
+      int suffix = 2;
+      while (suffix < 1000) {
+        const QString candidate =
+            outDir.filePath(stem + QStringLiteral("_x4_") +
+                            QString::number(suffix) +
+                            QStringLiteral(".png"));
+        if (!QFileInfo::exists(candidate)) {
+          outPath = candidate;
+          break;
+        }
+        ++suffix;
+      }
+    }
+  }
+  if (outPath.isEmpty()) {
+    UpdateLastError(pathError.isEmpty() ? QStringLiteral("创建超清目录失败")
+                                        : pathError);
+    return false;
+  }
+
+  if (QFileInfo::exists(outPath)) {
+    const QString outputUrl = QUrl::fromLocalFile(outPath).toString();
+    emit imageEnhanceFinished(trimmedMsg, sourceUrl, outputUrl, true, QString());
+    UpdateLastError(QString());
+    return true;
+  }
+
+  if (!inflightKey.isEmpty()) {
+    enhance_inflight_.insert(inflightKey);
   }
 
   QPointer<QuickClient> self(this);
-  auto task = new LambdaTask([self, sourceUrl, sourcePath, outPath]() {
+  auto task = new LambdaTask([self, trimmedMsg, inflightKey, sourceUrl,
+                              sourcePath, outPath]() {
     if (!self) {
       return;
     }
@@ -2153,14 +2359,18 @@ bool QuickClient::requestImageEnhance(const QString& fileUrl,
 
     QMetaObject::invokeMethod(
         self,
-        [self, sourceUrl, outputUrl, ok, error]() {
+        [self, trimmedMsg, inflightKey, sourceUrl, outputUrl, ok, error]() {
           if (!self) {
             return;
+          }
+          if (!inflightKey.isEmpty()) {
+            self->enhance_inflight_.remove(inflightKey);
           }
           if (!ok) {
             self->UpdateLastError(error);
           }
-          emit self->imageEnhanceFinished(sourceUrl, outputUrl, ok, error);
+          emit self->imageEnhanceFinished(trimmedMsg, sourceUrl, outputUrl, ok,
+                                          error);
         },
         Qt::QueuedConnection);
   });
@@ -2299,6 +2509,54 @@ void QuickClient::HandleRestoreTaskFinished(const QString& fileId,
   emit attachmentDownloadFinished(fileId, savePath, ok, error);
   download_progress_base_.remove(fileId);
   download_progress_span_.remove(fileId);
+}
+
+void QuickClient::MaybeAutoEnhanceImage(const QString& messageId,
+                                        const QString& filePath,
+                                        const QString& fileName) {
+  if (!ai_enhance_enabled_) {
+    return;
+  }
+  const QString trimmedMsg = messageId.trimmed();
+  if (trimmedMsg.isEmpty()) {
+    return;
+  }
+  const QString trimmedPath = filePath.trimmed();
+  if (trimmedPath.isEmpty()) {
+    return;
+  }
+  const QFileInfo info(trimmedPath);
+  if (!info.exists() || !info.isFile()) {
+    return;
+  }
+  if (!IsImageExt(info.suffix())) {
+    return;
+  }
+  if (!EnhancedImagePathIfExists(trimmedMsg).isEmpty()) {
+    return;
+  }
+
+  QPointer<QuickClient> self(this);
+  auto task = new LambdaTask([self, trimmedMsg, trimmedPath, fileName]() {
+    if (!self) {
+      return;
+    }
+    const bool shouldEnhance = ShouldAutoEnhanceImage(trimmedPath);
+    QMetaObject::invokeMethod(
+        self,
+        [self, trimmedMsg, trimmedPath, fileName, shouldEnhance]() {
+          if (!self || !shouldEnhance) {
+            return;
+          }
+          self->requestImageEnhanceForMessage(
+              trimmedMsg,
+              QUrl::fromLocalFile(trimmedPath).toString(),
+              fileName);
+        },
+        Qt::QueuedConnection);
+  });
+  task->setAutoDelete(true);
+  cache_pool_.start(task, 0);
 }
 
 QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {
@@ -2704,6 +2962,33 @@ void QuickClient::setInternalImeEnabled(bool enabled) {
   internal_ime_enabled_ = enabled;
 }
 
+bool QuickClient::aiEnhanceGpuAvailable() const {
+  bool gpuSupported = false;
+  const QString exe = FindRealEsrganPath(&gpuSupported);
+  if (exe.isEmpty() || !gpuSupported) {
+    return false;
+  }
+#ifdef _WIN32
+  const QString systemRoot = qEnvironmentVariable("SystemRoot");
+  if (!systemRoot.isEmpty()) {
+    const QString vulkan =
+        QDir(systemRoot).filePath(QStringLiteral("System32/vulkan-1.dll"));
+    if (!QFileInfo::exists(vulkan)) {
+      return false;
+    }
+  }
+#endif
+  return true;
+}
+
+bool QuickClient::aiEnhanceEnabled() const {
+  return ai_enhance_enabled_;
+}
+
+void QuickClient::setAiEnhanceEnabled(bool enabled) {
+  ai_enhance_enabled_ = enabled;
+}
+
 bool QuickClient::clipboardIsolation() const {
   return clipboard_isolation_enabled_;
 }
@@ -2913,8 +3198,8 @@ QVariantMap QuickClient::BuildHistoryMessage(
   msg.insert(QStringLiteral("sender"), QString::fromStdString(entry.sender));
   msg.insert(QStringLiteral("outgoing"), entry.outgoing);
   msg.insert(QStringLiteral("isGroup"), entry.is_group);
-  msg.insert(QStringLiteral("messageId"),
-             QString::fromStdString(entry.message_id_hex));
+  const QString messageId = QString::fromStdString(entry.message_id_hex);
+  msg.insert(QStringLiteral("messageId"), messageId);
   msg.insert(QStringLiteral("time"),
              QDateTime::fromSecsSinceEpoch(
                  static_cast<qint64>(entry.timestamp_sec))
@@ -2950,6 +3235,18 @@ QVariantMap QuickClient::BuildHistoryMessage(
                  static_cast<qint64>(entry.file_size));
       msg.insert(QStringLiteral("fileId"), QString::fromStdString(entry.file_id));
       msg.insert(QStringLiteral("fileKey"), BytesToHex32(entry.file_key));
+      if (!messageId.isEmpty()) {
+        const QString enhancedPath = EnhancedImagePathIfExists(messageId);
+        if (!enhancedPath.isEmpty()) {
+          const QString ext =
+              QFileInfo(QString::fromStdString(entry.file_name)).suffix();
+          if (IsImageExt(ext)) {
+            msg.insert(QStringLiteral("fileUrl"),
+                       QUrl::fromLocalFile(enhancedPath));
+            msg.insert(QStringLiteral("imageEnhanced"), true);
+          }
+        }
+      }
       break;
     case ClientCore::HistoryKind::kSticker: {
       msg.insert(QStringLiteral("kind"), QStringLiteral("sticker"));

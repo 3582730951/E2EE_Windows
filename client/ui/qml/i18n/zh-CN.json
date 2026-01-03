@@ -92,6 +92,8 @@
   "image.preview.enhanceFailed": "超清优化失败",
   "image.preview.enhanceDisabled": "AI超清已关闭",
   "image.preview.close": "关闭",
+  "image.context.enhance": "AI超清优化",
+  "image.context.enhanced": "已超清",
   "notice.friendAddedTitle": "好友已添加",
   "notice.friendAddedDetail": "已添加好友：%1",
   "notice.friendRemovedTitle": "好友已删除",
