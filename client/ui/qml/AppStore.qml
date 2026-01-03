@@ -534,6 +534,14 @@ QtObject {
         if (progressValue === undefined || progressValue === null) {
             progressValue = message.downloadProgress || 0
         }
+        var fileUrlValue = message.fileUrl || message.filePath || ""
+        var fileUrlText = fileUrlValue && fileUrlValue.toString
+                          ? fileUrlValue.toString()
+                          : (fileUrlValue ? "" + fileUrlValue : "")
+        if (progressValue <= 0 &&
+            (fileUrlText.length > 0 || (outgoing && kind === "file"))) {
+            progressValue = 1
+        }
 
         var entry = {
             chatId: convId,
@@ -549,7 +557,7 @@ QtObject {
             fileSize: message.fileSize || 0,
             fileId: fileId,
             fileKey: message.fileKey || "",
-            fileUrl: message.fileUrl || message.filePath || "",
+            fileUrl: fileUrlValue,
             downloadProgress: progressValue,
             stickerId: message.stickerId || "",
             stickerUrl: message.stickerUrl || "",
@@ -751,6 +759,14 @@ QtObject {
             if (progressValue === undefined || progressValue === null) {
                 progressValue = h.downloadProgress || 0
             }
+            var fileUrlValue = h.fileUrl || ""
+            var fileUrlText = fileUrlValue && fileUrlValue.toString
+                              ? fileUrlValue.toString()
+                              : (fileUrlValue ? "" + fileUrlValue : "")
+            if (progressValue <= 0 &&
+                (fileUrlText.length > 0 || (h.outgoing === true && h.kind === "file"))) {
+                progressValue = 1
+            }
 
             model.append({
                 chatId: chatId,
@@ -766,7 +782,7 @@ QtObject {
                 fileSize: h.fileSize || 0,
                 fileId: fileId,
                 fileKey: h.fileKey || "",
-                fileUrl: h.fileUrl || "",
+                fileUrl: fileUrlValue,
                 downloadProgress: progressValue,
                 stickerId: h.stickerId || "",
                 stickerUrl: h.stickerUrl || "",

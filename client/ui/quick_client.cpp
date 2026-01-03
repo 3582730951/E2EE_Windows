@@ -37,6 +37,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <utility>
@@ -55,6 +56,14 @@ constexpr int kMaxAbbrInputLength = 10;
 constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
 constexpr const char kPinyinAbbrDictResourcePath[] =
     ":/mi/e2ee/ui/ime/pinyin_short.dat";
+
+std::filesystem::path ToFsPath(const QString& path) {
+#ifdef _WIN32
+  return std::filesystem::path(path.toStdWString());
+#else
+  return std::filesystem::path(path.toStdString());
+#endif
+}
 
 bool IsSessionInvalidError(const QString& message) {
   const QString lowered = message.trimmed().toLower();
@@ -1594,11 +1603,11 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   std::string msg_id;
   bool ok = false;
   if (isGroup) {
-    ok = core_.SendGroupChatFile(trimmed.toStdString(),
-                                 info.absoluteFilePath().toStdString(), msg_id);
+    ok = core_.SendGroupChatFile(
+        trimmed.toStdString(), ToFsPath(info.absoluteFilePath()), msg_id);
   } else {
-    ok = core_.SendChatFile(trimmed.toStdString(),
-                            info.absoluteFilePath().toStdString(), msg_id);
+    ok = core_.SendChatFile(
+        trimmed.toStdString(), ToFsPath(info.absoluteFilePath()), msg_id);
   }
   if (!ok) {
     emit status(QStringLiteral("文件发送失败"));
@@ -1617,7 +1626,7 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   msg.insert(QStringLiteral("fileSize"), info.size());
   msg.insert(QStringLiteral("filePath"), info.absoluteFilePath());
   msg.insert(QStringLiteral("fileUrl"),
-             QUrl::fromLocalFile(info.absoluteFilePath()));
+             QUrl::fromLocalFile(info.absoluteFilePath()).toString());
   msg.insert(QStringLiteral("time"), NowTimeString());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
