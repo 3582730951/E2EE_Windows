@@ -1425,14 +1425,7 @@ Item {
                 cache: true
                 onStatusChanged: {
                     if (status === Image.Ready) {
-                        var w = sourceSize.width
-                        var h = sourceSize.height
-                        if (w > 0 && h > 0) {
-                            previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled &&
-                                                    Math.min(w, h) < 900
-                        } else {
-                            previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
-                        }
+                        previewSuggestEnhance = Ui.AppStore.aiEnhanceEnabled
                     } else {
                         previewSuggestEnhance = false
                     }
