@@ -65,6 +65,130 @@ std::filesystem::path ToFsPath(const QString& path) {
 #endif
 }
 
+QString ResolveLocalFilePath(const QString& urlOrPath) {
+  const QString trimmed = urlOrPath.trimmed();
+  if (trimmed.startsWith(QStringLiteral("file:"))) {
+    return QUrl(trimmed).toLocalFile();
+  }
+  return trimmed;
+}
+
+QString ResolveUiDataDir() {
+  const QByteArray env = qgetenv("MI_E2EE_DATA_DIR");
+  if (!env.isEmpty()) {
+    return QString::fromLocal8Bit(env);
+  }
+  QString baseDir = UiRuntimePaths::AppRootDir();
+  if (baseDir.isEmpty()) {
+    baseDir = QCoreApplication::applicationDirPath();
+  }
+  return QDir(baseDir).filePath(QStringLiteral("database"));
+}
+
+QString SanitizeFileStem(QString name) {
+  if (name.trimmed().isEmpty()) {
+    return QStringLiteral("image");
+  }
+  const QString base = QFileInfo(name).completeBaseName();
+  QString out;
+  out.reserve(base.size());
+  for (const QChar ch : base) {
+    if (ch == QLatin1Char('<') || ch == QLatin1Char('>') ||
+        ch == QLatin1Char(':') || ch == QLatin1Char('"') ||
+        ch == QLatin1Char('/') || ch == QLatin1Char('\\') ||
+        ch == QLatin1Char('|') || ch == QLatin1Char('?') ||
+        ch == QLatin1Char('*')) {
+      out.append(QLatin1Char('_'));
+    } else {
+      out.append(ch);
+    }
+  }
+  if (out.trimmed().isEmpty()) {
+    return QStringLiteral("image");
+  }
+  return out;
+}
+
+QString FindRealEsrganPath(bool* supportsGpu) {
+  if (supportsGpu) {
+    *supportsGpu = false;
+  }
+  const QStringList names = {
+      QStringLiteral("realesrgan-ncnn-vulkan.exe"),
+      QStringLiteral("realesrgan-ncnn-vulkan"),
+      QStringLiteral("realesrgan-ncnn.exe"),
+      QStringLiteral("realesrgan-ncnn")
+  };
+
+  for (const auto& name : names) {
+    const QString hit = QStandardPaths::findExecutable(name);
+    if (!hit.isEmpty()) {
+      if (supportsGpu) {
+        *supportsGpu = name.contains(QStringLiteral("vulkan"),
+                                     Qt::CaseInsensitive);
+      }
+      return hit;
+    }
+  }
+
+  QString baseDir = UiRuntimePaths::AppRootDir();
+  if (baseDir.isEmpty()) {
+    baseDir = QCoreApplication::applicationDirPath();
+  }
+  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
+  const QStringList roots = {
+      baseDir,
+      QDir(baseDir).filePath(QStringLiteral("tools/realesrgan")),
+      runtimeDir,
+      runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(QStringLiteral("tools/realesrgan"))
+  };
+
+  for (const auto& root : roots) {
+    if (root.isEmpty()) {
+      continue;
+    }
+    for (const auto& name : names) {
+      const QString candidate = QDir(root).filePath(name);
+      if (QFileInfo::exists(candidate)) {
+        if (supportsGpu) {
+          *supportsGpu = name.contains(QStringLiteral("vulkan"),
+                                       Qt::CaseInsensitive);
+        }
+        return candidate;
+      }
+    }
+  }
+  return {};
+}
+
+QString FindRealEsrganModelDir(const QString& exePath) {
+  const QString dataDir = ResolveUiDataDir();
+  const QString baseDir = UiRuntimePaths::AppRootDir();
+  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
+  const QString exeDir = exePath.isEmpty()
+                             ? QString()
+                             : QFileInfo(exePath).dir().absolutePath();
+  const QStringList roots = {
+      exeDir.isEmpty() ? QString() : QDir(exeDir).filePath(QStringLiteral("models")),
+      dataDir.isEmpty() ? QString() : QDir(dataDir).filePath(QStringLiteral("ai_models/realesrgan")),
+      baseDir.isEmpty() ? QString() : QDir(baseDir).filePath(QStringLiteral("models/realesrgan")),
+      runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(QStringLiteral("models/realesrgan"))
+  };
+  for (const auto& root : roots) {
+    if (root.isEmpty()) {
+      continue;
+    }
+    const QString param =
+        QDir(root).filePath(QStringLiteral("realesrgan-x4plus.param"));
+    const QString bin =
+        QDir(root).filePath(QStringLiteral("realesrgan-x4plus.bin"));
+    if (QFileInfo::exists(param) && QFileInfo::exists(bin)) {
+      return root;
+    }
+  }
+  return {};
+}
+
 bool IsSessionInvalidError(const QString& message) {
   const QString lowered = message.trimmed().toLower();
   return lowered == QStringLiteral("unauthorized") ||
@@ -1937,6 +2061,113 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     cache_inflight_.insert(fid);
     QueueAttachmentCacheTask(fid, file_key, effectiveName, fileSize, true);
   }
+  return true;
+}
+
+bool QuickClient::requestImageEnhance(const QString& fileUrl,
+                                      const QString& fileName) {
+  const QString sourceUrl = fileUrl.trimmed();
+  const QString sourcePath = ResolveLocalFilePath(sourceUrl);
+  if (sourcePath.isEmpty()) {
+    UpdateLastError(QStringLiteral("图片路径为空"));
+    return false;
+  }
+  const QFileInfo sourceInfo(sourcePath);
+  if (!sourceInfo.exists() || !sourceInfo.isFile()) {
+    UpdateLastError(QStringLiteral("图片不存在"));
+    return false;
+  }
+
+  const QString dataDir = ResolveUiDataDir();
+  if (dataDir.isEmpty()) {
+    UpdateLastError(QStringLiteral("存储目录无效"));
+    return false;
+  }
+  QDir outDir(QDir(dataDir).filePath(QStringLiteral("ai_upscale")));
+  if (!outDir.exists() && !outDir.mkpath(QStringLiteral("."))) {
+    UpdateLastError(QStringLiteral("创建超清目录失败"));
+    return false;
+  }
+
+  const QString stem = SanitizeFileStem(
+      fileName.trimmed().isEmpty() ? sourceInfo.fileName() : fileName);
+  QString outPath = outDir.filePath(stem + QStringLiteral("_x4.png"));
+  if (QFileInfo::exists(outPath)) {
+    int suffix = 2;
+    while (suffix < 1000) {
+      const QString candidate =
+          outDir.filePath(stem + QStringLiteral("_x4_") +
+                          QString::number(suffix) + QStringLiteral(".png"));
+      if (!QFileInfo::exists(candidate)) {
+        outPath = candidate;
+        break;
+      }
+      ++suffix;
+    }
+  }
+
+  QPointer<QuickClient> self(this);
+  auto task = new LambdaTask([self, sourceUrl, sourcePath, outPath]() {
+    if (!self) {
+      return;
+    }
+    bool gpuSupported = false;
+    const QString exe = FindRealEsrganPath(&gpuSupported);
+    const QString modelDir = FindRealEsrganModelDir(exe);
+    QString error;
+    bool ok = false;
+    QString outputUrl;
+
+    if (exe.isEmpty()) {
+      error = QStringLiteral("未找到超清工具");
+    } else if (modelDir.isEmpty()) {
+      error = QStringLiteral("未找到超清模型");
+    } else {
+      QStringList args;
+      args << QStringLiteral("-i") << sourcePath
+           << QStringLiteral("-o") << outPath
+           << QStringLiteral("-n") << QStringLiteral("realesrgan-x4plus")
+           << QStringLiteral("-s") << QStringLiteral("4")
+           << QStringLiteral("-m") << modelDir;
+      int exitCode = -1;
+      if (gpuSupported) {
+        QStringList gpuArgs = args;
+        gpuArgs << QStringLiteral("-g") << QStringLiteral("0");
+        exitCode = QProcess::execute(exe, gpuArgs);
+        if (exitCode != 0) {
+          QStringList cpuArgs = args;
+          cpuArgs << QStringLiteral("-g") << QStringLiteral("-1");
+          exitCode = QProcess::execute(exe, cpuArgs);
+        }
+      } else {
+        exitCode = QProcess::execute(exe, args);
+      }
+
+      if (exitCode == 0 && QFileInfo::exists(outPath)) {
+        ok = true;
+        outputUrl = QUrl::fromLocalFile(outPath).toString();
+      } else {
+        error = QStringLiteral("超清优化失败");
+      }
+    }
+
+    QMetaObject::invokeMethod(
+        self,
+        [self, sourceUrl, outputUrl, ok, error]() {
+          if (!self) {
+            return;
+          }
+          if (!ok) {
+            self->UpdateLastError(error);
+          }
+          emit self->imageEnhanceFinished(sourceUrl, outputUrl, ok, error);
+        },
+        Qt::QueuedConnection);
+  });
+  task->setAutoDelete(true);
+  cache_pool_.start(task, 0);
+  UpdateLastError(QString());
+  emit status(QStringLiteral("已提交超清优化"));
   return true;
 }
 

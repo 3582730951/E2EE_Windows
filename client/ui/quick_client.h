@@ -74,14 +74,16 @@ class QuickClient : public QObject {
                                 const QString& label,
                                 bool isGroup);
   Q_INVOKABLE QVariantMap ensureAttachmentCached(const QString& fileId,
-                                                const QString& fileKeyHex,
-                                                const QString& fileName,
-                                                qint64 fileSize);
+                                                 const QString& fileKeyHex,
+                                                 const QString& fileName,
+                                                 qint64 fileSize);
   Q_INVOKABLE bool requestAttachmentDownload(const QString& fileId,
                                              const QString& fileKeyHex,
                                              const QString& fileName,
                                              qint64 fileSize,
                                              const QString& savePath);
+  Q_INVOKABLE bool requestImageEnhance(const QString& fileUrl,
+                                       const QString& fileName);
   Q_INVOKABLE QVariantList loadHistory(const QString& convId, bool isGroup);
   Q_INVOKABLE QVariantList listGroupMembersInfo(const QString& groupId);
   Q_INVOKABLE QVariantList stickerItems();
@@ -171,6 +173,10 @@ class QuickClient : public QObject {
   void attachmentDownloadProgress(const QString& fileId,
                                   const QString& savePath,
                                   double progress);
+  void imageEnhanceFinished(const QString& sourceUrl,
+                            const QString& outputUrl,
+                            bool ok,
+                            const QString& error);
 
  private:
   void StartPolling();

@@ -36,6 +36,7 @@ Item {
     property string previewImageName: ""
     property bool previewSuggestEnhance: false
     property string previewEnhanceHint: ""
+    property bool previewEnhancing: false
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -138,10 +139,16 @@ Item {
             previewEnhanceHint = "AI超清暂未接入"
             return
         }
+        if (previewEnhancing) {
+            return
+        }
+        previewEnhancing = true
+        previewEnhanceHint = "正在进行超清优化..."
         var ok = clientBridge.requestImageEnhance(previewImageUrl, previewImageName)
         if (!ok) {
             var err = clientBridge.lastError || ""
             previewEnhanceHint = err.length > 0 ? err : "AI超清暂未接入"
+            previewEnhancing = false
         } else {
             previewEnhanceHint = "已提交超清优化请求"
         }
@@ -1382,6 +1389,7 @@ Item {
             previewImageName = ""
             previewSuggestEnhance = false
             previewEnhanceHint = ""
+            previewEnhancing = false
         }
 
         background: Rectangle {
@@ -1455,8 +1463,9 @@ Item {
                         onClicked: previewSuggestEnhance = false
                     }
                     Components.PrimaryButton {
-                        text: "立即优化"
+                        text: previewEnhancing ? "处理中" : "立即优化"
                         height: 24
+                        enabled: !previewEnhancing
                         onClicked: requestImageEnhance()
                     }
                 }
@@ -1480,6 +1489,29 @@ Item {
                 anchors.right: parent.right
                 anchors.margins: 16
                 onClicked: imagePreview.close()
+            }
+        }
+    }
+
+    Connections {
+        target: clientBridge
+        function onImageEnhanceFinished(sourceUrl, outputUrl, ok, error) {
+            if (!imagePreview.visible) {
+                return
+            }
+            var src = sourceUrl && sourceUrl.toString ? sourceUrl.toString() : (sourceUrl ? "" + sourceUrl : "")
+            var current = previewImageUrl && previewImageUrl.toString ? previewImageUrl.toString()
+                                                                      : (previewImageUrl ? "" + previewImageUrl : "")
+            if (src.length === 0 || current.length === 0 || src !== current) {
+                return
+            }
+            previewEnhancing = false
+            if (ok && outputUrl && outputUrl.length > 0) {
+                previewImageUrl = outputUrl
+                previewEnhanceHint = "超清优化完成"
+                previewSuggestEnhance = false
+            } else {
+                previewEnhanceHint = error && error.length > 0 ? error : "超清优化失败"
             }
         }
     }
