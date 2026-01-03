@@ -11,6 +11,7 @@
 #include <QVariant>
 #include <QVideoSink>
 #include <QMediaCaptureSession>
+#include <QUrl>
 #include <memory>
 #include <mutex>
 
@@ -105,6 +106,7 @@ class QuickClient : public QObject {
   Q_INVOKABLE void bindLocalVideoSink(QObject* sink);
   Q_INVOKABLE QString serverInfo() const;
   Q_INVOKABLE QString version() const;
+  Q_INVOKABLE QUrl defaultDownloadFileUrl(const QString& fileName) const;
   Q_INVOKABLE QString systemClipboardText() const;
   Q_INVOKABLE qint64 systemClipboardTimestamp() const;
   Q_INVOKABLE bool imeAvailable();
@@ -186,6 +188,9 @@ class QuickClient : public QObject {
   void UpdateLastError(const QString& message);
   void UpdateConnectionState(bool force_emit);
   void MaybeEmitTrustSignals();
+  void EmitDownloadProgress(const QString& fileId,
+                            const QString& savePath,
+                            double progress);
   bool InitMediaSession(const QString& peerUsername,
                         const QString& callIdHex,
                         bool initiator,
@@ -283,6 +288,8 @@ class QuickClient : public QObject {
   QSet<QString> cache_inflight_;
   QHash<QString, QStringList> pending_downloads_;
   QHash<QString, QString> pending_download_names_;
+  QHash<QString, double> download_progress_base_;
+  QHash<QString, double> download_progress_span_;
 };
 
 }  // namespace mi::client::ui

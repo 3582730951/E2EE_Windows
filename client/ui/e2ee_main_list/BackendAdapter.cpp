@@ -1445,7 +1445,7 @@ void BackendAdapter::startAsyncFileSave(const QString &convId,
         bool ok = false;
         std::string coreErr;
         const std::filesystem::path path = std::filesystem::path(outPathStr.toStdWString());
-        ok = self->core_.DownloadChatFileToPath(fileCopy, path, true);
+        ok = self->core_.DownloadChatFileToPath(fileCopy, path, true, nullptr);
         coreErr = self->core_.last_error();
 
         const QString err = coreErr.empty() ? QString() : QString::fromStdString(coreErr);

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -352,7 +353,10 @@ class ClientCore {
 
   bool DownloadChatFileToPath(const ChatFileMessage& file,
                               const std::filesystem::path& out_path,
-                              bool wipe_after_read = true);
+                              bool wipe_after_read = true,
+                              const std::function<void(std::uint64_t,
+                                                       std::uint64_t)>&
+                                  on_progress = nullptr);
   bool DownloadChatFileToBytes(const ChatFileMessage& file,
                                std::vector<std::uint8_t>& out_bytes,
                                bool wipe_after_read = true);
@@ -508,7 +512,10 @@ class ClientCore {
                           std::string& out_file_id);
   bool DownloadE2eeFileBlob(const std::string& file_id,
                             std::vector<std::uint8_t>& out_blob,
-                            bool wipe_after_read);
+                            bool wipe_after_read,
+                            const std::function<void(std::uint64_t,
+                                                     std::uint64_t)>&
+                                on_progress);
   bool StartE2eeFileBlobUpload(std::uint64_t expected_size,
                                std::string& out_file_id,
                                std::string& out_upload_id);
@@ -537,7 +544,10 @@ class ClientCore {
   bool DownloadE2eeFileBlobV3ToPath(const std::string& file_id,
                                     const std::array<std::uint8_t, 32>& file_key,
                                     const std::filesystem::path& out_path,
-                                    bool wipe_after_read);
+                                    bool wipe_after_read,
+                                    const std::function<void(std::uint64_t,
+                                                             std::uint64_t)>&
+                                        on_progress);
   bool UploadChatFileFromPath(const std::filesystem::path& file_path,
                               std::uint64_t file_size,
                               const std::string& file_name,

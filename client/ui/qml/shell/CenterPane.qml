@@ -102,7 +102,20 @@ Item {
         if (pendingDownloadId.length === 0 || pendingDownloadKey.length === 0) {
             return
         }
-        downloadConfirm.open()
+        if (arguments.length > 4 && arguments[4] === true) {
+            openDownloadSaveDialog()
+        } else {
+            downloadConfirm.open()
+        }
+    }
+    function openDownloadSaveDialog() {
+        if (clientBridge && clientBridge.defaultDownloadFileUrl) {
+            var url = clientBridge.defaultDownloadFileUrl(pendingDownloadName)
+            if (url) {
+                downloadSaveDialog.selectedFile = url
+            }
+        }
+        downloadSaveDialog.open()
     }
     function loadEmoji() {
         if (emojiLoaded) {
@@ -1294,14 +1307,14 @@ Item {
                     Layout.fillWidth: true
                     onClicked: downloadConfirm.close()
                 }
-                Components.PrimaryButton {
-                    text: Ui.I18n.t("chat.fileDownloadConfirm")
-                    Layout.fillWidth: true
-                    onClicked: {
-                        downloadConfirm.close()
-                        downloadSaveDialog.open()
+                    Components.PrimaryButton {
+                        text: Ui.I18n.t("chat.fileDownloadConfirm")
+                        Layout.fillWidth: true
+                        onClicked: {
+                            downloadConfirm.close()
+                            openDownloadSaveDialog()
+                        }
                     }
-                }
             }
         }
     }
@@ -2121,9 +2134,7 @@ Item {
                                 ctx.arc(cx, cy, r, 0, Math.PI * 2)
                                 ctx.stroke()
                                 if (progress > 0) {
-                                    ctx.strokeStyle = progress >= 0.999
-                                            ? Ui.Style.accent
-                                            : Ui.Style.link
+                                    ctx.strokeStyle = Ui.Style.success
                                     ctx.beginPath()
                                     ctx.arc(cx, cy, r,
                                             -Math.PI / 2,
@@ -2132,9 +2143,24 @@ Item {
                                 }
                             }
                         }
+                        Menu {
+                            id: fileContextMenu
+                            MenuItem {
+                                text: Ui.I18n.t("chat.fileDownloadConfirm")
+                                onTriggered: root.promptFileDownload(fileId, fileKey, fileName, fileSize, true)
+                            }
+                        }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: root.promptFileDownload(fileId, fileKey, fileName, fileSize)
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: {
+                                if (mouse.button === Qt.RightButton) {
+                                    var pos = mapToItem(root, mouse.x, mouse.y)
+                                    fileContextMenu.popup(root, pos.x, pos.y)
+                                    return
+                                }
+                                root.promptFileDownload(fileId, fileKey, fileName, fileSize)
+                            }
                         }
                     }
                 }

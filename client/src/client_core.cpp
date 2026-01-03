@@ -13334,9 +13334,11 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
   return result;
 }
 
-bool ClientCore::DownloadChatFileToPath(const ChatFileMessage& file,
-                                       const std::filesystem::path& out_path,
-                                       bool wipe_after_read) {
+bool ClientCore::DownloadChatFileToPath(
+    const ChatFileMessage& file,
+    const std::filesystem::path& out_path,
+    bool wipe_after_read,
+    const std::function<void(std::uint64_t, std::uint64_t)>& on_progress) {
   last_error_.clear();
   if (!EnsureChannel()) {
     last_error_ = "not logged in";
@@ -13354,7 +13356,7 @@ bool ClientCore::DownloadChatFileToPath(const ChatFileMessage& file,
   if (file.file_size > (8u * 1024u * 1024u)) {
     const bool ok =
         DownloadE2eeFileBlobV3ToPath(file.file_id, file.file_key, out_path,
-                                     wipe_after_read);
+                                     wipe_after_read, on_progress);
     if (ok) {
       BestEffortStoreAttachmentPreviewFromPath(file.file_id, file.file_name,
                                                file.file_size, out_path);
@@ -13363,7 +13365,7 @@ bool ClientCore::DownloadChatFileToPath(const ChatFileMessage& file,
   }
 
   std::vector<std::uint8_t> blob;
-  if (!DownloadE2eeFileBlob(file.file_id, blob, wipe_after_read)) {
+  if (!DownloadE2eeFileBlob(file.file_id, blob, wipe_after_read, on_progress)) {
     return false;
   }
 
@@ -13411,7 +13413,7 @@ bool ClientCore::DownloadChatFileToBytes(const ChatFileMessage& file,
   }
 
   std::vector<std::uint8_t> blob;
-  if (!DownloadE2eeFileBlob(file.file_id, blob, wipe_after_read)) {
+  if (!DownloadE2eeFileBlob(file.file_id, blob, wipe_after_read, nullptr)) {
     return false;
   }
 
@@ -13698,9 +13700,11 @@ bool ClientCore::UploadE2eeFileBlob(const std::vector<std::uint8_t>& blob,
   return true;
 }
 
-bool ClientCore::DownloadE2eeFileBlob(const std::string& file_id,
-                                     std::vector<std::uint8_t>& out_blob,
-                                     bool wipe_after_read) {
+bool ClientCore::DownloadE2eeFileBlob(
+    const std::string& file_id,
+    std::vector<std::uint8_t>& out_blob,
+    bool wipe_after_read,
+    const std::function<void(std::uint64_t, std::uint64_t)>& on_progress) {
   out_blob.clear();
   if (!EnsureChannel()) {
     last_error_ = "not logged in";
@@ -13727,6 +13731,9 @@ bool ClientCore::DownloadE2eeFileBlob(const std::string& file_id,
 
   std::vector<std::uint8_t> blob;
   blob.reserve(static_cast<std::size_t>(size));
+  if (on_progress) {
+    on_progress(0, size);
+  }
 
   std::uint64_t off = 0;
   bool eof = false;
@@ -13751,6 +13758,9 @@ bool ClientCore::DownloadE2eeFileBlob(const std::string& file_id,
     blob.insert(blob.end(), chunk.begin(), chunk.end());
     off += static_cast<std::uint64_t>(chunk.size());
     eof = chunk_eof;
+    if (on_progress) {
+      on_progress(off, size);
+    }
     if (eof) {
       break;
     }
@@ -14220,7 +14230,8 @@ bool ClientCore::UploadE2eeFileBlobV3FromPath(
 
 bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     const std::string& file_id, const std::array<std::uint8_t, 32>& file_key,
-    const std::filesystem::path& out_path, bool wipe_after_read) {
+    const std::filesystem::path& out_path, bool wipe_after_read,
+    const std::function<void(std::uint64_t, std::uint64_t)>& on_progress) {
   if (!EnsureChannel()) {
     last_error_ = "not logged in";
     return false;
@@ -14317,6 +14328,9 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
 
     std::uint64_t blob_off = kFileBlobV3PrefixSize;
     std::uint64_t written = 0;
+    if (on_progress) {
+      on_progress(0, original_size);
+    }
     for (std::uint64_t idx = 0; idx < chunks; ++idx) {
       const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
           chunk_size, original_size - written));
@@ -14365,6 +14379,9 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
       blob_off += record_len;
       written += want;
       eof = record_eof;
+      if (on_progress) {
+        on_progress(written, original_size);
+      }
     }
     ofs.close();
     if (written != original_size || blob_off != blob_size || !eof) {
@@ -14472,6 +14489,9 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
 
   std::uint64_t blob_off = header_size;
   std::uint64_t written = 0;
+  if (on_progress) {
+    on_progress(0, original_size);
+  }
   for (std::uint64_t idx = 0; idx < chunk_sizes.size(); ++idx) {
     const std::uint32_t chunk_len = chunk_sizes[static_cast<std::size_t>(idx)];
     const std::uint32_t record_len = static_cast<std::uint32_t>(16u + chunk_len);
@@ -14534,6 +14554,9 @@ bool ClientCore::DownloadE2eeFileBlobV3ToPath(
     blob_off += record_len;
     written += actual_len;
     eof = record_eof;
+    if (on_progress) {
+      on_progress(written, original_size);
+    }
   }
   ofs.close();
   if (written != original_size || blob_off != blob_size || !eof) {

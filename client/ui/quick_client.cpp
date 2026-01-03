@@ -1038,11 +1038,13 @@ struct CacheTaskResult {
 
 QString FindFfmpegPath();
 
-CacheTaskResult BuildAttachmentCache(ClientCore& core,
-                                     const QString& fileId,
-                                     const std::array<std::uint8_t, 32>& fileKey,
-                                     const QString& fileName,
-                                     qint64 fileSize) {
+CacheTaskResult BuildAttachmentCache(
+    ClientCore& core,
+    const QString& fileId,
+    const std::array<std::uint8_t, 32>& fileKey,
+    const QString& fileName,
+    qint64 fileSize,
+    const std::function<void(double)>& onProgress) {
   CacheTaskResult result;
   QDir cacheRoot;
   QString error;
@@ -1071,7 +1073,15 @@ CacheTaskResult BuildAttachmentCache(ClientCore& core,
       if (fileSize > 0) {
         file.file_size = static_cast<std::uint64_t>(fileSize);
       }
-      if (!core.DownloadChatFileToPath(file, filePath.toStdString(), true)) {
+      if (!core.DownloadChatFileToPath(
+              file, filePath.toStdString(), true,
+              [onProgress](std::uint64_t done, std::uint64_t total) {
+                if (!onProgress || total == 0) {
+                  return;
+                }
+                onProgress(static_cast<double>(done) /
+                           static_cast<double>(total));
+              })) {
         result.error = QString::fromStdString(core.last_error());
         return result;
       }
@@ -1144,7 +1154,15 @@ CacheTaskResult BuildAttachmentCache(ClientCore& core,
   if (fileSize > 0) {
     file.file_size = static_cast<std::uint64_t>(fileSize);
   }
-  if (!core.DownloadChatFileToPath(file, tempPath.toStdString(), true)) {
+  if (!core.DownloadChatFileToPath(
+          file, tempPath.toStdString(), true,
+          [onProgress](std::uint64_t done, std::uint64_t total) {
+            if (!onProgress || total == 0) {
+              return;
+            }
+            onProgress(static_cast<double>(done) /
+                       static_cast<double>(total));
+          })) {
     result.error = QString::fromStdString(core.last_error());
     return result;
   }
@@ -1372,6 +1390,13 @@ QuickClient::~QuickClient() {
 }
 
 bool QuickClient::init(const QString& configPath) {
+  const QString appRoot = UiRuntimePaths::AppRootDir();
+  const QString baseDir =
+      appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
+  const QString dataDir = QDir(baseDir).filePath(QStringLiteral("database"));
+  QDir().mkpath(dataDir);
+  qputenv("MI_E2EE_DATA_DIR",
+          QDir::toNativeSeparators(dataDir).toUtf8());
   if (!configPath.isEmpty()) {
     config_path_ = configPath;
   } else {
@@ -1383,9 +1408,6 @@ bool QuickClient::init(const QString& configPath) {
       config_path_ = FindConfigFile(QStringLiteral("config.ini"));
     }
     if (config_path_.isEmpty()) {
-      const QString appRoot = UiRuntimePaths::AppRootDir();
-      const QString baseDir =
-          appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
       config_path_ = baseDir + QStringLiteral("/config/client_config.ini");
     }
   }
@@ -1845,7 +1867,6 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     UpdateLastError(QStringLiteral("save path invalid"));
     return false;
   }
-  emit attachmentDownloadProgress(fid, resolved, 0.0);
   if (fileSize > 0 &&
       static_cast<quint64>(fileSize) > kMaxAttachmentCacheBytes) {
     UpdateLastError(QStringLiteral("file too large"));
@@ -1869,13 +1890,13 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     return false;
   }
   const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+  bool cacheReady = false;
 
   if (isMedia) {
     const QString filePath =
         cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
     if (QFileInfo::exists(filePath)) {
-      QueueAttachmentRestoreTask(fid, effectiveName, resolved, true);
-      return true;
+      cacheReady = true;
     }
   } else {
     const QDir fileDir(cacheRoot.filePath(safeId));
@@ -1885,9 +1906,17 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     if (QFileInfo::exists(indexPath) &&
         ReadCacheIndex(indexPath, existing, readErr) &&
         CacheChunksReady(fileDir, existing)) {
-      QueueAttachmentRestoreTask(fid, effectiveName, resolved, true);
-      return true;
+      cacheReady = true;
     }
+  }
+
+  download_progress_base_.insert(fid, 0.0);
+  download_progress_span_.insert(fid, cacheReady ? 1.0 : 0.9);
+  EmitDownloadProgress(fid, resolved, 0.0);
+
+  if (cacheReady) {
+    QueueAttachmentRestoreTask(fid, effectiveName, resolved, true);
+    return true;
   }
 
   pending_downloads_[fid].append(resolved);
@@ -1913,8 +1942,22 @@ void QuickClient::QueueAttachmentCacheTask(
     if (!self) {
       return;
     }
-    const CacheTaskResult result =
-        BuildAttachmentCache(self->core_, fileId, fileKey, fileName, fileSize);
+    const CacheTaskResult result = BuildAttachmentCache(
+        self->core_, fileId, fileKey, fileName, fileSize,
+        [self, fileId](double progress) {
+          if (!self) {
+            return;
+          }
+          QMetaObject::invokeMethod(
+              self,
+              [self, fileId, progress]() {
+                if (!self) {
+                  return;
+                }
+                self->EmitDownloadProgress(fileId, QString(), progress);
+              },
+              Qt::QueuedConnection);
+        });
     QMetaObject::invokeMethod(
         self,
         [self, fileId, result]() {
@@ -1956,8 +1999,7 @@ void QuickClient::QueueAttachmentRestoreTask(const QString& fileId,
                 if (!self) {
                   return;
                 }
-                emit self->attachmentDownloadProgress(fileId, savePath,
-                                                      progress);
+                self->EmitDownloadProgress(fileId, savePath, progress);
               },
               Qt::QueuedConnection);
         },
@@ -1984,15 +2026,23 @@ void QuickClient::HandleCacheTaskFinished(const QString& fileId,
   cache_inflight_.remove(fileId);
   emit attachmentCacheReady(fileId, fileUrl, previewUrl, error);
   if (!pending_downloads_.contains(fileId)) {
+    download_progress_base_.remove(fileId);
+    download_progress_span_.remove(fileId);
     return;
   }
   const QStringList paths = pending_downloads_.take(fileId);
   const QString name = pending_download_names_.take(fileId);
   if (!ok) {
+    download_progress_base_.remove(fileId);
+    download_progress_span_.remove(fileId);
     for (const auto& path : paths) {
       emit attachmentDownloadFinished(fileId, path, false, error);
     }
     return;
+  }
+  if (download_progress_span_.value(fileId, 1.0) < 1.0) {
+    download_progress_base_.insert(fileId, 0.9);
+    download_progress_span_.insert(fileId, 0.1);
   }
   for (const auto& path : paths) {
     QueueAttachmentRestoreTask(fileId, name, path, true);
@@ -2007,6 +2057,8 @@ void QuickClient::HandleRestoreTaskFinished(const QString& fileId,
     UpdateLastError(error);
   }
   emit attachmentDownloadFinished(fileId, savePath, ok, error);
+  download_progress_base_.remove(fileId);
+  download_progress_span_.remove(fileId);
 }
 
 QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {
@@ -2316,6 +2368,21 @@ QString QuickClient::serverInfo() const {
 
 QString QuickClient::version() const {
   return QStringLiteral("UI QML 1.0");
+}
+
+QUrl QuickClient::defaultDownloadFileUrl(const QString& fileName) const {
+  QString base =
+      QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+  if (base.isEmpty()) {
+    base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+  }
+  if (base.isEmpty()) {
+    base = QDir::homePath();
+  }
+  if (fileName.trimmed().isEmpty()) {
+    return QUrl::fromLocalFile(base);
+  }
+  return QUrl::fromLocalFile(QDir(base).filePath(fileName.trimmed()));
 }
 
 QString QuickClient::systemClipboardText() const {
@@ -3053,6 +3120,17 @@ void QuickClient::MaybeEmitTrustSignals() {
   if (changed) {
     emit trustStateChanged();
   }
+}
+
+void QuickClient::EmitDownloadProgress(const QString& fileId,
+                                       const QString& savePath,
+                                       double progress) {
+  const double base = download_progress_base_.value(fileId, 0.0);
+  const double span = download_progress_span_.value(fileId, 1.0);
+  double clamped = std::max(0.0, std::min(1.0, progress));
+  double scaled = base + clamped * span;
+  scaled = std::max(0.0, std::min(1.0, scaled));
+  emit attachmentDownloadProgress(fileId, savePath, scaled);
 }
 
 bool QuickClient::InitMediaSession(const QString& peerUsername,
