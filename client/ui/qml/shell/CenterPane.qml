@@ -1813,6 +1813,9 @@ Item {
                 id: bubbleBlock
                 visible: isIncoming || isOutgoing
                 property bool transparentBubble: isSticker || isImage || isGif || isEmoji
+                property bool usesFullWidth: !isSticker && !isImage && !isGif &&
+                                             !isVideo && !isFile && !isLocation &&
+                                             !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
                 property real maxBubbleWidth: Math.max(260, (ListView.view ? ListView.view.width : root.width) * 0.62)
@@ -1866,8 +1869,11 @@ Item {
                         SequentialAnimation {
                             running: isEmoji && (model.animateEmoji === true)
                             loops: 1
-                            NumberAnimation { target: emojiText; property: "scale"; from: 0.85; to: 1.15; duration: 160; easing.type: Easing.OutQuad }
-                            NumberAnimation { target: emojiText; property: "scale"; from: 1.15; to: 1.0; duration: 140; easing.type: Easing.InOutQuad }
+                            ParallelAnimation {
+                                NumberAnimation { target: emojiText; property: "scale"; from: 0.6; to: 1.2; duration: 200; easing.type: Easing.OutBack }
+                                NumberAnimation { target: emojiText; property: "opacity"; from: 0.4; to: 1.0; duration: 200; easing.type: Easing.OutCubic }
+                            }
+                            NumberAnimation { target: emojiText; property: "scale"; from: 1.2; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
                             onStopped: {
                                 if (model.animateEmoji === true && ListView.view && ListView.view.model) {
                                     ListView.view.model.setProperty(index, "animateEmoji", false)
@@ -2168,7 +2174,9 @@ Item {
 
                         Loader {
                             id: contentLoader
-                            width: bubbleBlock.maxBubbleWidth - bubbleBlock.hPadding * 2
+                            width: bubbleBlock.usesFullWidth
+                                   ? bubbleBlock.maxBubbleWidth - bubbleBlock.hPadding * 2
+                                   : bubbleBlock.contentWidth
                             sourceComponent: isSticker ? stickerContent
                                             : (isGif ? gifContent
                                             : (isImage ? imageContent

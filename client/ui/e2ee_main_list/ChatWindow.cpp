@@ -2120,12 +2120,13 @@ void ChatWindow::setConversation(const QString &id, const QString &title, bool i
                 } else if (h.kind == 2) {
                     const QString name = !h.fileName.trimmed().isEmpty() ? h.fileName : h.text;
                     messageModel_->appendFileMessage(conversationId_, h.outgoing, name, h.fileSize, QString(), t,
-                                                     h.messageId, st, sender);
+                                                     h.messageId, st, sender, false);
                 } else if (h.kind == 3) {
                     messageModel_->appendStickerMessage(conversationId_, h.outgoing, h.stickerId, t, h.messageId, st,
-                                                        sender);
+                                                        sender, false);
                 } else {
-                    messageModel_->appendTextMessage(conversationId_, h.outgoing, h.text, t, h.messageId, st, sender);
+                    messageModel_->appendTextMessage(conversationId_, h.outgoing, h.text, t, h.messageId, st, sender,
+                                                     false);
                 }
             }
             clearNewMessagePill();

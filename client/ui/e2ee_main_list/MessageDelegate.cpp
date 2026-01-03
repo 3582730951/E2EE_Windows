@@ -384,6 +384,18 @@ bool HasWhitespace(const QString &text) {
     return false;
 }
 
+double EaseOutQuad(double t) {
+    const double inv = 1.0 - t;
+    return 1.0 - inv * inv;
+}
+
+double EaseOutBack(double t) {
+    const double c1 = 1.70158;
+    const double c3 = c1 + 1.0;
+    const double inv = t - 1.0;
+    return 1.0 + c3 * inv * inv * inv + c1 * inv * inv;
+}
+
 QPainterPath BubblePath(const QRect &bubbleRect, bool outgoing) {
     QPainterPath path;
     path.setFillRule(Qt::WindingFill);
@@ -508,6 +520,8 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
     QString text = index.data(MessageModel::TextRole).toString();
     int emojiCount = 0;
     const bool emojiOnly = !isFile && !isSticker && IsEmojiOnlyText(text, emojiCount);
+    const bool singleEmoji = emojiOnly && emojiCount == 1;
+    const int emojiExtra = singleEmoji ? 8 : 0;
     QFont textFont = Theme::defaultFont(emojiOnly ? 24 : 13);
     if (isSticker) {
         const int stickerSize = 120;
@@ -536,6 +550,10 @@ QSize MessageDelegate::sizeHint(const QStyleOptionViewItem &option,
         bsize.setWidth(qMax(bsize.width(), metaMinWidth));
     }
     bsize.setHeight(bsize.height() + metaHeight);
+    if (emojiExtra > 0) {
+        bsize.rwidth() += emojiExtra;
+        bsize.rheight() += emojiExtra;
+    }
     const int senderExtra = (!outgoing && !sender.isEmpty()) ? 12 : 0;
     int height = qMax(BubbleTokens::avatarSize(), bsize.height() + senderExtra) + BubbleTokens::margin();
     return QSize(viewWidth, height);
@@ -616,6 +634,8 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     int emojiCount = 0;
     const bool emojiOnly = !isFile && !isSticker && IsEmojiOnlyText(text, emojiCount);
+    const bool singleEmoji = emojiOnly && emojiCount == 1;
+    const int emojiExtra = singleEmoji ? 8 : 0;
     QFont textFont = Theme::defaultFont(emojiOnly ? 24 : 13);
     QFont metaFont = Theme::defaultFont(10);
     const int metaHeight = QFontMetrics(metaFont).height();
@@ -645,6 +665,10 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     if (metaMinWidth > 0) {
         bsize.setWidth(qMax(bsize.width(), metaMinWidth));
     }
+    if (emojiExtra > 0) {
+        bsize.rwidth() += emojiExtra;
+        bsize.rheight() += emojiExtra;
+    }
 
     const int avatarSize = BubbleTokens::avatarSize();
     const int margin = BubbleTokens::margin();
@@ -673,18 +697,36 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         }
     }
 
+    qint64 dtMs = -1;
     if (insertedAtMs > 0) {
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        const qint64 dt = nowMs - insertedAtMs;
+        dtMs = nowMs - insertedAtMs;
         const qint64 windowMs = 220;
-        if (dt >= 0 && dt < windowMs) {
-            const double t = 1.0 - (static_cast<double>(dt) / static_cast<double>(windowMs));
+        if (dtMs >= 0 && dtMs < windowMs) {
+            const double t = 1.0 - (static_cast<double>(dtMs) / static_cast<double>(windowMs));
             QColor glow = Theme::uiAccentBlue();
             glow.setAlpha(qBound(0, static_cast<int>(70.0 * t), 70));
             QRect glowRect = bubbleRect.adjusted(-5, -3, 5, 3);
             painter->setPen(Qt::NoPen);
             painter->setBrush(glow);
             painter->drawRoundedRect(glowRect, BubbleTokens::radius() + 6, BubbleTokens::radius() + 6);
+        }
+    }
+
+    double emojiScale = 1.0;
+    if (singleEmoji && dtMs >= 0) {
+        const qint64 animMs = 420;
+        if (dtMs < animMs) {
+            const double t = static_cast<double>(dtMs) / static_cast<double>(animMs);
+            if (t < 0.65) {
+                const double s = t / 0.65;
+                const double eased = EaseOutBack(s);
+                emojiScale = 0.7 + 0.5 * eased;
+            } else {
+                const double s = (t - 0.65) / 0.35;
+                const double eased = EaseOutQuad(s);
+                emojiScale = 1.2 + (1.0 - 1.2) * eased;
+            }
         }
     }
 
@@ -858,10 +900,16 @@ void MessageDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
                                              -BubbleTokens::paddingH(),
                                              -BubbleTokens::paddingV() - metaReserve);
         painter->save();
-        painter->setClipRect(textRect, Qt::IntersectClip);
         if (emojiOnly) {
+            if (singleEmoji && std::abs(emojiScale - 1.0) > 0.001) {
+                const QPointF center = textRect.center();
+                painter->translate(center);
+                painter->scale(emojiScale, emojiScale);
+                painter->translate(-center);
+            }
             painter->drawText(textRect, Qt::AlignCenter, text);
         } else {
+            painter->setClipRect(textRect, Qt::IntersectClip);
             DrawWrappedText(painter, textRect, text, textFont, textColor);
         }
         painter->restore();

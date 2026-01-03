@@ -131,7 +131,8 @@ void MessageModel::maybeInsertDivider(const QDateTime &time) {
 
 void MessageModel::appendTextMessage(const QString &convId, bool outgoing, const QString &text,
                                      const QDateTime &time, const QString &messageId,
-                                     MessageItem::Status status, const QString &sender) {
+                                     MessageItem::Status status, const QString &sender,
+                                     bool markInserted) {
     if (convId != currentConvId_) {
         setConversation(convId);
     }
@@ -172,7 +173,7 @@ void MessageModel::appendTextMessage(const QString &convId, bool outgoing, const
 
     MessageItem msg;
     msg.type = MessageItem::Type::Text;
-    msg.insertedAtMs = QDateTime::currentMSecsSinceEpoch();
+    msg.insertedAtMs = markInserted ? QDateTime::currentMSecsSinceEpoch() : 0;
     msg.id = messageId;
     msg.convId = convId;
     msg.sender = sender;
@@ -194,7 +195,8 @@ void MessageModel::appendTextMessage(const QString &convId, bool outgoing, const
 
 void MessageModel::appendFileMessage(const QString &convId, bool outgoing, const QString &fileName,
                                      qint64 fileSize, const QString &filePath, const QDateTime &time,
-                                     const QString &messageId, MessageItem::Status status, const QString &sender) {
+                                     const QString &messageId, MessageItem::Status status,
+                                     const QString &sender, bool markInserted) {
     if (convId != currentConvId_) {
         setConversation(convId);
     }
@@ -243,7 +245,7 @@ void MessageModel::appendFileMessage(const QString &convId, bool outgoing, const
 
     MessageItem msg;
     msg.type = MessageItem::Type::Text;
-    msg.insertedAtMs = QDateTime::currentMSecsSinceEpoch();
+    msg.insertedAtMs = markInserted ? QDateTime::currentMSecsSinceEpoch() : 0;
     msg.id = messageId;
     msg.convId = convId;
     msg.sender = sender;
@@ -270,7 +272,8 @@ void MessageModel::appendStickerMessage(const QString &convId,
                                         const QDateTime &time,
                                         const QString &messageId,
                                         MessageItem::Status status,
-                                        const QString &sender) {
+                                        const QString &sender,
+                                        bool markInserted) {
     if (convId != currentConvId_) {
         setConversation(convId);
     }
@@ -311,7 +314,7 @@ void MessageModel::appendStickerMessage(const QString &convId,
 
     MessageItem msg;
     msg.type = MessageItem::Type::Text;
-    msg.insertedAtMs = QDateTime::currentMSecsSinceEpoch();
+    msg.insertedAtMs = markInserted ? QDateTime::currentMSecsSinceEpoch() : 0;
     msg.id = messageId;
     msg.convId = convId;
     msg.sender = sender;

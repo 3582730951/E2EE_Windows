@@ -63,6 +63,16 @@ QtObject {
         rebuildFiltered()
     }
 
+    function isEmojiBase(code) {
+        return (code >= 0x1F300 && code <= 0x1FAFF) ||
+               (code >= 0x2600 && code <= 0x27BF)
+    }
+    function isEmojiComponent(code) {
+        if (code === 0x200D || code === 0xFE0F || code === 0x20E3) {
+            return true
+        }
+        return code >= 0x1F3FB && code <= 0x1F3FF
+    }
     function isSingleEmoji(text) {
         var value = (text || "").trim()
         if (value.length === 0) {
@@ -71,13 +81,23 @@ QtObject {
         var count = 0
         for (var i = 0; i < value.length; ) {
             var code = value.codePointAt(i)
-            if (code !== 0xFE0F && code !== 0x200D) {
+            var step = code > 0xFFFF ? 2 : 1
+            if (code <= 0xFFFF) {
+                var ch = value.charAt(i)
+                if (/\\s/.test(ch)) {
+                    i += step
+                    continue
+                }
+            }
+            if (isEmojiBase(code)) {
                 count += 1
                 if (count > 1) {
                     return false
                 }
+            } else if (!isEmojiComponent(code)) {
+                return false
             }
-            i += code > 0xFFFF ? 2 : 1
+            i += step
         }
         return count === 1
     }
@@ -102,17 +122,38 @@ QtObject {
 
     function parseLocationText(text) {
         var value = (text || "").trim()
-        var pattern = /^【位置】(.*)\\nlat:([-\\d\\.]+),\\s*lon:([-\\d\\.]+)$/
+        var pattern = /^(?:【位置】|\\[位置\\])(.*)\\s+lat:([-\\d\\.]+),\\s*lon:([-\\d\\.]+)$/
         var match = pattern.exec(value)
         if (!match || match.length < 4) {
             return null
         }
+        var label = (match[1] || "").trim()
         var lat = parseFloat(match[2])
         var lon = parseFloat(match[3])
         if (isNaN(lat) || isNaN(lon)) {
             return null
         }
-        return { label: match[1], lat: lat, lon: lon }
+        return { label: label, lat: lat, lon: lon }
+    }
+
+    function parseCallInviteText(text) {
+        var value = (text || "").trim()
+        var voicePrefix = "[call]voice:"
+        var videoPrefix = "[call]video:"
+        var callId = ""
+        var video = false
+        if (value.indexOf(voicePrefix) === 0) {
+            callId = value.slice(voicePrefix.length).trim()
+        } else if (value.indexOf(videoPrefix) === 0) {
+            callId = value.slice(videoPrefix.length).trim()
+            video = true
+        } else {
+            return null
+        }
+        if (!/^[0-9a-fA-F]{32}$/.test(callId)) {
+            return null
+        }
+        return { callId: callId, video: video }
     }
 
     function clearIncomingCall() {
@@ -433,6 +474,9 @@ QtObject {
         var locationLabel = ""
         var locationLat = 0
         var locationLon = 0
+        var callId = message.callId || ""
+        var callVideo = message.video === true
+        var parsedCallInvite = null
         if (kind === "location") {
             contentKind = "location"
             locationLabel = message.locationLabel || ""
@@ -448,14 +492,26 @@ QtObject {
         } else if (kind === "call_invite") {
             contentKind = "call"
         } else if (kind === "text") {
-            var loc = parseLocationText(text)
-            if (loc) {
-                contentKind = "location"
-                locationLabel = loc.label
-                locationLat = loc.lat
-                locationLon = loc.lon
-            } else if (isSingleEmoji(text)) {
-                contentKind = "emoji"
+            var invite = parseCallInviteText(text)
+            if (invite) {
+                contentKind = "call"
+                callId = invite.callId
+                callVideo = invite.video
+                parsedCallInvite = invite
+                if (!outgoing) {
+                    text = invite.video ? Ui.I18n.t("chat.callIncomingVideo")
+                                        : Ui.I18n.t("chat.callIncomingVoice")
+                }
+            } else {
+                var loc = parseLocationText(text)
+                if (loc) {
+                    contentKind = "location"
+                    locationLabel = loc.label
+                    locationLat = loc.lat
+                    locationLon = loc.lon
+                } else if (isSingleEmoji(text)) {
+                    contentKind = "emoji"
+                }
             }
         }
 
@@ -495,8 +551,8 @@ QtObject {
             locationLabel: locationLabel,
             locationLat: locationLat,
             locationLon: locationLon,
-            callId: message.callId || "",
-            callVideo: message.video === true,
+            callId: callId,
+            callVideo: callVideo,
             animateEmoji: contentKind === "emoji"
         }
 
@@ -515,11 +571,11 @@ QtObject {
                 clientBridge.sendReadReceipt(convId, msgId)
             }
         }
-        if (kind === "call_invite" && !outgoing && !isGroup) {
+        if ((kind === "call_invite" || parsedCallInvite) && !outgoing && !isGroup) {
             incomingCallActive = true
             incomingCallPeer = convId
-            incomingCallId = message.callId || ""
-            incomingCallVideo = message.video === true
+            incomingCallId = callId
+            incomingCallVideo = callVideo
         }
     }
 

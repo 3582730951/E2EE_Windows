@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -77,13 +78,19 @@ void CopyOpenccFiles(const QString &srcDir, const QString &dstDir) {
     }
 }
 
-bool HasBinFiles(const QString &root) {
+bool HasBinFiles(const QString &root, const QDateTime &since = QDateTime()) {
     if (root.isEmpty() || !QDir(root).exists()) {
         return false;
     }
     QDirIterator it(root, QStringList() << QStringLiteral("*.bin"),
                     QDir::Files, QDirIterator::Subdirectories);
-    return it.hasNext();
+    while (it.hasNext()) {
+        it.next();
+        if (!since.isValid() || it.fileInfo().lastModified() >= since) {
+            return true;
+        }
+    }
+    return false;
 }
 
 struct RimeLibrary {
@@ -333,16 +340,12 @@ bool DeployRime(const QString &sharedDir, const QString &userDir, const QString 
         lib.api->deployer_initialize(&traits);
     }
     lib.api->initialize(&traits);
-    bool ok = true;
-    bool maintenance = false;
-    if (lib.api->start_maintenance) {
-        maintenance = lib.api->start_maintenance(False) == True;
-    }
+    bool ok = false;
     if (lib.api->deploy) {
         ok = lib.api->deploy() == True;
     }
-    if (maintenance && lib.api->join_maintenance_thread) {
-        lib.api->join_maintenance_thread();
+    if (!ok && lib.api->prebuild) {
+        ok = lib.api->prebuild() == True;
     }
     if (lib.api->finalize) {
         lib.api->finalize();
@@ -384,6 +387,7 @@ int main(int argc, char *argv[]) {
     const QString sharedDir = QDir(baseDir).filePath(QStringLiteral("share"));
     const QString userDir = QDir(baseDir).filePath(QStringLiteral("user"));
     qputenv("MI_E2EE_IME_DIR", baseDir.toUtf8());
+    const QDateTime startTime = QDateTime::currentDateTime();
 
     if (!PrepareRimeData(sharedDir, userDir)) {
         QTextStream(stderr) << "Failed to prepare rime data\n";
@@ -409,8 +413,11 @@ int main(int argc, char *argv[]) {
     }
 
     if (!DeployRime(sharedDir, userDir, runtimeDir)) {
-        QTextStream(stderr) << "Rime deploy failed\n";
-        return 4;
+        if (!HasBinFiles(userDir, startTime)) {
+            QTextStream(stderr) << "Rime deploy failed\n";
+            return 4;
+        }
+        QTextStream(stderr) << "Rime deploy failed; using existing .bin output\n";
     }
     if (!HasBinFiles(userDir)) {
         QTextStream(stderr) << "Rime deploy produced no .bin files\n";

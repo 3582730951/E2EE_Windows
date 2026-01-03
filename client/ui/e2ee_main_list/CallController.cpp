@@ -72,6 +72,132 @@ bool HexToBytes16(const QString &hex, std::array<std::uint8_t, 16> &out) {
     return true;
 }
 
+bool IsAudioFormatSupported(const QAudioDevice &device,
+                            int sampleRate,
+                            int channels) {
+    if (device.isNull() || sampleRate <= 0 || channels <= 0) {
+        return false;
+    }
+    QAudioFormat format;
+    format.setSampleRate(sampleRate);
+    format.setChannelCount(channels);
+    format.setSampleFormat(QAudioFormat::Int16);
+    return device.isFormatSupported(format);
+}
+
+bool PickPreferredAudioFormat(const QAudioDevice &device,
+                              int &sampleRate,
+                              int &channels) {
+    if (device.isNull()) {
+        return false;
+    }
+    const QAudioFormat preferred = device.preferredFormat();
+    if (preferred.sampleFormat() != QAudioFormat::Int16) {
+        return false;
+    }
+    const int rate = preferred.sampleRate();
+    const int ch = preferred.channelCount();
+    if (rate <= 0 || ch <= 0) {
+        return false;
+    }
+    if (!device.isFormatSupported(preferred)) {
+        return false;
+    }
+    sampleRate = rate;
+    channels = ch;
+    return true;
+}
+
+bool FindCandidateAudioFormat(const QAudioDevice &inDevice,
+                              const QAudioDevice &outDevice,
+                              bool checkIn,
+                              bool checkOut,
+                              int &sampleRate,
+                              int &channels) {
+    const std::array<int, 5> rates = {48000, 44100, 32000, 24000, 16000};
+    const std::array<int, 2> chans = {1, 2};
+    for (const int rate : rates) {
+        for (const int ch : chans) {
+            if (checkIn && !IsAudioFormatSupported(inDevice, rate, ch)) {
+                continue;
+            }
+            if (checkOut && !IsAudioFormatSupported(outDevice, rate, ch)) {
+                continue;
+            }
+            sampleRate = rate;
+            channels = ch;
+            return true;
+        }
+    }
+    return false;
+}
+
+void AdjustAudioConfigForDevices(
+    const QAudioDevice &inDevice,
+    const QAudioDevice &outDevice,
+    mi::client::media::AudioPipelineConfig &config) {
+    const bool haveIn = !inDevice.isNull();
+    const bool haveOut = !outDevice.isNull();
+    if (!haveIn && !haveOut) {
+        return;
+    }
+    const bool inOk =
+        !haveIn || IsAudioFormatSupported(inDevice, config.sample_rate,
+                                          config.channels);
+    const bool outOk =
+        !haveOut || IsAudioFormatSupported(outDevice, config.sample_rate,
+                                           config.channels);
+    if (inOk && outOk) {
+        return;
+    }
+
+    int rate = config.sample_rate;
+    int ch = config.channels;
+    if (haveIn && haveOut) {
+        if (FindCandidateAudioFormat(inDevice, outDevice, true, true, rate, ch)) {
+            config.sample_rate = rate;
+            config.channels = ch;
+            return;
+        }
+        int prefRate = 0;
+        int prefCh = 0;
+        if (PickPreferredAudioFormat(inDevice, prefRate, prefCh) &&
+            IsAudioFormatSupported(outDevice, prefRate, prefCh)) {
+            config.sample_rate = prefRate;
+            config.channels = prefCh;
+            return;
+        }
+        if (PickPreferredAudioFormat(outDevice, prefRate, prefCh) &&
+            IsAudioFormatSupported(inDevice, prefRate, prefCh)) {
+            config.sample_rate = prefRate;
+            config.channels = prefCh;
+            return;
+        }
+    }
+    if (haveIn) {
+        int prefRate = 0;
+        int prefCh = 0;
+        if (PickPreferredAudioFormat(inDevice, prefRate, prefCh) ||
+            FindCandidateAudioFormat(inDevice, outDevice, true, false,
+                                     prefRate, prefCh)) {
+            config.sample_rate = prefRate;
+            config.channels = prefCh;
+            return;
+        }
+    }
+    if (haveOut) {
+        int prefRate = 0;
+        int prefCh = 0;
+        if (PickPreferredAudioFormat(outDevice, prefRate, prefCh) ||
+            FindCandidateAudioFormat(inDevice, outDevice, false, true,
+                                     prefRate, prefCh)) {
+            config.sample_rate = prefRate;
+            config.channels = prefCh;
+            return;
+        }
+    }
+}
+
 }  // namespace
 
 CallController::CallController(mi::client::ClientCore &core, QObject *parent)
@@ -125,20 +251,8 @@ bool CallController::Start(const QString &peerUsername,
     media_session_ = std::move(session);
     audio_config_ = mi::client::media::AudioPipelineConfig{};
     const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
-    if (!in_device.isNull()) {
-        QAudioFormat desired;
-        desired.setSampleRate(audio_config_.sample_rate);
-        desired.setChannelCount(audio_config_.channels);
-        desired.setSampleFormat(QAudioFormat::Int16);
-        if (!in_device.isFormatSupported(desired)) {
-            const QAudioFormat preferred = in_device.preferredFormat();
-            if (preferred.sampleFormat() == QAudioFormat::Int16 &&
-                preferred.sampleRate() > 0 && preferred.channelCount() > 0) {
-                audio_config_.sample_rate = preferred.sampleRate();
-                audio_config_.channels = preferred.channelCount();
-            }
-        }
-    }
+    const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
+    AdjustAudioConfigForDevices(in_device, out_device, audio_config_);
     audio_pipeline_ = std::make_unique<mi::client::media::AudioPipeline>(
         *media_session_, audio_config_);
     if (!audio_pipeline_->Init(err)) {
@@ -368,7 +482,9 @@ bool CallController::SetupAudio(QString &outError) {
     }
     const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
     const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
-    if (in_device.isNull() || out_device.isNull()) {
+    const bool have_in = !in_device.isNull();
+    const bool have_out = !out_device.isNull();
+    if (!have_in && !have_out) {
         outError = QStringLiteral("未找到音频设备");
         return false;
     }
@@ -376,27 +492,48 @@ bool CallController::SetupAudio(QString &outError) {
     format.setSampleRate(audio_config_.sample_rate);
     format.setChannelCount(audio_config_.channels);
     format.setSampleFormat(QAudioFormat::Int16);
-    if (!in_device.isFormatSupported(format) ||
-        !out_device.isFormatSupported(format)) {
+    const bool in_ok = have_in && in_device.isFormatSupported(format);
+    const bool out_ok = have_out && out_device.isFormatSupported(format);
+    if (!in_ok && !out_ok) {
         outError = QStringLiteral("音频格式不支持");
         return false;
     }
-    audio_source_ = std::make_unique<QAudioSource>(in_device, format, this);
-    audio_sink_ = std::make_unique<QAudioSink>(out_device, format, this);
+    if (in_ok) {
+        audio_source_ = std::make_unique<QAudioSource>(in_device, format, this);
+    }
+    if (out_ok) {
+        audio_sink_ = std::make_unique<QAudioSink>(out_device, format, this);
+    }
     const int frame_bytes =
         audio_pipeline_->frame_samples() * static_cast<int>(sizeof(std::int16_t));
     if (frame_bytes > 0) {
-        audio_source_->setBufferSize(frame_bytes * 4);
-        audio_sink_->setBufferSize(frame_bytes * 8);
+        if (audio_source_) {
+            audio_source_->setBufferSize(frame_bytes * 4);
+        }
+        if (audio_sink_) {
+            audio_sink_->setBufferSize(frame_bytes * 8);
+        }
     }
-    audio_in_device_ = audio_source_->start();
-    audio_out_device_ = audio_sink_->start();
-    if (!audio_in_device_ || !audio_out_device_) {
+    if (audio_source_) {
+        audio_in_device_ = audio_source_->start();
+        if (!audio_in_device_) {
+            audio_source_.reset();
+        }
+    }
+    if (audio_sink_) {
+        audio_out_device_ = audio_sink_->start();
+        if (!audio_out_device_) {
+            audio_sink_.reset();
+        }
+    }
+    if (!audio_in_device_ && !audio_out_device_) {
         outError = QStringLiteral("音频设备启动失败");
         return false;
     }
-    connect(audio_in_device_, &QIODevice::readyRead, this,
-            &CallController::HandleAudioReady);
+    if (audio_in_device_) {
+        connect(audio_in_device_, &QIODevice::readyRead, this,
+                &CallController::HandleAudioReady);
+    }
     return true;
 }
 
@@ -404,8 +541,7 @@ bool CallController::SetupVideo(QString &outError) {
     outError.clear();
     const QCameraDevice device = QMediaDevices::defaultVideoInput();
     if (device.isNull()) {
-        outError = QStringLiteral("未检测到摄像头");
-        return false;
+        return true;
     }
     if (!local_video_sink_) {
         owned_local_sink_ = std::make_unique<QVideoSink>(this);

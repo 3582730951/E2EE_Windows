@@ -68,19 +68,22 @@ public:
                            const QDateTime &time,
                            const QString &messageId = QString(),
                            MessageItem::Status status = MessageItem::Status::Sent,
-                           const QString &sender = QString());
+                           const QString &sender = QString(),
+                           bool markInserted = true);
     void appendFileMessage(const QString &convId, bool outgoing, const QString &fileName,
                            qint64 fileSize, const QString &filePath, const QDateTime &time,
                            const QString &messageId = QString(),
                            MessageItem::Status status = MessageItem::Status::Sent,
-                           const QString &sender = QString());
+                           const QString &sender = QString(),
+                           bool markInserted = true);
     void appendStickerMessage(const QString &convId,
                               bool outgoing,
                               const QString &stickerId,
                               const QDateTime &time,
                               const QString &messageId = QString(),
                               MessageItem::Status status = MessageItem::Status::Sent,
-                              const QString &sender = QString());
+                              const QString &sender = QString(),
+                              bool markInserted = true);
     void appendSystemMessage(const QString &convId, const QString &text, const QDateTime &time);
     bool updateMessageStatus(const QString &messageId, MessageItem::Status status);
     bool updateFileTransfer(const QString &messageId, MessageItem::FileTransfer transfer, int progress = -1);
