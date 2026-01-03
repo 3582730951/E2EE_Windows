@@ -25,6 +25,7 @@ QtObject {
     property var membersByChatId: ({})
     property var typingByChatId: ({})
     property var presenceByChatId: ({})
+    property var downloadProgressByFileId: ({})
     property bool incomingCallActive: false
     property string incomingCallPeer: ""
     property string incomingCallId: ""
@@ -528,6 +529,12 @@ QtObject {
         }
 
         var displaySender = outgoing ? Ui.I18n.t("chat.you") : (sender || resolveTitle(convId))
+        var fileId = message.fileId || ""
+        var progressValue = downloadProgressByFileId[fileId]
+        if (progressValue === undefined || progressValue === null) {
+            progressValue = message.downloadProgress || 0
+        }
+
         var entry = {
             chatId: convId,
             msgId: msgId,
@@ -540,10 +547,10 @@ QtObject {
             edited: false,
             fileName: message.fileName || "",
             fileSize: message.fileSize || 0,
-            fileId: message.fileId || "",
+            fileId: fileId,
             fileKey: message.fileKey || "",
             fileUrl: message.fileUrl || message.filePath || "",
-            downloadProgress: message.downloadProgress || 0,
+            downloadProgress: progressValue,
             stickerId: message.stickerId || "",
             stickerUrl: message.stickerUrl || "",
             stickerAnimated: message.stickerAnimated || false,
@@ -739,6 +746,12 @@ QtObject {
                 }
             }
 
+            var fileId = h.fileId || ""
+            var progressValue = downloadProgressByFileId[fileId]
+            if (progressValue === undefined || progressValue === null) {
+                progressValue = h.downloadProgress || 0
+            }
+
             model.append({
                 chatId: chatId,
                 msgId: h.messageId || nextMsgId(),
@@ -751,10 +764,10 @@ QtObject {
                 edited: false,
                 fileName: h.fileName || "",
                 fileSize: h.fileSize || 0,
-                fileId: h.fileId || "",
+                fileId: fileId,
                 fileKey: h.fileKey || "",
                 fileUrl: h.fileUrl || "",
-                downloadProgress: h.downloadProgress || 0,
+                downloadProgress: progressValue,
                 stickerId: h.stickerId || "",
                 stickerUrl: h.stickerUrl || "",
                 stickerAnimated: h.stickerAnimated || false,
@@ -1268,6 +1281,7 @@ QtObject {
                 }
             }
         }
+        updateDownloadProgress(fileId, 1)
     }
 
     function updateDownloadProgress(fileId, progress) {
@@ -1279,6 +1293,7 @@ QtObject {
             value = 0
         }
         value = Math.max(0, Math.min(1, value))
+        downloadProgressByFileId[fileId] = value
         for (var chatId in messagesByChatId) {
             if (!messagesByChatId.hasOwnProperty(chatId)) {
                 continue

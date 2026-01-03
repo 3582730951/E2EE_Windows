@@ -78,6 +78,45 @@ constexpr std::uint8_t kRichKindContactCard = 3;
 constexpr std::uint8_t kRichFlagHasReply = 0x01;
 
 constexpr std::uint8_t kRecordMeta = 1;
+
+std::string ToLowerAscii(std::string value) {
+  for (char& ch : value) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return value;
+}
+
+void CopyHistoryFilesIfMissing(const std::filesystem::path& from,
+                               const std::filesystem::path& to) {
+  if (from.empty() || to.empty()) {
+    return;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(from, ec) || ec) {
+    return;
+  }
+  std::filesystem::create_directories(to, ec);
+  for (const auto& entry : std::filesystem::directory_iterator(from, ec)) {
+    if (ec) {
+      break;
+    }
+    if (!entry.is_regular_file(ec) || ec) {
+      continue;
+    }
+    const auto name = entry.path().filename();
+    if (name.empty()) {
+      continue;
+    }
+    const auto target = to / name;
+    if (std::filesystem::exists(target, ec)) {
+      ec.clear();
+      continue;
+    }
+    std::filesystem::copy_file(entry.path(), target,
+                               std::filesystem::copy_options::skip_existing, ec);
+    ec.clear();
+  }
+}
 constexpr std::uint8_t kRecordMessage = 2;
 constexpr std::uint8_t kRecordStatus = 3;
 
@@ -4000,7 +4039,14 @@ bool ChatHistoryStore::Init(const std::filesystem::path& e2ee_state_dir,
   if (base_dir.empty()) {
     base_dir = e2ee_state_dir_;
   }
-  history_dir_ = base_dir / "database";
+  std::filesystem::path legacy_history_dir;
+  if (!base_dir.empty() &&
+      ToLowerAscii(base_dir.filename().string()) == "database") {
+    history_dir_ = base_dir;
+    legacy_history_dir = base_dir / "database";
+  } else {
+    history_dir_ = base_dir / "database";
+  }
 
   std::error_code ec;
   std::filesystem::create_directories(legacy_conv_dir_, ec);
@@ -4008,6 +4054,9 @@ bool ChatHistoryStore::Init(const std::filesystem::path& e2ee_state_dir,
   std::filesystem::create_directories(history_dir_, ec);
   std::filesystem::create_directories(user_dir_, ec);
   std::filesystem::create_directories(attachments_dir_, ec);
+  if (!legacy_history_dir.empty() && legacy_history_dir != history_dir_) {
+    CopyHistoryFilesIfMissing(legacy_history_dir, history_dir_);
+  }
   if (!legacy_tag_.empty()) {
     std::string migrate_err;
     (void)MigrateLegacyHistoryFiles(legacy_tag_, user_tag_, migrate_err);
