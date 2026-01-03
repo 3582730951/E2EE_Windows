@@ -126,6 +126,11 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool aiEnhanceGpuAvailable() const;
   Q_INVOKABLE bool aiEnhanceEnabled() const;
   Q_INVOKABLE void setAiEnhanceEnabled(bool enabled);
+  Q_INVOKABLE int aiEnhanceQualityLevel() const;
+  Q_INVOKABLE void setAiEnhanceQualityLevel(int level);
+  Q_INVOKABLE bool aiEnhanceX4Confirmed() const;
+  Q_INVOKABLE void setAiEnhanceX4Confirmed(bool confirmed);
+  Q_INVOKABLE QVariantMap aiEnhanceRecommendations() const;
   Q_INVOKABLE bool clipboardIsolation() const;
   Q_INVOKABLE void setClipboardIsolation(bool enabled);
 
@@ -280,6 +285,13 @@ class QuickClient : public QObject {
   bool clipboard_isolation_enabled_{true};
   bool internal_ime_enabled_{true};
   bool ai_enhance_enabled_{false};
+  int ai_enhance_quality_{2};
+  bool ai_enhance_x4_confirmed_{false};
+  bool ai_gpu_available_{false};
+  int ai_gpu_series_{0};
+  QString ai_gpu_name_;
+  int ai_rec_perf_scale_{2};
+  int ai_rec_quality_scale_{2};
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;

@@ -18,6 +18,30 @@ ApplicationWindow {
     palette.base: Ui.Style.panelBgAlt
     palette.button: Ui.Style.panelBgAlt
     palette.text: Ui.Style.textPrimary
+
+    property int pendingAiQualityScale: 0
+    property var aiQualityOptions: [
+        { label: Ui.I18n.t("settings.privacy.aiEnhanceQualityX2"), scale: 2 },
+        { label: Ui.I18n.t("settings.privacy.aiEnhanceQualityX4"), scale: 4 }
+    ]
+
+    function aiQualityIndex(scale) {
+        for (var i = 0; i < aiQualityOptions.length; ++i) {
+            if (aiQualityOptions[i].scale === scale) {
+                return i
+            }
+        }
+        return 0
+    }
+
+    function requestAiQuality(scale) {
+        if (scale === 4 && !Ui.AppStore.aiEnhanceX4Confirmed) {
+            pendingAiQualityScale = scale
+            aiX4Dialog.open()
+            return
+        }
+        Ui.AppStore.setAiEnhanceQualityLevel(scale)
+    }
     palette.buttonText: Ui.Style.textPrimary
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
@@ -217,6 +241,59 @@ ApplicationWindow {
                             onToggled: Ui.AppStore.setAiEnhanceEnabled(checked)
                         }
                     }
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        ComboBox {
+                            id: aiQualityCombo
+                            model: aiQualityOptions
+                            textRole: "label"
+                            Layout.preferredWidth: 220
+                            enabled: Ui.AppStore.aiEnhanceEnabled
+                            currentIndex: aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
+                            onActivated: requestAiQuality(model[currentIndex].scale)
+                        }
+                    }
+                    Text {
+                        text: Ui.AppStore.aiEnhanceGpuName.length > 0
+                              ? Ui.I18n.t("settings.privacy.aiEnhanceGpu").arg(
+                                    Ui.AppStore.aiEnhanceGpuName +
+                                    (Ui.AppStore.aiEnhanceGpuSeries > 0
+                                     ? (" (" + Ui.AppStore.aiEnhanceGpuSeries + Ui.I18n.t("settings.privacy.aiEnhanceGpuSeriesSuffix") + ")")
+                                     : ""))
+                              : ""
+                        visible: Ui.AppStore.aiEnhanceGpuName.length > 0
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        text: Ui.AppStore.aiEnhanceGpuAvailable
+                              ? ""
+                              : Ui.I18n.t("settings.privacy.aiEnhanceGpuUnavailable")
+                        visible: !Ui.AppStore.aiEnhanceGpuAvailable
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendPerf")
+                              .arg(Ui.AppStore.aiEnhancePerfScale)
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendQuality")
+                              .arg(Ui.AppStore.aiEnhanceQualityScale)
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -246,6 +323,42 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    Dialog {
+        id: aiX4Dialog
+        modal: true
+        title: Ui.I18n.t("settings.privacy.aiEnhanceX4Title")
+        standardButtons: Dialog.NoButton
+        contentItem: Text {
+            width: 320
+            wrapMode: Text.WordWrap
+            color: Ui.Style.textPrimary
+            text: Ui.AppStore.aiEnhanceGpuAvailable
+                  ? Ui.I18n.t("settings.privacy.aiEnhanceX4MessageGpu")
+                  : Ui.I18n.t("settings.privacy.aiEnhanceX4MessageCpu")
+        }
+        footer: DialogButtonBox {
+            Button {
+                text: Ui.I18n.t("settings.privacy.aiEnhanceX4Cancel")
+                onClicked: aiX4Dialog.reject()
+            }
+            Button {
+                text: Ui.I18n.t("settings.privacy.aiEnhanceX4Confirm")
+                onClicked: aiX4Dialog.accept()
+            }
+        }
+        onAccepted: {
+            var targetScale = pendingAiQualityScale || 4
+            Ui.AppStore.setAiEnhanceX4Confirmed(true)
+            Ui.AppStore.setAiEnhanceQualityLevel(targetScale)
+            pendingAiQualityScale = 0
+        }
+        onRejected: {
+            pendingAiQualityScale = 0
+            aiQualityCombo.currentIndex =
+                aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
         }
     }
 }

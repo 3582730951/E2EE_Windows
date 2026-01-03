@@ -22,8 +22,10 @@
 #include <QMediaDevices>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QRunnable>
 #include <QSaveFile>
+#include <QSettings>
 #include <QPointer>
 #include <QSet>
 #include <QStandardPaths>
@@ -111,6 +113,154 @@ QString SanitizeFileStem(QString name) {
   return out;
 }
 
+constexpr int kAiEnhanceScaleX2 = 2;
+constexpr int kAiEnhanceScaleX4 = 4;
+
+int ClampEnhanceScale(int scale) {
+  return scale == kAiEnhanceScaleX4 ? kAiEnhanceScaleX4 : kAiEnhanceScaleX2;
+}
+
+int ResolveEnhanceScale(int requestedScale, bool x4Confirmed) {
+  const int clamped = ClampEnhanceScale(requestedScale);
+  if (clamped == kAiEnhanceScaleX4 && !x4Confirmed) {
+    return kAiEnhanceScaleX2;
+  }
+  return clamped;
+}
+
+QString AiSettingsPath() {
+  const QString dataDir = ResolveUiDataDir();
+  if (dataDir.isEmpty()) {
+    return {};
+  }
+  return QDir(dataDir).filePath(QStringLiteral("ai_settings.ini"));
+}
+
+struct AiEnhanceRecommendation {
+  int perf_scale{kAiEnhanceScaleX2};
+  int quality_scale{kAiEnhanceScaleX2};
+};
+
+AiEnhanceRecommendation BuildAiEnhanceRecommendation(int gpuSeries,
+                                                     bool gpuAvailable) {
+  AiEnhanceRecommendation rec;
+  if (!gpuAvailable) {
+    return rec;
+  }
+  if (gpuSeries >= 40) {
+    rec.quality_scale = kAiEnhanceScaleX4;
+  } else if (gpuSeries >= 30) {
+    rec.quality_scale = kAiEnhanceScaleX4;
+  } else if (gpuSeries >= 20) {
+    rec.quality_scale = kAiEnhanceScaleX2;
+  } else if (gpuSeries >= 10) {
+    rec.quality_scale = kAiEnhanceScaleX2;
+  }
+  return rec;
+}
+
+QString RunCommandOutput(const QString& program,
+                         const QStringList& args,
+                         int timeoutMs) {
+  QProcess proc;
+  proc.start(program, args);
+  if (!proc.waitForFinished(timeoutMs)) {
+    proc.kill();
+    proc.waitForFinished(250);
+    return {};
+  }
+  QByteArray output = proc.readAllStandardOutput();
+  if (output.trimmed().isEmpty()) {
+    output = proc.readAllStandardError();
+  }
+  return QString::fromLocal8Bit(output).trimmed();
+}
+
+QStringList ParseGpuNames(const QString& output) {
+  QStringList lines =
+      output.split(QRegularExpression(QStringLiteral("[\\r\\n]+")),
+                   Qt::SkipEmptyParts);
+  QStringList names;
+  for (const auto& line : lines) {
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) {
+      continue;
+    }
+    if (trimmed.compare(QStringLiteral("Name"), Qt::CaseInsensitive) == 0) {
+      continue;
+    }
+    names.push_back(trimmed);
+  }
+  return names;
+}
+
+QString PickPreferredGpuName(const QStringList& names) {
+  for (const auto& name : names) {
+    if (name.contains(QStringLiteral("NVIDIA"), Qt::CaseInsensitive) ||
+        name.contains(QStringLiteral("RTX"), Qt::CaseInsensitive) ||
+        name.contains(QStringLiteral("GTX"), Qt::CaseInsensitive)) {
+      return name.trimmed();
+    }
+  }
+  for (const auto& name : names) {
+    if (!name.trimmed().isEmpty()) {
+      return name.trimmed();
+    }
+  }
+  return {};
+}
+
+QString QueryGpuName() {
+#ifdef _WIN32
+  const QString wmicOutput = RunCommandOutput(
+      QStringLiteral("wmic"),
+      {QStringLiteral("path"),
+       QStringLiteral("win32_VideoController"),
+       QStringLiteral("get"),
+       QStringLiteral("Name")},
+      2000);
+  QStringList names = ParseGpuNames(wmicOutput);
+  if (names.isEmpty()) {
+    const QString psOutput = RunCommandOutput(
+        QStringLiteral("powershell"),
+        {QStringLiteral("-NoProfile"),
+         QStringLiteral("-Command"),
+         QStringLiteral("Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name")},
+        2500);
+    names = ParseGpuNames(psOutput);
+  }
+  return PickPreferredGpuName(names);
+#else
+  return {};
+#endif
+}
+
+int ParseNvidiaSeries(const QString& gpuName) {
+  const QString lowered = gpuName.toLower();
+  if (!lowered.contains(QStringLiteral("nvidia")) &&
+      !lowered.contains(QStringLiteral("rtx")) &&
+      !lowered.contains(QStringLiteral("gtx"))) {
+    return 0;
+  }
+  const QRegularExpression re(
+      QStringLiteral("(rtx|gtx)\\s*(\\d{4})"),
+      QRegularExpression::CaseInsensitiveOption);
+  const QRegularExpressionMatch match = re.match(gpuName);
+  if (!match.hasMatch()) {
+    return 0;
+  }
+  bool ok = false;
+  const int model = match.captured(2).toInt(&ok);
+  if (!ok || model < 1000) {
+    return 0;
+  }
+  const int series = (model / 1000) * 10;
+  if (series < 10 || series > 50) {
+    return 0;
+  }
+  return series;
+}
+
 QString FindRealEsrganPath(bool* supportsGpu) {
   if (supportsGpu) {
     *supportsGpu = false;
@@ -163,7 +313,31 @@ QString FindRealEsrganPath(bool* supportsGpu) {
   return {};
 }
 
-QString FindRealEsrganModelDir(const QString& exePath) {
+bool DetectAiEnhanceGpuAvailable() {
+  bool gpuSupported = false;
+  const QString exe = FindRealEsrganPath(&gpuSupported);
+  if (exe.isEmpty() || !gpuSupported) {
+    return false;
+  }
+#ifdef _WIN32
+  const QString systemRoot = qEnvironmentVariable("SystemRoot");
+  if (!systemRoot.isEmpty()) {
+    const QString vulkan =
+        QDir(systemRoot).filePath(QStringLiteral("System32/vulkan-1.dll"));
+    if (!QFileInfo::exists(vulkan)) {
+      return false;
+    }
+  }
+#endif
+  return true;
+}
+
+QString FindRealEsrganModelDir(const QString& exePath,
+                               const QString& modelName) {
+  const QString trimmedModel = modelName.trimmed();
+  if (trimmedModel.isEmpty()) {
+    return {};
+  }
   const QString dataDir = ResolveUiDataDir();
   const QString baseDir = UiRuntimePaths::AppRootDir();
   const QString runtimeDir = UiRuntimePaths::RuntimeDir();
@@ -181,14 +355,68 @@ QString FindRealEsrganModelDir(const QString& exePath) {
       continue;
     }
     const QString param =
-        QDir(root).filePath(QStringLiteral("realesrgan-x4plus.param"));
+        QDir(root).filePath(trimmedModel + QStringLiteral(".param"));
     const QString bin =
-        QDir(root).filePath(QStringLiteral("realesrgan-x4plus.bin"));
+        QDir(root).filePath(trimmedModel + QStringLiteral(".bin"));
     if (QFileInfo::exists(param) && QFileInfo::exists(bin)) {
       return root;
     }
   }
   return {};
+}
+
+QString SelectRealEsrganModelName(int scale, bool anime) {
+  const int clamped = ClampEnhanceScale(scale);
+  if (clamped == kAiEnhanceScaleX2) {
+    return QStringLiteral("realesrgan-x2plus");
+  }
+  if (anime) {
+    return QStringLiteral("realesrgan-x4plus-anime");
+  }
+  return QStringLiteral("realesrgan-x4plus");
+}
+
+bool LoadAiEnhanceSettings(bool gpuAvailable,
+                           const AiEnhanceRecommendation& rec,
+                           bool& enabled,
+                           int& quality,
+                           bool& x4Confirmed) {
+  const QString path = AiSettingsPath();
+  if (path.isEmpty()) {
+    enabled = gpuAvailable;
+    quality = rec.perf_scale;
+    x4Confirmed = false;
+    return false;
+  }
+  if (!QFileInfo::exists(path)) {
+    enabled = gpuAvailable;
+    quality = rec.perf_scale;
+    x4Confirmed = false;
+    return false;
+  }
+  QSettings settings(path, QSettings::IniFormat);
+  enabled = settings.value(QStringLiteral("ai/enabled"), gpuAvailable).toBool();
+  quality = settings.value(QStringLiteral("ai/quality"), rec.perf_scale).toInt();
+  const bool hasConfirm = settings.contains(QStringLiteral("ai/x4_confirmed"));
+  x4Confirmed =
+      settings.value(QStringLiteral("ai/x4_confirmed"), false).toBool();
+  quality = ClampEnhanceScale(quality);
+  if (!hasConfirm && quality == kAiEnhanceScaleX4) {
+    x4Confirmed = true;
+  }
+  return true;
+}
+
+void SaveAiEnhanceSettings(bool enabled, int quality, bool x4Confirmed) {
+  const QString path = AiSettingsPath();
+  if (path.isEmpty()) {
+    return;
+  }
+  QSettings settings(path, QSettings::IniFormat);
+  settings.setValue(QStringLiteral("ai/enabled"), enabled);
+  settings.setValue(QStringLiteral("ai/quality"), ClampEnhanceScale(quality));
+  settings.setValue(QStringLiteral("ai/x4_confirmed"), x4Confirmed);
+  settings.sync();
 }
 
 bool IsSessionInvalidError(const QString& message) {
@@ -661,7 +889,9 @@ bool EnsureAiUpscaleDir(QDir& outDir, QString& error) {
   return true;
 }
 
-QString BuildEnhancedImagePath(const QString& messageId, QString& error) {
+QString BuildEnhancedImagePath(const QString& messageId,
+                               int scale,
+                               QString& error) {
   const QString trimmed = messageId.trimmed();
   if (trimmed.isEmpty()) {
     error = QStringLiteral("图片标识无效");
@@ -676,20 +906,24 @@ QString BuildEnhancedImagePath(const QString& messageId, QString& error) {
     error = QStringLiteral("图片标识无效");
     return {};
   }
+  const int clamped = ClampEnhanceScale(scale);
   return outDir.filePath(
-      QStringLiteral("msg_%1_x4.png").arg(token));
+      QStringLiteral("msg_%1_x%2.png").arg(token).arg(clamped));
 }
 
 QString EnhancedImagePathIfExists(const QString& messageId) {
   QString error;
-  const QString path = BuildEnhancedImagePath(messageId, error);
-  if (path.isEmpty()) {
-    return {};
+  const std::array<int, 2> scales = {kAiEnhanceScaleX4, kAiEnhanceScaleX2};
+  for (const int scale : scales) {
+    const QString path = BuildEnhancedImagePath(messageId, scale, error);
+    if (path.isEmpty()) {
+      continue;
+    }
+    if (QFileInfo::exists(path)) {
+      return path;
+    }
   }
-  if (!QFileInfo::exists(path)) {
-    return {};
-  }
-  return path;
+  return {};
 }
 
 struct ImageQualityMetrics {
@@ -699,6 +933,7 @@ struct ImageQualityMetrics {
   bool low_res{false};
   double sharpness{0.0};
   double noise{0.0};
+  bool anime_like{false};
 };
 
 ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
@@ -746,6 +981,40 @@ ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
     return metrics;
   }
 
+  QImage color = image.convertToFormat(QImage::Format_ARGB32);
+  const int colorW = color.width();
+  const int colorH = color.height();
+  int colorSamples = 0;
+  int uniqueColors = 0;
+  double saturationSum = 0.0;
+  std::vector<bool> colorSeen(32768, false);
+  if (colorW > 0 && colorH > 0) {
+    const int step = std::max(colorW, colorH) > 128 ? 2 : 1;
+    for (int y = 0; y < colorH; y += step) {
+      const QRgb* line =
+          reinterpret_cast<const QRgb*>(color.constScanLine(y));
+      for (int x = 0; x < colorW; x += step) {
+        const QRgb px = line[x];
+        const int r = qRed(px);
+        const int g = qGreen(px);
+        const int b = qBlue(px);
+        const int maxc = std::max({r, g, b});
+        const int minc = std::min({r, g, b});
+        if (maxc > 0) {
+          saturationSum +=
+              static_cast<double>(maxc - minc) / static_cast<double>(maxc);
+        }
+        const int key =
+            ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+        if (!colorSeen[static_cast<std::size_t>(key)]) {
+          colorSeen[static_cast<std::size_t>(key)] = true;
+          ++uniqueColors;
+        }
+        ++colorSamples;
+      }
+    }
+  }
+
   QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
   const int w = gray.width();
   const int h = gray.height();
@@ -757,7 +1026,9 @@ ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
   double sum = 0.0;
   double sum2 = 0.0;
   double noiseSum = 0.0;
+  int edgeCount = 0;
   int count = 0;
+  constexpr int kEdgeThreshold = 25;
 
   for (int y = 1; y < h - 1; ++y) {
     const uchar* prev = gray.constScanLine(y - 1);
@@ -769,6 +1040,9 @@ ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
           -4 * center + cur[x - 1] + cur[x + 1] + prev[x] + next[x];
       sum += lap;
       sum2 += static_cast<double>(lap) * static_cast<double>(lap);
+      if (std::abs(lap) > kEdgeThreshold) {
+        ++edgeCount;
+      }
       const int mean =
           (center + cur[x - 1] + cur[x + 1] + prev[x] + next[x] +
            prev[x - 1] + prev[x + 1] + next[x - 1] + next[x + 1]) /
@@ -782,6 +1056,18 @@ ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
     const double mean = sum / count;
     metrics.sharpness = (sum2 / count) - (mean * mean);
     metrics.noise = noiseSum / count;
+    const double edgeRatio =
+        static_cast<double>(edgeCount) / static_cast<double>(count);
+    const double uniqueRatio =
+        colorSamples > 0
+            ? static_cast<double>(uniqueColors) /
+                  static_cast<double>(colorSamples)
+            : 1.0;
+    const double avgSat =
+        colorSamples > 0 ? saturationSum / static_cast<double>(colorSamples)
+                         : 0.0;
+    metrics.anime_like =
+        avgSat > 0.08 && uniqueRatio < 0.18 && edgeRatio > 0.08;
   }
   metrics.valid = true;
   return metrics;
@@ -1695,6 +1981,20 @@ bool QuickClient::init(const QString& configPath) {
   QDir().mkpath(dataDir);
   qputenv("MI_E2EE_DATA_DIR",
           QDir::toNativeSeparators(dataDir).toUtf8());
+  ai_gpu_name_ = QueryGpuName();
+  ai_gpu_series_ = ParseNvidiaSeries(ai_gpu_name_);
+  ai_gpu_available_ = DetectAiEnhanceGpuAvailable();
+  const AiEnhanceRecommendation rec =
+      BuildAiEnhanceRecommendation(ai_gpu_series_, ai_gpu_available_);
+  ai_rec_perf_scale_ = rec.perf_scale;
+  ai_rec_quality_scale_ = rec.quality_scale;
+  bool enabled = ai_enhance_enabled_;
+  int quality = ai_rec_perf_scale_;
+  bool x4Confirmed = ai_enhance_x4_confirmed_;
+  LoadAiEnhanceSettings(ai_gpu_available_, rec, enabled, quality, x4Confirmed);
+  ai_enhance_enabled_ = enabled;
+  ai_enhance_quality_ = quality;
+  ai_enhance_x4_confirmed_ = x4Confirmed;
   if (!configPath.isEmpty()) {
     config_path_ = configPath;
   } else {
@@ -2265,11 +2565,23 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
   if (!inflightKey.isEmpty() && enhance_inflight_.contains(inflightKey)) {
     return true;
   }
+  if (!trimmedMsg.isEmpty()) {
+    const QString existing = EnhancedImagePathIfExists(trimmedMsg);
+    if (!existing.isEmpty()) {
+      const QString outputUrl = QUrl::fromLocalFile(existing).toString();
+      emit imageEnhanceFinished(trimmedMsg, sourceUrl, outputUrl, true,
+                                QString());
+      UpdateLastError(QString());
+      return true;
+    }
+  }
 
   QString outPath;
   QString pathError;
+  const int scale =
+      ResolveEnhanceScale(ai_enhance_quality_, ai_enhance_x4_confirmed_);
   if (!trimmedMsg.isEmpty()) {
-    outPath = BuildEnhancedImagePath(trimmedMsg, pathError);
+    outPath = BuildEnhancedImagePath(trimmedMsg, scale, pathError);
   } else {
     QDir outDir;
     if (!EnsureAiUpscaleDir(outDir, pathError)) {
@@ -2278,12 +2590,13 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
     }
     const QString stem = SanitizeFileStem(
         fileName.trimmed().isEmpty() ? sourceInfo.fileName() : fileName);
-    outPath = outDir.filePath(stem + QStringLiteral("_x4.png"));
+    const QString suffix = QStringLiteral("_x%1").arg(scale);
+    outPath = outDir.filePath(stem + suffix + QStringLiteral(".png"));
     if (QFileInfo::exists(outPath)) {
       int suffix = 2;
       while (suffix < 1000) {
         const QString candidate =
-            outDir.filePath(stem + QStringLiteral("_x4_") +
+            outDir.filePath(stem + QStringLiteral("_x%1_").arg(scale) +
                             QString::number(suffix) +
                             QStringLiteral(".png"));
         if (!QFileInfo::exists(candidate)) {
@@ -2313,13 +2626,19 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
 
   QPointer<QuickClient> self(this);
   auto task = new LambdaTask([self, trimmedMsg, inflightKey, sourceUrl,
-                              sourcePath, outPath]() {
+                              sourcePath, outPath, scale]() {
     if (!self) {
       return;
     }
     bool gpuSupported = false;
     const QString exe = FindRealEsrganPath(&gpuSupported);
-    const QString modelDir = FindRealEsrganModelDir(exe);
+    const ImageQualityMetrics metrics = AnalyzeImageQuality(sourcePath);
+    QString modelName = SelectRealEsrganModelName(scale, metrics.anime_like);
+    QString modelDir = FindRealEsrganModelDir(exe, modelName);
+    if (modelDir.isEmpty() && metrics.anime_like) {
+      modelName = SelectRealEsrganModelName(scale, false);
+      modelDir = FindRealEsrganModelDir(exe, modelName);
+    }
     QString error;
     bool ok = false;
     QString outputUrl;
@@ -2332,8 +2651,8 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
       QStringList args;
       args << QStringLiteral("-i") << sourcePath
            << QStringLiteral("-o") << outPath
-           << QStringLiteral("-n") << QStringLiteral("realesrgan-x4plus")
-           << QStringLiteral("-s") << QStringLiteral("4")
+           << QStringLiteral("-n") << modelName
+           << QStringLiteral("-s") << QString::number(scale)
            << QStringLiteral("-m") << modelDir;
       int exitCode = -1;
       if (gpuSupported) {
@@ -2963,22 +3282,7 @@ void QuickClient::setInternalImeEnabled(bool enabled) {
 }
 
 bool QuickClient::aiEnhanceGpuAvailable() const {
-  bool gpuSupported = false;
-  const QString exe = FindRealEsrganPath(&gpuSupported);
-  if (exe.isEmpty() || !gpuSupported) {
-    return false;
-  }
-#ifdef _WIN32
-  const QString systemRoot = qEnvironmentVariable("SystemRoot");
-  if (!systemRoot.isEmpty()) {
-    const QString vulkan =
-        QDir(systemRoot).filePath(QStringLiteral("System32/vulkan-1.dll"));
-    if (!QFileInfo::exists(vulkan)) {
-      return false;
-    }
-  }
-#endif
-  return true;
+  return ai_gpu_available_;
 }
 
 bool QuickClient::aiEnhanceEnabled() const {
@@ -2987,6 +3291,38 @@ bool QuickClient::aiEnhanceEnabled() const {
 
 void QuickClient::setAiEnhanceEnabled(bool enabled) {
   ai_enhance_enabled_ = enabled;
+  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+                        ai_enhance_x4_confirmed_);
+}
+
+int QuickClient::aiEnhanceQualityLevel() const {
+  return ai_enhance_quality_;
+}
+
+void QuickClient::setAiEnhanceQualityLevel(int level) {
+  ai_enhance_quality_ = ClampEnhanceScale(level);
+  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+                        ai_enhance_x4_confirmed_);
+}
+
+bool QuickClient::aiEnhanceX4Confirmed() const {
+  return ai_enhance_x4_confirmed_;
+}
+
+void QuickClient::setAiEnhanceX4Confirmed(bool confirmed) {
+  ai_enhance_x4_confirmed_ = confirmed;
+  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+                        ai_enhance_x4_confirmed_);
+}
+
+QVariantMap QuickClient::aiEnhanceRecommendations() const {
+  QVariantMap out;
+  out.insert(QStringLiteral("gpuAvailable"), ai_gpu_available_);
+  out.insert(QStringLiteral("gpuName"), ai_gpu_name_);
+  out.insert(QStringLiteral("gpuSeries"), ai_gpu_series_);
+  out.insert(QStringLiteral("perfScale"), ai_rec_perf_scale_);
+  out.insert(QStringLiteral("qualityScale"), ai_rec_quality_scale_);
+  return out;
 }
 
 bool QuickClient::clipboardIsolation() const {

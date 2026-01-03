@@ -136,8 +136,29 @@ jobs:
           if (-not $modelParam -or -not $modelBin) {
             throw "realesrgan model not found"
           }
+          $modelDir = $modelParam.Directory.FullName
+          $optionalModels = @("realesrgan-x2plus", "realesrgan-x4plus-anime")
+          $modelBaseUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0"
+          foreach ($model in $optionalModels) {
+            $paramPath = Join-Path $modelDir "$model.param"
+            $binPath = Join-Path $modelDir "$model.bin"
+            if (-not (Test-Path $paramPath)) {
+              try {
+                Invoke-WebRequest -Uri "$modelBaseUrl/$model.param" -OutFile $paramPath -ErrorAction Stop
+              } catch {
+                Write-Warning "Failed to download $model.param"
+              }
+            }
+            if (-not (Test-Path $binPath)) {
+              try {
+                Invoke-WebRequest -Uri "$modelBaseUrl/$model.bin" -OutFile $binPath -ErrorAction Stop
+              } catch {
+                Write-Warning "Failed to download $model.bin"
+              }
+            }
+          }
           "REALESRGAN_RUNTIME_DIR=$($esrganExe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "REALESRGAN_MODEL_DIR=$($modelParam.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "REALESRGAN_MODEL_DIR=$modelDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure client
         run: >

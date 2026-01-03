@@ -20,6 +20,13 @@ QtObject {
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
     property bool aiEnhanceEnabled: false
+    property int aiEnhanceQualityLevel: 2
+    property bool aiEnhanceX4Confirmed: false
+    property bool aiEnhanceGpuAvailable: false
+    property string aiEnhanceGpuName: ""
+    property int aiEnhanceGpuSeries: 0
+    property int aiEnhancePerfScale: 2
+    property int aiEnhanceQualityScale: 2
     property string internalClipboardText: ""
     property double internalClipboardMs: 0
     property var messagesByChatId: ({})
@@ -61,11 +68,26 @@ QtObject {
             if (clientBridge.setInternalImeEnabled) {
                 clientBridge.setInternalImeEnabled(internalImeEnabled)
             }
-            if (clientBridge.aiEnhanceGpuAvailable) {
-                aiEnhanceEnabled = clientBridge.aiEnhanceGpuAvailable()
+            if (clientBridge.aiEnhanceRecommendations) {
+                var rec = clientBridge.aiEnhanceRecommendations()
+                if (rec) {
+                    aiEnhanceGpuAvailable = rec.gpuAvailable === true
+                    aiEnhanceGpuName = rec.gpuName || ""
+                    aiEnhanceGpuSeries = rec.gpuSeries || 0
+                    aiEnhancePerfScale = rec.perfScale || 2
+                    aiEnhanceQualityScale = rec.qualityScale || 2
+                }
+            } else if (clientBridge.aiEnhanceGpuAvailable) {
+                aiEnhanceGpuAvailable = clientBridge.aiEnhanceGpuAvailable()
             }
-            if (clientBridge.setAiEnhanceEnabled) {
-                clientBridge.setAiEnhanceEnabled(aiEnhanceEnabled)
+            if (clientBridge.aiEnhanceEnabled) {
+                aiEnhanceEnabled = clientBridge.aiEnhanceEnabled()
+            }
+            if (clientBridge.aiEnhanceQualityLevel) {
+                aiEnhanceQualityLevel = clientBridge.aiEnhanceQualityLevel()
+            }
+            if (clientBridge.aiEnhanceX4Confirmed) {
+                aiEnhanceX4Confirmed = clientBridge.aiEnhanceX4Confirmed()
             }
         }
         rebuildFiltered()
@@ -1070,6 +1092,20 @@ QtObject {
         aiEnhanceEnabled = enabled === true
         if (clientBridge && clientBridge.setAiEnhanceEnabled) {
             clientBridge.setAiEnhanceEnabled(aiEnhanceEnabled)
+        }
+    }
+
+    function setAiEnhanceQualityLevel(level) {
+        aiEnhanceQualityLevel = level || 2
+        if (clientBridge && clientBridge.setAiEnhanceQualityLevel) {
+            clientBridge.setAiEnhanceQualityLevel(aiEnhanceQualityLevel)
+        }
+    }
+
+    function setAiEnhanceX4Confirmed(confirmed) {
+        aiEnhanceX4Confirmed = confirmed === true
+        if (clientBridge && clientBridge.setAiEnhanceX4Confirmed) {
+            clientBridge.setAiEnhanceX4Confirmed(aiEnhanceX4Confirmed)
         }
     }
 
