@@ -1381,10 +1381,19 @@ Item {
         property real maxZoom: 6.0
         property real imageBaseWidth: 0
         property real imageBaseHeight: 0
+        property real panX: 0
+        property real panY: 0
         property int edgeMargin: 48
 
         function clampZoom(value) {
             return Math.max(minZoom, Math.min(maxZoom, value))
+        }
+
+        function clampPan() {
+            var maxX = Math.max(0, (imageBaseWidth * zoom - viewerLayer.width) / 2)
+            var maxY = Math.max(0, (imageBaseHeight * zoom - viewerLayer.height) / 2)
+            panX = Math.max(-maxX, Math.min(maxX, panX))
+            panY = Math.max(-maxY, Math.min(maxY, panY))
         }
 
         function updateBaseSize() {
@@ -1397,12 +1406,15 @@ Item {
                                  availableH / imageItem.implicitHeight)
             imageBaseWidth = imageItem.implicitWidth * scale
             imageBaseHeight = imageItem.implicitHeight * scale
+            clampPan()
         }
 
         function openWith(url, name) {
             sourceUrl = url
             imageName = name || ""
             zoom = 1.0
+            panX = 0
+            panY = 0
             updateBaseSize()
             visible = true
             raise()
@@ -1417,9 +1429,12 @@ Item {
             sourceUrl = ""
             imageName = ""
             zoom = 1.0
+            panX = 0
+            panY = 0
         }
         onWidthChanged: updateBaseSize()
         onHeightChanged: updateBaseSize()
+        onZoomChanged: clampPan()
 
         Keys.onEscapePressed: closeViewer()
 
@@ -1441,11 +1456,41 @@ Item {
                 }
             }
 
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+                property real startX: 0
+                property real startY: 0
+                property real startPanX: 0
+                property real startPanY: 0
+                onPressed: {
+                    startX = mouse.x
+                    startY = mouse.y
+                    startPanX = imageViewer.panX
+                    startPanY = imageViewer.panY
+                }
+                onPositionChanged: {
+                    if (!(mouse.buttons & Qt.LeftButton)) {
+                        return
+                    }
+                    imageViewer.panX = startPanX + (mouse.x - startX)
+                    imageViewer.panY = startPanY + (mouse.y - startY)
+                    imageViewer.clampPan()
+                }
+                onDoubleClicked: {
+                    imageViewer.zoom = 1.0
+                    imageViewer.panX = 0
+                    imageViewer.panY = 0
+                }
+            }
+
             Image {
                 id: imageItem
-                anchors.centerIn: parent
                 width: imageViewer.imageBaseWidth
                 height: imageViewer.imageBaseHeight
+                x: (parent.width - width) / 2 + imageViewer.panX
+                y: (parent.height - height) / 2 + imageViewer.panY
                 source: imageViewer.sourceUrl
                 fillMode: Image.PreserveAspectFit
                 smooth: true
