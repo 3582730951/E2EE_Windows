@@ -26,6 +26,7 @@
 - 元数据对抗：消息/心跳/文件分块桶化填充 + cover traffic
 - 离线文件：一次一密 + 密钥删除优先 + 可选 secure-delete 插件
 - 客户端：Qt 6 UI（默认开启），核心逻辑走 `mi_e2ee_client_core`
+- 图片：可选离线 AI 超清（手动触发，不强制使用）
 
 ## 架构与目录
 ```
@@ -129,6 +130,9 @@ GitHub Actions：`.github/workflows/ci.yml`
 ## 贡献与反馈
 - 提交遵循 Conventional Commits
 - PR 需包含变更摘要与测试结果
+
+## 致谢
+- 离线图片超清基于 Real-ESRGAN（ncnn 预训练模型），感谢 xinntao 与社区贡献。
 
 ## License
 本项目使用 PolyForm Noncommercial License 1.0.0（见 `LICENSE`）。

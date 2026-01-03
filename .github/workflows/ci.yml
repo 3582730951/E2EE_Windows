@@ -116,6 +116,29 @@ jobs:
           }
           "FFMPEG_RUNTIME_DIR=$($ffmpegExe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Fetch Real-ESRGAN runtime
+        run: |
+          $esrganRoot = Join-Path $env:GITHUB_WORKSPACE "build\\realesrgan"
+          New-Item -ItemType Directory -Force -Path $esrganRoot | Out-Null
+          $esrganZip = Join-Path $esrganRoot "realesrgan.zip"
+          $esrganUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5/realesrgan-ncnn-vulkan-20220424-windows.zip"
+          Invoke-WebRequest -Uri $esrganUrl -OutFile $esrganZip
+          Expand-Archive -Path $esrganZip -DestinationPath $esrganRoot -Force
+          $esrganExe = Get-ChildItem -Path $esrganRoot -Recurse -Filter "realesrgan-ncnn-vulkan.exe" | Select-Object -First 1
+          if (-not $esrganExe) {
+            $esrganExe = Get-ChildItem -Path $esrganRoot -Recurse -Filter "realesrgan-ncnn.exe" | Select-Object -First 1
+          }
+          if (-not $esrganExe) {
+            throw "realesrgan executable not found"
+          }
+          $modelParam = Get-ChildItem -Path $esrganRoot -Recurse -Filter "realesrgan-x4plus.param" | Select-Object -First 1
+          $modelBin = Get-ChildItem -Path $esrganRoot -Recurse -Filter "realesrgan-x4plus.bin" | Select-Object -First 1
+          if (-not $modelParam -or -not $modelBin) {
+            throw "realesrgan model not found"
+          }
+          "REALESRGAN_RUNTIME_DIR=$($esrganExe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "REALESRGAN_MODEL_DIR=$($modelParam.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Configure client
         run: >
           cmake -S client -B build/client
@@ -358,6 +381,25 @@ jobs:
           if ($ffmpegRuntime -and (Test-Path $ffmpegRuntime)) {
             Get-ChildItem -Path $ffmpegRuntime -File | ForEach-Object {
               Copy-Item $_.FullName $clientRoot -Force
+            }
+          }
+          $esrganRuntime = $env:REALESRGAN_RUNTIME_DIR
+          $esrganModels = $env:REALESRGAN_MODEL_DIR
+          if ($esrganRuntime -and (Test-Path $esrganRuntime)) {
+            $esrganDst = Join-Path $clientRoot "tools\\realesrgan"
+            New-Item -ItemType Directory -Force -Path $esrganDst | Out-Null
+            Get-ChildItem -Path $esrganRuntime -File | ForEach-Object {
+              Copy-Item $_.FullName $esrganDst -Force
+            }
+          }
+          if ($esrganModels -and (Test-Path $esrganModels)) {
+            $modelDst = Join-Path $clientDb "ai_models\\realesrgan"
+            New-Item -ItemType Directory -Force -Path $modelDst | Out-Null
+            Get-ChildItem -Path $esrganModels -File -Filter "*.param" | ForEach-Object {
+              Copy-Item $_.FullName $modelDst -Force
+            }
+            Get-ChildItem -Path $esrganModels -File -Filter "*.bin" | ForEach-Object {
+              Copy-Item $_.FullName $modelDst -Force
             }
           }
           $skipDirs = @("qml", "translations", "icon", "assets", "runtime", "qmltooling")
