@@ -78,6 +78,22 @@ Item {
         attachPopup.y = Math.max(Ui.Style.paddingS, desiredY)
         attachPopup.open()
     }
+    function resolveDialogUrl(dialog) {
+        if (!dialog) {
+            return ""
+        }
+        var url = dialog.selectedFile
+        if (!url && dialog.selectedFiles && dialog.selectedFiles.length > 0) {
+            url = dialog.selectedFiles[0]
+        }
+        if (!url && dialog.fileUrl !== undefined) {
+            url = dialog.fileUrl
+        }
+        if (!url) {
+            return ""
+        }
+        return url.toString ? url.toString() : ("" + url)
+    }
     function promptFileDownload(fileId, fileKey, fileName, fileSize) {
         pendingDownloadId = fileId || ""
         pendingDownloadKey = fileKey || ""
@@ -1207,29 +1223,32 @@ Item {
     FileDialog {
         id: filePicker
         title: Ui.I18n.t("attach.document")
+        fileMode: FileDialog.OpenFile
         onAccepted: {
-            Ui.AppStore.sendFile(fileUrl.toString())
+            Ui.AppStore.sendFile(resolveDialogUrl(filePicker))
         }
     }
     FileDialog {
         id: mediaPicker
         title: Ui.I18n.t("attach.photoVideo")
+        fileMode: FileDialog.OpenFile
         nameFilters: [
             "媒体文件 (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.mp4 *.mov *.mkv *.webm *.avi)"
         ]
         onAccepted: {
-            Ui.AppStore.sendFile(fileUrl.toString())
+            Ui.AppStore.sendFile(resolveDialogUrl(mediaPicker))
         }
     }
     FileDialog {
         id: stickerPicker
         title: Ui.I18n.t("chat.importSticker")
+        fileMode: FileDialog.OpenFile
         nameFilters: [
             "媒体文件 (*.gif *.png *.jpg *.jpeg *.webp *.bmp *.mp4 *.mov *.mkv *.webm *.avi)"
         ]
         onAccepted: {
             if (clientBridge && clientBridge.importSticker) {
-                var result = clientBridge.importSticker(fileUrl.toString())
+                var result = clientBridge.importSticker(resolveDialogUrl(stickerPicker))
                 if (result && result.ok) {
                     loadStickers()
                     emojiTabIndex = 1
@@ -1294,7 +1313,10 @@ Item {
             if (!clientBridge || !clientBridge.requestAttachmentDownload) {
                 return
             }
-            var path = fileUrl.toString()
+            var path = resolveDialogUrl(downloadSaveDialog)
+            if (!path || path.length === 0) {
+                return
+            }
             clientBridge.requestAttachmentDownload(
                         pendingDownloadId,
                         pendingDownloadKey,

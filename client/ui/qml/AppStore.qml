@@ -846,7 +846,11 @@ QtObject {
             sendErrorMessage = Ui.I18n.t("chat.sendFailed")
             return false
         }
+        if (path && path.toString) {
+            path = path.toString()
+        }
         if (!path || path.length === 0) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
             return false
         }
         var ok = clientBridge.sendFile(currentChatId, path, currentChatType === "group")
