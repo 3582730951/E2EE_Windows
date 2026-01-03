@@ -32,6 +32,10 @@ Item {
     property string pendingDownloadKey: ""
     property string pendingDownloadName: ""
     property int pendingDownloadSize: 0
+    property string previewImageUrl: ""
+    property string previewImageName: ""
+    property bool previewSuggestEnhance: false
+    property string previewEnhanceHint: ""
     property bool imeChineseMode: true
     property bool imeComposing: false
     property bool imeShiftPressed: false
@@ -116,6 +120,31 @@ Item {
             }
         }
         downloadSaveDialog.open()
+    }
+    function openImagePreview(url, name) {
+        var resolved = url && url.toString ? url.toString() : (url ? "" + url : "")
+        if (!resolved || resolved.length === 0) {
+            return
+        }
+        previewImageUrl = resolved
+        previewImageName = name || ""
+        previewSuggestEnhance = false
+        previewEnhanceHint = ""
+        imagePreview.open()
+    }
+    function requestImageEnhance() {
+        previewEnhanceHint = ""
+        if (!clientBridge || !clientBridge.requestImageEnhance) {
+            previewEnhanceHint = "AI超清暂未接入"
+            return
+        }
+        var ok = clientBridge.requestImageEnhance(previewImageUrl, previewImageName)
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            previewEnhanceHint = err.length > 0 ? err : "AI超清暂未接入"
+        } else {
+            previewEnhanceHint = "已提交超清优化请求"
+        }
     }
     function loadEmoji() {
         if (emojiLoaded) {
@@ -1338,6 +1367,122 @@ Item {
                         path)
         }
     }
+    Popup {
+        id: imagePreview
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        x: 0
+        y: 0
+        width: root.width
+        height: root.height
+        onClosed: {
+            previewImageUrl = ""
+            previewImageName = ""
+            previewSuggestEnhance = false
+            previewEnhanceHint = ""
+        }
+
+        background: Rectangle {
+            color: Qt.rgba(0, 0, 0, 0.72)
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    var p = mapToItem(previewImage, mouse.x, mouse.y)
+                    if (p.x < 0 || p.y < 0 ||
+                        p.x > previewImage.width || p.y > previewImage.height) {
+                        imagePreview.close()
+                    }
+                }
+            }
+
+            Image {
+                id: previewImage
+                anchors.fill: parent
+                anchors.margins: 48
+                source: previewImageUrl
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                antialiasing: true
+                cache: true
+                onStatusChanged: {
+                    if (status === Image.Ready) {
+                        var w = sourceSize.width
+                        var h = sourceSize.height
+                        if (w > 0 && h > 0) {
+                            previewSuggestEnhance = Math.min(w, h) < 900
+                        } else {
+                            previewSuggestEnhance = true
+                        }
+                    } else {
+                        previewSuggestEnhance = false
+                    }
+                }
+            }
+
+            Rectangle {
+                id: enhanceBanner
+                visible: previewSuggestEnhance
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: 16
+                width: Math.min(parent.width - 80, 540)
+                height: 36
+                radius: 18
+                color: Ui.Style.panelBgRaised
+                border.color: Ui.Style.borderSubtle
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    spacing: 8
+                    Text {
+                        text: "图片不够清晰？试试 AI 超清优化"
+                        font.pixelSize: 12
+                        color: Ui.Style.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Components.GhostButton {
+                        text: "稍后"
+                        height: 24
+                        onClicked: previewSuggestEnhance = false
+                    }
+                    Components.PrimaryButton {
+                        text: "立即优化"
+                        height: 24
+                        onClicked: requestImageEnhance()
+                    }
+                }
+            }
+
+            Text {
+                visible: previewEnhanceHint.length > 0
+                anchors.top: enhanceBanner.bottom
+                anchors.topMargin: 8
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: previewEnhanceHint
+                font.pixelSize: 12
+                color: Ui.Style.textSecondary
+            }
+
+            Components.GhostButton {
+                text: "关闭"
+                width: 60
+                height: 28
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 16
+                onClicked: imagePreview.close()
+            }
+        }
+    }
 
     ListModel {
         id: emojiModel
@@ -1847,7 +1992,7 @@ Item {
             Item {
                 id: bubbleBlock
                 visible: isIncoming || isOutgoing
-                property bool transparentBubble: isSticker || isImage || isGif || isEmoji
+                property bool transparentBubble: isSticker || isEmoji
                 property bool usesFullWidth: !isSticker && !isImage && !isGif &&
                                              !isVideo && !isFile && !isLocation &&
                                              !isEmoji
@@ -1960,6 +2105,12 @@ Item {
                             smooth: true
                             antialiasing: true
                         }
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openImagePreview(fileUrl, fileName)
+                        }
                     }
                 }
 
@@ -1976,6 +2127,12 @@ Item {
                             playing: true
                             cache: true
                             fillMode: Image.PreserveAspectFit
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.openImagePreview(fileUrl, fileName)
                         }
                     }
                 }
