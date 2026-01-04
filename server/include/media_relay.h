@@ -18,6 +18,11 @@ struct MediaRelayPacket {
   std::chrono::steady_clock::time_point created_at{};
 };
 
+struct MediaRelayStats {
+  std::uint64_t queues{0};
+  std::uint64_t packets{0};
+};
+
 class MediaRelay {
  public:
   explicit MediaRelay(std::size_t max_queue = 2048,
@@ -27,6 +32,10 @@ class MediaRelay {
                const std::array<std::uint8_t, 16>& call_id,
                MediaRelayPacket packet);
 
+  void EnqueueMany(const std::vector<std::string>& recipients,
+                   const std::array<std::uint8_t, 16>& call_id,
+                   const MediaRelayPacket& packet);
+
   void Pull(const std::string& recipient,
             const std::array<std::uint8_t, 16>& call_id,
             std::size_t max_packets,
@@ -34,6 +43,7 @@ class MediaRelay {
             std::vector<MediaRelayPacket>& out);
 
   void Cleanup();
+  MediaRelayStats GetStats();
 
  private:
   struct Queue {

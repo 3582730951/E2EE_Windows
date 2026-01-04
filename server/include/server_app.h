@@ -7,6 +7,7 @@
 #include "auth_provider.h"
 #include "config.h"
 #include "group_directory.h"
+#include "group_call_manager.h"
 #include "group_manager.h"
 #include "frame.h"
 #include "frame_router.h"
@@ -46,12 +47,14 @@ class ServerApp {
   OfflineStorage* offline_storage() { return offline_storage_.get(); }
   OfflineQueue* offline_queue() { return offline_queue_.get(); }
   MediaRelay* media_relay() { return media_relay_.get(); }
+  GroupCallManager* group_calls() { return group_calls_.get(); }
 
  private:
   ServerConfig config_;
   std::unique_ptr<AuthProvider> auth_;
   std::unique_ptr<SessionManager> sessions_;
   std::unique_ptr<GroupManager> groups_;
+  std::unique_ptr<GroupCallManager> group_calls_;
   std::unique_ptr<GroupDirectory> directory_;
   std::unique_ptr<OfflineStorage> offline_storage_;
   std::unique_ptr<OfflineQueue> offline_queue_;

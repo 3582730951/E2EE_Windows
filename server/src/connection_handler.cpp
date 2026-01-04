@@ -510,7 +510,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
         proto::WriteString("unauthorized", out.payload);
       } else {
         out.payload.push_back(1);
-        proto::WriteUint32(3, out.payload);  // version
+        proto::WriteUint32(4, out.payload);  // version
 
         const auto now = std::chrono::steady_clock::now();
         const auto uptime_sec = static_cast<std::uint64_t>(
@@ -591,6 +591,22 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
           proto::WriteUint64(stats.bytes, out.payload);
         } else {
           proto::WriteUint64(0, out.payload);
+          proto::WriteUint64(0, out.payload);
+        }
+
+        if (auto* calls = app_->group_calls()) {
+          const auto stats = calls->GetStats();
+          proto::WriteUint64(stats.active_calls, out.payload);
+          proto::WriteUint64(stats.participants, out.payload);
+        } else {
+          proto::WriteUint64(0, out.payload);
+          proto::WriteUint64(0, out.payload);
+        }
+
+        if (auto* relay = app_->media_relay()) {
+          const auto stats = relay->GetStats();
+          proto::WriteUint64(stats.packets, out.payload);
+        } else {
           proto::WriteUint64(0, out.payload);
         }
 

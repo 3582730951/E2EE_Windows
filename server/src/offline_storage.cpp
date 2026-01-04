@@ -1000,6 +1000,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
     }
   }
 
+  ifs.close();
   if (wipe_after_read) {
     WipeFile(path);
     std::lock_guard<std::mutex> lock(mutex_);

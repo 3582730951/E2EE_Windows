@@ -5,6 +5,7 @@
 #include "auth_provider.h"
 #include "frame.h"
 #include "frame_router.h"
+#include "group_call_manager.h"
 #include "protocol.h"
 #include "group_directory.h"
 #include "session_manager.h"
@@ -16,6 +17,7 @@ using mi::server::DemoUserTable;
 using mi::server::Frame;
 using mi::server::FrameRouter;
 using mi::server::FrameType;
+using mi::server::GroupCallManager;
 using mi::server::GroupDirectory;
 using mi::server::GroupManager;
 using mi::server::LoginRequest;
@@ -60,8 +62,9 @@ int main() {
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager sessions(std::move(auth));
   GroupManager groups;
+  GroupCallManager calls;
   GroupDirectory dir;
-  ApiService api(&sessions, &groups, &dir);
+  ApiService api(&sessions, &groups, &calls, &dir);
   FrameRouter router(&api);
 
   Frame login = MakeLoginFrame("bob", "pwd");

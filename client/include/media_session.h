@@ -38,31 +38,51 @@ struct MediaSessionConfig {
   std::size_t video_max_frames{256};
 };
 
-class MediaSession {
+class MediaSessionInterface {
+ public:
+  virtual ~MediaSessionInterface() = default;
+  virtual bool SendAudioFrame(const std::vector<std::uint8_t>& payload,
+                              std::uint64_t timestamp_ms,
+                              std::uint8_t flags) = 0;
+  virtual bool SendVideoFrame(const std::vector<std::uint8_t>& payload,
+                              std::uint64_t timestamp_ms,
+                              std::uint8_t flags) = 0;
+  virtual bool PopAudioFrame(std::uint64_t now_ms,
+                             mi::media::MediaFrame& out) = 0;
+  virtual bool PopVideoFrame(std::uint64_t now_ms,
+                             mi::media::MediaFrame& out) = 0;
+  virtual const MediaSessionStats& stats() const = 0;
+  virtual const MediaJitterStats& audio_jitter_stats() const = 0;
+  virtual const MediaJitterStats& video_jitter_stats() const = 0;
+};
+
+class MediaSession : public MediaSessionInterface {
  public:
   MediaSession(mi::client::ClientCore& core, MediaSessionConfig config);
 
   bool Init(std::string& error);
   bool SendAudioFrame(const std::vector<std::uint8_t>& payload,
                       std::uint64_t timestamp_ms,
-                      std::uint8_t flags = 0);
+                      std::uint8_t flags = 0) override;
   bool SendVideoFrame(const std::vector<std::uint8_t>& payload,
                       std::uint64_t timestamp_ms,
-                      std::uint8_t flags = 0);
+                      std::uint8_t flags = 0) override;
 
   bool PollIncoming(std::uint32_t max_packets,
                     std::uint32_t wait_ms,
                     std::string& error);
 
-  bool PopAudioFrame(std::uint64_t now_ms, mi::media::MediaFrame& out);
-  bool PopVideoFrame(std::uint64_t now_ms, mi::media::MediaFrame& out);
+  bool PopAudioFrame(std::uint64_t now_ms,
+                     mi::media::MediaFrame& out) override;
+  bool PopVideoFrame(std::uint64_t now_ms,
+                     mi::media::MediaFrame& out) override;
 
-  const MediaSessionStats& stats() const { return stats_; }
+  const MediaSessionStats& stats() const override { return stats_; }
   const MediaSessionConfig& config() const { return config_; }
-  const MediaJitterStats& audio_jitter_stats() const {
+  const MediaJitterStats& audio_jitter_stats() const override {
     return audio_jitter_.stats();
   }
-  const MediaJitterStats& video_jitter_stats() const {
+  const MediaJitterStats& video_jitter_stats() const override {
     return video_jitter_.stats();
   }
 

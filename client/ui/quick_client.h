@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -14,8 +15,11 @@
 #include <QUrl>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "client_core.h"
+#include "group_call_media_adapter.h"
+#include "group_call_session.h"
 #include "media_pipeline.h"
 #include "media_session.h"
 
@@ -50,6 +54,12 @@ class QuickClient : public QObject {
   Q_PROPERTY(QString activeCallId READ activeCallId NOTIFY callStateChanged)
   Q_PROPERTY(QString activeCallPeer READ activeCallPeer NOTIFY callStateChanged)
   Q_PROPERTY(bool activeCallVideo READ activeCallVideo NOTIFY callStateChanged)
+  Q_PROPERTY(bool groupCallActive READ groupCallActive NOTIFY groupCallStateChanged)
+  Q_PROPERTY(QString activeGroupCallId READ activeGroupCallId NOTIFY groupCallStateChanged)
+  Q_PROPERTY(QString activeGroupCallGroup READ activeGroupCallGroup NOTIFY groupCallStateChanged)
+  Q_PROPERTY(bool activeGroupCallVideo READ activeGroupCallVideo NOTIFY groupCallStateChanged)
+  Q_PROPERTY(QVariantList groupCallRooms READ groupCallRooms NOTIFY groupCallRoomsChanged)
+  Q_PROPERTY(QVariantList groupCallParticipants READ groupCallParticipants NOTIFY groupCallParticipantsChanged)
   Q_PROPERTY(QVideoSink* remoteVideoSink READ remoteVideoSink CONSTANT)
   Q_PROPERTY(QVideoSink* localVideoSink READ localVideoSink CONSTANT)
 
@@ -110,12 +120,22 @@ class QuickClient : public QObject {
                             const QString& callIdHex,
                             bool video);
   Q_INVOKABLE void endCall();
+  Q_INVOKABLE bool sendCallEnd(const QString& peerUsername,
+                               const QString& callIdHex);
+  Q_INVOKABLE QString startGroupCall(const QString& groupId, bool video);
+  Q_INVOKABLE bool joinGroupCall(const QString& groupId,
+                                 const QString& callIdHex,
+                                 bool video);
+  Q_INVOKABLE void leaveGroupCall();
+  Q_INVOKABLE void endGroupCall();
   Q_INVOKABLE bool callMicEnabled() const;
   Q_INVOKABLE void setCallMicEnabled(bool enabled);
   Q_INVOKABLE bool callCameraEnabled() const;
   Q_INVOKABLE void setCallCameraEnabled(bool enabled);
   Q_INVOKABLE void bindRemoteVideoSink(QObject* sink);
   Q_INVOKABLE void bindLocalVideoSink(QObject* sink);
+  Q_INVOKABLE void bindGroupCallVideoSink(const QString& username,
+                                          QObject* sink);
   Q_INVOKABLE QString serverInfo() const;
   Q_INVOKABLE QString version() const;
   Q_INVOKABLE QUrl defaultDownloadFileUrl(const QString& fileName) const;
@@ -142,6 +162,9 @@ class QuickClient : public QObject {
   Q_INVOKABLE void setHistorySaveEnabled(bool enabled);
   Q_INVOKABLE bool clipboardIsolation() const;
   Q_INVOKABLE void setClipboardIsolation(bool enabled);
+  Q_INVOKABLE QUrl chatBackground(const QString& chatId) const;
+  Q_INVOKABLE bool setChatBackground(const QString& chatId,
+                                     const QString& imageUrl);
 
   QString token() const;
   bool loggedIn() const;
@@ -163,6 +186,12 @@ class QuickClient : public QObject {
   QString activeCallId() const { return active_call_id_; }
   QString activeCallPeer() const { return active_call_peer_; }
   bool activeCallVideo() const { return active_call_video_; }
+  bool groupCallActive() const { return group_call_session_ != nullptr; }
+  QString activeGroupCallId() const { return active_group_call_id_; }
+  QString activeGroupCallGroup() const { return active_group_call_group_; }
+  bool activeGroupCallVideo() const { return active_group_call_video_; }
+  QVariantList groupCallRooms() const { return group_call_rooms_; }
+  QVariantList groupCallParticipants() const { return group_call_participants_; }
   QVideoSink* remoteVideoSink() const { return remote_video_sink_; }
   QVideoSink* localVideoSink() const { return local_video_sink_; }
 
@@ -182,6 +211,9 @@ class QuickClient : public QObject {
   void status(const QString& message);
   void messageEvent(const QVariantMap& message);
   void callStateChanged();
+  void groupCallStateChanged();
+  void groupCallRoomsChanged();
+  void groupCallParticipantsChanged();
   void attachmentCacheReady(const QString& fileId,
                             const QUrl& fileUrl,
                             const QUrl& previewUrl,
@@ -223,9 +255,18 @@ class QuickClient : public QObject {
                         bool initiator,
                         bool video,
                         QString& outError);
+  bool InitGroupCallSession(const QString& groupId,
+                            const std::array<std::uint8_t, 16>& callId,
+                            std::uint32_t keyId,
+                            bool video,
+                            bool owner,
+                            QString& outError);
   void StartMedia();
   void StopMedia();
   void PumpMedia();
+  void PumpGroupCall();
+  void PumpGroupAudioOutput();
+  void PumpGroupVideoOutput();
   void DrainAudioInput();
   void FlushAudioOutput();
   bool SetupAudio(QString& outError);
@@ -234,6 +275,22 @@ class QuickClient : public QObject {
   void ShutdownVideo();
   void HandleAudioReady();
   void HandleLocalVideoFrame(const QVideoFrame& frame);
+  void HandleGroupCallEvents(
+      const std::vector<ClientCore::GroupCallEvent>& events);
+  void UpdateGroupCallRooms();
+  void UpdateGroupCallParticipants(
+      const std::vector<std::string>& members);
+  void AddGroupCallParticipant(const std::string& username);
+  void RemoveGroupCallParticipant(const std::string& username);
+  void SyncGroupCallRemotes();
+  void UpdateGroupCallSubscriptions();
+  void BuildGroupCallSubscriptionPayload(
+      std::vector<std::uint8_t>& out) const;
+  void EnsureGroupCallRemote(const std::string& username);
+  void ClearGroupCallRemotes();
+  void TryActivatePendingGroupCall();
+  void TryUpdateGroupCallKey();
+  void ClearGroupCallState(bool notify);
   bool ConvertVideoFrameToNv12(const QVideoFrame& frame,
                                std::vector<std::uint8_t>& out,
                                std::uint32_t& width,
@@ -303,6 +360,7 @@ class QuickClient : public QObject {
   QString ai_gpu_name_;
   int ai_rec_perf_scale_{2};
   int ai_rec_quality_scale_{2};
+  QHash<QString, QString> chat_backgrounds_;
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;
@@ -324,6 +382,37 @@ class QuickClient : public QObject {
   QString active_call_id_;
   QString active_call_peer_;
   bool active_call_video_{false};
+  QString active_group_call_id_;
+  QString active_group_call_group_;
+  bool active_group_call_video_{false};
+  bool active_group_call_owner_{false};
+  std::uint32_t active_group_call_key_id_{0};
+  std::uint32_t pending_group_call_key_id_{0};
+  std::array<std::uint8_t, 16> active_group_call_id_bytes_{};
+  std::array<std::uint8_t, 16> pending_group_call_id_bytes_{};
+  QString pending_group_call_group_;
+  bool pending_group_call_video_{false};
+  bool pending_group_call_owner_{false};
+  qint64 last_group_call_ping_ms_{0};
+  QVariantList group_call_rooms_;
+  QVariantList group_call_participants_;
+  std::vector<std::string> group_call_member_ids_;
+  std::unordered_map<std::string, std::uint8_t> group_call_member_media_flags_;
+  std::vector<std::uint8_t> group_call_subscribe_payload_;
+  std::unordered_map<std::string, std::array<std::uint8_t, 16>>
+      group_call_rooms_map_;
+  std::unordered_map<std::string, std::uint8_t> group_call_media_flags_;
+  std::unique_ptr<mi::client::media::GroupCallSession> group_call_session_;
+  std::unique_ptr<mi::client::media::GroupCallMediaAdapter>
+      group_call_adapter_;
+  struct GroupCallRemote {
+    std::unique_ptr<mi::client::media::GroupCallMediaAdapter> adapter;
+    std::unique_ptr<mi::client::media::AudioPipeline> audio;
+    std::unique_ptr<mi::client::media::VideoPipeline> video;
+    QPointer<QVideoSink> sink;
+  };
+  std::unordered_map<std::string, GroupCallRemote> group_call_remotes_;
+  std::vector<std::int16_t> group_mix_buffer_;
   bool call_mic_enabled_{true};
   bool call_camera_enabled_{true};
   QThreadPool cache_pool_;

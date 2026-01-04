@@ -5,6 +5,7 @@
 
 #include "api_service.h"
 #include "auth_provider.h"
+#include "group_call_manager.h"
 #include "group_directory.h"
 #include "offline_storage.h"
 #include "session_manager.h"
@@ -13,6 +14,7 @@ using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
 using mi::server::DemoUser;
 using mi::server::DemoUserTable;
+using mi::server::GroupCallManager;
 using mi::server::GroupManager;
 using mi::server::GroupDirectory;
 using mi::server::LoginRequest;
@@ -33,6 +35,7 @@ int main() {
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager sessions(std::move(auth));
   GroupManager groups;
+  GroupCallManager calls;
   GroupDirectory dir;
   auto offline_dir =
       std::filesystem::temp_directory_path() / "mi_e2ee_api_offline";
@@ -40,7 +43,7 @@ int main() {
   std::filesystem::remove_all(offline_dir, ec);
   OfflineStorage storage(offline_dir, std::chrono::seconds(60));
   OfflineQueue queue(std::chrono::seconds(60));
-  ApiService api(&sessions, &groups, &dir, &storage, &queue);
+  ApiService api(&sessions, &groups, &calls, &dir, &storage, &queue);
 
   auto login_ok =
       api.Login(LoginRequest{"alice", "secret"}, mi::server::TransportKind::kLocal);

@@ -34,6 +34,7 @@ ApplicationWindow {
             nameField.text = ""
             handleField.text = ""
             errorText.visible = false
+            errorText.text = ""
         }
     }
 
@@ -110,7 +111,7 @@ ApplicationWindow {
         }
         Text {
             id: errorText
-            text: Ui.I18n.t("dialog.addContact.errorName")
+            text: ""
             color: Ui.Style.danger
             font.pixelSize: 11
             visible: false
@@ -185,12 +186,23 @@ ApplicationWindow {
                 text: Ui.I18n.t("dialog.addContact.add")
                 Layout.fillWidth: true
                 onClicked: {
-                    if (Ui.AppStore.addContact(nameField.text, handleField.text)) {
+                    var nameText = (nameField.text || "").trim()
+                    var handleText = (handleField.text || "").trim()
+                    if (nameText.length === 0 && handleText.length === 0) {
+                        errorText.text = Ui.I18n.t("dialog.addContact.errorName")
+                        errorText.visible = true
+                        return
+                    }
+                    if (Ui.AppStore.addContact(nameText, handleText)) {
                         nameField.text = ""
                         handleField.text = ""
                         errorText.visible = false
                         root.close()
                     } else {
+                        var err = clientBridge ? clientBridge.lastError : ""
+                        errorText.text = err.length > 0
+                                         ? err
+                                         : Ui.I18n.t("dialog.addContact.errorFailed")
                         errorText.visible = true
                     }
                 }

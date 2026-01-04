@@ -50,6 +50,23 @@ void MediaRelay::Enqueue(const std::string& recipient,
   bucket.cv.notify_all();
 }
 
+void MediaRelay::EnqueueMany(const std::vector<std::string>& recipients,
+                             const std::array<std::uint8_t, 16>& call_id,
+                             const MediaRelayPacket& packet) {
+  if (recipients.empty()) {
+    return;
+  }
+  for (const auto& recipient : recipients) {
+    if (recipient.empty()) {
+      continue;
+    }
+    MediaRelayPacket copy;
+    copy.sender = packet.sender;
+    copy.payload = packet.payload;
+    Enqueue(recipient, call_id, std::move(copy));
+  }
+}
+
 void MediaRelay::Pull(const std::string& recipient,
                       const std::array<std::uint8_t, 16>& call_id,
                       std::size_t max_packets,
@@ -105,6 +122,18 @@ void MediaRelay::Cleanup() {
       ++it;
     }
   }
+}
+
+MediaRelayStats MediaRelay::GetStats() {
+  MediaRelayStats stats;
+  for (auto& bucket : buckets_) {
+    std::lock_guard<std::mutex> lock(bucket.mutex);
+    stats.queues += bucket.queues.size();
+    for (const auto& kv : bucket.queues) {
+      stats.packets += kv.second.packets.size();
+    }
+  }
+  return stats;
 }
 
 }  // namespace mi::server

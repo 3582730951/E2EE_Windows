@@ -74,10 +74,10 @@ int main() {
   std::uint32_t ver = 0;
   std::uint64_t uptime = 0;
   if (!ReadUint32(resp.payload, off, ver) ||
-      !ReadUint64(resp.payload, off, uptime) || ver != 3) {
+      !ReadUint64(resp.payload, off, uptime) || ver != 4) {
     return 1;
   }
-  for (int i = 0; i < 25; ++i) {
+  for (int i = 0; i < 28; ++i) {
     std::uint64_t v = 0;
     if (!ReadUint64(resp.payload, off, v)) {
       return 1;

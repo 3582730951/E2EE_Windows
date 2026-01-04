@@ -15,8 +15,9 @@
 #include <vector>
 
 #include "config.h"
-#include "group_manager.h"
+#include "group_call_manager.h"
 #include "group_directory.h"
+#include "group_manager.h"
 #include "key_transparency.h"
 #include "media_relay.h"
 #include "offline_storage.h"
@@ -303,6 +304,29 @@ struct MediaPullResponse {
   std::string error;
 };
 
+struct GroupCallSignalResponse {
+  bool success{false};
+  std::array<std::uint8_t, 16> call_id{};
+  std::uint32_t key_id{0};
+  std::vector<std::string> members;
+  std::string error;
+};
+
+struct GroupCallSignalPullResponse {
+  bool success{false};
+  struct Entry {
+    std::uint8_t op{0};
+    std::string group_id;
+    std::array<std::uint8_t, 16> call_id{};
+    std::uint32_t key_id{0};
+    std::string sender;
+    std::uint8_t media_flags{0};
+    std::uint64_t ts_ms{0};
+  };
+  std::vector<Entry> events;
+  std::string error;
+};
+
 struct GroupCipherSendResponse {
   bool success{false};
   std::string error;
@@ -370,6 +394,7 @@ struct DevicePairingPullResponse {
 class ApiService {
  public:
   ApiService(SessionManager* sessions, GroupManager* groups,
+             GroupCallManager* calls,
              GroupDirectory* directory = nullptr,
              OfflineStorage* storage = nullptr,
              OfflineQueue* queue = nullptr,
@@ -519,6 +544,30 @@ class ApiService {
                               std::uint32_t max_packets,
                               std::uint32_t wait_ms);
 
+  GroupCallSignalResponse GroupCallSignal(const std::string& token,
+                                          std::uint8_t op,
+                                          const std::string& group_id,
+                                          const std::array<std::uint8_t, 16>& call_id,
+                                          std::uint8_t media_flags,
+                                          std::uint32_t key_id,
+                                          std::uint32_t seq,
+                                          std::uint64_t ts_ms,
+                                          std::vector<std::uint8_t> ext);
+
+  GroupCallSignalPullResponse PullGroupCallSignals(const std::string& token,
+                                                   std::uint32_t max_events,
+                                                   std::uint32_t wait_ms);
+
+  MediaPushResponse PushGroupMedia(const std::string& token,
+                                   const std::string& group_id,
+                                   const std::array<std::uint8_t, 16>& call_id,
+                                   std::vector<std::uint8_t> payload);
+
+  MediaPullResponse PullGroupMedia(const std::string& token,
+                                   const std::array<std::uint8_t, 16>& call_id,
+                                   std::uint32_t max_packets,
+                                   std::uint32_t wait_ms);
+
   GroupCipherSendResponse SendGroupCipher(const std::string& token,
                                           const std::string& group_id,
                                           std::vector<std::uint8_t> payload);
@@ -625,6 +674,7 @@ class ApiService {
 
   SessionManager* sessions_;
   GroupManager* groups_;
+  GroupCallManager* calls_;
   GroupDirectory* directory_;
   OfflineStorage* storage_;
   OfflineQueue* queue_;

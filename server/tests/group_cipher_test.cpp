@@ -4,6 +4,7 @@
 
 #include "api_service.h"
 #include "auth_provider.h"
+#include "group_call_manager.h"
 #include "group_directory.h"
 #include "offline_storage.h"
 #include "session_manager.h"
@@ -12,6 +13,7 @@ using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
 using mi::server::DemoUser;
 using mi::server::DemoUserTable;
+using mi::server::GroupCallManager;
 using mi::server::GroupDirectory;
 using mi::server::GroupManager;
 using mi::server::OfflineQueue;
@@ -37,9 +39,10 @@ int main() {
 
   SessionManager sessions(std::make_unique<DemoAuthProvider>(std::move(users)));
   GroupManager groups;
+  GroupCallManager calls;
   GroupDirectory directory;
   OfflineQueue queue;
-  ApiService api(&sessions, &groups, &directory, nullptr, &queue);
+  ApiService api(&sessions, &groups, &calls, &directory, nullptr, &queue);
 
   Session bob;
   Session alice;

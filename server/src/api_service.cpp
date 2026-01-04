@@ -21,6 +21,7 @@
 #endif
 
 #include "protocol.h"
+#include "media_frame.h"
 
 extern "C" {
 int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
@@ -133,6 +134,77 @@ std::vector<std::uint8_t> BuildGroupNoticePayload(
   return out;
 }
 
+bool DecodeGroupCallSubscriptions(const std::vector<std::uint8_t>& ext,
+                                  std::vector<mi::server::GroupCallSubscription>& out,
+                                  std::string& error) {
+  out.clear();
+  error.clear();
+  if (ext.empty()) {
+    return true;
+  }
+  std::size_t off = 0;
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(ext, off, count)) {
+    error = "subscription payload invalid";
+    return false;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    std::string sender;
+    if (!mi::server::proto::ReadString(ext, off, sender)) {
+      error = "subscription payload invalid";
+      return false;
+    }
+    if (off >= ext.size()) {
+      error = "subscription payload invalid";
+      return false;
+    }
+    const std::uint8_t flags = ext[off++];
+    mi::server::GroupCallSubscription sub;
+    sub.sender = std::move(sender);
+    sub.media_flags = flags;
+    out.push_back(std::move(sub));
+  }
+  if (off != ext.size()) {
+    error = "subscription payload invalid";
+    return false;
+  }
+  return true;
+}
+
+bool PeekMediaPacketKindFlag(const std::vector<std::uint8_t>& payload,
+                             std::uint8_t& out_flag) {
+  out_flag = 0;
+  if (payload.size() < 2) {
+    return false;
+  }
+  const std::uint8_t version = payload[0];
+  const std::uint8_t kind = payload[1];
+  const std::size_t min_size_v2 = 1 + 1 + 4 + 16;
+  const std::size_t min_size_v3 = 1 + 1 + 4 + 4 + 16;
+  if (version == 2) {
+    if (payload.size() < min_size_v2) {
+      return false;
+    }
+  } else if (version == 3) {
+    if (payload.size() < min_size_v3) {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
+  if (kind == static_cast<std::uint8_t>(mi::media::StreamKind::kAudio)) {
+    out_flag = mi::server::kGroupCallMediaAudio;
+    return true;
+  }
+  if (kind == static_cast<std::uint8_t>(mi::media::StreamKind::kVideo)) {
+    out_flag = mi::server::kGroupCallMediaVideo;
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 namespace mi::server {
@@ -204,6 +276,7 @@ bool ReadFileBytes(const std::filesystem::path& path,
 }  // namespace
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
+                       GroupCallManager* calls,
                        GroupDirectory* directory, OfflineStorage* storage,
                        OfflineQueue* queue, MediaRelay* media_relay,
                        std::uint32_t group_threshold,
@@ -212,6 +285,7 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        std::filesystem::path kt_signing_key)
     : sessions_(sessions),
       groups_(groups),
+      calls_(calls),
       directory_(directory),
       storage_(storage),
       queue_(queue),
@@ -3597,6 +3671,353 @@ MediaPullResponse ApiService::PullMedia(const std::string& token,
   }
   if (wait_ms > 1000) {
     wait_ms = 1000;
+  }
+
+  std::vector<MediaRelayPacket> pulled;
+  media_relay_->Pull(sess->username, call_id, max_packets,
+                     std::chrono::milliseconds(wait_ms), pulled);
+  resp.success = true;
+  resp.packets.reserve(pulled.size());
+  for (auto& pkt : pulled) {
+    MediaPullResponse::Entry entry;
+    entry.sender = std::move(pkt.sender);
+    entry.payload = std::move(pkt.payload);
+    resp.packets.push_back(std::move(entry));
+  }
+  return resp;
+}
+
+GroupCallSignalResponse ApiService::GroupCallSignal(
+    const std::string& token, std::uint8_t op, const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id, std::uint8_t media_flags,
+    std::uint32_t key_id, std::uint32_t seq, std::uint64_t ts_ms,
+    std::vector<std::uint8_t> ext) {
+  (void)key_id;
+  (void)seq;
+  GroupCallSignalResponse resp;
+  if (!sessions_ || !directory_ || !calls_) {
+    resp.error = "group call unavailable";
+    return resp;
+  }
+  if (!calls_->enabled()) {
+    resp.error = "group call disabled";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("group_call_signal", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (group_id.empty()) {
+    resp.error = "group id empty";
+    return resp;
+  }
+  if (!directory_->HasMember(group_id, sess->username)) {
+    resp.error = "not in group";
+    return resp;
+  }
+
+  std::vector<GroupCallSubscription> subscriptions;
+  const bool has_subscriptions = !ext.empty();
+  if (has_subscriptions) {
+    if (!DecodeGroupCallSubscriptions(ext, subscriptions, resp.error)) {
+      return resp;
+    }
+  }
+
+  GroupCallSnapshot snapshot;
+  std::array<std::uint8_t, 16> call_id_mut = call_id;
+  const auto op_enum = static_cast<GroupCallOp>(op);
+  if (op_enum == GroupCallOp::kCreate) {
+    if (!calls_->CreateCall(group_id, sess->username, media_flags, call_id_mut,
+                            snapshot, resp.error)) {
+      return resp;
+    }
+    if (has_subscriptions) {
+      if (!calls_->UpdateSubscriptions(call_id_mut, sess->username,
+                                       subscriptions, resp.error)) {
+        return resp;
+      }
+    }
+    resp.call_id = call_id_mut;
+    resp.key_id = snapshot.key_id;
+    resp.members = snapshot.members;
+    resp.success = true;
+
+    GroupCallEvent ev;
+    ev.op = GroupCallOp::kCreate;
+    ev.group_id = group_id;
+    ev.call_id = call_id_mut;
+    ev.key_id = snapshot.key_id;
+    ev.sender = sess->username;
+    ev.media_flags = media_flags;
+    ev.ts_ms = ts_ms;
+    calls_->EnqueueEventForMembers(directory_->Members(group_id), ev);
+    return resp;
+  }
+
+  if (op_enum == GroupCallOp::kJoin) {
+    if (!calls_->JoinCall(group_id, call_id, sess->username, media_flags,
+                          snapshot, resp.error)) {
+      return resp;
+    }
+    if (has_subscriptions) {
+      if (!calls_->UpdateSubscriptions(snapshot.call_id, sess->username,
+                                       subscriptions, resp.error)) {
+        return resp;
+      }
+    }
+    resp.call_id = snapshot.call_id;
+    resp.key_id = snapshot.key_id;
+    resp.members = snapshot.members;
+    resp.success = true;
+
+    GroupCallEvent ev;
+    ev.op = GroupCallOp::kJoin;
+    ev.group_id = group_id;
+    ev.call_id = snapshot.call_id;
+    ev.key_id = snapshot.key_id;
+    ev.sender = sess->username;
+    ev.media_flags = media_flags;
+    ev.ts_ms = ts_ms;
+    calls_->EnqueueEventForMembers(snapshot.members, ev);
+    return resp;
+  }
+
+  if (op_enum == GroupCallOp::kLeave) {
+    bool ended = false;
+    if (!calls_->LeaveCall(group_id, call_id, sess->username, snapshot, ended,
+                           resp.error)) {
+      return resp;
+    }
+    resp.call_id = snapshot.call_id;
+    resp.key_id = snapshot.key_id;
+    resp.members = snapshot.members;
+    resp.success = true;
+
+    GroupCallEvent ev;
+    ev.op = ended ? GroupCallOp::kEnd : GroupCallOp::kLeave;
+    ev.group_id = group_id;
+    ev.call_id = snapshot.call_id;
+    ev.key_id = snapshot.key_id;
+    ev.sender = sess->username;
+    ev.media_flags = media_flags;
+    ev.ts_ms = ts_ms;
+    calls_->EnqueueEventForMembers(snapshot.members, ev);
+    return resp;
+  }
+
+  if (op_enum == GroupCallOp::kEnd) {
+    if (!calls_->EndCall(group_id, call_id, sess->username, snapshot,
+                         resp.error)) {
+      return resp;
+    }
+    resp.call_id = snapshot.call_id;
+    resp.key_id = snapshot.key_id;
+    resp.members = snapshot.members;
+    resp.success = true;
+
+    GroupCallEvent ev;
+    ev.op = GroupCallOp::kEnd;
+    ev.group_id = group_id;
+    ev.call_id = snapshot.call_id;
+    ev.key_id = snapshot.key_id;
+    ev.sender = sess->username;
+    ev.media_flags = media_flags;
+    ev.ts_ms = ts_ms;
+    calls_->EnqueueEventForMembers(snapshot.members, ev);
+    return resp;
+  }
+
+  if (op_enum == GroupCallOp::kUpdate || op_enum == GroupCallOp::kPing) {
+    if (!calls_->TouchCall(call_id, sess->username, snapshot, resp.error)) {
+      return resp;
+    }
+    if (snapshot.group_id != group_id) {
+      resp.error = "call mismatch";
+      return resp;
+    }
+    if (has_subscriptions) {
+      if (!calls_->UpdateSubscriptions(snapshot.call_id, sess->username,
+                                       subscriptions, resp.error)) {
+        return resp;
+      }
+    }
+    resp.call_id = snapshot.call_id;
+    resp.key_id = snapshot.key_id;
+    resp.members = snapshot.members;
+    resp.success = true;
+
+    if (op_enum == GroupCallOp::kUpdate) {
+      GroupCallEvent ev;
+      ev.op = GroupCallOp::kUpdate;
+      ev.group_id = group_id;
+      ev.call_id = snapshot.call_id;
+      ev.key_id = snapshot.key_id;
+      ev.sender = sess->username;
+      ev.media_flags = media_flags;
+      ev.ts_ms = ts_ms;
+      calls_->EnqueueEventForMembers(snapshot.members, ev);
+    }
+    return resp;
+  }
+
+  resp.error = "unknown op";
+  return resp;
+}
+
+GroupCallSignalPullResponse ApiService::PullGroupCallSignals(
+    const std::string& token, std::uint32_t max_events,
+    std::uint32_t wait_ms) {
+  GroupCallSignalPullResponse resp;
+  if (!sessions_ || !calls_) {
+    resp.error = "group call unavailable";
+    return resp;
+  }
+  if (!calls_->enabled()) {
+    resp.error = "group call disabled";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("group_call_signal_pull", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (max_events == 0) {
+    max_events = 1;
+  } else if (max_events > 256) {
+    max_events = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+  std::vector<GroupCallEvent> events;
+  calls_->PullEvents(sess->username, max_events,
+                     std::chrono::milliseconds(wait_ms), events);
+  resp.success = true;
+  resp.events.reserve(events.size());
+  for (const auto& ev : events) {
+    GroupCallSignalPullResponse::Entry entry;
+    entry.op = static_cast<std::uint8_t>(ev.op);
+    entry.group_id = ev.group_id;
+    entry.call_id = ev.call_id;
+    entry.key_id = ev.key_id;
+    entry.sender = ev.sender;
+    entry.media_flags = ev.media_flags;
+    entry.ts_ms = ev.ts_ms;
+    resp.events.push_back(std::move(entry));
+  }
+  return resp;
+}
+
+MediaPushResponse ApiService::PushGroupMedia(
+    const std::string& token, const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::vector<std::uint8_t> payload) {
+  MediaPushResponse resp;
+  if (!sessions_ || !media_relay_ || !calls_ || !directory_) {
+    resp.error = "media relay unavailable";
+    return resp;
+  }
+  if (!calls_->enabled()) {
+    resp.error = "group call disabled";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("group_media_push", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (group_id.empty()) {
+    resp.error = "group id empty";
+    return resp;
+  }
+  if (!directory_->HasMember(group_id, sess->username)) {
+    resp.error = "not in group";
+    return resp;
+  }
+  if (payload.empty()) {
+    resp.error = "payload empty";
+    return resp;
+  }
+
+  GroupCallSnapshot snapshot;
+  if (!calls_->GetCall(call_id, snapshot) || snapshot.group_id != group_id) {
+    resp.error = "call not found";
+    return resp;
+  }
+  if (std::find(snapshot.members.begin(), snapshot.members.end(),
+                sess->username) == snapshot.members.end()) {
+    resp.error = "not in call";
+    return resp;
+  }
+
+  std::uint8_t kind_flag = 0;
+  if (!PeekMediaPacketKindFlag(payload, kind_flag)) {
+    resp.error = "media packet invalid";
+    return resp;
+  }
+
+  std::vector<std::string> recipients;
+  recipients.reserve(snapshot.members.size());
+  for (const auto& member : snapshot.members) {
+    if (member == sess->username) {
+      continue;
+    }
+    if (!calls_->IsSubscribed(call_id, member, sess->username, kind_flag)) {
+      continue;
+    }
+    recipients.push_back(member);
+  }
+  if (!recipients.empty()) {
+    MediaRelayPacket packet;
+    packet.sender = sess->username;
+    packet.payload = payload;
+    media_relay_->EnqueueMany(recipients, call_id, packet);
+  }
+  resp.success = true;
+  return resp;
+}
+
+MediaPullResponse ApiService::PullGroupMedia(
+    const std::string& token, const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t max_packets, std::uint32_t wait_ms) {
+  MediaPullResponse resp;
+  if (!sessions_ || !media_relay_ || !calls_) {
+    resp.error = "media relay unavailable";
+    return resp;
+  }
+  if (!calls_->enabled()) {
+    resp.error = "group call disabled";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("group_media_pull", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (max_packets == 0) {
+    max_packets = 1;
+  } else if (max_packets > 256) {
+    max_packets = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+
+  GroupCallSnapshot snapshot;
+  if (!calls_->GetCall(call_id, snapshot)) {
+    resp.error = "call not found";
+    return resp;
+  }
+  if (std::find(snapshot.members.begin(), snapshot.members.end(),
+                sess->username) == snapshot.members.end()) {
+    resp.error = "not in call";
+    return resp;
   }
 
   std::vector<MediaRelayPacket> pulled;

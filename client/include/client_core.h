@@ -105,6 +105,24 @@ class ClientCore {
     std::vector<std::uint8_t> payload;
   };
 
+  struct GroupCallSignalResult {
+    bool success{false};
+    std::array<std::uint8_t, 16> call_id{};
+    std::uint32_t key_id{0};
+    std::vector<std::string> members;
+    std::string error;
+  };
+
+  struct GroupCallEvent {
+    std::uint8_t op{0};
+    std::string group_id;
+    std::array<std::uint8_t, 16> call_id{};
+    std::uint32_t key_id{0};
+    std::string sender;
+    std::uint8_t media_flags{0};
+    std::uint64_t ts_ms{0};
+  };
+
   struct OutgoingChatTextMessage {
     std::string peer_username;
     std::string message_id_hex;
@@ -288,6 +306,88 @@ class ClientCore {
                        std::array<std::uint8_t, 32>& out_media_root,
                        std::string& out_error);
 
+  GroupCallSignalResult SendGroupCallSignal(
+      std::uint8_t op,
+      const std::string& group_id,
+      const std::array<std::uint8_t, 16>& call_id,
+      bool video,
+      std::uint32_t key_id = 0,
+      std::uint32_t seq = 0,
+      std::uint64_t ts_ms = 0,
+      const std::vector<std::uint8_t>& ext = {});
+
+  bool StartGroupCall(const std::string& group_id,
+                      bool video,
+                      std::array<std::uint8_t, 16>& out_call_id,
+                      std::uint32_t& out_key_id);
+  bool JoinGroupCall(const std::string& group_id,
+                     const std::array<std::uint8_t, 16>& call_id,
+                     bool video);
+  bool JoinGroupCall(const std::string& group_id,
+                     const std::array<std::uint8_t, 16>& call_id,
+                     bool video,
+                     std::uint32_t& out_key_id);
+  bool LeaveGroupCall(const std::string& group_id,
+                      const std::array<std::uint8_t, 16>& call_id);
+  bool RotateGroupCallKey(const std::string& group_id,
+                          const std::array<std::uint8_t, 16>& call_id,
+                          std::uint32_t key_id,
+                          const std::vector<std::string>& members);
+  bool RequestGroupCallKey(const std::string& group_id,
+                           const std::array<std::uint8_t, 16>& call_id,
+                           std::uint32_t key_id,
+                           const std::vector<std::string>& members);
+
+  std::vector<GroupCallEvent> PullGroupCallEvents(std::uint32_t max_events = 32,
+                                                  std::uint32_t wait_ms = 50);
+
+  bool PushGroupMedia(const std::string& group_id,
+                      const std::array<std::uint8_t, 16>& call_id,
+                      const std::vector<std::uint8_t>& packet);
+  std::vector<MediaRelayPacket> PullGroupMedia(
+      const std::array<std::uint8_t, 16>& call_id,
+      std::uint32_t max_packets = 32,
+      std::uint32_t wait_ms = 50);
+
+  bool GetGroupCallKey(const std::string& group_id,
+                       const std::array<std::uint8_t, 16>& call_id,
+                       std::uint32_t key_id,
+                       std::array<std::uint8_t, 32>& out_key) const;
+
+  static std::vector<std::uint8_t> BuildGroupCallKeyDistSigMessage(
+      const std::string& group_id,
+      const std::array<std::uint8_t, 16>& call_id,
+      std::uint32_t key_id,
+      const std::array<std::uint8_t, 32>& call_key);
+  static bool EncodeGroupCallKeyDist(
+      const std::array<std::uint8_t, 16>& msg_id,
+      const std::string& group_id,
+      const std::array<std::uint8_t, 16>& call_id,
+      std::uint32_t key_id,
+      const std::array<std::uint8_t, 32>& call_key,
+      const std::vector<std::uint8_t>& sig,
+      std::vector<std::uint8_t>& out);
+  static bool DecodeGroupCallKeyDist(
+      const std::vector<std::uint8_t>& payload,
+      std::size_t& offset,
+      std::string& out_group_id,
+      std::array<std::uint8_t, 16>& out_call_id,
+      std::uint32_t& out_key_id,
+      std::array<std::uint8_t, 32>& out_call_key,
+      std::vector<std::uint8_t>& out_sig);
+  static bool EncodeGroupCallKeyReq(
+      const std::array<std::uint8_t, 16>& msg_id,
+      const std::string& group_id,
+      const std::array<std::uint8_t, 16>& call_id,
+      std::uint32_t want_key_id,
+      std::vector<std::uint8_t>& out);
+  static bool DecodeGroupCallKeyReq(
+      const std::vector<std::uint8_t>& payload,
+      std::size_t& offset,
+      std::string& out_group_id,
+      std::array<std::uint8_t, 16>& out_call_id,
+      std::uint32_t& out_want_key_id);
+
   bool SendChatText(const std::string& peer_username,
                     const std::string& text_utf8,
                     std::string& out_message_id_hex);
@@ -414,6 +514,14 @@ class ClientCore {
     std::deque<std::uint32_t> skipped_order;
   };
 
+  struct GroupCallKeyState {
+    std::string group_id;
+    std::array<std::uint8_t, 16> call_id{};
+    std::uint32_t key_id{0};
+    std::array<std::uint8_t, 32> call_key{};
+    std::uint64_t updated_at{0};
+  };
+
   struct PendingSenderKeyDistribution {
     std::string group_id;
     std::uint32_t version{0};
@@ -466,6 +574,23 @@ class ClientCore {
                                    const std::vector<std::string>& members,
                                    GroupSenderKeyState*& out_sender_key,
                                    std::string& out_warn);
+  bool StoreGroupCallKey(const std::string& group_id,
+                         const std::array<std::uint8_t, 16>& call_id,
+                         std::uint32_t key_id,
+                         const std::array<std::uint8_t, 32>& call_key);
+  bool LookupGroupCallKey(const std::string& group_id,
+                          const std::array<std::uint8_t, 16>& call_id,
+                          std::uint32_t key_id,
+                          std::array<std::uint8_t, 32>& out_key) const;
+  bool SendGroupCallKeyEnvelope(const std::string& group_id,
+                                const std::string& peer_username,
+                                const std::array<std::uint8_t, 16>& call_id,
+                                std::uint32_t key_id,
+                                const std::array<std::uint8_t, 32>& call_key);
+  bool SendGroupCallKeyRequest(const std::string& group_id,
+                               const std::string& peer_username,
+                               const std::array<std::uint8_t, 16>& call_id,
+                               std::uint32_t key_id);
   void ResendPendingSenderKeyDistributions();
   void RecordKtGossipMismatch(const std::string& reason);
 
@@ -623,6 +748,7 @@ class ClientCore {
 
   std::unordered_map<std::string, CachedPeerIdentity> peer_id_cache_;
   std::unordered_map<std::string, GroupSenderKeyState> group_sender_keys_;
+  std::unordered_map<std::string, GroupCallKeyState> group_call_keys_;
   std::unordered_map<std::string, PendingSenderKeyDistribution>
       pending_sender_key_dists_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>

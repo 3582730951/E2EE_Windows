@@ -295,7 +295,8 @@ class AudioPipeline::OpusCodecImpl {
   OpusEncoderCtl encoder_ctl_{nullptr};
 };
 
-AudioPipeline::AudioPipeline(MediaSession& session, AudioPipelineConfig config)
+AudioPipeline::AudioPipeline(MediaSessionInterface& session,
+                             AudioPipelineConfig config)
     : session_(session), config_(std::move(config)) {}
 
 AudioPipeline::~AudioPipeline() = default;
@@ -847,7 +848,8 @@ class VideoPipeline::MfVideoCodecImpl {
 };
 #endif
 
-VideoPipeline::VideoPipeline(MediaSession& session, VideoPipelineConfig config)
+VideoPipeline::VideoPipeline(MediaSessionInterface& session,
+                             VideoPipelineConfig config)
     : session_(session), config_(std::move(config)) {}
 
 VideoPipeline::~VideoPipeline() = default;

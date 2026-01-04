@@ -77,10 +77,20 @@ struct ServerSection {
   shard::ScrambledString ops_token;
 };
 
+struct CallSection {
+  bool enable_group_call{false};
+  std::uint32_t max_room_size{1000};
+  std::uint32_t idle_timeout_sec{60};
+  std::uint32_t call_timeout_sec{3600};
+  std::uint32_t media_ttl_ms{5000};
+  std::uint32_t max_subscriptions{0};
+};
+
 struct ServerConfig {
   AuthMode mode{AuthMode::kMySQL};
   MySqlConfig mysql;
   ServerSection server;
+  CallSection call;
 };
 
 struct DemoUser {

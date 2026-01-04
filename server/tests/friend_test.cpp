@@ -3,12 +3,14 @@
 
 #include "api_service.h"
 #include "auth_provider.h"
+#include "group_call_manager.h"
 #include "session_manager.h"
 
 using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
 using mi::server::DemoUser;
 using mi::server::DemoUserTable;
+using mi::server::GroupCallManager;
 using mi::server::GroupManager;
 using mi::server::Session;
 using mi::server::SessionManager;
@@ -31,7 +33,8 @@ int main() {
 
   SessionManager sessions(std::make_unique<DemoAuthProvider>(std::move(users)));
   GroupManager groups;
-  ApiService api(&sessions, &groups);
+  GroupCallManager calls;
+  ApiService api(&sessions, &groups, &calls);
 
   Session bob;
   Session alice;

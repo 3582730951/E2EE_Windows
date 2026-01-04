@@ -35,6 +35,11 @@ bool ReadFixed16(proto::ByteView data, std::size_t& offset,
   return true;
 }
 
+void WriteFixed16(const std::array<std::uint8_t, 16>& data,
+                  std::vector<std::uint8_t>& out) {
+  out.insert(out.end(), data.begin(), data.end());
+}
+
 void AssignString(std::string& out, std::string_view in) {
   out.assign(in.data(), in.size());
 }
@@ -683,6 +688,68 @@ std::vector<std::uint8_t> EncodeMediaPullResp(const MediaPullResponse& resp) {
     for (const auto& e : resp.packets) {
       proto::WriteString(e.sender, out);
       proto::WriteBytes(e.payload, out);
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeGroupCallSignalResp(
+    const GroupCallSignalResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 16 + 4 + 4;
+    for (const auto& member : resp.members) {
+      reserve += EncodedStringSize(member);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    WriteFixed16(resp.call_id, out);
+    proto::WriteUint32(resp.key_id, out);
+    proto::WriteUint32(static_cast<std::uint32_t>(resp.members.size()), out);
+    for (const auto& member : resp.members) {
+      proto::WriteString(member, out);
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeGroupCallSignalPullResp(
+    const GroupCallSignalPullResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 1 + 4;
+    for (const auto& e : resp.events) {
+      reserve += 1;
+      reserve += EncodedStringSize(e.group_id);
+      reserve += 16;
+      reserve += 4;
+      reserve += EncodedStringSize(e.sender);
+      reserve += 1;
+      reserve += 8;
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteUint32(static_cast<std::uint32_t>(resp.events.size()), out);
+    for (const auto& e : resp.events) {
+      out.push_back(e.op);
+      proto::WriteString(e.group_id, out);
+      WriteFixed16(e.call_id, out);
+      proto::WriteUint32(e.key_id, out);
+      proto::WriteString(e.sender, out);
+      out.push_back(e.media_flags);
+      proto::WriteUint64(e.ts_ms, out);
     }
   } else {
     proto::WriteString(resp.error, out);
@@ -1526,6 +1593,99 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
         return false;
       }
       auto resp = api_->PullMedia(token, call_id, max_packets, wait_ms);
+      out.payload = EncodeMediaPullResp(resp);
+      return true;
+    }
+    case FrameType::kGroupCallSignal: {
+      if (token.empty()) {
+        return false;
+      }
+      if (offset >= payload_bytes.size()) {
+        return false;
+      }
+      const std::uint8_t op = payload_view.data[offset++];
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
+        return false;
+      }
+      AssignString(s1, s1_view);  // group_id
+      std::array<std::uint8_t, 16> call_id{};
+      if (!ReadFixed16(payload_view, offset, call_id)) {
+        return false;
+      }
+      if (offset >= payload_bytes.size()) {
+        return false;
+      }
+      const std::uint8_t media_flags = payload_view.data[offset++];
+      std::uint32_t key_id = 0;
+      std::uint32_t seq = 0;
+      std::uint64_t ts_ms = 0;
+      if (!proto::ReadUint32(payload_view, offset, key_id) ||
+          !proto::ReadUint32(payload_view, offset, seq) ||
+          !proto::ReadUint64(payload_view, offset, ts_ms)) {
+        return false;
+      }
+      std::vector<std::uint8_t> ext;
+      if (!proto::ReadBytes(payload_view, offset, ext) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp =
+          api_->GroupCallSignal(token, op, s1, call_id, media_flags, key_id,
+                                seq, ts_ms, std::move(ext));
+      out.payload = EncodeGroupCallSignalResp(resp);
+      return true;
+    }
+    case FrameType::kGroupCallSignalPull: {
+      if (token.empty()) {
+        return false;
+      }
+      std::uint32_t max_events = 0;
+      std::uint32_t wait_ms = 0;
+      if (!proto::ReadUint32(payload_view, offset, max_events) ||
+          !proto::ReadUint32(payload_view, offset, wait_ms) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp = api_->PullGroupCallSignals(token, max_events, wait_ms);
+      out.payload = EncodeGroupCallSignalPullResp(resp);
+      return true;
+    }
+    case FrameType::kGroupMediaPush: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
+        return false;
+      }
+      AssignString(s1, s1_view);  // group_id
+      std::array<std::uint8_t, 16> call_id{};
+      if (!ReadFixed16(payload_view, offset, call_id)) {
+        return false;
+      }
+      std::vector<std::uint8_t> payload;
+      if (!proto::ReadBytes(payload_view, offset, payload) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp =
+          api_->PushGroupMedia(token, s1, call_id, std::move(payload));
+      out.payload = EncodeMediaPushResp(resp);
+      return true;
+    }
+    case FrameType::kGroupMediaPull: {
+      if (token.empty()) {
+        return false;
+      }
+      std::array<std::uint8_t, 16> call_id{};
+      std::uint32_t max_packets = 0;
+      std::uint32_t wait_ms = 0;
+      if (!ReadFixed16(payload_view, offset, call_id) ||
+          !proto::ReadUint32(payload_view, offset, max_packets) ||
+          !proto::ReadUint32(payload_view, offset, wait_ms) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp = api_->PullGroupMedia(token, call_id, max_packets, wait_ms);
       out.payload = EncodeMediaPullResp(resp);
       return true;
     }

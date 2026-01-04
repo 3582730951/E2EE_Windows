@@ -65,7 +65,7 @@ struct VideoFrameData {
 
 class AudioPipeline {
  public:
-  AudioPipeline(MediaSession& session, AudioPipelineConfig config);
+  AudioPipeline(MediaSessionInterface& session, AudioPipelineConfig config);
   ~AudioPipeline();
 
   bool Init(std::string& error);
@@ -80,7 +80,7 @@ class AudioPipeline {
  private:
   void AdaptBitrate(std::uint64_t now_ms);
 
-  MediaSession& session_;
+  MediaSessionInterface& session_;
   AudioPipelineConfig config_;
   AudioCodec codec_{AudioCodec::kOpus};
   int frame_samples_{0};
@@ -97,7 +97,7 @@ class AudioPipeline {
 
 class VideoPipeline {
  public:
-  VideoPipeline(MediaSession& session, VideoPipelineConfig config);
+  VideoPipeline(MediaSessionInterface& session, VideoPipelineConfig config);
   ~VideoPipeline();
 
   bool Init(std::string& error);
@@ -125,7 +125,7 @@ class VideoPipeline {
                    std::uint32_t height,
                    std::vector<std::uint8_t>& out);
 
-  MediaSession& session_;
+  MediaSessionInterface& session_;
   VideoPipelineConfig config_;
   VideoCodec codec_{VideoCodec::kH264};
   std::uint32_t current_bitrate_bps_{0};

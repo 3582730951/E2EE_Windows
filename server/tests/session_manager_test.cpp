@@ -1,5 +1,6 @@
 #include <chrono>
 #include <string>
+#include <thread>
 
 #include "auth_provider.h"
 #include "session_manager.h"
@@ -79,7 +80,7 @@ int main() {
     return 1;
   }
 
-  // TTL expire path: very short TTL, then force cleanup
+  // TTL expire path: short TTL, then force cleanup
   DemoUserTable t2;
   DemoUser u2;
   u2.username.set("c");
@@ -88,7 +89,7 @@ int main() {
   u2.password_plain = "d";
   t2.emplace("c", u2);
   SessionManager short_mgr(std::make_unique<DemoAuthProvider>(std::move(t2)),
-                           std::chrono::seconds(0));
+                           std::chrono::seconds(1));
   Session s2;
   std::string err2;
   bool ok2 = short_mgr.Login("c", "d", mi::server::TransportKind::kLocal, s2,
@@ -99,6 +100,7 @@ int main() {
   auto fetched2 = short_mgr.GetSession(s2.token);
   // May already be expired due to zero TTL
   if (fetched2.has_value()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     short_mgr.Cleanup();
     fetched2 = short_mgr.GetSession(s2.token);
     if (fetched2.has_value()) {

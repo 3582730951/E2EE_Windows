@@ -53,6 +53,17 @@ if(MSVC)
 endif()
 add_test(NAME group_manager_test COMMAND group_manager_test)
 
+add_executable(group_call_manager_test
+    group_call_manager_test.cpp
+)
+target_link_libraries(group_call_manager_test PRIVATE mi_e2ee_core)
+target_include_directories(group_call_manager_test PRIVATE ../include)
+mi_copy_msvc_runtime(group_call_manager_test)
+if(MSVC)
+  target_compile_options(group_call_manager_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME group_call_manager_test COMMAND group_call_manager_test)
+
 add_executable(group_directory_test
     group_directory_test.cpp
 )
@@ -107,6 +118,17 @@ if(MSVC)
   target_compile_options(frame_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 add_test(NAME frame_test COMMAND frame_test)
+
+add_executable(group_call_signal_test
+    group_call_signal_test.cpp
+)
+target_link_libraries(group_call_signal_test PRIVATE mi_e2ee_core)
+target_include_directories(group_call_signal_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(group_call_signal_test)
+if(MSVC)
+  target_compile_options(group_call_signal_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME group_call_signal_test COMMAND group_call_signal_test)
 
 add_executable(key_transparency_test
     key_transparency_test.cpp

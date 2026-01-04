@@ -1,6 +1,7 @@
 #include "server_app.h"
 
 #include "api_service.h"
+#include "group_call_manager.h"
 #include "crypto.h"
 #include "key_transparency.h"
 #include "opaque_pake.h"
@@ -735,6 +736,13 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
       std::chrono::seconds(config_.server.session_ttl_sec),
       std::move(opaque_setup));
   groups_ = std::make_unique<GroupManager>();
+  GroupCallConfig call_cfg;
+  call_cfg.enable_group_call = config_.call.enable_group_call;
+  call_cfg.max_room_size = config_.call.max_room_size;
+  call_cfg.idle_timeout_sec = config_.call.idle_timeout_sec;
+  call_cfg.call_timeout_sec = config_.call.call_timeout_sec;
+  call_cfg.max_subscriptions = config_.call.max_subscriptions;
+  group_calls_ = std::make_unique<GroupCallManager>(call_cfg);
   directory_ = std::make_unique<GroupDirectory>();
   offline_storage_ = std::make_unique<OfflineStorage>(
       storage_dir, std::chrono::hours(12), secure_delete);
@@ -746,9 +754,11 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
   offline_queue_ = std::make_unique<OfflineQueue>();
-  media_relay_ = std::make_unique<MediaRelay>();
+  media_relay_ = std::make_unique<MediaRelay>(
+      2048, std::chrono::milliseconds(config_.call.media_ttl_ms));
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),
-                                      directory_.get(), offline_storage_.get(),
+                                      group_calls_.get(), directory_.get(),
+                                      offline_storage_.get(),
                                       offline_queue_.get(), media_relay_.get(),
                                       config_.server.group_rotation_threshold,
                                       config_.mode == AuthMode::kMySQL
@@ -778,6 +788,9 @@ bool ServerApp::RunOnce(std::string& error) {
     }
     if (media_relay_) {
       media_relay_->Cleanup();
+    }
+    if (group_calls_) {
+      group_calls_->Cleanup();
     }
     last_cleanup_ = now;
   }

@@ -59,10 +59,13 @@
         <file alias="qml/components/PrimaryButton.qml">../qml/components/PrimaryButton.qml</file>
         <file alias="qml/components/GhostButton.qml">../qml/components/GhostButton.qml</file>
         <file alias="qml/components/InputContextMenu.qml">../qml/components/InputContextMenu.qml</file>
+        <file alias="qml/components/GroupCallBar.qml">../qml/components/GroupCallBar.qml</file>
+        <file alias="qml/components/GroupCallTile.qml">../qml/components/GroupCallTile.qml</file>
         <file alias="qml/components/RoundIconButton.qml">../qml/components/RoundIconButton.qml</file>
         <file alias="qml/components/SearchField.qml">../qml/components/SearchField.qml</file>
         <file alias="qml/components/SecureTextField.qml">../qml/components/SecureTextField.qml</file>
         <file alias="qml/components/SecureTextArea.qml">../qml/components/SecureTextArea.qml</file>
+        <file alias="qml/shell/GroupCallWindow.qml">../qml/shell/GroupCallWindow.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>
         <file alias="ime/pinyin_short.dat">../data/ime_pinyin_short.dat</file>

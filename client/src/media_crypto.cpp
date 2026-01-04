@@ -58,9 +58,16 @@ bool KdfMediaCk(const std::array<std::uint8_t, 32>& ck,
 bool EncodeMediaPacket(const MediaPacket& packet,
                        std::vector<std::uint8_t>& out) {
   out.clear();
-  out.reserve(1 + 1 + 4 + packet.tag.size() + packet.cipher.size());
-  out.push_back(kMediaPacketVersion);
+  const std::size_t header_extra = (packet.version >= 3) ? 4 : 0;
+  out.reserve(1 + 1 + 4 + header_extra + packet.tag.size() +
+              packet.cipher.size());
+  out.push_back(packet.version);
   out.push_back(static_cast<std::uint8_t>(packet.kind));
+  if (packet.version >= 3) {
+    std::uint8_t key_bytes[4];
+    WriteLe32(packet.key_id, key_bytes);
+    out.insert(out.end(), key_bytes, key_bytes + sizeof(key_bytes));
+  }
   std::uint8_t seq_bytes[4];
   WriteLe32(packet.seq, seq_bytes);
   out.insert(out.end(), seq_bytes, seq_bytes + sizeof(seq_bytes));
@@ -71,17 +78,33 @@ bool EncodeMediaPacket(const MediaPacket& packet,
 
 bool DecodeMediaPacket(const std::vector<std::uint8_t>& data, MediaPacket& out) {
   out = MediaPacket{};
-  const std::size_t min_size = 1 + 1 + 4 + out.tag.size();
-  if (data.size() < min_size) {
+  const std::size_t min_size_v2 = 1 + 1 + 4 + out.tag.size();
+  const std::size_t min_size_v3 = 1 + 1 + 4 + 4 + out.tag.size();
+  if (data.size() < min_size_v2) {
     return false;
   }
   std::size_t off = 0;
   const std::uint8_t version = data[off++];
-  if (version != kMediaPacketVersion) {
-    return false;
-  }
-  out.kind = static_cast<mi::media::StreamKind>(data[off++]);
-  if (!ReadLe32(data, off, out.seq)) {
+  if (version == 2) {
+    out.version = version;
+    out.kind = static_cast<mi::media::StreamKind>(data[off++]);
+    if (!ReadLe32(data, off, out.seq)) {
+      return false;
+    }
+    out.key_id = 1;
+  } else if (version == 3) {
+    out.version = version;
+    if (data.size() < min_size_v3) {
+      return false;
+    }
+    out.kind = static_cast<mi::media::StreamKind>(data[off++]);
+    if (!ReadLe32(data, off, out.key_id)) {
+      return false;
+    }
+    if (!ReadLe32(data, off, out.seq)) {
+      return false;
+    }
+  } else {
     return false;
   }
   if (off + out.tag.size() > data.size()) {
@@ -96,17 +119,37 @@ bool DecodeMediaPacket(const std::vector<std::uint8_t>& data, MediaPacket& out) 
 bool PeekMediaPacketHeader(const std::vector<std::uint8_t>& data,
                            mi::media::StreamKind& out_kind,
                            std::uint32_t& out_seq) {
-  const std::size_t min_size = 1 + 1 + 4;
-  if (data.size() < min_size) {
+  std::uint32_t key_id = 0;
+  return PeekMediaPacketHeaderWithKeyId(data, out_kind, key_id, out_seq);
+}
+
+bool PeekMediaPacketHeaderWithKeyId(const std::vector<std::uint8_t>& data,
+                                    mi::media::StreamKind& out_kind,
+                                    std::uint32_t& out_key_id,
+                                    std::uint32_t& out_seq) {
+  const std::size_t min_size_v2 = 1 + 1 + 4;
+  const std::size_t min_size_v3 = 1 + 1 + 4 + 4;
+  if (data.size() < min_size_v2) {
     return false;
   }
   std::size_t off = 0;
   const std::uint8_t version = data[off++];
-  if (version != kMediaPacketVersion) {
-    return false;
+  if (version == 2) {
+    out_kind = static_cast<mi::media::StreamKind>(data[off++]);
+    out_key_id = 1;
+    return ReadLe32(data, off, out_seq);
   }
-  out_kind = static_cast<mi::media::StreamKind>(data[off++]);
-  return ReadLe32(data, off, out_seq);
+  if (version == 3) {
+    if (data.size() < min_size_v3) {
+      return false;
+    }
+    out_kind = static_cast<mi::media::StreamKind>(data[off++]);
+    if (!ReadLe32(data, off, out_key_id)) {
+      return false;
+    }
+    return ReadLe32(data, off, out_seq);
+  }
+  return false;
 }
 
 bool DeriveStreamChainKeys(const std::array<std::uint8_t, 32>& media_root,
@@ -136,8 +179,12 @@ bool DeriveStreamChainKeys(const std::array<std::uint8_t, 32>& media_root,
 
 MediaRatchet::MediaRatchet(const std::array<std::uint8_t, 32>& chain_key,
                            mi::media::StreamKind kind,
-                           std::uint32_t start_seq)
-    : ck_(chain_key), next_seq_(start_seq), kind_(kind) {}
+                           std::uint32_t start_seq,
+                           std::uint32_t key_id)
+    : ck_(chain_key),
+      next_seq_(start_seq),
+      key_id_(key_id),
+      kind_(kind) {}
 
 bool MediaRatchet::EncryptFrame(const mi::media::MediaFrame& frame,
                                 std::vector<std::uint8_t>& out_packet,
@@ -161,19 +208,28 @@ bool MediaRatchet::EncryptFrame(const mi::media::MediaFrame& frame,
   }
 
   MediaPacket packet;
+  packet.version = kMediaPacketVersion;
   packet.kind = kind_;
+  packet.key_id = key_id_;
   packet.seq = next_seq_;
   packet.cipher.resize(plain.size());
 
   std::uint8_t nonce[24];
   BuildNonce(packet.seq, nonce);
-  std::uint8_t ad[1 + 1 + 4];
-  ad[0] = kMediaPacketVersion;
+  std::uint8_t ad[1 + 1 + 4 + 4];
+  ad[0] = packet.version;
   ad[1] = static_cast<std::uint8_t>(kind_);
-  WriteLe32(packet.seq, ad + 2);
+  std::size_t ad_len = 1 + 1 + 4;
+  if (packet.version >= 3) {
+    WriteLe32(packet.key_id, ad + 2);
+    WriteLe32(packet.seq, ad + 6);
+    ad_len = 1 + 1 + 4 + 4;
+  } else {
+    WriteLe32(packet.seq, ad + 2);
+  }
 
   crypto_aead_lock(packet.cipher.data(), packet.tag.data(), mk.data(), nonce,
-                   ad, sizeof(ad), plain.data(), plain.size());
+                   ad, ad_len, plain.data(), plain.size());
 
   ck_ = next_ck;
   next_seq_++;
@@ -193,6 +249,10 @@ bool MediaRatchet::DecryptFrame(const std::vector<std::uint8_t>& packet,
     error = "media kind mismatch";
     return false;
   }
+  if (parsed.key_id != key_id_) {
+    error = "media key id mismatch";
+    return false;
+  }
 
   std::array<std::uint8_t, 32> mk{};
   if (!DeriveMessageKey(parsed.seq, mk, error)) {
@@ -201,16 +261,23 @@ bool MediaRatchet::DecryptFrame(const std::vector<std::uint8_t>& packet,
 
   std::uint8_t nonce[24];
   BuildNonce(parsed.seq, nonce);
-  std::uint8_t ad[1 + 1 + 4];
-  ad[0] = kMediaPacketVersion;
+  std::uint8_t ad[1 + 1 + 4 + 4];
+  ad[0] = parsed.version;
   ad[1] = static_cast<std::uint8_t>(kind_);
-  WriteLe32(parsed.seq, ad + 2);
+  std::size_t ad_len = 1 + 1 + 4;
+  if (parsed.version >= 3) {
+    WriteLe32(parsed.key_id, ad + 2);
+    WriteLe32(parsed.seq, ad + 6);
+    ad_len = 1 + 1 + 4 + 4;
+  } else {
+    WriteLe32(parsed.seq, ad + 2);
+  }
 
   std::vector<std::uint8_t> plain;
   plain.resize(parsed.cipher.size());
   const int ok = crypto_aead_unlock(
       plain.data(), parsed.tag.data(), mk.data(), nonce,
-      ad, sizeof(ad), parsed.cipher.data(), parsed.cipher.size());
+      ad, ad_len, parsed.cipher.data(), parsed.cipher.size());
   if (ok != 0) {
     error = "media decrypt failed";
     return false;

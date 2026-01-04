@@ -1271,6 +1271,15 @@ constexpr std::uint8_t kChatTypeReadReceipt = 10;
 constexpr std::uint8_t kChatTypeTyping = 11;
 constexpr std::uint8_t kChatTypeSticker = 12;
 constexpr std::uint8_t kChatTypePresence = 13;
+constexpr std::uint8_t kChatTypeGroupCallKeyDist = 14;
+constexpr std::uint8_t kChatTypeGroupCallKeyReq = 15;
+
+constexpr std::uint8_t kGroupCallOpCreate = 1;
+constexpr std::uint8_t kGroupCallOpJoin = 2;
+constexpr std::uint8_t kGroupCallOpLeave = 3;
+constexpr std::uint8_t kGroupCallOpEnd = 4;
+constexpr std::uint8_t kGroupCallOpUpdate = 5;
+constexpr std::uint8_t kGroupCallOpPing = 6;
 
 constexpr std::size_t kChatHeaderSize = sizeof(kChatMagic) + 1 + 1 + 16;
 constexpr std::size_t kChatSeenLimit = 4096;
@@ -1803,6 +1812,128 @@ bool DecodeChatGroupSenderKeyReq(const std::vector<std::uint8_t>& payload,
          mi::server::proto::ReadUint32(payload, offset, out_want_version);
 }
 
+std::vector<std::uint8_t> BuildGroupCallKeyDistSigMessage(
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id,
+    const std::array<std::uint8_t, 32>& call_key) {
+  std::vector<std::uint8_t> msg;
+  static constexpr char kPrefix[] = "MI_GCKD_V1";
+  msg.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + call_id.size() + 4 +
+              2 + call_key.size());
+  msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  mi::server::proto::WriteString(group_id, msg);
+  msg.insert(msg.end(), call_id.begin(), call_id.end());
+  mi::server::proto::WriteUint32(key_id, msg);
+  mi::server::proto::WriteBytes(call_key.data(), call_key.size(), msg);
+  return msg;
+}
+
+bool EncodeChatGroupCallKeyDist(const std::array<std::uint8_t, 16>& msg_id,
+                                const std::string& group_id,
+                                const std::array<std::uint8_t, 16>& call_id,
+                                std::uint32_t key_id,
+                                const std::array<std::uint8_t, 32>& call_key,
+                                const std::vector<std::uint8_t>& sig,
+                                std::vector<std::uint8_t>& out) {
+  ReserveChatEnvelope(out, group_id.size() + sig.size() + 80);
+  out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
+  out.push_back(kChatVersion);
+  out.push_back(kChatTypeGroupCallKeyDist);
+  out.insert(out.end(), msg_id.begin(), msg_id.end());
+  if (!mi::server::proto::WriteString(group_id, out)) {
+    out.clear();
+    return false;
+  }
+  out.insert(out.end(), call_id.begin(), call_id.end());
+  if (!mi::server::proto::WriteUint32(key_id, out)) {
+    out.clear();
+    return false;
+  }
+  if (!mi::server::proto::WriteBytes(call_key.data(), call_key.size(), out) ||
+      !mi::server::proto::WriteBytes(sig, out)) {
+    out.clear();
+    return false;
+  }
+  return true;
+}
+
+bool DecodeChatGroupCallKeyDist(const std::vector<std::uint8_t>& payload,
+                                std::size_t& offset,
+                                std::string& out_group_id,
+                                std::array<std::uint8_t, 16>& out_call_id,
+                                std::uint32_t& out_key_id,
+                                std::array<std::uint8_t, 32>& out_call_key,
+                                std::vector<std::uint8_t>& out_sig) {
+  out_group_id.clear();
+  out_call_id.fill(0);
+  out_key_id = 0;
+  out_call_key.fill(0);
+  out_sig.clear();
+  if (!mi::server::proto::ReadString(payload, offset, out_group_id)) {
+    return false;
+  }
+  if (offset + out_call_id.size() > payload.size()) {
+    return false;
+  }
+  std::memcpy(out_call_id.data(), payload.data() + offset, out_call_id.size());
+  offset += out_call_id.size();
+  if (!mi::server::proto::ReadUint32(payload, offset, out_key_id)) {
+    return false;
+  }
+  std::vector<std::uint8_t> key_bytes;
+  if (!mi::server::proto::ReadBytes(payload, offset, key_bytes) ||
+      key_bytes.size() != out_call_key.size()) {
+    return false;
+  }
+  std::memcpy(out_call_key.data(), key_bytes.data(), out_call_key.size());
+  if (!mi::server::proto::ReadBytes(payload, offset, out_sig)) {
+    return false;
+  }
+  return true;
+}
+
+bool EncodeChatGroupCallKeyReq(const std::array<std::uint8_t, 16>& msg_id,
+                               const std::string& group_id,
+                               const std::array<std::uint8_t, 16>& call_id,
+                               std::uint32_t want_key_id,
+                               std::vector<std::uint8_t>& out) {
+  ReserveChatEnvelope(out, group_id.size() + 32);
+  out.insert(out.end(), kChatMagic, kChatMagic + sizeof(kChatMagic));
+  out.push_back(kChatVersion);
+  out.push_back(kChatTypeGroupCallKeyReq);
+  out.insert(out.end(), msg_id.begin(), msg_id.end());
+  if (!mi::server::proto::WriteString(group_id, out)) {
+    out.clear();
+    return false;
+  }
+  out.insert(out.end(), call_id.begin(), call_id.end());
+  if (!mi::server::proto::WriteUint32(want_key_id, out)) {
+    out.clear();
+    return false;
+  }
+  return true;
+}
+
+bool DecodeChatGroupCallKeyReq(const std::vector<std::uint8_t>& payload,
+                               std::size_t& offset,
+                               std::string& out_group_id,
+                               std::array<std::uint8_t, 16>& out_call_id,
+                               std::uint32_t& out_want_key_id) {
+  out_group_id.clear();
+  out_call_id.fill(0);
+  out_want_key_id = 0;
+  if (!mi::server::proto::ReadString(payload, offset, out_group_id)) {
+    return false;
+  }
+  if (offset + out_call_id.size() > payload.size()) {
+    return false;
+  }
+  std::memcpy(out_call_id.data(), payload.data() + offset, out_call_id.size());
+  offset += out_call_id.size();
+  return mi::server::proto::ReadUint32(payload, offset, out_want_key_id);
+}
+
 constexpr std::uint8_t kRichKindText = 1;
 constexpr std::uint8_t kRichKindLocation = 2;
 constexpr std::uint8_t kRichKindContactCard = 3;
@@ -2214,6 +2345,13 @@ bool DeriveGroupMessageKey(State& state, std::uint32_t iteration,
 std::string MakeGroupSenderKeyMapKey(const std::string& group_id,
                                     const std::string& sender_username) {
   return group_id + "|" + sender_username;
+}
+
+std::string MakeGroupCallKeyMapKey(const std::string& group_id,
+                                   const std::array<std::uint8_t, 16>& call_id) {
+  const std::string call_hex =
+      BytesToHexLower(call_id.data(), call_id.size());
+  return group_id + "|" + call_hex;
 }
 
 std::string HashGroupMembers(std::vector<std::string> members) {
@@ -4670,6 +4808,58 @@ bool TlsRoundTripSChannel(const std::string& host, std::uint16_t port,
 #endif  // _WIN32
 
 }  // namespace
+
+std::vector<std::uint8_t> ClientCore::BuildGroupCallKeyDistSigMessage(
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id,
+    const std::array<std::uint8_t, 32>& call_key) {
+  return ::mi::client::BuildGroupCallKeyDistSigMessage(group_id, call_id, key_id,
+                                                       call_key);
+}
+
+bool ClientCore::EncodeGroupCallKeyDist(
+    const std::array<std::uint8_t, 16>& msg_id,
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id,
+    const std::array<std::uint8_t, 32>& call_key,
+    const std::vector<std::uint8_t>& sig,
+    std::vector<std::uint8_t>& out) {
+  return EncodeChatGroupCallKeyDist(msg_id, group_id, call_id, key_id, call_key,
+                                    sig, out);
+}
+
+bool ClientCore::DecodeGroupCallKeyDist(
+    const std::vector<std::uint8_t>& payload,
+    std::size_t& offset,
+    std::string& out_group_id,
+    std::array<std::uint8_t, 16>& out_call_id,
+    std::uint32_t& out_key_id,
+    std::array<std::uint8_t, 32>& out_call_key,
+    std::vector<std::uint8_t>& out_sig) {
+  return DecodeChatGroupCallKeyDist(payload, offset, out_group_id, out_call_id,
+                                    out_key_id, out_call_key, out_sig);
+}
+
+bool ClientCore::EncodeGroupCallKeyReq(
+    const std::array<std::uint8_t, 16>& msg_id,
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t want_key_id,
+    std::vector<std::uint8_t>& out) {
+  return EncodeChatGroupCallKeyReq(msg_id, group_id, call_id, want_key_id, out);
+}
+
+bool ClientCore::DecodeGroupCallKeyReq(
+    const std::vector<std::uint8_t>& payload,
+    std::size_t& offset,
+    std::string& out_group_id,
+    std::array<std::uint8_t, 16>& out_call_id,
+    std::uint32_t& out_want_key_id) {
+  return DecodeChatGroupCallKeyReq(payload, offset, out_group_id, out_call_id,
+                                   out_want_key_id);
+}
 
 bool DecryptFileBlobForTooling(const std::vector<std::uint8_t>& blob,
                                const std::array<std::uint8_t, 32>& key,
@@ -7868,6 +8058,104 @@ bool ClientCore::EnsureGroupSenderKeyForSend(
   return true;
 }
 
+bool ClientCore::StoreGroupCallKey(
+    const std::string& group_id, const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id, const std::array<std::uint8_t, 32>& call_key) {
+  if (group_id.empty()) {
+    last_error_ = "group id empty";
+    return false;
+  }
+  if (key_id == 0) {
+    last_error_ = "key id invalid";
+    return false;
+  }
+  if (IsAllZero(call_key.data(), call_key.size())) {
+    last_error_ = "call key empty";
+    return false;
+  }
+  const std::string map_key = MakeGroupCallKeyMapKey(group_id, call_id);
+  auto& state = group_call_keys_[map_key];
+  if (state.key_id != 0 && key_id < state.key_id) {
+    return false;
+  }
+  state.group_id = group_id;
+  state.call_id = call_id;
+  state.key_id = key_id;
+  state.call_key = call_key;
+  state.updated_at = NowUnixSeconds();
+  return true;
+}
+
+bool ClientCore::LookupGroupCallKey(
+    const std::string& group_id, const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id, std::array<std::uint8_t, 32>& out_key) const {
+  out_key.fill(0);
+  if (group_id.empty() || key_id == 0) {
+    return false;
+  }
+  const std::string map_key = MakeGroupCallKeyMapKey(group_id, call_id);
+  const auto it = group_call_keys_.find(map_key);
+  if (it == group_call_keys_.end()) {
+    return false;
+  }
+  if (it->second.key_id != key_id ||
+      IsAllZero(it->second.call_key.data(), it->second.call_key.size())) {
+    return false;
+  }
+  out_key = it->second.call_key;
+  return true;
+}
+
+bool ClientCore::SendGroupCallKeyEnvelope(
+    const std::string& group_id, const std::string& peer_username,
+    const std::array<std::uint8_t, 16>& call_id, std::uint32_t key_id,
+    const std::array<std::uint8_t, 32>& call_key) {
+  if (group_id.empty() || peer_username.empty()) {
+    last_error_ = "invalid params";
+    return false;
+  }
+  std::array<std::uint8_t, 16> dist_id{};
+  if (!RandomBytes(dist_id.data(), dist_id.size())) {
+    last_error_ = "rng failed";
+    return false;
+  }
+  const auto sig_msg =
+      BuildGroupCallKeyDistSigMessage(group_id, call_id, key_id, call_key);
+  std::vector<std::uint8_t> sig;
+  std::string sig_err;
+  if (!e2ee_.SignDetached(sig_msg, sig, sig_err)) {
+    last_error_ = sig_err.empty() ? "sign call key failed" : sig_err;
+    return false;
+  }
+  std::vector<std::uint8_t> envelope;
+  if (!EncodeChatGroupCallKeyDist(dist_id, group_id, call_id, key_id, call_key,
+                                  sig, envelope)) {
+    last_error_ = "encode call key failed";
+    return false;
+  }
+  return SendGroupSenderKeyEnvelope(group_id, peer_username, envelope);
+}
+
+bool ClientCore::SendGroupCallKeyRequest(
+    const std::string& group_id, const std::string& peer_username,
+    const std::array<std::uint8_t, 16>& call_id, std::uint32_t key_id) {
+  if (group_id.empty() || peer_username.empty()) {
+    last_error_ = "invalid params";
+    return false;
+  }
+  std::array<std::uint8_t, 16> req_id{};
+  if (!RandomBytes(req_id.data(), req_id.size())) {
+    last_error_ = "rng failed";
+    return false;
+  }
+  std::vector<std::uint8_t> req;
+  if (!EncodeChatGroupCallKeyReq(req_id, group_id, call_id, key_id, req)) {
+    last_error_ = "encode call key req failed";
+    return false;
+  }
+  return SendGroupSenderKeyEnvelope(group_id, peer_username, req);
+}
+
 void ClientCore::ResendPendingSenderKeyDistributions() {
   if (pending_sender_key_dists_.empty()) {
     return;
@@ -10541,6 +10829,471 @@ std::vector<ClientCore::MediaRelayPacket> ClientCore::PullMedia(
   return out;
 }
 
+ClientCore::GroupCallSignalResult ClientCore::SendGroupCallSignal(
+    std::uint8_t op, const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id, bool video,
+    std::uint32_t key_id, std::uint32_t seq, std::uint64_t ts_ms,
+    const std::vector<std::uint8_t>& ext) {
+  GroupCallSignalResult resp;
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    resp.error = last_error_;
+    return resp;
+  }
+  if (group_id.empty()) {
+    last_error_ = "group id empty";
+    resp.error = last_error_;
+    return resp;
+  }
+
+  std::vector<std::uint8_t> plain;
+  plain.reserve(64 + group_id.size() + ext.size());
+  plain.push_back(op);
+  mi::server::proto::WriteString(group_id, plain);
+  WriteFixed16(call_id, plain);
+  const std::uint8_t media_flags = video ? static_cast<std::uint8_t>(0x01 | 0x02)
+                                         : static_cast<std::uint8_t>(0x01);
+  plain.push_back(media_flags);
+  mi::server::proto::WriteUint32(key_id, plain);
+  mi::server::proto::WriteUint32(seq, plain);
+  if (ts_ms == 0) {
+    ts_ms = NowUnixSeconds() * 1000ULL;
+  }
+  mi::server::proto::WriteUint64(ts_ms, plain);
+  mi::server::proto::WriteBytes(ext, plain);
+
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kGroupCallSignal, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "group call signal failed";
+    }
+    resp.error = last_error_;
+    return resp;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "group call response empty";
+    resp.error = last_error_;
+    return resp;
+  }
+  if (resp_payload[0] == 0) {
+    std::size_t off = 1;
+    std::string server_err;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "group call failed" : server_err;
+    resp.error = last_error_;
+    return resp;
+  }
+
+  std::size_t off = 1;
+  if (!ReadFixed16(resp_payload, off, resp.call_id) ||
+      !mi::server::proto::ReadUint32(resp_payload, off, resp.key_id)) {
+    last_error_ = "group call response invalid";
+    resp.error = last_error_;
+    return resp;
+  }
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+    last_error_ = "group call response invalid";
+    resp.error = last_error_;
+    return resp;
+  }
+  resp.members.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    std::string member;
+    if (!mi::server::proto::ReadString(resp_payload, off, member)) {
+      last_error_ = "group call response invalid";
+      resp.error = last_error_;
+      return resp;
+    }
+    resp.members.push_back(std::move(member));
+  }
+  if (off != resp_payload.size()) {
+    last_error_ = "group call response invalid";
+    resp.error = last_error_;
+    return resp;
+  }
+  resp.success = true;
+  return resp;
+}
+
+bool ClientCore::StartGroupCall(const std::string& group_id,
+                                bool video,
+                                std::array<std::uint8_t, 16>& out_call_id,
+                                std::uint32_t& out_key_id) {
+  out_call_id.fill(0);
+  out_key_id = 0;
+  last_error_.clear();
+  std::array<std::uint8_t, 16> empty{};
+  const auto resp =
+      SendGroupCallSignal(kGroupCallOpCreate, group_id, empty, video);
+  if (!resp.success) {
+    return false;
+  }
+  out_call_id = resp.call_id;
+  out_key_id = resp.key_id;
+
+  std::array<std::uint8_t, 32> call_key{};
+  if (!RandomBytes(call_key.data(), call_key.size())) {
+    last_error_ = "rng failed";
+    return false;
+  }
+  if (!StoreGroupCallKey(group_id, resp.call_id, resp.key_id, call_key)) {
+    return false;
+  }
+
+  const auto members = ListGroupMembers(group_id);
+  if (members.empty()) {
+    if (last_error_.empty()) {
+      last_error_ = "group member list empty";
+    }
+    return false;
+  }
+
+  std::string first_error;
+  for (const auto& member : members) {
+    if (!username_.empty() && member == username_) {
+      continue;
+    }
+    const std::string saved_err = last_error_;
+    if (!SendGroupCallKeyEnvelope(group_id, member, resp.call_id, resp.key_id,
+                                  call_key) &&
+        first_error.empty()) {
+      first_error = last_error_;
+    }
+    last_error_ = saved_err;
+  }
+  if (!first_error.empty()) {
+    last_error_ = first_error;
+  }
+  return true;
+}
+
+bool ClientCore::JoinGroupCall(const std::string& group_id,
+                               const std::array<std::uint8_t, 16>& call_id,
+                               bool video) {
+  std::uint32_t key_id = 0;
+  return JoinGroupCall(group_id, call_id, video, key_id);
+}
+
+bool ClientCore::JoinGroupCall(const std::string& group_id,
+                               const std::array<std::uint8_t, 16>& call_id,
+                               bool video,
+                               std::uint32_t& out_key_id) {
+  out_key_id = 0;
+  last_error_.clear();
+  const auto resp =
+      SendGroupCallSignal(kGroupCallOpJoin, group_id, call_id, video);
+  if (!resp.success) {
+    return false;
+  }
+  out_key_id = resp.key_id;
+  std::array<std::uint8_t, 32> call_key{};
+  if (!LookupGroupCallKey(group_id, call_id, resp.key_id, call_key)) {
+    bool requested = false;
+    for (const auto& member : resp.members) {
+      if (!username_.empty() && member == username_) {
+        continue;
+      }
+      const std::string saved_err = last_error_;
+      SendGroupCallKeyRequest(group_id, member, call_id, resp.key_id);
+      last_error_ = saved_err;
+      requested = true;
+      break;
+    }
+    if (!requested) {
+      const std::string saved_err = last_error_;
+      const auto members = ListGroupMembers(group_id);
+      last_error_ = saved_err;
+      for (const auto& member : members) {
+        if (!username_.empty() && member == username_) {
+          continue;
+        }
+        const std::string saved_err2 = last_error_;
+        SendGroupCallKeyRequest(group_id, member, call_id, resp.key_id);
+        last_error_ = saved_err2;
+        break;
+      }
+    }
+  }
+  return true;
+}
+
+bool ClientCore::LeaveGroupCall(const std::string& group_id,
+                                const std::array<std::uint8_t, 16>& call_id) {
+  last_error_.clear();
+  const auto resp =
+      SendGroupCallSignal(kGroupCallOpLeave, group_id, call_id, false);
+  if (!resp.success) {
+    return false;
+  }
+  const std::string map_key = MakeGroupCallKeyMapKey(group_id, call_id);
+  group_call_keys_.erase(map_key);
+  return true;
+}
+
+bool ClientCore::RotateGroupCallKey(
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id,
+    const std::vector<std::string>& members) {
+  last_error_.clear();
+  if (group_id.empty()) {
+    last_error_ = "group id empty";
+    return false;
+  }
+  if (members.empty()) {
+    last_error_ = "group members empty";
+    return false;
+  }
+  if (key_id == 0) {
+    last_error_ = "key id invalid";
+    return false;
+  }
+  std::array<std::uint8_t, 32> call_key{};
+  if (!RandomBytes(call_key.data(), call_key.size())) {
+    last_error_ = "rng failed";
+    return false;
+  }
+  if (!StoreGroupCallKey(group_id, call_id, key_id, call_key)) {
+    return false;
+  }
+  std::string first_error;
+  for (const auto& member : members) {
+    if (!username_.empty() && member == username_) {
+      continue;
+    }
+    const std::string saved_err = last_error_;
+    if (!SendGroupCallKeyEnvelope(group_id, member, call_id, key_id, call_key) &&
+        first_error.empty()) {
+      first_error = last_error_;
+    }
+    last_error_ = saved_err;
+  }
+  if (!first_error.empty()) {
+    last_error_ = first_error;
+    return false;
+  }
+  return true;
+}
+
+bool ClientCore::RequestGroupCallKey(
+    const std::string& group_id,
+    const std::array<std::uint8_t, 16>& call_id,
+    std::uint32_t key_id,
+    const std::vector<std::string>& members) {
+  last_error_.clear();
+  if (group_id.empty()) {
+    last_error_ = "group id empty";
+    return false;
+  }
+  if (members.empty()) {
+    last_error_ = "group members empty";
+    return false;
+  }
+  if (key_id == 0) {
+    last_error_ = "key id invalid";
+    return false;
+  }
+  bool requested = false;
+  for (const auto& member : members) {
+    if (!username_.empty() && member == username_) {
+      continue;
+    }
+    const std::string saved_err = last_error_;
+    SendGroupCallKeyRequest(group_id, member, call_id, key_id);
+    last_error_ = saved_err;
+    requested = true;
+  }
+  if (!requested) {
+    last_error_ = "no member to request";
+    return false;
+  }
+  return true;
+}
+
+bool ClientCore::GetGroupCallKey(const std::string& group_id,
+                                 const std::array<std::uint8_t, 16>& call_id,
+                                 std::uint32_t key_id,
+                                 std::array<std::uint8_t, 32>& out_key) const {
+  return LookupGroupCallKey(group_id, call_id, key_id, out_key);
+}
+
+std::vector<ClientCore::GroupCallEvent> ClientCore::PullGroupCallEvents(
+    std::uint32_t max_events, std::uint32_t wait_ms) {
+  std::vector<GroupCallEvent> out;
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return out;
+  }
+  if (max_events == 0) {
+    max_events = 1;
+  } else if (max_events > 256) {
+    max_events = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteUint32(max_events, plain);
+  mi::server::proto::WriteUint32(wait_ms, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kGroupCallSignalPull, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "group call pull failed";
+    }
+    return out;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "group call pull response empty";
+    return out;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "group call pull failed" : server_err;
+    return out;
+  }
+  std::size_t off = 1;
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+    last_error_ = "group call pull response invalid";
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (off >= resp_payload.size()) {
+      last_error_ = "group call pull response invalid";
+      break;
+    }
+    GroupCallEvent ev;
+    ev.op = resp_payload[off++];
+    if (!mi::server::proto::ReadString(resp_payload, off, ev.group_id) ||
+        !ReadFixed16(resp_payload, off, ev.call_id) ||
+        !mi::server::proto::ReadUint32(resp_payload, off, ev.key_id) ||
+        !mi::server::proto::ReadString(resp_payload, off, ev.sender)) {
+      last_error_ = "group call pull response invalid";
+      break;
+    }
+    if (off >= resp_payload.size()) {
+      last_error_ = "group call pull response invalid";
+      break;
+    }
+    ev.media_flags = resp_payload[off++];
+    if (!mi::server::proto::ReadUint64(resp_payload, off, ev.ts_ms)) {
+      last_error_ = "group call pull response invalid";
+      break;
+    }
+    out.push_back(std::move(ev));
+  }
+  return out;
+}
+
+bool ClientCore::PushGroupMedia(const std::string& group_id,
+                                const std::array<std::uint8_t, 16>& call_id,
+                                const std::vector<std::uint8_t>& packet) {
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  if (group_id.empty()) {
+    last_error_ = "group id empty";
+    return false;
+  }
+  if (packet.empty()) {
+    last_error_ = "packet empty";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(group_id, plain);
+  WriteFixed16(call_id, plain);
+  mi::server::proto::WriteBytes(packet, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kGroupMediaPush, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "group media push failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "group media push response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "group media push failed" : server_err;
+    return false;
+  }
+  return true;
+}
+
+std::vector<ClientCore::MediaRelayPacket> ClientCore::PullGroupMedia(
+    const std::array<std::uint8_t, 16>& call_id, std::uint32_t max_packets,
+    std::uint32_t wait_ms) {
+  std::vector<MediaRelayPacket> out;
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return out;
+  }
+  if (max_packets == 0) {
+    max_packets = 1;
+  } else if (max_packets > 256) {
+    max_packets = 256;
+  }
+  if (wait_ms > 1000) {
+    wait_ms = 1000;
+  }
+  std::vector<std::uint8_t> plain;
+  WriteFixed16(call_id, plain);
+  mi::server::proto::WriteUint32(max_packets, plain);
+  mi::server::proto::WriteUint32(wait_ms, plain);
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kGroupMediaPull, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "group media pull failed";
+    }
+    return out;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "group media pull response empty";
+    return out;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ = server_err.empty() ? "group media pull failed" : server_err;
+    return out;
+  }
+  std::size_t off = 1;
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(resp_payload, off, count)) {
+    last_error_ = "group media pull response invalid";
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    MediaRelayPacket packet;
+    if (!mi::server::proto::ReadString(resp_payload, off, packet.sender) ||
+        !mi::server::proto::ReadBytes(resp_payload, off, packet.payload)) {
+      last_error_ = "group media pull response invalid";
+      break;
+    }
+    out.push_back(std::move(packet));
+  }
+  return out;
+}
+
 bool ClientCore::DeriveMediaRoot(
     const std::string& peer_username,
     const std::array<std::uint8_t, 16>& call_id,
@@ -12936,6 +13689,106 @@ ClientCore::ChatPollResult ClientCore::PollChat() {
 
       const std::string saved_err = last_error_;
       SendPrivateE2ee(msg.from_username, dist_envelope);
+      last_error_ = saved_err;
+      return;
+    }
+
+    if (type == kChatTypeGroupCallKeyDist) {
+      std::string group_id;
+      std::array<std::uint8_t, 16> call_id{};
+      std::uint32_t key_id = 0;
+      std::array<std::uint8_t, 32> call_key{};
+      std::vector<std::uint8_t> sig;
+      if (!DecodeChatGroupCallKeyDist(msg.plaintext, off, group_id, call_id,
+                                      key_id, call_key, sig) ||
+          off != msg.plaintext.size()) {
+        return;
+      }
+      if (group_id.empty() || key_id == 0 || sig.empty()) {
+        return;
+      }
+
+      CachedPeerIdentity peer;
+      if (!GetPeerIdentityCached(msg.from_username, peer, true)) {
+        return;
+      }
+      const auto sig_msg =
+          BuildGroupCallKeyDistSigMessage(group_id, call_id, key_id, call_key);
+      std::string ver_err;
+      if (!mi::client::e2ee::Engine::VerifyDetached(sig_msg, sig,
+                                                    peer.id_sig_pk, ver_err)) {
+        return;
+      }
+
+      const std::string map_key = MakeGroupCallKeyMapKey(group_id, call_id);
+      const auto it = group_call_keys_.find(map_key);
+      const bool accept = (it == group_call_keys_.end() ||
+                           it->second.key_id == 0 ||
+                           key_id >= it->second.key_id);
+      if (accept) {
+        StoreGroupCallKey(group_id, call_id, key_id, call_key);
+      }
+
+      std::vector<std::uint8_t> ack;
+      if (EncodeChatAck(msg_id, ack)) {
+        const std::string saved_err = last_error_;
+        SendPrivateE2ee(msg.from_username, ack);
+        last_error_ = saved_err;
+      }
+      return;
+    }
+
+    if (type == kChatTypeGroupCallKeyReq) {
+      std::string group_id;
+      std::array<std::uint8_t, 16> call_id{};
+      std::uint32_t want_key_id = 0;
+      if (!DecodeChatGroupCallKeyReq(msg.plaintext, off, group_id, call_id,
+                                     want_key_id) ||
+          off != msg.plaintext.size()) {
+        return;
+      }
+      if (group_id.empty() || want_key_id == 0) {
+        return;
+      }
+      std::array<std::uint8_t, 32> call_key{};
+      if (!LookupGroupCallKey(group_id, call_id, want_key_id, call_key)) {
+        return;
+      }
+
+      {
+        const std::string saved_err = last_error_;
+        const auto members = ListGroupMembers(group_id);
+        last_error_ = saved_err;
+        bool allowed = false;
+        for (const auto& m : members) {
+          if (m == msg.from_username) {
+            allowed = true;
+            break;
+          }
+        }
+        if (!allowed) {
+          return;
+        }
+      }
+
+      std::array<std::uint8_t, 16> dist_id{};
+      if (!RandomBytes(dist_id.data(), dist_id.size())) {
+        return;
+      }
+      const auto sig_msg =
+          BuildGroupCallKeyDistSigMessage(group_id, call_id, want_key_id, call_key);
+      std::vector<std::uint8_t> sig;
+      std::string sig_err;
+      if (!e2ee_.SignDetached(sig_msg, sig, sig_err)) {
+        return;
+      }
+      std::vector<std::uint8_t> envelope;
+      if (!EncodeChatGroupCallKeyDist(dist_id, group_id, call_id, want_key_id,
+                                      call_key, sig, envelope)) {
+        return;
+      }
+      const std::string saved_err = last_error_;
+      SendGroupSenderKeyEnvelope(group_id, msg.from_username, envelope);
       last_error_ = saved_err;
       return;
     }

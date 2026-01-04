@@ -63,7 +63,11 @@ enum class FrameType : std::uint16_t {
   kFriendSync = 48,
   kGroupSenderKeySend = 49,
   kMediaPush = 50,
-  kMediaPull = 51
+  kMediaPull = 51,
+  kGroupCallSignal = 52,
+  kGroupCallSignalPull = 53,
+  kGroupMediaPush = 54,
+  kGroupMediaPull = 55
 };
 
 struct Frame {

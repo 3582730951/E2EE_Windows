@@ -91,6 +91,8 @@ add_library(mi_e2ee_client_core STATIC
     src/media_crypto.cpp
     src/media_pipeline.cpp
     src/media_session.cpp
+    src/group_call_media_adapter.cpp
+    src/group_call_session.cpp
 )
 target_include_directories(mi_e2ee_client_core PUBLIC
     include

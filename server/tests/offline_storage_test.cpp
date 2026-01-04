@@ -6,6 +6,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <thread>
 #include <vector>
 #include <random>
@@ -14,8 +15,31 @@
 
 namespace {
 
+#define FAIL()                                                        \
+  do {                                                                \
+    std::cerr << "offline_storage_test failed at " << __FILE__ << ":"  \
+              << __LINE__ << "\n";                                    \
+    return 1;                                                         \
+  } while (false)
+
 bool Check(bool cond) {
   return cond;
+}
+
+bool WaitForGone(const std::filesystem::path& path) {
+  for (int i = 0; i < 10; ++i) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  std::error_code ec;
+  const bool gone = !std::filesystem::exists(path, ec);
+  if (!gone) {
+    std::cerr << "path still exists: " << path.string() << "\n";
+  }
+  return gone;
 }
 
 std::filesystem::path TempDir(const std::string& name) {
@@ -36,53 +60,53 @@ int main() {
     std::vector<std::uint8_t> payload = {1, 2, 3, 4, 5, 6, 7};
     auto put = storage.Put("alice", payload);
     if (!Check(put.success && !put.file_id.empty() && put.meta.owner == "alice")) {
-      return 1;
+      FAIL();
     }
     {
       const auto path = dir / (put.file_id + ".bin");
       std::ifstream ifs(path, std::ios::binary);
       if (!ifs) {
-        return 1;
+        FAIL();
       }
       std::array<std::uint8_t, 9> hdr{};
       ifs.read(reinterpret_cast<char*>(hdr.data()),
                static_cast<std::streamsize>(hdr.size()));
       if (ifs.gcount() != static_cast<std::streamsize>(hdr.size())) {
-        return 1;
+        FAIL();
       }
       static constexpr std::array<std::uint8_t, 8> kMagic = {
           'M', 'I', 'O', 'F', 'A', 'E', 'A', 'D'};
       if (!std::equal(kMagic.begin(), kMagic.end(), hdr.begin())) {
-        return 1;
+        FAIL();
       }
       if (hdr[8] != 3) {
-        return 1;
+        FAIL();
       }
     }
     {
       const auto key_path = dir / (put.file_id + ".key");
       std::error_code ec;
       if (!std::filesystem::exists(key_path, ec) || ec) {
-        return 1;
+        FAIL();
       }
       if (std::filesystem::file_size(key_path, ec) != 32 || ec) {
-        return 1;
+        FAIL();
       }
     }
 
     std::string err;
     auto fetched = storage.Fetch(put.file_id, put.file_key, true, err);
     if (!fetched.has_value() || payload != fetched.value()) {
-      return 1;
+      FAIL();
     }
-    if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
-      return 1;
+    if (!WaitForGone(dir / (put.file_id + ".bin"))) {
+      FAIL();
     }
-    if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
-      return 1;
+    if (!WaitForGone(dir / (put.file_id + ".key"))) {
+      FAIL();
     }
     if (storage.Meta(put.file_id).has_value()) {
-      return 1;
+      FAIL();
     }
   }
 
@@ -93,14 +117,14 @@ int main() {
     std::vector<std::uint8_t> payload = {0xAA, 0xBB, 0xCC};
     auto put = storage.Put("alice", payload);
     if (!put.success) {
-      return 1;
+      FAIL();
     }
     std::error_code ec;
     std::filesystem::remove(dir / (put.file_id + ".key"), ec);
     std::string err;
     auto fetched = storage.Fetch(put.file_id, put.file_key, false, err);
     if (fetched.has_value()) {
-      return 1;
+      FAIL();
     }
   }
 
@@ -118,18 +142,18 @@ int main() {
       }
       auto put = storage.Put("alice", payload);
       if (!put.success) {
-        return 1;
+        FAIL();
       }
       std::string err;
       auto fetched = storage.Fetch(put.file_id, put.file_key, true, err);
       if (!fetched.has_value() || fetched.value() != payload) {
-        return 1;
+        FAIL();
       }
-      if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
-        return 1;
+      if (!WaitForGone(dir / (put.file_id + ".bin"))) {
+        FAIL();
       }
-      if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
-        return 1;
+      if (!WaitForGone(dir / (put.file_id + ".key"))) {
+        FAIL();
       }
     }
   }
@@ -199,7 +223,7 @@ int main() {
     const auto path = dir / (file_id + ".bin");
     std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
     if (!ofs) {
-      return 1;
+      FAIL();
     }
     ofs.write(reinterpret_cast<const char*>(kNonce.data()),
               static_cast<std::streamsize>(kNonce.size()));
@@ -212,10 +236,10 @@ int main() {
     std::string err;
     auto fetched = storage.Fetch(file_id, kKey, true, err);
     if (!fetched.has_value() || fetched.value() != payload) {
-      return 1;
+      FAIL();
     }
-    if (std::filesystem::exists(path)) {
-      return 1;
+    if (!WaitForGone(path)) {
+      FAIL();
     }
   }
 
@@ -226,7 +250,7 @@ int main() {
     auto started = storage.BeginBlobUpload("alice", 0);
     if (!Check(started.success && !started.file_id.empty() &&
                !started.upload_id.empty())) {
-      return 1;
+      FAIL();
     }
 
     const std::vector<std::uint8_t> chunk1 = {1, 2, 3};
@@ -235,13 +259,13 @@ int main() {
     auto a1 = storage.AppendBlobUploadChunk("alice", started.file_id,
                                             started.upload_id, 0, chunk1);
     if (!a1.success || a1.bytes_received != chunk1.size()) {
-      return 1;
+      FAIL();
     }
 
     auto bad = storage.AppendBlobUploadChunk("alice", started.file_id,
                                              started.upload_id, 0, chunk2);
     if (bad.success) {
-      return 1;
+      FAIL();
     }
 
     auto a2 = storage.AppendBlobUploadChunk(
@@ -249,28 +273,28 @@ int main() {
         static_cast<std::uint64_t>(chunk1.size()), chunk2);
     if (!a2.success ||
         a2.bytes_received != static_cast<std::uint64_t>(chunk1.size() + chunk2.size())) {
-      return 1;
+      FAIL();
     }
 
     auto finished = storage.FinishBlobUpload(
         "alice", started.file_id, started.upload_id,
         static_cast<std::uint64_t>(chunk1.size() + chunk2.size()));
     if (!finished.success || finished.meta.size != chunk1.size() + chunk2.size()) {
-      return 1;
+      FAIL();
     }
     if (!std::filesystem::exists(dir / (started.file_id + ".bin"))) {
-      return 1;
+      FAIL();
     }
 
     auto dl = storage.BeginBlobDownload("bob", started.file_id, true);
     if (!dl.success || dl.download_id.empty()) {
-      return 1;
+      FAIL();
     }
 
     auto c1 = storage.ReadBlobDownloadChunk("bob", started.file_id, dl.download_id,
                                             0, 3);
     if (!c1.success || c1.offset != 0 || c1.chunk != chunk1 || c1.eof) {
-      return 1;
+      FAIL();
     }
 
     auto c2 = storage.ReadBlobDownloadChunk(
@@ -278,14 +302,14 @@ int main() {
         static_cast<std::uint64_t>(chunk1.size()), 1024);
     if (!c2.success || c2.offset != chunk1.size() || c2.chunk != chunk2 ||
         !c2.eof) {
-      return 1;
+      FAIL();
     }
 
-    if (std::filesystem::exists(dir / (started.file_id + ".bin"))) {
-      return 1;
+    if (!WaitForGone(dir / (started.file_id + ".bin"))) {
+      FAIL();
     }
     if (storage.Meta(started.file_id).has_value()) {
-      return 1;
+      FAIL();
     }
   }
 
@@ -295,18 +319,18 @@ int main() {
     std::vector<std::uint8_t> payload(64, 0xAB);
     auto put = storage.Put("bob", payload);
     if (!put.success || !std::filesystem::exists(dir / (put.file_id + ".bin"))) {
-      return 1;
+      FAIL();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     storage.CleanupExpired();
-    if (std::filesystem::exists(dir / (put.file_id + ".bin"))) {
-      return 1;
+    if (!WaitForGone(dir / (put.file_id + ".bin"))) {
+      FAIL();
     }
-    if (std::filesystem::exists(dir / (put.file_id + ".key"))) {
-      return 1;
+    if (!WaitForGone(dir / (put.file_id + ".key"))) {
+      FAIL();
     }
     if (storage.Meta(put.file_id).has_value()) {
-      return 1;
+      FAIL();
     }
   }
 
@@ -320,10 +344,10 @@ int main() {
     queue.CleanupExpired();
     auto msgs = queue.Drain("alice");
     if (msgs.size() != 1u || msgs[0] != std::vector<std::uint8_t>({7, 8, 9})) {
-      return 1;
+      FAIL();
     }
     if (!queue.Drain("alice").empty()) {
-      return 1;
+      FAIL();
     }
   }
 

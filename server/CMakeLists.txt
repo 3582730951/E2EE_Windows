@@ -257,6 +257,7 @@ add_library(mi_e2ee_core STATIC
     src/key_transparency.cpp
     src/session_manager.cpp
     src/group_manager.cpp
+    src/group_call_manager.cpp
     src/group_directory.cpp
     src/frame.cpp
     src/offline_storage.cpp

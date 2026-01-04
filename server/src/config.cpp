@@ -245,6 +245,22 @@ void ApplyKV(IniState& state, const std::string& key,
     }
     return;
   }
+  if (state.section == "call") {
+    if (key == "enable_group_call") {
+      ParseBool(value, state.cfg->call.enable_group_call);
+    } else if (key == "max_room_size") {
+      ParseUint32(value, state.cfg->call.max_room_size);
+    } else if (key == "idle_timeout_sec") {
+      ParseUint32(value, state.cfg->call.idle_timeout_sec);
+    } else if (key == "call_timeout_sec") {
+      ParseUint32(value, state.cfg->call.call_timeout_sec);
+    } else if (key == "media_ttl_ms") {
+      ParseUint32(value, state.cfg->call.media_ttl_ms);
+    } else if (key == "max_subscriptions") {
+      ParseUint32(value, state.cfg->call.max_subscriptions);
+    }
+    return;
+  }
 }
 
 bool ParseIni(const std::string& path, ServerConfig& out, std::string& error) {
@@ -296,6 +312,21 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   }
   if (out_config.server.group_rotation_threshold == 0) {
     out_config.server.group_rotation_threshold = 10000;
+  }
+  if (out_config.call.max_room_size == 0) {
+    out_config.call.max_room_size = 1000;
+  }
+  if (out_config.call.idle_timeout_sec == 0) {
+    out_config.call.idle_timeout_sec = 60;
+  }
+  if (out_config.call.call_timeout_sec == 0) {
+    out_config.call.call_timeout_sec = 3600;
+  }
+  if (out_config.call.media_ttl_ms == 0) {
+    out_config.call.media_ttl_ms = 5000;
+  }
+  if (out_config.call.max_subscriptions == 0) {
+    out_config.call.max_subscriptions = out_config.call.max_room_size;
   }
   if (out_config.server.tls_enable && !out_config.server.require_tls_set) {
     out_config.server.require_tls = true;

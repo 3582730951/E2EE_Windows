@@ -17,6 +17,7 @@ QtObject {
     property bool initialized: false
     property string statusMessage: ""
     property string sendErrorMessage: ""
+    property int sendErrorTimeoutMs: 4500
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
     property bool historySaveEnabled: true
@@ -39,6 +40,8 @@ QtObject {
     property string incomingCallPeer: ""
     property string incomingCallId: ""
     property bool incomingCallVideo: false
+    property string currentChatBackgroundUrl: ""
+    property var recalledMessageIdsByChat: ({})
     property int recallWindowMs: 5 * 60 * 1000
 
     signal currentChatChanged(string chatId)
@@ -214,6 +217,95 @@ QtObject {
         incomingCallPeer = ""
         incomingCallId = ""
         incomingCallVideo = false
+    }
+
+    function refreshChatBackground(chatId) {
+        var target = (chatId && chatId.length > 0) ? chatId : currentChatId
+        if (!target || !clientBridge || !clientBridge.chatBackground) {
+            if (target === currentChatId) {
+                currentChatBackgroundUrl = ""
+            }
+            return
+        }
+        var url = clientBridge.chatBackground(target)
+        if (target === currentChatId) {
+            currentChatBackgroundUrl = url && url.toString ? url.toString()
+                                                          : (url ? "" + url : "")
+        }
+    }
+
+    function ensureRecallMap(chatId) {
+        if (!recalledMessageIdsByChat[chatId]) {
+            recalledMessageIdsByChat[chatId] = {}
+        }
+        return recalledMessageIdsByChat[chatId]
+    }
+
+    function markMessageRecalled(chatId, messageId) {
+        if (!chatId || !messageId) {
+            return
+        }
+        var map = ensureRecallMap(chatId)
+        map[messageId] = true
+    }
+
+    function isMessageRecalled(chatId, messageId) {
+        if (!chatId || !messageId) {
+            return false
+        }
+        var map = recalledMessageIdsByChat[chatId]
+        return map && map[messageId] === true
+    }
+
+    function refreshDialogPreviewFromModel(chatId) {
+        var idx = findDialogIndex(chatId)
+        if (idx < 0) {
+            return
+        }
+        var model = messagesModel(chatId)
+        if (!model || model.count === 0) {
+            updateDialogPreview(chatId, "", "", "")
+            return
+        }
+        var lastIndex = model.count - 1
+        var entry = null
+        while (lastIndex >= 0) {
+            var candidate = model.get(lastIndex)
+            if (candidate && candidate.kind !== "system") {
+                entry = candidate
+                break
+            }
+            lastIndex -= 1
+        }
+        if (!entry) {
+            updateDialogPreview(chatId, "", "", "")
+            return
+        }
+        updateDialogPreview(chatId,
+                            entry.text || "",
+                            entry.timeText || "",
+                            entry.senderName || "")
+    }
+
+    function removeMessageFromChat(chatId, messageId) {
+        var idx = findMessageIndex(chatId, messageId)
+        if (idx < 0) {
+            return false
+        }
+        var model = messagesModel(chatId)
+        var removed = model.get(idx)
+        model.remove(idx)
+        if (removed && removed.kind === "in" && chatId !== currentChatId) {
+            var dialogIdx = findDialogIndex(chatId)
+            if (dialogIdx >= 0) {
+                var unread = dialogsModel.get(dialogIdx).unread || 0
+                if (unread > 0) {
+                    dialogsModel.setProperty(dialogIdx, "unread", unread - 1)
+                }
+            }
+        }
+        refreshDialogPreviewFromModel(chatId)
+        return true
     }
 
     function bootstrapAfterLogin() {
@@ -502,6 +594,9 @@ QtObject {
         var sender = message.sender || ""
         var msgId = message.messageId || nextMsgId()
         var timeText = message.time || formatTime(new Date())
+        if (isMessageRecalled(convId, msgId)) {
+            return
+        }
         if (kind === "group_invite" && !outgoing) {
             addGroupInvite(convId, sender, msgId)
         }
@@ -706,9 +801,11 @@ QtObject {
         if (!chatId) {
             return
         }
+        clearSendError()
         currentChatId = chatId
         updateCurrentChatDetails()
         loadHistoryForChat(chatId)
+        refreshChatBackground(chatId)
         markDialogRead(chatId)
         currentChatChanged(chatId)
     }
@@ -772,6 +869,22 @@ QtObject {
         }
         var isGroup = currentChatType === "group"
         var history = clientBridge.loadHistory(chatId, isGroup)
+        var recallIds = {}
+        for (var r = 0; r < history.length; ++r) {
+            var rh = history[r]
+            if (rh.kind !== "text") {
+                continue
+            }
+            var rtext = rh.text || ""
+            var rid = parseRecallTarget(rtext)
+            if (rid.length > 0) {
+                recallIds[rid] = true
+            }
+        }
+        recalledMessageIdsByChat[chatId] = recallIds
+        var lastPreviewText = ""
+        var lastPreviewTime = ""
+        var lastPreviewSender = ""
         for (var i = 0; i < history.length; ++i) {
             var h = history[i]
             var entryKind = "in"
@@ -785,12 +898,15 @@ QtObject {
             if (h.kind === "text") {
                 var recallTarget = parseRecallTarget(rawText)
                 if (recallTarget.length > 0) {
-                    applyRecallToChat(chatId, recallTarget, h.outgoing === true)
                     continue
                 }
                 if (parseCallEndId(rawText).length > 0) {
                     continue
                 }
+            }
+            var historyId = h.messageId || ""
+            if (historyId.length > 0 && recallIds[historyId]) {
+                continue
             }
 
             var text = rawText
@@ -850,13 +966,14 @@ QtObject {
             }
             var timestampSec = h.timestampSec || 0
             var timestampMs = timestampSec > 0 ? timestampSec * 1000 : Date.now()
+            var displaySender = h.outgoing ? Ui.I18n.t("chat.you") : (h.sender || "")
 
             model.append({
                 chatId: chatId,
-                msgId: h.messageId || nextMsgId(),
+                msgId: historyId || nextMsgId(),
                 kind: entryKind,
                 contentKind: contentKind,
-                senderName: h.outgoing ? Ui.I18n.t("chat.you") : (h.sender || ""),
+                senderName: displaySender,
                 text: text,
                 timeText: h.time || "",
                 timestampMs: timestampMs,
@@ -878,6 +995,16 @@ QtObject {
                 locationLon: locationLon,
                 animateEmoji: false
             })
+            if (entryKind !== "system") {
+                lastPreviewText = text
+                lastPreviewTime = h.time || ""
+                lastPreviewSender = displaySender
+            }
+        }
+        if (lastPreviewText.length > 0 || lastPreviewTime.length > 0) {
+            updateDialogPreview(chatId, lastPreviewText, lastPreviewTime, lastPreviewSender)
+        } else {
+            updateDialogPreview(chatId, "", "", "")
         }
     }
 
@@ -996,17 +1123,92 @@ QtObject {
         return ok
     }
 
+    function setChatBackgroundForCurrentChat(url) {
+        if (!currentChatId || !clientBridge || !clientBridge.setChatBackground) {
+            return false
+        }
+        var ok = clientBridge.setChatBackground(currentChatId, url)
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        refreshChatBackground(currentChatId)
+        return true
+    }
+
     function startCall(video) {
         if (!currentChatId || !clientBridge) {
             return false
         }
         if (currentChatType === "group") {
-            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
-            return false
+            return startGroupCall(video)
         }
         var callId = video ? clientBridge.startVideoCall(currentChatId)
                            : clientBridge.startVoiceCall(currentChatId)
         return callId && callId.length > 0
+    }
+
+    function groupCallInfo(chatId) {
+        if (!chatId || !clientBridge || !clientBridge.groupCallRooms) {
+            return null
+        }
+        var rooms = clientBridge.groupCallRooms || []
+        for (var i = 0; i < rooms.length; ++i) {
+            if (rooms[i].groupId === chatId) {
+                return rooms[i]
+            }
+        }
+        return null
+    }
+
+    function startGroupCall(video) {
+        if (!currentChatId || !clientBridge || !clientBridge.startGroupCall) {
+            return false
+        }
+        var callId = clientBridge.startGroupCall(currentChatId, video === true)
+        if (!callId || callId.length === 0) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        return true
+    }
+
+    function joinGroupCall(video) {
+        var info = groupCallInfo(currentChatId)
+        if (!info || !info.callId || !clientBridge || !clientBridge.joinGroupCall) {
+            return false
+        }
+        var ok = clientBridge.joinGroupCall(currentChatId, info.callId, video === true)
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
+    }
+
+    function leaveGroupCall() {
+        if (clientBridge && clientBridge.leaveGroupCall) {
+            clientBridge.leaveGroupCall()
+        }
+    }
+
+    function endGroupCall() {
+        if (clientBridge && clientBridge.endGroupCall) {
+            clientBridge.endGroupCall()
+        }
+    }
+
+    function handleCallAction(video) {
+        if (currentChatType === "group") {
+            var info = groupCallInfo(currentChatId)
+            if (info && info.callId) {
+                return joinGroupCall(video)
+            }
+            return startGroupCall(video)
+        }
+        return startCall(video)
     }
 
     function acceptIncomingCall() {
@@ -1021,28 +1223,15 @@ QtObject {
     }
 
     function declineIncomingCall() {
+        if (incomingCallActive && clientBridge && clientBridge.sendCallEnd) {
+            clientBridge.sendCallEnd(incomingCallPeer, incomingCallId)
+        }
         clearIncomingCall()
     }
 
     function applyRecallToChat(chatId, messageId, outgoing) {
-        var idx = findMessageIndex(chatId, messageId)
-        if (idx < 0) {
-            return false
-        }
-        var model = messagesModel(chatId)
-        var text = outgoing ? Ui.I18n.t("chat.recallSelf")
-                            : Ui.I18n.t("chat.recallOther")
-        model.setProperty(idx, "kind", "system")
-        model.setProperty(idx, "contentKind", "text")
-        model.setProperty(idx, "text", text)
-        model.setProperty(idx, "senderName", "")
-        model.setProperty(idx, "statusTicks", "none")
-        model.setProperty(idx, "fileUrl", "")
-        model.setProperty(idx, "previewUrl", "")
-        model.setProperty(idx, "stickerUrl", "")
-        model.setProperty(idx, "stickerAnimated", false)
-        model.setProperty(idx, "imageEnhanced", false)
-        return true
+        markMessageRecalled(chatId, messageId)
+        return removeMessageFromChat(chatId, messageId)
     }
 
     function requestRecallMessage(chatId, messageId, timestampMs, isGroup) {
@@ -1233,6 +1422,7 @@ QtObject {
             dialogsModel.setProperty(i, "timeText", "")
             dialogsModel.setProperty(i, "subtitle", "")
         }
+        recalledMessageIdsByChat = ({})
     }
 
     function clearSendError() {
@@ -1252,6 +1442,7 @@ QtObject {
             } else {
                 currentChatId = ""
                 updateCurrentChatDetails()
+                refreshChatBackground("")
             }
         }
     }
@@ -1566,6 +1757,11 @@ QtObject {
                 bootstrapAfterLogin()
             }
         }
+        function onConnectionChanged() {
+            if (clientBridge && clientBridge.remoteOk) {
+                clearSendError()
+            }
+        }
         function onCallStateChanged() {
             if (clientBridge && clientBridge.activeCallId.length === 0) {
                 clearIncomingCall()
@@ -1592,6 +1788,21 @@ QtObject {
                 applyImageEnhance(messageId, outputUrl)
             }
         }
+    }
+
+    onSendErrorMessageChanged: {
+        if (sendErrorMessage.length > 0) {
+            sendErrorTimer.restart()
+        } else {
+            sendErrorTimer.stop()
+        }
+    }
+
+    Timer {
+        id: sendErrorTimer
+        interval: sendErrorTimeoutMs
+        repeat: false
+        onTriggered: sendErrorMessage = ""
     }
 
     Component.onCompleted: init()

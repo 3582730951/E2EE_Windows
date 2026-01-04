@@ -53,6 +53,13 @@ Item {
     property double callStartMs: 0
     property bool callMicEnabled: true
     property bool callCameraEnabled: true
+    property int contextMenuPadding: 10
+
+    FontMetrics {
+        id: contextMenuMetrics
+        font.family: Ui.Style.fontFamily
+        font.pixelSize: 12
+    }
 
     function formatCallDuration(totalSec) {
         var sec = Math.max(0, totalSec || 0)
@@ -63,6 +70,18 @@ Item {
         var mm = minutes < 10 ? "0" + minutes : "" + minutes
         var ss = seconds < 10 ? "0" + seconds : "" + seconds
         return hours > 0 ? (hh + ":" + mm + ":" + ss) : (mm + ":" + ss)
+    }
+
+    function contextMenuWidth(labels) {
+        var maxWidth = 0
+        for (var i = 0; i < labels.length; ++i) {
+            var label = labels[i] || ""
+            var w = contextMenuMetrics.advanceWidth(label)
+            if (w > maxWidth) {
+                maxWidth = w
+            }
+        }
+        return Math.ceil(maxWidth) + contextMenuPadding * 2
     }
 
     function resetCallControls() {
@@ -623,19 +642,19 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
-                        enabled: Ui.AppStore.currentChatType === "private"
+                        enabled: Ui.AppStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.call")
-                        onClicked: Ui.AppStore.startCall(false)
+                        onClicked: Ui.AppStore.handleCallAction(false)
                     }
                     Components.IconButton {
                         icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
-                        enabled: Ui.AppStore.currentChatType === "private"
+                        enabled: Ui.AppStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.video")
-                        onClicked: Ui.AppStore.startCall(true)
+                        onClicked: Ui.AppStore.handleCallAction(true)
                     }
                     Components.IconButton {
                         id: chatMoreButton
@@ -696,6 +715,7 @@ Item {
             id: messageArea
             Layout.fillWidth: true
             Layout.fillHeight: true
+            property bool hasChatBackground: Ui.AppStore.currentChatBackgroundUrl.length > 0
             color: Ui.Style.messageBg
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Ui.Style.messageGradientStart }
@@ -704,16 +724,79 @@ Item {
 
             Image {
                 anchors.fill: parent
+                source: Ui.AppStore.currentChatBackgroundUrl
+                fillMode: Image.PreserveAspectCrop
+                smooth: true
+                antialiasing: true
+                mipmap: true
+                cache: true
+                asynchronous: true
+                opacity: 0.35
+                visible: messageArea.hasChatBackground
+            }
+
+            Image {
+                anchors.fill: parent
                 source: "qrc:/mi/e2ee/ui/qml/assets/wallpaper_tile.svg"
                 fillMode: Image.Tile
                 opacity: 0.28
                 smooth: true
+                visible: !messageArea.hasChatBackground
+            }
+
+            Rectangle {
+                id: groupCallBanner
+                property var callInfo: Ui.AppStore.groupCallInfo(Ui.AppStore.currentChatId)
+                visible: Ui.AppStore.currentChatType === "group" && callInfo
+                height: visible ? 48 : 0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.leftMargin: Ui.Style.paddingL
+                anchors.rightMargin: Ui.Style.paddingL
+                anchors.topMargin: Ui.Style.paddingM
+                radius: 12
+                color: Ui.Style.panelBgAlt
+                border.color: Ui.Style.borderSubtle
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingS
+                    spacing: Ui.Style.paddingS
+                    Text {
+                        text: callInfo && callInfo.video
+                              ? Ui.I18n.t("chat.groupCallActiveVideo")
+                              : Ui.I18n.t("chat.groupCallActiveVoice")
+                        color: Ui.Style.textPrimary
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    Item { Layout.fillWidth: true }
+                    Components.GhostButton {
+                        text: Ui.I18n.t("chat.groupCallJoin")
+                        visible: clientBridge && !clientBridge.groupCallActive
+                        onClicked: Ui.AppStore.joinGroupCall(callInfo && callInfo.video)
+                    }
+                    Components.PrimaryButton {
+                        text: Ui.I18n.t("chat.groupCallLeave")
+                        visible: clientBridge && clientBridge.groupCallActive &&
+                                 clientBridge.activeGroupCallGroup === Ui.AppStore.currentChatId
+                        onClicked: Ui.AppStore.leaveGroupCall()
+                    }
+                }
             }
 
             ListView {
                 id: messageList
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingL
+                anchors.leftMargin: Ui.Style.paddingL
+                anchors.rightMargin: Ui.Style.paddingL
+                anchors.bottomMargin: Ui.Style.paddingL
+                anchors.topMargin: Ui.Style.paddingL +
+                                   (groupCallBanner.visible
+                                    ? groupCallBanner.height + Ui.Style.paddingS
+                                    : 0)
                 clip: true
                 model: Ui.AppStore.currentChatId.length > 0
                        ? Ui.AppStore.messagesModel(Ui.AppStore.currentChatId)
@@ -843,25 +926,30 @@ Item {
             }
         }
 
+        function syncCallState() {
+            if (clientBridge &&
+                (clientBridge.activeCallId.length > 0 || clientBridge.groupCallActive)) {
+                callStartMs = Date.now()
+                callDurationSec = 0
+                resetCallControls()
+            } else {
+                callStartMs = 0
+                callDurationSec = 0
+            }
+        }
+
         Connections {
             target: clientBridge
-            function onCallStateChanged() {
-                if (clientBridge && clientBridge.activeCallId.length > 0) {
-                    callStartMs = Date.now()
-                    callDurationSec = 0
-                    resetCallControls()
-                } else {
-                    callStartMs = 0
-                    callDurationSec = 0
-                }
-            }
+            function onCallStateChanged() { syncCallState() }
+            function onGroupCallStateChanged() { syncCallState() }
         }
 
         Timer {
             id: callDurationTimer
             interval: 1000
             repeat: true
-            running: clientBridge && clientBridge.activeCallId.length > 0
+            running: clientBridge &&
+                     (clientBridge.activeCallId.length > 0 || clientBridge.groupCallActive)
             onTriggered: {
                 if (!callStartMs || callStartMs <= 0) {
                     callStartMs = Date.now()
@@ -1127,6 +1215,30 @@ Item {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        GroupCallWindow {
+            id: groupCallWindow
+            visible: clientBridge && clientBridge.groupCallActive
+            clientBridge: clientBridge
+            participants: clientBridge ? clientBridge.groupCallParticipants : []
+            videoEnabled: clientBridge && clientBridge.activeGroupCallVideo
+            durationSec: callDurationSec
+            micEnabled: callMicEnabled
+            cameraEnabled: callCameraEnabled
+            onLeaveRequested: Ui.AppStore.leaveGroupCall()
+            onMicToggled: {
+                callMicEnabled = enabled
+                if (clientBridge && clientBridge.setCallMicEnabled) {
+                    clientBridge.setCallMicEnabled(callMicEnabled)
+                }
+            }
+            onCameraToggled: {
+                callCameraEnabled = enabled
+                if (clientBridge && clientBridge.setCallCameraEnabled) {
+                    clientBridge.setCallCameraEnabled(callCameraEnabled)
                 }
             }
         }
@@ -2357,6 +2469,14 @@ Item {
                         }
                         Menu {
                             id: imageContextMenu
+                            property int compactWidth: root.contextMenuWidth([
+                                Ui.I18n.t("image.context.enhanced"),
+                                Ui.I18n.t("image.context.enhance"),
+                                Ui.I18n.t("image.context.setBackground"),
+                                Ui.I18n.t("chat.recall")
+                            ])
+                            implicitWidth: compactWidth
+                            width: compactWidth
                             MenuItem {
                                 text: imageEnhanced
                                       ? Ui.I18n.t("image.context.enhanced")
@@ -2364,13 +2484,51 @@ Item {
                                 enabled: !imageEnhanced &&
                                          Ui.AppStore.aiEnhanceEnabled &&
                                          hasLocalUrl(fileUrl)
+                                width: imageContextMenu.compactWidth
+                                implicitWidth: imageContextMenu.compactWidth
+                                height: 28
+                                contentItem: Text {
+                                    text: parent.text
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    color: parent.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                                }
                                 onTriggered: root.requestImageEnhanceForMessage(
                                                  msgId, fileUrl, fileName)
                             }
                             MenuItem {
+                                text: Ui.I18n.t("image.context.setBackground")
+                                enabled: hasLocalUrl(fileUrl)
+                                width: imageContextMenu.compactWidth
+                                implicitWidth: imageContextMenu.compactWidth
+                                height: 28
+                                contentItem: Text {
+                                    text: parent.text
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    color: parent.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                                }
+                                onTriggered: Ui.AppStore.setChatBackgroundForCurrentChat(fileUrl)
+                            }
+                            MenuItem {
                                 text: Ui.I18n.t("chat.recall")
                                 visible: isOutgoing
-                                enabled: recallEligible
+                                enabled: true
+                                width: imageContextMenu.compactWidth
+                                implicitWidth: imageContextMenu.compactWidth
+                                height: 28
+                                contentItem: Text {
+                                    text: parent.text
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
+                                }
                                 onTriggered: Ui.AppStore.requestRecallMessage(
                                                  Ui.AppStore.currentChatId,
                                                  msgId,
@@ -2583,14 +2741,42 @@ Item {
                         }
                         Menu {
                             id: fileContextMenu
+                            property int compactWidth: root.contextMenuWidth([
+                                Ui.I18n.t("chat.fileDownloadConfirm"),
+                                Ui.I18n.t("chat.recall")
+                            ])
+                            implicitWidth: compactWidth
+                            width: compactWidth
                             MenuItem {
                                 text: Ui.I18n.t("chat.fileDownloadConfirm")
+                                width: fileContextMenu.compactWidth
+                                implicitWidth: fileContextMenu.compactWidth
+                                height: 28
+                                contentItem: Text {
+                                    text: parent.text
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    color: parent.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                                }
                                 onTriggered: root.promptFileDownload(fileId, fileKey, fileName, fileSize, true)
                             }
                             MenuItem {
                                 text: Ui.I18n.t("chat.recall")
                                 visible: isOutgoing
-                                enabled: recallEligible
+                                enabled: true
+                                width: fileContextMenu.compactWidth
+                                implicitWidth: fileContextMenu.compactWidth
+                                height: 28
+                                contentItem: Text {
+                                    text: parent.text
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
+                                }
                                 onTriggered: Ui.AppStore.requestRecallMessage(
                                                  Ui.AppStore.currentChatId,
                                                  msgId,
@@ -2648,10 +2834,26 @@ Item {
 
                 Menu {
                     id: messageContextMenu
+                    property int compactWidth: root.contextMenuWidth([
+                        Ui.I18n.t("chat.recall")
+                    ])
+                    implicitWidth: compactWidth
+                    width: compactWidth
                     MenuItem {
                         text: Ui.I18n.t("chat.recall")
                         visible: isOutgoing
-                        enabled: recallEligible
+                        enabled: true
+                        width: messageContextMenu.compactWidth
+                        implicitWidth: messageContextMenu.compactWidth
+                        height: 28
+                        contentItem: Text {
+                            text: parent.text
+                            anchors.fill: parent
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 12
+                            color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        }
                         onTriggered: Ui.AppStore.requestRecallMessage(
                                          Ui.AppStore.currentChatId,
                                          msgId,
