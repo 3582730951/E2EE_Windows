@@ -73,6 +73,9 @@ class QuickClient : public QObject {
                                 double lon,
                                 const QString& label,
                                 bool isGroup);
+  Q_INVOKABLE bool recallMessage(const QString& convId,
+                                const QString& messageId,
+                                bool isGroup);
   Q_INVOKABLE QVariantMap ensureAttachmentCached(const QString& fileId,
                                                  const QString& fileKeyHex,
                                                  const QString& fileName,
@@ -107,6 +110,10 @@ class QuickClient : public QObject {
                             const QString& callIdHex,
                             bool video);
   Q_INVOKABLE void endCall();
+  Q_INVOKABLE bool callMicEnabled() const;
+  Q_INVOKABLE void setCallMicEnabled(bool enabled);
+  Q_INVOKABLE bool callCameraEnabled() const;
+  Q_INVOKABLE void setCallCameraEnabled(bool enabled);
   Q_INVOKABLE void bindRemoteVideoSink(QObject* sink);
   Q_INVOKABLE void bindLocalVideoSink(QObject* sink);
   Q_INVOKABLE QString serverInfo() const;
@@ -233,6 +240,7 @@ class QuickClient : public QObject {
                                std::uint32_t& height,
                                std::size_t& stride) const;
   bool SelectCameraFormat();
+  void EndCallInternal(bool notify_peer);
   QMediaCaptureSession* EnsureCaptureSession();
   void* EnsureImeSession();
   void QueueAttachmentCacheTask(const QString& fileId,
@@ -316,6 +324,8 @@ class QuickClient : public QObject {
   QString active_call_id_;
   QString active_call_peer_;
   bool active_call_video_{false};
+  bool call_mic_enabled_{true};
+  bool call_camera_enabled_{true};
   QThreadPool cache_pool_;
   QSet<QString> cache_inflight_;
   QSet<QString> enhance_inflight_;

@@ -39,6 +39,7 @@ QtObject {
     property string incomingCallPeer: ""
     property string incomingCallId: ""
     property bool incomingCallVideo: false
+    property int recallWindowMs: 5 * 60 * 1000
 
     signal currentChatChanged(string chatId)
     signal leftTabChanged(int tab)
@@ -188,6 +189,24 @@ QtObject {
             return null
         }
         return { callId: callId, video: video }
+    }
+
+    function parseCallEndId(text) {
+        var value = (text || "").trim()
+        var endPrefix = "[call]end:"
+        if (value.indexOf(endPrefix) !== 0) {
+            return ""
+        }
+        return value.slice(endPrefix.length).trim()
+    }
+
+    function parseRecallTarget(text) {
+        var value = (text || "").trim()
+        var prefix = "[recall]:"
+        if (value.indexOf(prefix) !== 0) {
+            return ""
+        }
+        return value.slice(prefix.length).trim()
     }
 
     function clearIncomingCall() {
@@ -445,6 +464,8 @@ QtObject {
         if (convId.length === 0) {
             return
         }
+        var isGroup = message.isGroup === true
+        var outgoing = message.outgoing === true
 
         if (kind === "delivery" || kind === "read") {
             updateMessageStatus(convId, message.messageId || "", kind)
@@ -464,9 +485,20 @@ QtObject {
             }
             return
         }
+        if (kind === "call_end") {
+            if (incomingCallActive && incomingCallId === message.callId) {
+                clearIncomingCall()
+            }
+            return
+        }
+        if (kind === "recall") {
+            var targetId = message.targetMessageId || ""
+            if (targetId.length > 0) {
+                applyRecallToChat(convId, targetId, outgoing)
+            }
+            return
+        }
 
-        var isGroup = message.isGroup === true
-        var outgoing = message.outgoing === true
         var sender = message.sender || ""
         var msgId = message.messageId || nextMsgId()
         var timeText = message.time || formatTime(new Date())
@@ -575,6 +607,8 @@ QtObject {
             (fileUrlText.length > 0 || (outgoing && kind === "file"))) {
             progressValue = 1
         }
+        var timestampSec = message.timestampSec || 0
+        var timestampMs = timestampSec > 0 ? timestampSec * 1000 : Date.now()
 
         var entry = {
             chatId: convId,
@@ -584,6 +618,7 @@ QtObject {
             senderName: displaySender,
             text: text,
             timeText: timeText,
+            timestampMs: timestampMs,
             statusTicks: outgoing ? "sent" : "none",
             edited: false,
             fileName: message.fileName || "",
@@ -746,7 +781,19 @@ QtObject {
                 entryKind = "out"
             }
 
-            var text = h.text || ""
+            var rawText = h.text || ""
+            if (h.kind === "text") {
+                var recallTarget = parseRecallTarget(rawText)
+                if (recallTarget.length > 0) {
+                    applyRecallToChat(chatId, recallTarget, h.outgoing === true)
+                    continue
+                }
+                if (parseCallEndId(rawText).length > 0) {
+                    continue
+                }
+            }
+
+            var text = rawText
             if (h.kind === "file") {
                 text = h.fileName ? "[文件] " + h.fileName : "[文件]"
             } else if (h.kind === "sticker") {
@@ -801,6 +848,8 @@ QtObject {
                 (fileUrlText.length > 0 || (h.outgoing === true && h.kind === "file"))) {
                 progressValue = 1
             }
+            var timestampSec = h.timestampSec || 0
+            var timestampMs = timestampSec > 0 ? timestampSec * 1000 : Date.now()
 
             model.append({
                 chatId: chatId,
@@ -810,6 +859,7 @@ QtObject {
                 senderName: h.outgoing ? Ui.I18n.t("chat.you") : (h.sender || ""),
                 text: text,
                 timeText: h.time || "",
+                timestampMs: timestampMs,
                 statusTicks: ticks,
                 edited: false,
                 fileName: h.fileName || "",
@@ -972,6 +1022,46 @@ QtObject {
 
     function declineIncomingCall() {
         clearIncomingCall()
+    }
+
+    function applyRecallToChat(chatId, messageId, outgoing) {
+        var idx = findMessageIndex(chatId, messageId)
+        if (idx < 0) {
+            return false
+        }
+        var model = messagesModel(chatId)
+        var text = outgoing ? Ui.I18n.t("chat.recallSelf")
+                            : Ui.I18n.t("chat.recallOther")
+        model.setProperty(idx, "kind", "system")
+        model.setProperty(idx, "contentKind", "text")
+        model.setProperty(idx, "text", text)
+        model.setProperty(idx, "senderName", "")
+        model.setProperty(idx, "statusTicks", "none")
+        model.setProperty(idx, "fileUrl", "")
+        model.setProperty(idx, "previewUrl", "")
+        model.setProperty(idx, "stickerUrl", "")
+        model.setProperty(idx, "stickerAnimated", false)
+        model.setProperty(idx, "imageEnhanced", false)
+        return true
+    }
+
+    function requestRecallMessage(chatId, messageId, timestampMs, isGroup) {
+        if (!chatId || !messageId || !clientBridge || !clientBridge.recallMessage) {
+            return false
+        }
+        var nowMs = Date.now()
+        if (timestampMs && (nowMs - timestampMs) > recallWindowMs) {
+            sendErrorMessage = Ui.I18n.t("chat.recallExpired")
+            return false
+        }
+        var ok = clientBridge.recallMessage(chatId, messageId, isGroup === true)
+        if (ok) {
+            applyRecallToChat(chatId, messageId, true)
+        } else {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
     }
 
     function appendMessage(chatId, message, markUnread) {

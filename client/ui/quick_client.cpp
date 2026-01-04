@@ -55,6 +55,8 @@ namespace mi::client::ui {
 namespace {
 constexpr char kCallVoicePrefix[] = "[call]voice:";
 constexpr char kCallVideoPrefix[] = "[call]video:";
+constexpr char kCallEndPrefix[] = "[call]end:";
+constexpr char kRecallPrefix[] = "[recall]:";
 constexpr int kMaxPinyinCandidatesPerKey = 5;
 constexpr int kMaxAbbrInputLength = 10;
 constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
@@ -851,6 +853,20 @@ CallInvite ParseCallInvite(const QString& text) {
     invite.ok = false;
   }
   return invite;
+}
+
+QString ParseCallEndId(const QString& text) {
+  if (!text.startsWith(QString::fromLatin1(kCallEndPrefix))) {
+    return {};
+  }
+  return text.mid(static_cast<int>(std::strlen(kCallEndPrefix))).trimmed();
+}
+
+QString ParseRecallTargetId(const QString& text) {
+  if (!text.startsWith(QString::fromLatin1(kRecallPrefix))) {
+    return {};
+  }
+  return text.mid(static_cast<int>(std::strlen(kRecallPrefix))).trimmed();
 }
 
 QString FormatCoordE7(std::int32_t v_e7) {
@@ -2388,6 +2404,34 @@ bool QuickClient::sendLocation(const QString& convId,
   return true;
 }
 
+bool QuickClient::recallMessage(const QString& convId,
+                                const QString& messageId,
+                                bool isGroup) {
+  const QString target = convId.trimmed();
+  const QString msgId = messageId.trimmed();
+  if (target.isEmpty() || msgId.isEmpty()) {
+    UpdateLastError(QStringLiteral("撤回参数无效"));
+    return false;
+  }
+  const QString payload =
+      QString::fromLatin1(kRecallPrefix) + msgId;
+  std::string out_id;
+  bool ok = false;
+  if (isGroup) {
+    ok = core_.SendGroupChatText(target.toStdString(),
+                                 payload.toStdString(),
+                                 out_id);
+  } else {
+    ok = core_.SendChatText(target.toStdString(),
+                            payload.toStdString(),
+                            out_id);
+  }
+  if (!ok) {
+    UpdateLastError(QString::fromStdString(core_.last_error()));
+  }
+  return ok;
+}
+
 QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
                                                 const QString& fileKeyHex,
                                                 const QString& fileName,
@@ -3134,6 +3178,8 @@ QString QuickClient::startVoiceCall(const QString& peerUsername) {
   msg.insert(QStringLiteral("callId"), call_hex);
   msg.insert(QStringLiteral("video"), false);
   msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("timestampSec"),
+             QDateTime::currentSecsSinceEpoch());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   emit status(QStringLiteral("语音通话已发起"));
@@ -3170,6 +3216,8 @@ QString QuickClient::startVideoCall(const QString& peerUsername) {
   msg.insert(QStringLiteral("callId"), call_hex);
   msg.insert(QStringLiteral("video"), true);
   msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("timestampSec"),
+             QDateTime::currentSecsSinceEpoch());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   emit status(QStringLiteral("视频通话已发起"));
@@ -3189,6 +3237,53 @@ bool QuickClient::joinCall(const QString& peerUsername,
 }
 
 void QuickClient::endCall() {
+  EndCallInternal(true);
+}
+
+bool QuickClient::callMicEnabled() const {
+  return call_mic_enabled_;
+}
+
+void QuickClient::setCallMicEnabled(bool enabled) {
+  call_mic_enabled_ = enabled;
+  if (!call_mic_enabled_) {
+    audio_in_buffer_.clear();
+    audio_in_offset_ = 0;
+  }
+}
+
+bool QuickClient::callCameraEnabled() const {
+  return call_camera_enabled_;
+}
+
+void QuickClient::setCallCameraEnabled(bool enabled) {
+  call_camera_enabled_ = enabled;
+  if (!camera_) {
+    return;
+  }
+  if (call_camera_enabled_) {
+    if (!camera_->isActive()) {
+      camera_->start();
+    }
+  } else {
+    camera_->stop();
+    if (local_video_sink_) {
+      local_video_sink_->setVideoFrame(QVideoFrame());
+    }
+  }
+}
+
+void QuickClient::EndCallInternal(bool notify_peer) {
+  const QString peer = active_call_peer_;
+  const QString callId = active_call_id_;
+  if (notify_peer && !peer.isEmpty() && !callId.isEmpty()) {
+    const QString payload =
+        QString::fromLatin1(kCallEndPrefix) + callId;
+    std::string msg_id;
+    (void)core_.SendChatText(peer.toStdString(),
+                             payload.toStdString(),
+                             msg_id);
+  }
   StopMedia();
   active_call_id_.clear();
   active_call_peer_.clear();
@@ -3598,6 +3693,8 @@ QVariantMap QuickClient::BuildHistoryMessage(
              QDateTime::fromSecsSinceEpoch(
                  static_cast<qint64>(entry.timestamp_sec))
                  .toString(QStringLiteral("HH:mm:ss")));
+  msg.insert(QStringLiteral("timestampSec"),
+             static_cast<qint64>(entry.timestamp_sec));
   switch (entry.status) {
     case ClientCore::HistoryStatus::kSent:
       msg.insert(QStringLiteral("status"), QStringLiteral("sent"));
@@ -3666,9 +3763,45 @@ QVariantMap QuickClient::BuildHistoryMessage(
 
 void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
   const QString now = NowTimeString();
+  const qint64 nowSec = QDateTime::currentSecsSinceEpoch();
 
   for (const auto& t : result.texts) {
     const QString text = QString::fromStdString(t.text_utf8);
+    const QString callEndId = ParseCallEndId(text);
+    if (!callEndId.isEmpty()) {
+      if (callEndId == active_call_id_) {
+        EndCallInternal(false);
+      }
+      QVariantMap msg;
+      msg.insert(QStringLiteral("convId"),
+                 QString::fromStdString(t.from_username));
+      msg.insert(QStringLiteral("sender"),
+                 QString::fromStdString(t.from_username));
+      msg.insert(QStringLiteral("outgoing"), false);
+      msg.insert(QStringLiteral("isGroup"), false);
+      msg.insert(QStringLiteral("kind"), QStringLiteral("call_end"));
+      msg.insert(QStringLiteral("callId"), callEndId);
+      msg.insert(QStringLiteral("time"), now);
+      msg.insert(QStringLiteral("timestampSec"), nowSec);
+      EmitMessage(msg);
+      continue;
+    }
+    const QString recallId = ParseRecallTargetId(text);
+    if (!recallId.isEmpty()) {
+      QVariantMap msg;
+      msg.insert(QStringLiteral("convId"),
+                 QString::fromStdString(t.from_username));
+      msg.insert(QStringLiteral("sender"),
+                 QString::fromStdString(t.from_username));
+      msg.insert(QStringLiteral("outgoing"), false);
+      msg.insert(QStringLiteral("isGroup"), false);
+      msg.insert(QStringLiteral("kind"), QStringLiteral("recall"));
+      msg.insert(QStringLiteral("targetMessageId"), recallId);
+      msg.insert(QStringLiteral("time"), now);
+      msg.insert(QStringLiteral("timestampSec"), nowSec);
+      EmitMessage(msg);
+      continue;
+    }
     const auto invite = ParseCallInvite(text);
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"),
@@ -3680,6 +3813,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
+    msg.insert(QStringLiteral("timestampSec"), nowSec);
     if (invite.ok) {
       msg.insert(QStringLiteral("kind"), QStringLiteral("call_invite"));
       msg.insert(QStringLiteral("callId"), invite.callId);
@@ -3692,6 +3826,11 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
   }
 
   for (const auto& t : result.outgoing_texts) {
+    const QString text = QString::fromStdString(t.text_utf8);
+    if (!ParseCallEndId(text).isEmpty() ||
+        !ParseRecallTargetId(text).isEmpty()) {
+      continue;
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"),
                QString::fromStdString(t.peer_username));
@@ -3699,10 +3838,11 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), true);
     msg.insert(QStringLiteral("isGroup"), false);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), QString::fromStdString(t.text_utf8));
+    msg.insert(QStringLiteral("text"), text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
+    msg.insert(QStringLiteral("timestampSec"), nowSec);
     EmitMessage(msg);
   }
 
@@ -3793,6 +3933,26 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     if (AddGroupIfMissing(group_id)) {
       emit groupsChanged();
     }
+    const QString text = QString::fromStdString(t.text_utf8);
+    const QString callEndId = ParseCallEndId(text);
+    if (!callEndId.isEmpty()) {
+      continue;
+    }
+    const QString recallId = ParseRecallTargetId(text);
+    if (!recallId.isEmpty()) {
+      QVariantMap msg;
+      msg.insert(QStringLiteral("convId"), group_id);
+      msg.insert(QStringLiteral("sender"),
+                 QString::fromStdString(t.from_username));
+      msg.insert(QStringLiteral("outgoing"), false);
+      msg.insert(QStringLiteral("isGroup"), true);
+      msg.insert(QStringLiteral("kind"), QStringLiteral("recall"));
+      msg.insert(QStringLiteral("targetMessageId"), recallId);
+      msg.insert(QStringLiteral("time"), now);
+      msg.insert(QStringLiteral("timestampSec"), nowSec);
+      EmitMessage(msg);
+      continue;
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"),
@@ -3800,10 +3960,11 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), false);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), QString::fromStdString(t.text_utf8));
+    msg.insert(QStringLiteral("text"), text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
+    msg.insert(QStringLiteral("timestampSec"), nowSec);
     EmitMessage(msg);
   }
 
@@ -3812,16 +3973,22 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
     if (AddGroupIfMissing(group_id)) {
       emit groupsChanged();
     }
+    const QString text = QString::fromStdString(t.text_utf8);
+    if (!ParseCallEndId(text).isEmpty() ||
+        !ParseRecallTargetId(text).isEmpty()) {
+      continue;
+    }
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"), group_id);
     msg.insert(QStringLiteral("sender"), username_);
     msg.insert(QStringLiteral("outgoing"), true);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), QString::fromStdString(t.text_utf8));
+    msg.insert(QStringLiteral("text"), text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
+    msg.insert(QStringLiteral("timestampSec"), nowSec);
     EmitMessage(msg);
   }
 
@@ -4096,6 +4263,8 @@ bool QuickClient::InitMediaSession(const QString& peerUsername,
     return false;
   }
   media_session_ = std::move(session);
+  call_mic_enabled_ = true;
+  call_camera_enabled_ = true;
   audio_config_ = mi::client::media::AudioPipelineConfig{};
   const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
   const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
@@ -4158,6 +4327,8 @@ void QuickClient::StopMedia() {
   audio_in_offset_ = 0;
   audio_frame_tmp_.clear();
   video_send_buffer_.clear();
+  call_mic_enabled_ = true;
+  call_camera_enabled_ = true;
   if (remote_video_sink_) {
     remote_video_sink_->setVideoFrame(QVideoFrame());
   }
@@ -4225,6 +4396,11 @@ void QuickClient::PumpMedia() {
 
 void QuickClient::DrainAudioInput() {
   if (!audio_pipeline_ || !audio_in_device_) {
+    return;
+  }
+  if (!call_mic_enabled_) {
+    audio_in_buffer_.clear();
+    audio_in_offset_ = 0;
     return;
   }
   const int frame_samples = audio_pipeline_->frame_samples();
@@ -4429,6 +4605,9 @@ void QuickClient::HandleAudioReady() {
 
 void QuickClient::HandleLocalVideoFrame(const QVideoFrame& frame) {
   if (!video_pipeline_ || !media_session_) {
+    return;
+  }
+  if (!call_camera_enabled_) {
     return;
   }
   std::uint32_t width = 0;

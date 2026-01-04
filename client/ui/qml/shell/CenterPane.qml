@@ -49,6 +49,32 @@ Item {
                                     clientBridge.imeAvailable()
     property bool imePopupVisible: internalImeReady && imeComposing &&
                                    imeCandidates && imeCandidates.length > 0
+    property int callDurationSec: 0
+    property double callStartMs: 0
+    property bool callMicEnabled: true
+    property bool callCameraEnabled: true
+
+    function formatCallDuration(totalSec) {
+        var sec = Math.max(0, totalSec || 0)
+        var hours = Math.floor(sec / 3600)
+        var minutes = Math.floor((sec % 3600) / 60)
+        var seconds = sec % 60
+        var hh = hours > 0 ? (hours < 10 ? "0" + hours : "" + hours) : ""
+        var mm = minutes < 10 ? "0" + minutes : "" + minutes
+        var ss = seconds < 10 ? "0" + seconds : "" + seconds
+        return hours > 0 ? (hh + ":" + mm + ":" + ss) : (mm + ":" + ss)
+    }
+
+    function resetCallControls() {
+        callMicEnabled = true
+        callCameraEnabled = true
+        if (clientBridge && clientBridge.setCallMicEnabled) {
+            clientBridge.setCallMicEnabled(true)
+        }
+        if (clientBridge && clientBridge.setCallCameraEnabled) {
+            clientBridge.setCallCameraEnabled(true)
+        }
+    }
 
     function showSearch() {
         if (!hasChat) {
@@ -753,8 +779,8 @@ Item {
                 id: callOverlay
                 anchors.fill: parent
                 z: 5
-                visible: Ui.AppStore.incomingCallActive ||
-                         (clientBridge && clientBridge.activeCallId.length > 0)
+                visible: Ui.AppStore.incomingCallActive &&
+                         (!clientBridge || clientBridge.activeCallId.length === 0)
                 property bool callVideo: clientBridge && clientBridge.activeCallVideo
                 property string callPeer: clientBridge ? clientBridge.activeCallPeer : ""
 
@@ -814,105 +840,290 @@ Item {
                     }
                 }
 
+            }
+        }
+
+        Connections {
+            target: clientBridge
+            function onCallStateChanged() {
+                if (clientBridge && clientBridge.activeCallId.length > 0) {
+                    callStartMs = Date.now()
+                    callDurationSec = 0
+                    resetCallControls()
+                } else {
+                    callStartMs = 0
+                    callDurationSec = 0
+                }
+            }
+        }
+
+        Timer {
+            id: callDurationTimer
+            interval: 1000
+            repeat: true
+            running: clientBridge && clientBridge.activeCallId.length > 0
+            onTriggered: {
+                if (!callStartMs || callStartMs <= 0) {
+                    callStartMs = Date.now()
+                }
+                callDurationSec = Math.max(0,
+                                           Math.floor((Date.now() - callStartMs) / 1000))
+            }
+        }
+
+        Window {
+            id: voiceCallWindow
+            visible: clientBridge && clientBridge.activeCallId.length > 0 &&
+                     !clientBridge.activeCallVideo
+            flags: Qt.Window | Qt.FramelessWindowHint
+            color: "transparent"
+            width: 520
+            height: 360
+
+            function centerWindow() {
+                x = Screen.virtualX + (Screen.width - width) / 2
+                y = Screen.virtualY + (Screen.height - height) / 2
+            }
+
+            onVisibleChanged: {
+                if (visible) {
+                    centerWindow()
+                }
+            }
+            onWidthChanged: if (visible) { centerWindow() }
+            onHeightChanged: if (visible) { centerWindow() }
+            onClosing: {
+                if (clientBridge && clientBridge.activeCallId.length > 0) {
+                    clientBridge.endCall()
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 16
+                color: Ui.Style.panelBgRaised
+                border.color: Ui.Style.borderSubtle
+            }
+
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.LeftButton
+                onActiveChanged: {
+                    if (active && voiceCallWindow.startSystemMove) {
+                        voiceCallWindow.startSystemMove()
+                    }
+                }
+            }
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 8
+                Text {
+                    text: Ui.I18n.t("chat.callActiveVoice")
+                    color: Ui.Style.textPrimary
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    text: Ui.AppStore.resolveTitle(clientBridge ? clientBridge.activeCallPeer : "")
+                    color: Ui.Style.textSecondary
+                    font.pixelSize: 12
+                }
+                Text {
+                    text: Ui.I18n.t("chat.callDuration")
+                          .arg(formatCallDuration(callDurationSec))
+                    color: Ui.Style.textMuted
+                    font.pixelSize: 11
+                }
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 18
+                Components.RoundIconButton {
+                    icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+                    buttonSize: 50
+                    iconSize: 22
+                    baseColor: Ui.Style.danger
+                    hoverColor: Ui.Style.danger
+                    pressColor: Ui.Style.danger
+                    bgColor: "transparent"
+                    hoverBg: Qt.rgba(1, 1, 1, 0.08)
+                    pressedBg: Qt.rgba(1, 1, 1, 0.16)
+                    onClicked: {
+                        if (clientBridge) {
+                            clientBridge.endCall()
+                        }
+                    }
+                }
+            }
+        }
+
+        Window {
+            id: videoCallWindow
+            visible: clientBridge && clientBridge.activeCallId.length > 0 &&
+                     clientBridge.activeCallVideo
+            flags: Qt.Window | Qt.FramelessWindowHint
+            color: "transparent"
+            width: 760
+            height: 520
+
+            function centerWindow() {
+                x = Screen.virtualX + (Screen.width - width) / 2
+                y = Screen.virtualY + (Screen.height - height) / 2
+            }
+
+            function bindVideoSinks() {
+                if (!clientBridge) {
+                    return
+                }
+                if (clientBridge.bindRemoteVideoSink) {
+                    clientBridge.bindRemoteVideoSink(remoteVideo.videoSink)
+                }
+                if (clientBridge.bindLocalVideoSink) {
+                    clientBridge.bindLocalVideoSink(localVideo.videoSink)
+                }
+            }
+
+            onVisibleChanged: {
+                if (visible) {
+                    centerWindow()
+                    bindVideoSinks()
+                }
+            }
+            Component.onCompleted: bindVideoSinks()
+            onWidthChanged: if (visible) { centerWindow() }
+            onHeightChanged: if (visible) { centerWindow() }
+            onClosing: {
+                if (clientBridge && clientBridge.activeCallId.length > 0) {
+                    clientBridge.endCall()
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 16
+                color: Ui.Style.panelBgRaised
+                border.color: Ui.Style.borderSubtle
+            }
+
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.LeftButton
+                onActiveChanged: {
+                    if (active && videoCallWindow.startSystemMove) {
+                        videoCallWindow.startSystemMove()
+                    }
+                }
+            }
+
+            Item {
+                id: videoStage
+                anchors.fill: parent
+                anchors.margins: Ui.Style.paddingM
+
                 Rectangle {
-                    id: activeCallPanel
-                    visible: clientBridge && clientBridge.activeCallId.length > 0
-                    width: Math.min(parent.width * 0.78, 760)
-                    height: Math.min(parent.height * 0.78, 520)
-                    radius: 14
-                    color: Ui.Style.panelBgRaised
+                    anchors.fill: parent
+                    radius: 12
+                    color: Ui.Style.panelBgAlt
                     border.color: Ui.Style.borderSubtle
-                    anchors.centerIn: parent
+                }
 
-                    ColumnLayout {
+                VideoOutput {
+                    id: remoteVideo
+                    anchors.fill: parent
+                    fillMode: VideoOutput.PreserveAspectFit
+                }
+
+                VideoOutput {
+                    id: localVideo
+                    width: 180
+                    height: 110
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: Ui.Style.paddingS
+                    fillMode: VideoOutput.PreserveAspectFit
+                    Rectangle {
                         anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingM
-                        spacing: Ui.Style.paddingS
-                        Text {
-                            text: callOverlay.callVideo
-                                  ? Ui.I18n.t("chat.callActiveVideo")
-                                  : Ui.I18n.t("chat.callActiveVoice")
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                            color: Ui.Style.textPrimary
-                        }
-                        Text {
-                            text: Ui.AppStore.resolveTitle(callOverlay.callPeer || "")
-                            font.pixelSize: 12
-                            color: Ui.Style.textSecondary
-                            elide: Text.ElideRight
-                        }
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            visible: callOverlay.callVideo
+                        radius: 10
+                        color: "transparent"
+                        border.color: Ui.Style.borderSubtle
+                    }
+                }
 
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 12
-                                color: Ui.Style.panelBgAlt
-                                border.color: Ui.Style.borderSubtle
-                            }
+                Column {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.margins: Ui.Style.paddingS
+                    spacing: 4
+                    Text {
+                        text: Ui.I18n.t("chat.callActiveVideo")
+                        color: Ui.Style.textPrimary
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
+                    }
+                    Text {
+                        text: Ui.AppStore.resolveTitle(clientBridge ? clientBridge.activeCallPeer : "")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 11
+                    }
+                    Text {
+                        text: Ui.I18n.t("chat.callDuration")
+                              .arg(formatCallDuration(callDurationSec))
+                        color: Ui.Style.textMuted
+                        font.pixelSize: 10
+                    }
+                }
 
-                            VideoOutput {
-                                id: remoteView
-                                anchors.fill: parent
-                                fillMode: VideoOutput.PreserveAspectFit
-                                Component.onCompleted: {
-                                    if (clientBridge && clientBridge.bindRemoteVideoSink) {
-                                        clientBridge.bindRemoteVideoSink(remoteView.videoSink)
-                                    }
-                                }
-                            }
-                            VideoOutput {
-                                id: localView
-                                width: 160
-                                height: 100
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                anchors.margins: Ui.Style.paddingS
-                                fillMode: VideoOutput.PreserveAspectFit
-                                Component.onCompleted: {
-                                    if (clientBridge && clientBridge.bindLocalVideoSink) {
-                                        clientBridge.bindLocalVideoSink(localView.videoSink)
-                                    }
-                                }
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 10
-                                    color: "transparent"
-                                    border.color: Ui.Style.borderSubtle
-                                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 18
+                    spacing: 18
+                    Components.RoundIconButton {
+                        icon.source: "qrc:/mi/e2ee/ui/icons/mic.svg"
+                        buttonSize: 46
+                        iconSize: 20
+                        baseColor: callMicEnabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        hoverColor: Ui.Style.textPrimary
+                        pressColor: Ui.Style.textPrimary
+                        bgColor: "transparent"
+                        onClicked: {
+                            callMicEnabled = !callMicEnabled
+                            if (clientBridge && clientBridge.setCallMicEnabled) {
+                                clientBridge.setCallMicEnabled(callMicEnabled)
                             }
                         }
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            visible: !callOverlay.callVideo
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 12
-                                color: Ui.Style.panelBgAlt
-                                border.color: Ui.Style.borderSubtle
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: Ui.I18n.t("chat.callActiveVoice")
-                                    font.pixelSize: 12
-                                    color: Ui.Style.textMuted
-                                }
+                    }
+                    Components.RoundIconButton {
+                        icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+                        buttonSize: 56
+                        iconSize: 22
+                        baseColor: Ui.Style.danger
+                        hoverColor: Ui.Style.danger
+                        pressColor: Ui.Style.danger
+                        bgColor: "transparent"
+                        hoverBg: Qt.rgba(1, 1, 1, 0.08)
+                        pressedBg: Qt.rgba(1, 1, 1, 0.16)
+                        onClicked: {
+                            if (clientBridge) {
+                                clientBridge.endCall()
                             }
                         }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Ui.Style.paddingS
-                            Item { Layout.fillWidth: true }
-                            Components.PrimaryButton {
-                                text: Ui.I18n.t("chat.callHangup")
-                                onClicked: {
-                                    if (clientBridge) {
-                                        clientBridge.endCall()
-                                    }
-                                }
+                    }
+                    Components.RoundIconButton {
+                        icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
+                        buttonSize: 46
+                        iconSize: 20
+                        baseColor: callCameraEnabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                        hoverColor: Ui.Style.textPrimary
+                        pressColor: Ui.Style.textPrimary
+                        bgColor: "transparent"
+                        onClicked: {
+                            callCameraEnabled = !callCameraEnabled
+                            if (clientBridge && clientBridge.setCallCameraEnabled) {
+                                clientBridge.setCallCameraEnabled(callCameraEnabled)
                             }
                         }
                     }
@@ -1916,6 +2127,7 @@ Item {
             property bool isLocation: contentKind === "location"
             property bool isCall: contentKind === "call"
             property string msgId: model.msgId || ""
+            property double timestampMs: model.timestampMs || 0
             property string fileName: model.fileName || ""
             property string fileId: model.fileId || ""
             property string fileKey: model.fileKey || ""
@@ -1928,6 +2140,9 @@ Item {
             property int senderLeftInset: showSender
                                             ? Ui.Style.paddingL + senderAvatarSize + senderAvatarGap
                                             : Ui.Style.paddingL
+            property bool recallEligible: isOutgoing && msgId.length > 0 &&
+                                          timestampMs > 0 &&
+                                          (Date.now() - timestampMs) <= Ui.AppStore.recallWindowMs
 
             height: isDate || isSystem ? 32 : bubbleBlock.height + 10
 
@@ -2152,6 +2367,16 @@ Item {
                                 onTriggered: root.requestImageEnhanceForMessage(
                                                  msgId, fileUrl, fileName)
                             }
+                            MenuItem {
+                                text: Ui.I18n.t("chat.recall")
+                                visible: isOutgoing
+                                enabled: recallEligible
+                                onTriggered: Ui.AppStore.requestRecallMessage(
+                                                 Ui.AppStore.currentChatId,
+                                                 msgId,
+                                                 timestampMs,
+                                                 Ui.AppStore.currentChatType === "group")
+                            }
                         }
                         MouseArea {
                             anchors.fill: parent
@@ -2362,6 +2587,16 @@ Item {
                                 text: Ui.I18n.t("chat.fileDownloadConfirm")
                                 onTriggered: root.promptFileDownload(fileId, fileKey, fileName, fileSize, true)
                             }
+                            MenuItem {
+                                text: Ui.I18n.t("chat.recall")
+                                visible: isOutgoing
+                                enabled: recallEligible
+                                onTriggered: Ui.AppStore.requestRecallMessage(
+                                                 Ui.AppStore.currentChatId,
+                                                 msgId,
+                                                 timestampMs,
+                                                 Ui.AppStore.currentChatType === "group")
+                            }
                         }
                         MouseArea {
                             anchors.fill: parent
@@ -2411,6 +2646,20 @@ Item {
                     }
                 }
 
+                Menu {
+                    id: messageContextMenu
+                    MenuItem {
+                        text: Ui.I18n.t("chat.recall")
+                        visible: isOutgoing
+                        enabled: recallEligible
+                        onTriggered: Ui.AppStore.requestRecallMessage(
+                                         Ui.AppStore.currentChatId,
+                                         msgId,
+                                         timestampMs,
+                                         Ui.AppStore.currentChatType === "group")
+                    }
+                }
+
                 Rectangle {
                     id: bubble
                     anchors.fill: parent
@@ -2419,6 +2668,23 @@ Item {
                            ? "transparent"
                            : (isOutgoing ? Ui.Style.bubbleOutBg : Ui.Style.bubbleInBg)
                     border.width: 0
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        hoverEnabled: true
+                        propagateComposedEvents: true
+                        onClicked: {
+                            if (mouse.button !== Qt.RightButton) {
+                                return
+                            }
+                            if (!isOutgoing) {
+                                return
+                            }
+                            var pos = mapToItem(root, mouse.x, mouse.y)
+                            messageContextMenu.popup(root, pos.x, pos.y)
+                        }
+                    }
 
                     Column {
                         anchors.fill: parent

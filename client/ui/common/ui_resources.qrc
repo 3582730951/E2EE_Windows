@@ -59,6 +59,7 @@
         <file alias="qml/components/PrimaryButton.qml">../qml/components/PrimaryButton.qml</file>
         <file alias="qml/components/GhostButton.qml">../qml/components/GhostButton.qml</file>
         <file alias="qml/components/InputContextMenu.qml">../qml/components/InputContextMenu.qml</file>
+        <file alias="qml/components/RoundIconButton.qml">../qml/components/RoundIconButton.qml</file>
         <file alias="qml/components/SearchField.qml">../qml/components/SearchField.qml</file>
         <file alias="qml/components/SecureTextField.qml">../qml/components/SecureTextField.qml</file>
         <file alias="qml/components/SecureTextArea.qml">../qml/components/SecureTextArea.qml</file>
