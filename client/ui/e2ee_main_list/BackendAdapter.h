@@ -15,8 +15,12 @@
 #include <atomic>
 #include <unordered_map>
 #include <unordered_set>
+#include <array>
 
-#include "../../include/client_core.h"
+#include "c_api_client.h"
+#include "sdk_client_types.h"
+
+struct mi_client_handle;
 
 class BackendAdapter : public QObject {
     Q_OBJECT
@@ -43,10 +47,34 @@ public:
     bool registerUser(const QString &account, const QString &password, QString &err);
     void registerUserAsync(const QString &account, const QString &password);
 
-    bool hasPendingServerTrust() const { return core_.HasPendingServerTrust(); }
-    QString pendingServerFingerprint() const { return QString::fromStdString(core_.pending_server_fingerprint()); }
-    QString pendingServerPin() const { return QString::fromStdString(core_.pending_server_pin()); }
-    QString lastCoreError() const { return QString::fromStdString(core_.last_error()); }
+    bool hasPendingServerTrust() const {
+        if (c_api_) {
+            return mi_client_has_pending_server_trust(c_api_) != 0;
+        }
+        return false;
+    }
+    QString pendingServerFingerprint() const {
+        if (c_api_) {
+            const char* value = mi_client_pending_server_fingerprint(c_api_);
+            return value ? QString::fromUtf8(value) : QString();
+        }
+        return {};
+    }
+    QString pendingServerPin() const {
+        if (c_api_) {
+            const char* value = mi_client_pending_server_pin(c_api_);
+            return value ? QString::fromUtf8(value) : QString();
+        }
+        return {};
+    }
+    QString lastCoreError() const {
+        if (c_api_) {
+            const char* value = mi_client_last_error(c_api_);
+            return value ? QString::fromUtf8(value) : QString();
+        }
+        return {};
+    }
+    mi_client_handle* clientHandle() const { return c_api_; }
 
     QVector<FriendEntry> listFriends(QString &err);
     void requestFriendList();
@@ -145,10 +173,8 @@ public:
     QVector<DeviceEntry> listDevices(QString &err);
     bool kickDevice(const QString &deviceId, QString &err);
 
-    bool deviceSyncEnabled() const { return core_.device_sync_enabled(); }
-    bool deviceSyncIsPrimary() const { return core_.device_sync_is_primary(); }
-    mi::client::ClientCore &core() { return core_; }
-    const mi::client::ClientCore &core() const { return core_; }
+    bool deviceSyncEnabled() const { return device_sync_enabled_; }
+    bool deviceSyncIsPrimary() const { return device_sync_primary_; }
 
     struct DevicePairingRequestEntry {
         QString deviceId;
@@ -192,6 +218,13 @@ signals:
     void registerFinished(bool success, const QString &error);
 
 private:
+    struct ChatFileEntry {
+        std::string file_id;
+        std::array<std::uint8_t, 32> file_key{};
+        std::string file_name;
+        std::uint64_t file_size{0};
+    };
+
     struct PendingOutgoing {
         enum class Kind { Text, ReplyText, Location, ContactCard, Sticker };
 
@@ -216,9 +249,9 @@ private:
 
     bool ensureInited(QString &err);
     void pollMessages();
-    void handlePollResult(mi::client::ClientCore::ChatPollResult events,
-                          std::vector<mi::client::ClientCore::FriendRequestEntry> friendRequests);
-    void applyFriendSync(const std::vector<mi::client::ClientCore::FriendEntry> &friends,
+    void handlePollResult(mi::sdk::ChatPollResult events,
+                          std::vector<mi::sdk::FriendRequestEntry> friendRequests);
+    void applyFriendSync(const std::vector<mi::sdk::FriendEntry> &friends,
                          bool changed, const QString &err, bool emitEvenIfUnchanged);
     void maybeEmitPeerTrustRequired(bool force);
     void maybeEmitServerTrustRequired(bool force);
@@ -229,18 +262,19 @@ private:
                             bool isResend);
     void startAsyncFileSave(const QString &convId,
                             const QString &messageId,
-                            const mi::client::ClientCore::ChatFileMessage &file,
+                            const ChatFileEntry &file,
                             const QString &outPath);
     void cacheAttachmentPreviewForSend(const QString &convId,
                                        const QString &messageId,
                                        const QString &filePath);
     void applyCachedAttachmentPreview(const QString &convId,
                                       const QString &messageId,
-                                      const mi::client::ClientCore::ChatFileMessage &file);
-    void storeAttachmentPreviewForPath(const mi::client::ClientCore::ChatFileMessage &file,
+                                      const ChatFileEntry &file);
+    void storeAttachmentPreviewForPath(const ChatFileEntry &file,
                                        const QString &filePath);
+    void loadDeviceSyncSettings();
 
-    mi::client::ClientCore core_;
+    mi_client_handle* c_api_{nullptr};
     bool inited_{false};
     bool loggedIn_{false};
     bool online_{true};
@@ -258,8 +292,10 @@ private:
     QString lastServerTrustFingerprint_;
     bool attemptedAutoStartServer_{false};
     bool promptedKtRoot_{false};
+    bool device_sync_enabled_{false};
+    bool device_sync_primary_{true};
 
-    std::unordered_map<std::string, mi::client::ClientCore::ChatFileMessage> receivedFiles_;
+    std::unordered_map<std::string, ChatFileEntry> receivedFiles_;
     std::unordered_map<std::string, PendingOutgoing> pendingOutgoing_;
     std::unordered_set<std::string> seenFriendRequests_;
     std::unordered_map<std::string, std::string> groupPendingDeliveries_;

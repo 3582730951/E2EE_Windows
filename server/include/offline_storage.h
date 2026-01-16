@@ -74,6 +74,13 @@ struct BlobDownloadStartResult {
 };
 
 struct BlobDownloadChunkResult {
+  BlobDownloadChunkResult() = default;
+  BlobDownloadChunkResult(const BlobDownloadChunkResult&) = default;
+  BlobDownloadChunkResult& operator=(const BlobDownloadChunkResult&) = default;
+  BlobDownloadChunkResult(BlobDownloadChunkResult&&) noexcept = default;
+  BlobDownloadChunkResult& operator=(BlobDownloadChunkResult&&) noexcept = default;
+  ~BlobDownloadChunkResult();
+
   bool success{false};
   std::uint64_t offset{0};
   bool eof{false};

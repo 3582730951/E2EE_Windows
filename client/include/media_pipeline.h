@@ -11,6 +11,11 @@
 
 #include "media_session.h"
 
+namespace mi::platform::media {
+class OpusCodec;
+class H264Codec;
+}  // namespace mi::platform::media
+
 namespace mi::client::media {
 
 enum class AudioCodec : std::uint8_t {
@@ -91,8 +96,7 @@ class AudioPipeline {
   MediaJitterStats last_jitter_{};
   std::uint64_t last_adapt_ms_{0};
   bool ready_{false};
-  class OpusCodecImpl;
-  std::unique_ptr<OpusCodecImpl> opus_;
+  std::unique_ptr<mi::platform::media::OpusCodec> opus_;
 };
 
 class VideoPipeline {
@@ -137,8 +141,8 @@ class VideoPipeline {
   MediaJitterStats last_jitter_{};
   std::uint64_t last_adapt_ms_{0};
   bool ready_{false};
-  class MfVideoCodecImpl;
-  std::unique_ptr<MfVideoCodecImpl> mf_;
+  std::unique_ptr<mi::platform::media::H264Codec> mf_;
+  std::size_t h264_payload_hint_{0};
   std::vector<std::uint8_t> encode_scratch_;
 };
 

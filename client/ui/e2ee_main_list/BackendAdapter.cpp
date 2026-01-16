@@ -26,7 +26,7 @@
 #include <QProcess>
 #include <algorithm>
 #include <thread>
-#include <chrono>
+#include <cstring>
 #include <filesystem>
 #if defined(MI_UI_HAS_QT_MULTIMEDIA)
 #include <QMediaPlayer>
@@ -34,9 +34,12 @@
 #include <QVideoSink>
 #endif
 
+#include "c_api_client.h"
+#include "cpp_client_adapter.h"
 #include "../common/UiSettings.h"
 #include "../common/UiRuntimePaths.h"
 #include "key_transparency.h"
+#include "platform_time.h"
 
 BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {
     core_pool_.setMaxThreadCount(1);
@@ -46,6 +49,10 @@ BackendAdapter::BackendAdapter(QObject *parent) : QObject(parent) {
 BackendAdapter::~BackendAdapter() {
     core_pool_.clear();
     core_pool_.waitForDone();
+    if (c_api_) {
+        mi_client_destroy(c_api_);
+        c_api_ = nullptr;
+    }
 }
 
 namespace {
@@ -96,6 +103,11 @@ QString GenerateMessageIdHex() {
 constexpr int kPreviewMaxBytes = 240 * 1024;
 constexpr int kPreviewMaxDim = 256;
 constexpr int kPreviewMinDim = 64;
+constexpr std::uint32_t kMaxFriendEntries = 512;
+constexpr std::uint32_t kMaxFriendRequestEntries = 256;
+constexpr std::uint32_t kMaxDeviceEntries = 128;
+constexpr std::uint32_t kMaxGroupMemberEntries = 256;
+constexpr std::uint32_t kMaxDevicePairingRequests = 64;
 
 bool IsImageExtension(const QString &suffix) {
     static const QStringList kImageExt = {
@@ -454,7 +466,7 @@ bool IsNonRetryableSendError(const QString &coreErr) {
 }
 
 QVector<BackendAdapter::FriendEntry> ToFriendEntries(
-    const std::vector<mi::client::ClientCore::FriendEntry> &friends) {
+    const std::vector<mi::sdk::FriendEntry> &friends) {
     QVector<BackendAdapter::FriendEntry> out;
     out.reserve(static_cast<int>(friends.size()));
     for (const auto &f : friends) {
@@ -465,6 +477,165 @@ QVector<BackendAdapter::FriendEntry> ToFriendEntries(
     }
     return out;
 }
+
+QVector<BackendAdapter::FriendEntry> ToFriendEntries(
+    const mi_friend_entry_t* entries,
+    std::uint32_t count) {
+    QVector<BackendAdapter::FriendEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        BackendAdapter::FriendEntry e;
+        if (entries[i].username) {
+            e.username = QString::fromUtf8(entries[i].username);
+        }
+        if (entries[i].remark) {
+            e.remark = QString::fromUtf8(entries[i].remark);
+        }
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+QVector<BackendAdapter::FriendRequestEntry> ToFriendRequestEntries(
+    const mi_friend_request_entry_t* entries,
+    std::uint32_t count) {
+    QVector<BackendAdapter::FriendRequestEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        BackendAdapter::FriendRequestEntry e;
+        if (entries[i].requester_username) {
+            e.requesterUsername = QString::fromUtf8(entries[i].requester_username);
+        }
+        if (entries[i].requester_remark) {
+            e.requesterRemark = QString::fromUtf8(entries[i].requester_remark);
+        }
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+QVector<BackendAdapter::GroupMemberRoleEntry> ToGroupMemberRoleEntries(
+    const mi_group_member_entry_t* entries,
+    std::uint32_t count) {
+    QVector<BackendAdapter::GroupMemberRoleEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        BackendAdapter::GroupMemberRoleEntry e;
+        if (entries[i].username) {
+            e.username = QString::fromUtf8(entries[i].username);
+        }
+        e.role = static_cast<int>(entries[i].role);
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+QVector<QString> ToGroupMemberNames(const mi_group_member_entry_t* entries,
+                                    std::uint32_t count) {
+    QVector<QString> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        if (entries[i].username) {
+            out.push_back(QString::fromUtf8(entries[i].username));
+        }
+    }
+    return out;
+}
+
+QVector<BackendAdapter::DevicePairingRequestEntry> ToDevicePairingRequests(
+    const mi_device_pairing_request_t* entries,
+    std::uint32_t count) {
+    QVector<BackendAdapter::DevicePairingRequestEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        BackendAdapter::DevicePairingRequestEntry e;
+        if (entries[i].device_id) {
+            e.deviceId = QString::fromUtf8(entries[i].device_id);
+        }
+        if (entries[i].request_id_hex) {
+            e.requestIdHex = QString::fromUtf8(entries[i].request_id_hex);
+        }
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+QVector<BackendAdapter::DeviceEntry> ToDeviceEntries(
+    const mi_device_entry_t* entries,
+    std::uint32_t count) {
+    QVector<BackendAdapter::DeviceEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        BackendAdapter::DeviceEntry e;
+        if (entries[i].device_id) {
+            e.deviceId = QString::fromUtf8(entries[i].device_id);
+        }
+        e.lastSeenSec = static_cast<quint32>(entries[i].last_seen_sec);
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+std::vector<mi::sdk::FriendEntry> ToFriendVector(
+    const mi_friend_entry_t* entries,
+    std::uint32_t count) {
+    std::vector<mi::sdk::FriendEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        mi::sdk::FriendEntry e;
+        if (entries[i].username) {
+            e.username = entries[i].username;
+        }
+        if (entries[i].remark) {
+            e.remark = entries[i].remark;
+        }
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+std::vector<mi::sdk::FriendRequestEntry> ToFriendRequestVector(
+    const mi_friend_request_entry_t* entries,
+    std::uint32_t count) {
+    std::vector<mi::sdk::FriendRequestEntry> out;
+    if (!entries || count == 0) {
+        return out;
+    }
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        mi::sdk::FriendRequestEntry e;
+        if (entries[i].requester_username) {
+            e.requester_username = entries[i].requester_username;
+        }
+        if (entries[i].requester_remark) {
+            e.requester_remark = entries[i].requester_remark;
+        }
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
 }  // namespace
 
 bool BackendAdapter::init(const QString &configPath) {
@@ -472,7 +643,13 @@ bool BackendAdapter::init(const QString &configPath) {
         if (!configPath.isEmpty() && configPath != configPath_) {
             // 允许在首次之后更新配置路径
             configPath_ = ResolveConfigPath(configPath);
-            inited_ = core_.Init(configPath_.toStdString());
+            loadDeviceSyncSettings();
+            if (c_api_) {
+                mi_client_destroy(c_api_);
+                c_api_ = nullptr;
+            }
+            c_api_ = mi_client_create(configPath_.toStdString().c_str());
+            inited_ = c_api_ != nullptr;
         }
         return inited_;
     }
@@ -491,10 +668,17 @@ bool BackendAdapter::init(const QString &configPath) {
     } else {
         configPath_ = ResolveConfigPath(QStringLiteral("config/client_config.ini"));
     }
-    inited_ = core_.Init(configPath_.toStdString());
+    loadDeviceSyncSettings();
+    if (c_api_) {
+        mi_client_destroy(c_api_);
+        c_api_ = nullptr;
+    }
+    c_api_ = mi_client_create(configPath_.toStdString().c_str());
+    inited_ = c_api_ != nullptr;
     if (!inited_ && !promptedKtRoot_) {
-        const QString coreErr = QString::fromStdString(core_.last_error());
-        if (IsKtRootError(coreErr)) {
+        const char* createErr = mi_client_last_create_error();
+        const QString apiErr = createErr ? QString::fromUtf8(createErr) : QString();
+        if (IsKtRootError(apiErr)) {
             promptedKtRoot_ = true;
             bool ktApplied = false;
             const QString baseDir = QFileInfo(configPath_).absolutePath();
@@ -522,7 +706,12 @@ bool BackendAdapter::init(const QString &configPath) {
                                            input)) {
                         QString writeErr;
                         if (WriteKtRootPath(configPath_, pick, writeErr)) {
-                            inited_ = core_.Init(configPath_.toStdString());
+                            if (c_api_) {
+                                mi_client_destroy(c_api_);
+                                c_api_ = nullptr;
+                            }
+                            c_api_ = mi_client_create(configPath_.toStdString().c_str());
+                            inited_ = c_api_ != nullptr;
                             ktApplied = inited_;
                         } else {
                             QMessageBox::warning(nullptr,
@@ -546,6 +735,25 @@ bool BackendAdapter::init(const QString &configPath) {
     return inited_;
 }
 
+void BackendAdapter::loadDeviceSyncSettings() {
+    device_sync_enabled_ = false;
+    device_sync_primary_ = true;
+    if (configPath_.isEmpty()) {
+        return;
+    }
+    QSettings settings(configPath_, QSettings::IniFormat);
+    settings.beginGroup(QStringLiteral("device_sync"));
+    device_sync_enabled_ =
+        settings.value(QStringLiteral("enabled"), 0).toInt() != 0;
+    const QString role =
+        settings.value(QStringLiteral("role"), QStringLiteral("primary"))
+            .toString()
+            .trimmed()
+            .toLower();
+    device_sync_primary_ = (role != QStringLiteral("linked"));
+    settings.endGroup();
+}
+
 bool BackendAdapter::ensureInited(QString &err) {
     if (coreWorkActive_.load()) {
         err = QStringLiteral("同步中，请稍后");
@@ -557,7 +765,9 @@ bool BackendAdapter::ensureInited(QString &err) {
     }
     if (!inited_) {
         if (!init(configPath_)) {
-            const QString coreErr = QString::fromStdString(core_.last_error());
+            const char* createErr = mi_client_last_create_error();
+            const QString coreErr =
+                createErr ? QString::fromUtf8(createErr) : QString();
             const QString pathHint = configPath_.isEmpty()
                                          ? QStringLiteral("config/client_config.ini")
                                          : configPath_;
@@ -571,19 +781,48 @@ bool BackendAdapter::ensureInited(QString &err) {
 }
 
 bool BackendAdapter::login(const QString &account, const QString &password, QString &err) {
-    if (account.trimmed().isEmpty() || password.isEmpty()) {
+    const QString user = account.trimmed();
+    if (user.isEmpty() || password.isEmpty()) {
         err = QStringLiteral("账号或密码为空");
         return false;
     }
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.Login(account.trimmed().toStdString(), password.toStdString())) {
-        QString coreErr = AugmentTransportErrorHint(QString::fromStdString(core_.last_error()));
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    QString rawErr;
+    const auto loginOnce = [&](QString& outErr) -> bool {
+        outErr.clear();
+        if (!c_api_) {
+            outErr = QStringLiteral("未初始化");
+            return false;
+        }
+        const bool ok = mi_client_login(c_api_, user.toStdString().c_str(),
+                                        password.toStdString().c_str()) != 0;
+        if (!ok) {
+            const char* apiErr = mi_client_last_error(c_api_);
+            outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
+        }
+        return ok;
+    };
+
+    if (!loginOnce(rawErr)) {
+        QString coreErr = AugmentTransportErrorHint(rawErr);
 
         if (!attemptedAutoStartServer_ &&
             (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
-            core_.is_remote_mode()) {
+            (c_api_ && (mi_client_is_remote_mode(c_api_) != 0))) {
             const ServerEndpoint ep = ReadClientEndpoint(configPath_);
             if (IsLoopbackHost(ep.host) && ep.port != 0) {
                 const QString serverExe = FindBundledServerExe();
@@ -591,10 +830,10 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
                     const QString serverDir = QFileInfo(serverExe).absolutePath();
                     if (QProcess::startDetached(serverExe, {}, serverDir)) {
                         attemptedAutoStartServer_ = true;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                        if (core_.Login(account.trimmed().toStdString(), password.toStdString())) {
+                        mi::platform::SleepMs(250);
+                        if (loginOnce(rawErr)) {
                             loggedIn_ = true;
-                            currentUser_ = account.trimmed();
+                            currentUser_ = user;
                             lastFriends_.clear();
                             friendSyncForced_.store(true);
                             lastFriendSyncAtMs_.store(0);
@@ -603,13 +842,13 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
                             startPolling(basePollIntervalMs_);
                             return true;
                         }
-                        coreErr = QString::fromStdString(core_.last_error()).trimmed();
+                        coreErr = rawErr.trimmed();
                     }
                 }
             }
         }
 
-        if (core_.HasPendingServerTrust()) {
+        if (hasPendingServerTrust()) {
             err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
         } else if (!coreErr.isEmpty()) {
             const ServerEndpoint ep = ReadClientEndpoint(configPath_);
@@ -626,7 +865,7 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
         return false;
     }
     loggedIn_ = true;
-    currentUser_ = account.trimmed();
+    currentUser_ = user;
     lastFriends_.clear();
     friendSyncForced_.store(true);
     lastFriendSyncAtMs_.store(0);
@@ -658,7 +897,9 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
             const QString path = configPath_.isEmpty()
                                      ? QStringLiteral("config/client_config.ini")
                                      : configPath_;
-            const QString coreErr = QString::fromStdString(core_.last_error());
+            const char* createErr = mi_client_last_create_error();
+            const QString coreErr =
+                createErr ? QString::fromUtf8(createErr) : QString();
             coreWorkActive_.store(false);
             if (coreErr.isEmpty()) {
                 emit loginFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
@@ -676,17 +917,33 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
             return;
         }
 
-        bool success = self->core_.Login(acc.toStdString(), pwd.toStdString());
+        QString rawErr;
+        const auto loginOnce = [&](QString& outErr) -> bool {
+            outErr.clear();
+            if (!self->c_api_) {
+                outErr = QStringLiteral("未初始化");
+                return false;
+            }
+            const bool ok = mi_client_login(self->c_api_, acc.toStdString().c_str(),
+                                            pwd.toStdString().c_str()) != 0;
+            if (!ok) {
+                const char* apiErr = mi_client_last_error(self->c_api_);
+                outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
+            }
+            return ok;
+        };
+
+        bool success = loginOnce(rawErr);
         bool autoStartAttempted = false;
         QString err;
 
         if (!success) {
-            QString coreErr = AugmentTransportErrorHint(QString::fromStdString(self->core_.last_error()));
+            QString coreErr = AugmentTransportErrorHint(rawErr);
 
             if (allowAutoStart &&
                 !autoStartAttempted &&
                 (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
-                self->core_.is_remote_mode()) {
+                (self->c_api_ && (mi_client_is_remote_mode(self->c_api_) != 0))) {
                 const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
                 if (IsLoopbackHost(ep.host) && ep.port != 0) {
                     const QString serverExe = FindBundledServerExe();
@@ -694,11 +951,11 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
                         const QString serverDir = QFileInfo(serverExe).absolutePath();
                         if (QProcess::startDetached(serverExe, {}, serverDir)) {
                             autoStartAttempted = true;
-                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                            if (self->core_.Login(acc.toStdString(), pwd.toStdString())) {
+                            mi::platform::SleepMs(250);
+                            if (loginOnce(rawErr)) {
                                 success = true;
                             } else {
-                                coreErr = QString::fromStdString(self->core_.last_error()).trimmed();
+                                coreErr = rawErr.trimmed();
                             }
                         }
                     }
@@ -706,7 +963,7 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
             }
 
             if (!success) {
-                if (self->core_.HasPendingServerTrust()) {
+                if (self->hasPendingServerTrust()) {
                     err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
                 } else if (!coreErr.isEmpty()) {
                     const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
@@ -763,11 +1020,27 @@ bool BackendAdapter::registerUser(const QString &account, const QString &passwor
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.Register(acc.toStdString(), pwd.toStdString())) {
-        QString coreErr = AugmentTransportErrorHint(QString::fromStdString(core_.last_error()));
+    QString rawErr;
+    const auto registerOnce = [&](QString& outErr) -> bool {
+        outErr.clear();
+        if (!c_api_) {
+            outErr = QStringLiteral("未初始化");
+            return false;
+        }
+        const bool ok = mi_client_register(c_api_, acc.toStdString().c_str(),
+                                           pwd.toStdString().c_str()) != 0;
+        if (!ok) {
+            const char* apiErr = mi_client_last_error(c_api_);
+            outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
+        }
+        return ok;
+    };
+
+    if (!registerOnce(rawErr)) {
+        QString coreErr = AugmentTransportErrorHint(rawErr);
         if (!attemptedAutoStartServer_ &&
             (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
-            core_.is_remote_mode()) {
+            (c_api_ && (mi_client_is_remote_mode(c_api_) != 0))) {
             const ServerEndpoint ep = ReadClientEndpoint(configPath_);
             if (IsLoopbackHost(ep.host) && ep.port != 0) {
                 const QString serverExe = FindBundledServerExe();
@@ -775,18 +1048,18 @@ bool BackendAdapter::registerUser(const QString &account, const QString &passwor
                     const QString serverDir = QFileInfo(serverExe).absolutePath();
                     if (QProcess::startDetached(serverExe, {}, serverDir)) {
                         attemptedAutoStartServer_ = true;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                        if (core_.Register(acc.toStdString(), pwd.toStdString())) {
+                        mi::platform::SleepMs(250);
+                        if (registerOnce(rawErr)) {
                             err.clear();
                             return true;
                         }
-                        coreErr = QString::fromStdString(core_.last_error()).trimmed();
+                        coreErr = rawErr.trimmed();
                     }
                 }
             }
         }
 
-        if (core_.HasPendingServerTrust()) {
+        if (hasPendingServerTrust()) {
             err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
         } else if (!coreErr.isEmpty()) {
             const ServerEndpoint ep = ReadClientEndpoint(configPath_);
@@ -825,7 +1098,9 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
             const QString path = configPath_.isEmpty()
                                      ? QStringLiteral("config/client_config.ini")
                                      : configPath_;
-            const QString coreErr = QString::fromStdString(core_.last_error());
+            const char* createErr = mi_client_last_create_error();
+            const QString coreErr =
+                createErr ? QString::fromUtf8(createErr) : QString();
             coreWorkActive_.store(false);
             if (coreErr.isEmpty()) {
                 emit registerFinished(false, QStringLiteral("后端初始化失败（检查 %1）").arg(path));
@@ -843,16 +1118,32 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
             return;
         }
 
-        bool success = self->core_.Register(acc.toStdString(), pwd.toStdString());
+        QString rawErr;
+        const auto registerOnce = [&](QString& outErr) -> bool {
+            outErr.clear();
+            if (!self->c_api_) {
+                outErr = QStringLiteral("未初始化");
+                return false;
+            }
+            const bool ok = mi_client_register(self->c_api_, acc.toStdString().c_str(),
+                                               pwd.toStdString().c_str()) != 0;
+            if (!ok) {
+                const char* apiErr = mi_client_last_error(self->c_api_);
+                outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
+            }
+            return ok;
+        };
+
+        bool success = registerOnce(rawErr);
         bool autoStartAttempted = false;
         QString err;
 
         if (!success) {
-            QString coreErr = AugmentTransportErrorHint(QString::fromStdString(self->core_.last_error()));
+            QString coreErr = AugmentTransportErrorHint(rawErr);
             if (allowAutoStart &&
                 !autoStartAttempted &&
                 (coreErr == QStringLiteral("connect failed") || coreErr == QStringLiteral("dns resolve failed")) &&
-                self->core_.is_remote_mode()) {
+                (self->c_api_ && (mi_client_is_remote_mode(self->c_api_) != 0))) {
                 const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
                 if (IsLoopbackHost(ep.host) && ep.port != 0) {
                     const QString serverExe = FindBundledServerExe();
@@ -860,11 +1151,11 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
                         const QString serverDir = QFileInfo(serverExe).absolutePath();
                         if (QProcess::startDetached(serverExe, {}, serverDir)) {
                             autoStartAttempted = true;
-                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                            if (self->core_.Register(acc.toStdString(), pwd.toStdString())) {
+                            mi::platform::SleepMs(250);
+                            if (registerOnce(rawErr)) {
                                 success = true;
                             } else {
-                                coreErr = QString::fromStdString(self->core_.last_error()).trimmed();
+                                coreErr = rawErr.trimmed();
                             }
                         }
                     }
@@ -872,7 +1163,7 @@ void BackendAdapter::registerUserAsync(const QString &account, const QString &pa
             }
 
             if (!success) {
-                if (self->core_.HasPendingServerTrust()) {
+                if (self->hasPendingServerTrust()) {
                     err = QStringLiteral("首次连接/证书变更：需先信任服务器（TLS）");
                 } else if (!coreErr.isEmpty()) {
                     const ServerEndpoint ep = ReadClientEndpoint(self->configPath_);
@@ -909,8 +1200,14 @@ QVector<BackendAdapter::FriendEntry> BackendAdapter::listFriends(QString &err) {
     if (!ensureInited(err)) {
         return out;
     }
-    const auto friends = core_.ListFriends();
-    out = ToFriendEntries(friends);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return out;
+    }
+    std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+    const std::uint32_t count =
+        mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
+    out = ToFriendEntries(buffer.data(), count);
     lastFriends_ = out;
     err.clear();
     return out;
@@ -938,10 +1235,28 @@ void BackendAdapter::requestFriendList() {
         if (!self) {
             return;
         }
-        std::vector<mi::client::ClientCore::FriendEntry> friends;
+        QVector<BackendAdapter::FriendEntry> friends;
         bool changed = false;
-        const bool ok = self->core_.SyncFriends(friends, changed);
-        const std::string coreErr = ok ? std::string() : self->core_.last_error();
+        bool ok = false;
+        std::string coreErr;
+        if (!self->c_api_) {
+            coreErr = "not initialized";
+        } else {
+            std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+            int changed_flag = 0;
+            const std::uint32_t count =
+                mi_client_sync_friends(self->c_api_, buffer.data(),
+                                       kMaxFriendEntries, &changed_flag);
+            const char* err = mi_client_last_error(self->c_api_);
+            ok = !(err && *err);
+            if (ok && changed_flag) {
+                friends = ToFriendEntries(buffer.data(), count);
+                changed = true;
+            }
+            if (!ok && err) {
+                coreErr = err;
+            }
+        }
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         self->lastFriendSyncAtMs_.store(now);
         self->friendSyncForced_.store(false);
@@ -958,7 +1273,7 @@ void BackendAdapter::requestFriendList() {
                 return;
             }
             if (ok && changed) {
-                self->lastFriends_ = ToFriendEntries(friends);
+                self->lastFriends_ = std::move(friends);
             }
             emit self->friendListLoaded(self->lastFriends_, err);
         }, Qt::QueuedConnection);
@@ -978,8 +1293,18 @@ bool BackendAdapter::addFriend(const QString &account, const QString &remark, QS
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.AddFriend(target.toStdString(), remark.trimmed().toStdString())) {
-        err = QStringLiteral("添加好友失败：账号不存在或服务器异常");
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const QByteArray remarkUtf8 = remark.trimmed().toUtf8();
+    const bool ok = mi_client_add_friend(
+                        c_api_, target.toStdString().c_str(),
+                        remarkUtf8.isEmpty() ? nullptr : remarkUtf8.constData()) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = apiErr && *apiErr ? QString::fromUtf8(apiErr)
+                                : QStringLiteral("添加好友失败");
         return false;
     }
     friendSyncForced_.store(true);
@@ -1000,9 +1325,17 @@ bool BackendAdapter::sendFriendRequest(const QString &account, const QString &re
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SendFriendRequest(target.toStdString(), remark.trimmed().toUtf8().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送好友申请失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const bool ok = mi_client_send_friend_request(
+                        c_api_, target.toStdString().c_str(),
+                        remark.trimmed().toUtf8().toStdString().c_str()) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = apiErr && *apiErr ? QString::fromUtf8(apiErr)
+                                : QStringLiteral("发送好友申请失败");
         return false;
     }
     err.clear();
@@ -1018,14 +1351,15 @@ QVector<BackendAdapter::FriendRequestEntry> BackendAdapter::listFriendRequests(Q
     if (!ensureInited(err)) {
         return out;
     }
-    const auto reqs = core_.ListFriendRequests();
-    out.reserve(static_cast<int>(reqs.size()));
-    for (const auto &r : reqs) {
-        FriendRequestEntry e;
-        e.requesterUsername = QString::fromStdString(r.requester_username);
-        e.requesterRemark = QString::fromStdString(r.requester_remark);
-        out.push_back(std::move(e));
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return out;
     }
+    std::vector<mi_friend_request_entry_t> buffer(kMaxFriendRequestEntries);
+    const std::uint32_t count =
+        mi_client_list_friend_requests(c_api_, buffer.data(),
+                                       kMaxFriendRequestEntries);
+    out = ToFriendRequestEntries(buffer.data(), count);
     err.clear();
     return out;
 }
@@ -1043,9 +1377,16 @@ bool BackendAdapter::respondFriendRequest(const QString &requester, bool accept,
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.RespondFriendRequest(u.toStdString(), accept)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("处理好友申请失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const bool ok = mi_client_respond_friend_request(
+                        c_api_, u.toStdString().c_str(), accept ? 1 : 0) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = apiErr && *apiErr ? QString::fromUtf8(apiErr)
+                                : QStringLiteral("处理好友申请失败");
         return false;
     }
     if (accept) {
@@ -1068,9 +1409,16 @@ bool BackendAdapter::deleteFriend(const QString &account, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.DeleteFriend(target.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("删除好友失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const bool ok =
+        mi_client_delete_friend(c_api_, target.toStdString().c_str()) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = apiErr && *apiErr ? QString::fromUtf8(apiErr)
+                                : QStringLiteral("删除好友失败");
         return false;
     }
     friendSyncForced_.store(true);
@@ -1089,9 +1437,21 @@ bool BackendAdapter::deleteChatHistory(const QString &convId, bool isGroup,
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.DeleteChatHistory(cid.toStdString(), isGroup, deleteAttachments, secureWipe)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("删除聊天记录失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    ok = mi_client_delete_chat_history(
+        c_api_, cid.toStdString().c_str(), isGroup ? 1 : 0,
+        deleteAttachments ? 1 : 0, secureWipe ? 1 : 0) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("删除聊天记录失败") : errMsg;
         return false;
     }
     err.clear();
@@ -1111,9 +1471,20 @@ bool BackendAdapter::setUserBlocked(const QString &account, bool blocked, QStrin
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SetUserBlocked(target.toStdString(), blocked)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("操作失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    ok = mi_client_set_user_blocked(c_api_, target.toStdString().c_str(),
+                                    blocked ? 1 : 0) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("操作失败") : errMsg;
         return false;
     }
     if (blocked) {
@@ -1136,8 +1507,21 @@ bool BackendAdapter::setFriendRemark(const QString &account, const QString &rema
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SetFriendRemark(target.toStdString(), remark.trimmed().toStdString())) {
-        err = QStringLiteral("备注更新失败：账号不存在或服务器异常");
+    bool ok = false;
+    QString errMsg;
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    ok = mi_client_set_friend_remark(
+        c_api_, target.toStdString().c_str(),
+        remark.trimmed().toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("备注更新失败：账号不存在或服务器异常") : errMsg;
         return false;
     }
     friendSyncForced_.store(true);
@@ -1158,15 +1542,30 @@ bool BackendAdapter::sendText(const QString &targetId, const QString &text, QStr
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
 
     std::string msgId;
-    const bool ok = core_.SendChatText(targetId.toStdString(), text.toUtf8().toStdString(), msgId);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_private_text(c_api_, targetId.toStdString().c_str(),
+                                     text.toUtf8().toStdString().c_str(),
+                                     &outId) != 0;
+    if (outId) {
+        msgId.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("后端发送失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        err = errMsg.isEmpty() ? QStringLiteral("后端发送失败") : errMsg;
+        const bool retryable = !IsNonRetryableSendError(errMsg);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
@@ -1206,19 +1605,34 @@ bool BackendAdapter::sendTextWithReply(const QString &targetId,
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
 
     std::string msgId;
-    const bool ok = core_.SendChatTextWithReply(targetId.toStdString(),
-                                               text.toUtf8().toStdString(),
-                                               replyToMessageId.trimmed().toStdString(),
-                                               replyPreview.toUtf8().toStdString(),
-                                               msgId);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_private_text_with_reply(
+        c_api_, targetId.toStdString().c_str(),
+        text.toUtf8().toStdString().c_str(),
+        replyToMessageId.trimmed().toStdString().c_str(),
+        replyPreview.toUtf8().toStdString().c_str(),
+        &outId) != 0;
+    if (outId) {
+        msgId.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("后端发送失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        const QString errQ = errMsg.trimmed();
+        err = errQ.isEmpty() ? QStringLiteral("后端发送失败") : errQ;
+        const bool retryable = !IsNonRetryableSendError(errQ);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
@@ -1258,36 +1672,52 @@ bool BackendAdapter::resendText(const QString &targetId, const QString &messageI
 
     const std::string key = messageId.trimmed().toStdString();
     bool ok = false;
+    QString errMsg;
     auto it = pendingOutgoing_.find(key);
     if (it != pendingOutgoing_.end() && !it->second.isFile && !it->second.isGroup) {
         const PendingOutgoing &p = it->second;
         if (p.kind == PendingOutgoing::Kind::ReplyText) {
-            ok = core_.ResendChatTextWithReply(targetId.toStdString(),
-                                              key,
-                                              p.text.toUtf8().toStdString(),
-                                              p.replyToMessageId.trimmed().toStdString(),
-                                              p.replyPreview.toUtf8().toStdString());
+            ok = mi_client_resend_private_text_with_reply(
+                c_api_, targetId.toStdString().c_str(), key.c_str(),
+                p.text.toUtf8().toStdString().c_str(),
+                p.replyToMessageId.trimmed().toStdString().c_str(),
+                p.replyPreview.toUtf8().toStdString().c_str()) != 0;
+            const char* apiErr = mi_client_last_error(c_api_);
+            if (apiErr && *apiErr) {
+                errMsg = QString::fromUtf8(apiErr);
+            }
         } else if (p.kind == PendingOutgoing::Kind::Location) {
-            ok = core_.ResendChatLocation(targetId.toStdString(),
-                                          key,
-                                          static_cast<std::int32_t>(p.latE7),
-                                          static_cast<std::int32_t>(p.lonE7),
-                                          p.locationLabel.toUtf8().toStdString());
+            ok = mi_client_resend_private_location(
+                c_api_, targetId.toStdString().c_str(), key.c_str(),
+                static_cast<std::int32_t>(p.latE7),
+                static_cast<std::int32_t>(p.lonE7),
+                p.locationLabel.toUtf8().toStdString().c_str()) != 0;
+            const char* apiErr = mi_client_last_error(c_api_);
+            if (apiErr && *apiErr) {
+                errMsg = QString::fromUtf8(apiErr);
+            }
         } else if (p.kind == PendingOutgoing::Kind::ContactCard) {
-            ok = core_.ResendChatContactCard(targetId.toStdString(),
-                                             key,
-                                             p.cardUsername.trimmed().toStdString(),
-                                             p.cardDisplay.toUtf8().toStdString());
+            ok = mi_client_resend_private_contact(
+                c_api_, targetId.toStdString().c_str(), key.c_str(),
+                p.cardUsername.trimmed().toStdString().c_str(),
+                p.cardDisplay.toUtf8().toStdString().c_str()) != 0;
+            const char* apiErr = mi_client_last_error(c_api_);
+            if (apiErr && *apiErr) {
+                errMsg = QString::fromUtf8(apiErr);
+            }
         }
     }
     if (!ok) {
-        ok = core_.ResendChatText(targetId.toStdString(),
-                                  key,
-                                  text.toUtf8().toStdString());
+        ok = mi_client_resend_private_text(
+            c_api_, targetId.toStdString().c_str(), key.c_str(),
+            text.toUtf8().toStdString().c_str()) != 0;
+        const char* apiErr = mi_client_last_error(c_api_);
+        if (apiErr && *apiErr) {
+            errMsg = QString::fromUtf8(apiErr);
+        }
     }
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("重试失败") : QString::fromStdString(coreErr);
+        err = errMsg.isEmpty() ? QStringLiteral("重试失败") : errMsg;
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
@@ -1373,16 +1803,29 @@ void BackendAdapter::startAsyncFileSend(const QString &convId, bool isGroup,
             return;
         }
         bool ok = false;
-        std::string coreErr;
-        const std::filesystem::path path = std::filesystem::path(pathStr.toStdWString());
-        if (isGroup) {
-            ok = self->core_.ResendGroupChatFile(cid.toStdString(), mid.toStdString(), path);
+        std::string errStr;
+        if (!self->c_api_) {
+            errStr = "not initialized";
         } else {
-            ok = self->core_.ResendChatFile(cid.toStdString(), mid.toStdString(), path);
+            const QByteArray pathUtf8 = pathStr.toUtf8();
+            if (isGroup) {
+                ok = mi_client_resend_group_file(self->c_api_,
+                                                 cid.toStdString().c_str(),
+                                                 mid.toStdString().c_str(),
+                                                 pathUtf8.constData()) != 0;
+            } else {
+                ok = mi_client_resend_private_file(self->c_api_,
+                                                   cid.toStdString().c_str(),
+                                                   mid.toStdString().c_str(),
+                                                   pathUtf8.constData()) != 0;
+            }
+            const char* apiErr = mi_client_last_error(self->c_api_);
+            if (apiErr && *apiErr) {
+                errStr = apiErr;
+            }
         }
-        coreErr = self->core_.last_error();
 
-        const QString err = coreErr.empty() ? QString() : QString::fromStdString(coreErr);
+        const QString err = errStr.empty() ? QString() : QString::fromStdString(errStr);
         QMetaObject::invokeMethod(self, [self, cid, isGroup, mid, pathStr, ok, err, isResend]() {
             if (!self) {
                 return;
@@ -1424,7 +1867,7 @@ void BackendAdapter::startAsyncFileSend(const QString &convId, bool isGroup,
 
 void BackendAdapter::startAsyncFileSave(const QString &convId,
                                         const QString &messageId,
-                                        const mi::client::ClientCore::ChatFileMessage &file,
+                                        const ChatFileEntry &file,
                                         const QString &outPath) {
     bool expected = false;
     if (!fileTransferActive_.compare_exchange_strong(expected, true)) {
@@ -1435,7 +1878,7 @@ void BackendAdapter::startAsyncFileSave(const QString &convId,
     const QString cid = convId.trimmed();
     const QString mid = messageId.trimmed();
     const QString outPathStr = outPath;
-    const mi::client::ClientCore::ChatFileMessage fileCopy = file;
+    const ChatFileEntry fileCopy = file;
     QPointer<BackendAdapter> self(this);
 
     std::thread([self, cid, mid, fileCopy, outPathStr]() {
@@ -1443,12 +1886,24 @@ void BackendAdapter::startAsyncFileSave(const QString &convId,
             return;
         }
         bool ok = false;
-        std::string coreErr;
-        const std::filesystem::path path = std::filesystem::path(outPathStr.toStdWString());
-        ok = self->core_.DownloadChatFileToPath(fileCopy, path, true, nullptr);
-        coreErr = self->core_.last_error();
+        std::string errStr;
+        if (!self->c_api_) {
+            errStr = "not initialized";
+        } else {
+            const QByteArray pathUtf8 = outPathStr.toUtf8();
+            ok = mi_client_download_chat_file_to_path(
+                     self->c_api_, fileCopy.file_id.c_str(),
+                     fileCopy.file_key.data(),
+                     static_cast<std::uint32_t>(fileCopy.file_key.size()),
+                     fileCopy.file_name.c_str(), fileCopy.file_size,
+                     pathUtf8.constData(), 1, nullptr, nullptr) != 0;
+            const char* apiErr = mi_client_last_error(self->c_api_);
+            if (apiErr && *apiErr) {
+                errStr = apiErr;
+            }
+        }
 
-        const QString err = coreErr.empty() ? QString() : QString::fromStdString(coreErr);
+        const QString err = errStr.empty() ? QString() : QString::fromStdString(errStr);
         QMetaObject::invokeMethod(self, [self, cid, mid, outPathStr, ok, err, fileCopy]() {
             if (!self) {
                 return;
@@ -1492,7 +1947,7 @@ void BackendAdapter::cacheAttachmentPreviewForSend(const QString &convId,
 void BackendAdapter::applyCachedAttachmentPreview(
     const QString &convId,
     const QString &messageId,
-    const mi::client::ClientCore::ChatFileMessage &file) {
+    const ChatFileEntry &file) {
     if (convId.trimmed().isEmpty() || messageId.trimmed().isEmpty() ||
         file.file_id.empty()) {
         return;
@@ -1512,12 +1967,17 @@ void BackendAdapter::applyCachedAttachmentPreview(
         return;
     }
     std::vector<std::uint8_t> bytes(preview.begin(), preview.end());
-    core_.BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
-                                                file.file_size, bytes);
+    if (!c_api_) {
+        return;
+    }
+    mi_client_store_attachment_preview_bytes(
+        c_api_, file.file_id.c_str(), file.file_name.c_str(),
+        file.file_size, bytes.data(),
+        static_cast<std::uint32_t>(bytes.size()));
 }
 
 void BackendAdapter::storeAttachmentPreviewForPath(
-    const mi::client::ClientCore::ChatFileMessage &file,
+    const ChatFileEntry &file,
     const QString &filePath) {
     if (file.file_id.empty()) {
         return;
@@ -1531,8 +1991,13 @@ void BackendAdapter::storeAttachmentPreviewForPath(
         return;
     }
     std::vector<std::uint8_t> bytes(preview.begin(), preview.end());
-    core_.BestEffortStoreAttachmentPreviewBytes(file.file_id, file.file_name,
-                                                file.file_size, bytes);
+    if (!c_api_) {
+        return;
+    }
+    mi_client_store_attachment_preview_bytes(
+        c_api_, file.file_id.c_str(), file.file_name.c_str(),
+        file.file_size, bytes.data(),
+        static_cast<std::uint32_t>(bytes.size()));
 }
 
 bool BackendAdapter::sendLocation(const QString &targetId,
@@ -1555,17 +2020,28 @@ bool BackendAdapter::sendLocation(const QString &targetId,
     }
 
     std::string msgId;
-    const bool ok = core_.SendChatLocation(targetId.trimmed().toStdString(),
-                                          static_cast<std::int32_t>(latE7),
-                                          static_cast<std::int32_t>(lonE7),
-                                          label.toUtf8().toStdString(),
-                                          msgId);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_private_location(
+        c_api_, targetId.trimmed().toStdString().c_str(),
+        static_cast<std::int32_t>(latE7),
+        static_cast<std::int32_t>(lonE7),
+        label.toUtf8().toStdString().c_str(),
+        &outId) != 0;
+    if (outId) {
+        msgId.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("发送位置失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        const QString errQ = errMsg.trimmed();
+        err = errQ.isEmpty() ? QStringLiteral("发送位置失败") : errQ;
+        const bool retryable = !IsNonRetryableSendError(errQ);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
@@ -1603,18 +2079,33 @@ bool BackendAdapter::sendContactCard(const QString &targetId,
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
 
     std::string msgId;
-    const bool ok = core_.SendChatContactCard(targetId.trimmed().toStdString(),
-                                             cardUsername.trimmed().toStdString(),
-                                             cardDisplay.toUtf8().toStdString(),
-                                             msgId);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_private_contact(
+        c_api_, targetId.trimmed().toStdString().c_str(),
+        cardUsername.trimmed().toStdString().c_str(),
+        cardDisplay.toUtf8().toStdString().c_str(),
+        &outId) != 0;
+    if (outId) {
+        msgId.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("发送名片失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        const QString errQ = errMsg.trimmed();
+        err = errQ.isEmpty() ? QStringLiteral("发送名片失败") : errQ;
+        const bool retryable = !IsNonRetryableSendError(errQ);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
@@ -1654,17 +2145,32 @@ bool BackendAdapter::sendSticker(const QString &targetId,
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
 
     std::string msgId;
-    const bool ok = core_.SendChatSticker(targetId.trimmed().toStdString(),
-                                         stickerId.trimmed().toStdString(),
-                                         msgId);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_private_sticker(
+        c_api_, targetId.trimmed().toStdString().c_str(),
+        stickerId.trimmed().toStdString().c_str(),
+        &outId) != 0;
+    if (outId) {
+        msgId.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
     outMessageId = QString::fromStdString(msgId);
     if (!ok) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("发送贴纸失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        const QString errQ = errMsg.trimmed();
+        err = errQ.isEmpty() ? QStringLiteral("发送贴纸失败") : errQ;
+        const bool retryable = !IsNonRetryableSendError(errQ);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = targetId;
@@ -1698,12 +2204,22 @@ bool BackendAdapter::resendSticker(const QString &targetId,
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
     const std::string mid = messageId.trimmed().toStdString();
-    if (!core_.ResendChatSticker(targetId.trimmed().toStdString(),
-                                 mid,
-                                 stickerId.trimmed().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("重试发送贴纸失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_resend_private_sticker(
+        c_api_, targetId.trimmed().toStdString().c_str(), mid.c_str(),
+        stickerId.trimmed().toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("重试发送贴纸失败") : errMsg;
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
@@ -1725,10 +2241,21 @@ bool BackendAdapter::sendReadReceipt(const QString &targetId, const QString &mes
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SendChatReadReceipt(targetId.trimmed().toStdString(),
-                                   messageId.trimmed().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送已读回执失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_send_read_receipt(c_api_,
+                                     targetId.trimmed().toStdString().c_str(),
+                                     messageId.trimmed().toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("发送已读回执失败") : errMsg;
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
@@ -1749,9 +2276,21 @@ bool BackendAdapter::sendTyping(const QString &targetId, bool typing, QString &e
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SendChatTyping(targetId.trimmed().toStdString(), typing)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送输入状态失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_send_typing(c_api_,
+                               targetId.trimmed().toStdString().c_str(),
+                               typing ? 1 : 0) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("发送输入状态失败") : errMsg;
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
@@ -1772,9 +2311,21 @@ bool BackendAdapter::sendPresence(const QString &targetId, bool online, QString 
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.SendChatPresence(targetId.trimmed().toStdString(), online)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("发送在线状态失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_send_presence(c_api_,
+                                 targetId.trimmed().toStdString().c_str(),
+                                 online ? 1 : 0) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("发送在线状态失败") : errMsg;
         maybeEmitPeerTrustRequired(false);
         maybeEmitServerTrustRequired(false);
         return false;
@@ -1843,18 +2394,34 @@ bool BackendAdapter::loadReceivedFileBytes(const QString &convId, const QString 
         return false;
     }
 
-    std::vector<std::uint8_t> plain;
-    if (!core_.DownloadChatFileToBytes(it->second, plain, wipeAfterRead)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("下载失败") : QString::fromStdString(coreErr);
+    std::uint8_t* plain = nullptr;
+    std::uint64_t plainLen = 0;
+    const ChatFileEntry& file = it->second;
+    const bool ok = mi_client_download_chat_file_to_bytes(
+                        c_api_, file.file_id.c_str(), file.file_key.data(),
+                        static_cast<std::uint32_t>(file.file_key.size()),
+                        file.file_name.c_str(), file.file_size,
+                        wipeAfterRead ? 1 : 0, &plain, &plainLen) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = (apiErr && *apiErr) ? QString::fromUtf8(apiErr)
+                                  : QStringLiteral("下载失败");
         return false;
     }
-    if (maxBytes > 0 && plain.size() > static_cast<std::size_t>(maxBytes)) {
+    if (maxBytes > 0 && plainLen > static_cast<std::uint64_t>(maxBytes)) {
+        if (plain) {
+            mi_client_free(plain);
+        }
         err = QStringLiteral("文件过大，无法预览");
         return false;
     }
-    outBytes = QByteArray(reinterpret_cast<const char *>(plain.data()),
-                          static_cast<int>(plain.size()));
+    if (plain && plainLen > 0) {
+        outBytes = QByteArray(reinterpret_cast<const char *>(plain),
+                              static_cast<int>(plainLen));
+        mi_client_free(plain);
+    } else {
+        outBytes.clear();
+    }
     err.clear();
     return true;
 }
@@ -1878,47 +2445,60 @@ bool BackendAdapter::loadChatHistory(const QString &convId, bool isGroup, int li
     if (!ensureInited(err)) {
         return false;
     }
-
-    const auto entries = core_.LoadChatHistory(cid.toStdString(), isGroup,
-                                               static_cast<std::size_t>(limit));
-    const std::string coreErr = core_.last_error();
-    if (!coreErr.empty()) {
-        err = QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
         return false;
     }
 
-    outEntries.reserve(static_cast<int>(entries.size()));
-    for (const auto &e : entries) {
+    const std::size_t safeLimit = limit == 0 ? 200u : static_cast<std::size_t>(limit);
+    std::vector<mi_history_entry_t> buffer(safeLimit);
+    const std::uint32_t count =
+        mi_client_load_chat_history(c_api_, cid.toStdString().c_str(),
+                                    isGroup ? 1 : 0,
+                                    static_cast<std::uint32_t>(safeLimit),
+                                    buffer.data(),
+                                    static_cast<std::uint32_t>(buffer.size()));
+    if (count == 0) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        if (apiErr && *apiErr) {
+            err = QString::fromUtf8(apiErr);
+            return false;
+        }
+        err.clear();
+        return true;
+    }
+    outEntries.reserve(static_cast<int>(count));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const mi_history_entry_t& e = buffer[i];
         HistoryMessageEntry h;
-        h.outgoing = e.outgoing;
+        h.outgoing = e.outgoing != 0;
         h.timestampSec = static_cast<quint64>(e.timestamp_sec);
         h.convId = cid;
-        h.sender = QString::fromStdString(e.sender);
-        h.messageId = QString::fromStdString(e.message_id_hex);
+        h.sender = e.sender ? QString::fromUtf8(e.sender) : QString();
+        h.messageId = e.message_id ? QString::fromUtf8(e.message_id) : QString();
 
-        switch (e.status) {
-        case mi::client::ClientCore::HistoryStatus::kSent:
+        switch (static_cast<mi::sdk::HistoryStatus>(e.status)) {
+        case mi::sdk::HistoryStatus::kSent:
             h.status = 0;
             break;
-        case mi::client::ClientCore::HistoryStatus::kDelivered:
+        case mi::sdk::HistoryStatus::kDelivered:
             h.status = 1;
             break;
-        case mi::client::ClientCore::HistoryStatus::kRead:
+        case mi::sdk::HistoryStatus::kRead:
             h.status = 2;
             break;
-        case mi::client::ClientCore::HistoryStatus::kFailed:
+        case mi::sdk::HistoryStatus::kFailed:
             h.status = 3;
             break;
         }
 
-        switch (e.kind) {
-        case mi::client::ClientCore::HistoryKind::kText: {
-            const QString text =
-                QString::fromUtf8(e.text_utf8.data(), static_cast<int>(e.text_utf8.size()));
+        switch (static_cast<mi::sdk::HistoryKind>(e.kind)) {
+        case mi::sdk::HistoryKind::kText: {
+            const QString text = e.text ? QString::fromUtf8(e.text) : QString();
             const auto invite = mi::ui::ParseCallInvite(text);
             if (!isGroup && invite.ok) {
                 h.kind = 4;
-                if (e.outgoing) {
+                if (h.outgoing) {
                     h.text = invite.video
                                  ? UiSettings::Tr(QStringLiteral("已发起视频通话"),
                                                   QStringLiteral("Video call started"))
@@ -1937,28 +2517,35 @@ bool BackendAdapter::loadChatHistory(const QString &convId, bool isGroup, int li
             }
             break;
         }
-        case mi::client::ClientCore::HistoryKind::kFile: {
+        case mi::sdk::HistoryKind::kFile: {
             h.kind = 2;
-            h.fileName = QString::fromUtf8(e.file_name.data(), static_cast<int>(e.file_name.size()));
+            h.fileName = e.file_name ? QString::fromUtf8(e.file_name) : QString();
             h.fileSize = static_cast<qint64>(e.file_size);
-            mi::client::ClientCore::ChatFileMessage f;
-            f.from_username = cid.toStdString();
-            f.message_id_hex = e.message_id_hex;
-            f.file_id = e.file_id;
-            f.file_key = e.file_key;
-            f.file_name = e.file_name;
+            ChatFileEntry f;
+            if (e.file_id) {
+                f.file_id = e.file_id;
+            }
+            if (e.file_key && e.file_key_len == f.file_key.size()) {
+                std::memcpy(f.file_key.data(), e.file_key, f.file_key.size());
+            }
+            if (e.file_name) {
+                f.file_name = e.file_name;
+            }
             f.file_size = e.file_size;
-            const std::string key = cid.toStdString() + "|" + e.message_id_hex;
+            const std::string key =
+                cid.toStdString() + "|" + h.messageId.toStdString();
             receivedFiles_[key] = std::move(f);
             break;
         }
-        case mi::client::ClientCore::HistoryKind::kSticker:
+        case mi::sdk::HistoryKind::kSticker:
             h.kind = 3;
-            h.stickerId = QString::fromStdString(e.sticker_id);
+            h.stickerId = e.sticker_id ? QString::fromUtf8(e.sticker_id) : QString();
             break;
-        case mi::client::ClientCore::HistoryKind::kSystem:
+        case mi::sdk::HistoryKind::kSystem:
             h.kind = 4;
-            h.text = QString::fromUtf8(e.text_utf8.data(), static_cast<int>(e.text_utf8.size()));
+            h.text = e.text ? QString::fromUtf8(e.text) : QString();
+            break;
+        default:
             break;
         }
 
@@ -1978,10 +2565,25 @@ bool BackendAdapter::createGroup(QString &outGroupId, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
     std::string groupId;
-    if (!core_.CreateGroup(groupId)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("创建群聊失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    char* outGroup = nullptr;
+    ok = mi_client_create_group(c_api_, &outGroup) != 0;
+    if (outGroup) {
+        groupId.assign(outGroup);
+        mi_client_free(outGroup);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("创建群聊失败") : errMsg;
         return false;
     }
     outGroupId = QString::fromStdString(groupId);
@@ -2002,9 +2604,19 @@ bool BackendAdapter::joinGroup(const QString &groupId, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.JoinGroup(gid.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("加入群聊失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_join_group(c_api_, gid.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("加入群聊失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2024,9 +2636,19 @@ bool BackendAdapter::leaveGroup(const QString &groupId, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.LeaveGroup(gid.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("退出群聊失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_leave_group(c_api_, gid.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("退出群聊失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2047,16 +2669,21 @@ QVector<QString> BackendAdapter::listGroupMembers(const QString &groupId, QStrin
     if (!ensureInited(err)) {
         return out;
     }
-    const auto members = core_.ListGroupMembers(gid.toStdString());
-    if (members.empty()) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("获取成员列表失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
         return out;
     }
-    out.reserve(static_cast<int>(members.size()));
-    for (const auto &m : members) {
-        out.push_back(QString::fromStdString(m));
+    std::vector<mi_group_member_entry_t> buffer(kMaxGroupMemberEntries);
+    const std::uint32_t count =
+        mi_client_list_group_members_info(c_api_, gid.toStdString().c_str(),
+                                          buffer.data(), kMaxGroupMemberEntries);
+    if (count == 0) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = (apiErr && *apiErr) ? QString::fromUtf8(apiErr)
+                                  : QStringLiteral("获取成员列表失败");
+        return out;
     }
+    out = ToGroupMemberNames(buffer.data(), count);
     err.clear();
     return out;
 }
@@ -2075,20 +2702,22 @@ QVector<BackendAdapter::GroupMemberRoleEntry> BackendAdapter::listGroupMembersIn
     if (!ensureInited(err)) {
         return out;
     }
-    const auto members = core_.ListGroupMembersInfo(gid.toStdString());
-    if (members.empty()) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("获取成员信息失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return out;
+    }
+    std::vector<mi_group_member_entry_t> buffer(kMaxGroupMemberEntries);
+    const std::uint32_t count =
+        mi_client_list_group_members_info(c_api_, gid.toStdString().c_str(),
+                                          buffer.data(), kMaxGroupMemberEntries);
+    if (count == 0) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = (apiErr && *apiErr) ? QString::fromUtf8(apiErr)
+                                  : QStringLiteral("获取成员信息失败");
         maybeEmitServerTrustRequired(true);
         return out;
     }
-    out.reserve(static_cast<int>(members.size()));
-    for (const auto &m : members) {
-        GroupMemberRoleEntry e;
-        e.username = QString::fromStdString(m.username);
-        e.role = static_cast<int>(m.role);
-        out.push_back(std::move(e));
-    }
+    out = ToGroupMemberRoleEntries(buffer.data(), count);
     err.clear();
     return out;
 }
@@ -2107,19 +2736,26 @@ bool BackendAdapter::setGroupMemberRole(const QString &groupId, const QString &m
     if (!ensureInited(err)) {
         return false;
     }
-    mi::client::ClientCore::GroupMemberRole r = mi::client::ClientCore::GroupMemberRole::kMember;
-    if (role == 1) {
-        r = mi::client::ClientCore::GroupMemberRole::kAdmin;
-    } else if (role == 2) {
-        r = mi::client::ClientCore::GroupMemberRole::kMember;
-    } else {
+    if (role != 1 && role != 2) {
         err = QStringLiteral("角色无效");
         return false;
     }
-
-    if (!core_.SetGroupMemberRole(gid.toStdString(), who.toStdString(), r)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("设置角色失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_set_group_member_role(
+        c_api_, gid.toStdString().c_str(),
+        who.toStdString().c_str(),
+        static_cast<std::uint32_t>(role)) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("设置角色失败") : errMsg;
         maybeEmitServerTrustRequired(true);
         return false;
     }
@@ -2141,9 +2777,20 @@ bool BackendAdapter::kickGroupMember(const QString &groupId, const QString &memb
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.KickGroupMember(gid.toStdString(), who.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("踢人失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_kick_group_member(c_api_, gid.toStdString().c_str(),
+                                     who.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("踢人失败") : errMsg;
         maybeEmitServerTrustRequired(true);
         return false;
     }
@@ -2166,10 +2813,26 @@ bool BackendAdapter::sendGroupInvite(const QString &groupId, const QString &peer
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
     std::string mid;
-    if (!core_.SendGroupInvite(gid.toStdString(), to.toStdString(), mid)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("邀请失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_group_invite(c_api_, gid.toStdString().c_str(),
+                                     to.toStdString().c_str(), &outId) != 0;
+    if (outId) {
+        mid.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("邀请失败") : errMsg;
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
@@ -2203,13 +2866,29 @@ bool BackendAdapter::sendGroupText(const QString &groupId, const QString &text, 
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
     std::string mid;
-    if (!core_.SendGroupChatText(gid.toStdString(), t.toUtf8().toStdString(), mid)) {
+    bool ok = false;
+    QString errMsg;
+    char* outId = nullptr;
+    ok = mi_client_send_group_text(c_api_, gid.toStdString().c_str(),
+                                   t.toUtf8().toStdString().c_str(),
+                                   &outId) != 0;
+    if (outId) {
+        mid.assign(outId);
+        mi_client_free(outId);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
+    if (!ok) {
         outMessageId = QString::fromStdString(mid);
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("发送失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+        err = errMsg.isEmpty() ? QStringLiteral("发送失败") : errMsg;
+        const bool retryable = !IsNonRetryableSendError(errMsg);
         if (retryable && !outMessageId.trimmed().isEmpty()) {
             PendingOutgoing p;
             p.convId = gid;
@@ -2242,9 +2921,8 @@ bool BackendAdapter::sendGroupText(const QString &groupId, const QString &text, 
             groupPendingOrder_.clear();
         }
     }
-    const std::string coreErr = core_.last_error();
-    if (!coreErr.empty()) {
-        err = QString::fromStdString(coreErr);  // partial failure warning
+    if (apiErr && *apiErr) {
+        err = QString::fromUtf8(apiErr);  // partial failure warning
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return true;
@@ -2267,11 +2945,22 @@ bool BackendAdapter::resendGroupText(const QString &groupId, const QString &mess
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.ResendGroupChatText(gid.toStdString(), mid.toStdString(), text.toUtf8().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        const QString coreErrQ = QString::fromStdString(coreErr).trimmed();
-        err = coreErrQ.isEmpty() ? QStringLiteral("重试失败") : coreErrQ;
-        const bool retryable = !IsNonRetryableSendError(coreErrQ);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_resend_group_text(c_api_, gid.toStdString().c_str(),
+                                     mid.toStdString().c_str(),
+                                     text.toUtf8().toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr).trimmed();
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("重试失败") : errMsg;
+        const bool retryable = !IsNonRetryableSendError(err);
         if (retryable) {
             PendingOutgoing p;
             p.convId = gid;
@@ -2284,15 +2973,6 @@ bool BackendAdapter::resendGroupText(const QString &groupId, const QString &mess
         maybeEmitPeerTrustRequired(true);
         maybeEmitServerTrustRequired(true);
         return false;
-    }
-    const std::string coreErr = core_.last_error();
-    if (!coreErr.empty()) {
-        err = QString::fromStdString(coreErr);  // partial failure warning
-        maybeEmitPeerTrustRequired(true);
-        maybeEmitServerTrustRequired(true);
-        pendingOutgoing_.erase(mid.toStdString());
-        emit messageResent(gid, mid);
-        return true;
     }
     pendingOutgoing_.erase(mid.toStdString());
     emit messageResent(gid, mid);
@@ -2375,9 +3055,16 @@ bool BackendAdapter::trustPendingPeer(const QString &pin, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.TrustPendingPeer(pin.trimmed().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("信任失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const bool ok =
+        mi_client_trust_pending_peer(c_api_, pin.trimmed().toStdString().c_str()) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        const QString msg = apiErr ? QString::fromUtf8(apiErr) : QString();
+        err = msg.isEmpty() ? QStringLiteral("信任失败") : msg;
         return false;
     }
     err.clear();
@@ -2388,9 +3075,16 @@ bool BackendAdapter::trustPendingServer(const QString &pin, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.TrustPendingServer(pin.trimmed().toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("信任失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    const bool ok =
+        mi_client_trust_pending_server(c_api_, pin.trimmed().toStdString().c_str()) != 0;
+    if (!ok) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        const QString msg = apiErr ? QString::fromUtf8(apiErr) : QString();
+        err = msg.isEmpty() ? QStringLiteral("信任失败") : msg;
         return false;
     }
     err.clear();
@@ -2401,8 +3095,11 @@ QString BackendAdapter::currentDeviceId() const {
     if (fileTransferActive_.load()) {
         return {};
     }
-    const std::string id = core_.device_id();
-    return QString::fromStdString(id);
+    if (c_api_) {
+        const char* value = mi_client_device_id(c_api_);
+        return value ? QString::fromUtf8(value) : QString();
+    }
+    return {};
 }
 
 bool BackendAdapter::isPendingOutgoingMessage(const QString &messageId) const {
@@ -2422,19 +3119,20 @@ QVector<BackendAdapter::DeviceEntry> BackendAdapter::listDevices(QString &err) {
     if (!ensureInited(err)) {
         return out;
     }
-    const auto devices = core_.ListDevices();
-    if (devices.empty()) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("获取设备列表失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
         return out;
     }
-    out.reserve(static_cast<int>(devices.size()));
-    for (const auto &d : devices) {
-        DeviceEntry e;
-        e.deviceId = QString::fromStdString(d.device_id);
-        e.lastSeenSec = static_cast<quint32>(d.last_seen_sec);
-        out.push_back(std::move(e));
+    std::vector<mi_device_entry_t> buffer(kMaxDeviceEntries);
+    const std::uint32_t count =
+        mi_client_list_devices(c_api_, buffer.data(), kMaxDeviceEntries);
+    if (count == 0) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        err = (apiErr && *apiErr) ? QString::fromUtf8(apiErr)
+                                  : QStringLiteral("获取设备列表失败");
+        return out;
     }
+    out = ToDeviceEntries(buffer.data(), count);
     err.clear();
     return out;
 }
@@ -2452,9 +3150,19 @@ bool BackendAdapter::kickDevice(const QString &deviceId, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.KickDevice(target.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("踢下线失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_kick_device(c_api_, target.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("踢下线失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2470,10 +3178,25 @@ bool BackendAdapter::beginDevicePairingPrimary(QString &outPairingCode, QString 
     if (!ensureInited(err)) {
         return false;
     }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
     std::string code;
-    if (!core_.BeginDevicePairingPrimary(code)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("生成配对码失败") : QString::fromStdString(coreErr);
+    bool ok = false;
+    QString errMsg;
+    char* outCode = nullptr;
+    ok = mi_client_begin_device_pairing_primary(c_api_, &outCode) != 0;
+    if (outCode) {
+        code.assign(outCode);
+        mi_client_free(outCode);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("生成配对码失败") : errMsg;
         return false;
     }
     outPairingCode = QString::fromStdString(code);
@@ -2491,19 +3214,23 @@ bool BackendAdapter::pollDevicePairingRequests(QVector<DevicePairingRequestEntry
     if (!ensureInited(err)) {
         return false;
     }
-    const auto requests = core_.PollDevicePairingRequests();
-    const std::string coreErr = core_.last_error();
-    if (!coreErr.empty() && requests.empty()) {
-        err = QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
         return false;
     }
-    outRequests.reserve(static_cast<int>(requests.size()));
-    for (const auto &r : requests) {
-        DevicePairingRequestEntry e;
-        e.deviceId = QString::fromStdString(r.device_id);
-        e.requestIdHex = QString::fromStdString(r.request_id_hex);
-        outRequests.push_back(std::move(e));
+    std::vector<mi_device_pairing_request_t> buffer(
+        kMaxDevicePairingRequests);
+    const std::uint32_t count =
+        mi_client_poll_device_pairing_requests(
+            c_api_, buffer.data(), kMaxDevicePairingRequests);
+    if (count == 0) {
+        const char* apiErr = mi_client_last_error(c_api_);
+        if (apiErr && *apiErr) {
+            err = QString::fromUtf8(apiErr);
+            return false;
+        }
     }
+    outRequests = ToDevicePairingRequests(buffer.data(), count);
     err.clear();
     return true;
 }
@@ -2516,12 +3243,21 @@ bool BackendAdapter::approveDevicePairingRequest(const DevicePairingRequestEntry
     if (!ensureInited(err)) {
         return false;
     }
-    mi::client::ClientCore::DevicePairingRequest r;
-    r.device_id = request.deviceId.trimmed().toStdString();
-    r.request_id_hex = request.requestIdHex.trimmed().toStdString();
-    if (!core_.ApproveDevicePairingRequest(r)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("确认配对失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_approve_device_pairing_request(
+        c_api_, request.deviceId.trimmed().toStdString().c_str(),
+        request.requestIdHex.trimmed().toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("确认配对失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2541,9 +3277,20 @@ bool BackendAdapter::beginDevicePairingLinked(const QString &pairingCode, QStrin
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.BeginDevicePairingLinked(code.toStdString())) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("开始配对失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_begin_device_pairing_linked(
+             c_api_, code.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("开始配对失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2559,9 +3306,21 @@ bool BackendAdapter::pollDevicePairingLinked(bool &outCompleted, QString &err) {
     if (!ensureInited(err)) {
         return false;
     }
-    if (!core_.PollDevicePairingLinked(outCompleted)) {
-        const std::string coreErr = core_.last_error();
-        err = coreErr.empty() ? QStringLiteral("配对轮询失败") : QString::fromStdString(coreErr);
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    int completed = 0;
+    ok = mi_client_poll_device_pairing_linked(c_api_, &completed) != 0;
+    outCompleted = completed != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("配对轮询失败") : errMsg;
         return false;
     }
     err.clear();
@@ -2572,7 +3331,9 @@ void BackendAdapter::cancelDevicePairing() {
     if (fileTransferActive_.load()) {
         return;
     }
-    core_.CancelDevicePairing();
+    if (c_api_) {
+        mi_client_cancel_device_pairing(c_api_);
+    }
 }
 
 void BackendAdapter::startPolling(int intervalMs) {
@@ -2588,16 +3349,26 @@ void BackendAdapter::startPolling(int intervalMs) {
 }
 
 void BackendAdapter::maybeEmitPeerTrustRequired(bool force) {
-    if (!core_.HasPendingPeerTrust()) {
+    QString peer;
+    QString fingerprint;
+    QString pin;
+    if (c_api_) {
+        if (mi_client_has_pending_peer_trust(c_api_) == 0) {
+            lastPeerTrustUser_.clear();
+            lastPeerTrustFingerprint_.clear();
+            return;
+        }
+        const char* peer_c = mi_client_pending_peer_username(c_api_);
+        const char* fp_c = mi_client_pending_peer_fingerprint(c_api_);
+        const char* pin_c = mi_client_pending_peer_pin(c_api_);
+        peer = peer_c ? QString::fromUtf8(peer_c) : QString();
+        fingerprint = fp_c ? QString::fromUtf8(fp_c) : QString();
+        pin = pin_c ? QString::fromUtf8(pin_c) : QString();
+    } else {
         lastPeerTrustUser_.clear();
         lastPeerTrustFingerprint_.clear();
         return;
     }
-
-    const auto &p = core_.pending_peer_trust();
-    const QString peer = QString::fromStdString(p.peer_username);
-    const QString fingerprint = QString::fromStdString(p.fingerprint_hex);
-    const QString pin = QString::fromStdString(p.pin6);
 
     if (!force && peer == lastPeerTrustUser_ && fingerprint == lastPeerTrustFingerprint_) {
         return;
@@ -2608,13 +3379,21 @@ void BackendAdapter::maybeEmitPeerTrustRequired(bool force) {
 }
 
 void BackendAdapter::maybeEmitServerTrustRequired(bool force) {
-    if (!core_.HasPendingServerTrust()) {
+    QString fingerprint;
+    QString pin;
+    if (c_api_) {
+        if (mi_client_has_pending_server_trust(c_api_) == 0) {
+            lastServerTrustFingerprint_.clear();
+            return;
+        }
+        const char* fp_c = mi_client_pending_server_fingerprint(c_api_);
+        const char* pin_c = mi_client_pending_server_pin(c_api_);
+        fingerprint = fp_c ? QString::fromUtf8(fp_c) : QString();
+        pin = pin_c ? QString::fromUtf8(pin_c) : QString();
+    } else {
         lastServerTrustFingerprint_.clear();
         return;
     }
-
-    const QString fingerprint = QString::fromStdString(core_.pending_server_fingerprint());
-    const QString pin = QString::fromStdString(core_.pending_server_pin());
     if (!force && fingerprint == lastServerTrustFingerprint_) {
         return;
     }
@@ -2628,6 +3407,9 @@ void BackendAdapter::maybeRetryPendingOutgoing() {
     }
     QString initErr;
     if (!ensureInited(initErr)) {
+        return;
+    }
+    if (!c_api_) {
         return;
     }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -2665,34 +3447,40 @@ void BackendAdapter::maybeRetryPendingOutgoing() {
             return;
         } else {
             if (p.isGroup) {
-                ok = core_.ResendGroupChatText(p.convId.toStdString(),
-                                              p.messageId.toStdString(),
-                                              p.text.toUtf8().toStdString());
+                ok = mi_client_resend_group_text(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    p.text.toUtf8().toStdString().c_str()) != 0;
             } else if (p.kind == PendingOutgoing::Kind::ReplyText) {
-                ok = core_.ResendChatTextWithReply(p.convId.toStdString(),
-                                                  p.messageId.toStdString(),
-                                                  p.text.toUtf8().toStdString(),
-                                                  p.replyToMessageId.trimmed().toStdString(),
-                                                  p.replyPreview.toUtf8().toStdString());
+                ok = mi_client_resend_private_text_with_reply(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    p.text.toUtf8().toStdString().c_str(),
+                    p.replyToMessageId.trimmed().toStdString().c_str(),
+                    p.replyPreview.toUtf8().toStdString().c_str()) != 0;
             } else if (p.kind == PendingOutgoing::Kind::Location) {
-                ok = core_.ResendChatLocation(p.convId.toStdString(),
-                                             p.messageId.toStdString(),
-                                             static_cast<std::int32_t>(p.latE7),
-                                             static_cast<std::int32_t>(p.lonE7),
-                                             p.locationLabel.toUtf8().toStdString());
+                ok = mi_client_resend_private_location(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    static_cast<std::int32_t>(p.latE7),
+                    static_cast<std::int32_t>(p.lonE7),
+                    p.locationLabel.toUtf8().toStdString().c_str()) != 0;
             } else if (p.kind == PendingOutgoing::Kind::ContactCard) {
-                ok = core_.ResendChatContactCard(p.convId.toStdString(),
-                                                p.messageId.toStdString(),
-                                                p.cardUsername.trimmed().toStdString(),
-                                                p.cardDisplay.toUtf8().toStdString());
+                ok = mi_client_resend_private_contact(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    p.cardUsername.trimmed().toStdString().c_str(),
+                    p.cardDisplay.toUtf8().toStdString().c_str()) != 0;
             } else if (p.kind == PendingOutgoing::Kind::Sticker) {
-                ok = core_.ResendChatSticker(p.convId.toStdString(),
-                                            p.messageId.toStdString(),
-                                            p.stickerId.trimmed().toStdString());
+                ok = mi_client_resend_private_sticker(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    p.stickerId.trimmed().toStdString().c_str()) != 0;
             } else {
-                ok = core_.ResendChatText(p.convId.toStdString(),
-                                         p.messageId.toStdString(),
-                                         p.text.toUtf8().toStdString());
+                ok = mi_client_resend_private_text(
+                    c_api_, p.convId.toStdString().c_str(),
+                    p.messageId.toStdString().c_str(),
+                    p.text.toUtf8().toStdString().c_str()) != 0;
             }
         }
 
@@ -2712,38 +3500,53 @@ void BackendAdapter::maybeRetryPendingOutgoing() {
 void BackendAdapter::updateConnectionState() {
     const bool wasOnline = online_;
     QString detail;
+    QString tokenValue;
+    const bool remoteMode = c_api_ && (mi_client_is_remote_mode(c_api_) != 0);
+    if (c_api_) {
+        const char* token = mi_client_token(c_api_);
+        tokenValue = token ? QString::fromUtf8(token) : QString();
+    }
 
     if (!loggedIn_) {
         online_ = false;
         detail = QStringLiteral("未登录");
-    } else if (core_.HasPendingServerTrust()) {
+    } else if (hasPendingServerTrust()) {
         online_ = false;
         detail = QStringLiteral("需信任服务器（TLS）");
-    } else if (core_.token().empty()) {
+    } else if (tokenValue.isEmpty()) {
         online_ = false;
         detail = QStringLiteral("会话失效（正在重连）");
-    } else if (!core_.is_remote_mode()) {
+    } else if (!remoteMode) {
         online_ = true;
         detail = QStringLiteral("本地模式");
-    } else if (core_.remote_ok()) {
-        online_ = true;
-        detail = QStringLiteral("在线");
     } else {
-        online_ = false;
-        const QString err = QString::fromStdString(core_.remote_error());
-        detail = err.trimmed().isEmpty() ? QStringLiteral("离线") : QStringLiteral("离线：%1").arg(err);
+        bool remoteOk = false;
+        QString remoteErr;
+        if (c_api_) {
+            remoteOk = mi_client_remote_ok(c_api_) != 0;
+            const char* value = mi_client_remote_error(c_api_);
+            remoteErr = value ? QString::fromUtf8(value) : QString();
+        }
+        if (remoteOk) {
+            online_ = true;
+            detail = QStringLiteral("在线");
+        } else {
+            online_ = false;
+            detail = remoteErr.trimmed().isEmpty() ? QStringLiteral("离线")
+                                                   : QStringLiteral("离线：%1").arg(remoteErr);
+        }
     }
 
     if (pollTimer_) {
         int nextInterval = basePollIntervalMs_;
-        if (!online_ && core_.HasPendingServerTrust()) {
+        if (!online_ && hasPendingServerTrust()) {
             backoffExp_ = 0;
             nextInterval = qMax(basePollIntervalMs_, 5000);
-        } else if (!online_ && loggedIn_ && core_.token().empty()) {
+        } else if (!online_ && loggedIn_ && tokenValue.isEmpty()) {
             backoffExp_ = qMin(backoffExp_ + 1, 5);
             nextInterval = qMin(30000, basePollIntervalMs_ * (1 << backoffExp_));
             nextInterval = qMax(nextInterval, 5000);
-        } else if (!online_ && loggedIn_ && core_.is_remote_mode()) {
+        } else if (!online_ && loggedIn_ && remoteMode) {
             backoffExp_ = qMin(backoffExp_ + 1, 5);
             nextInterval = qMin(30000, basePollIntervalMs_ * (1 << backoffExp_));
         } else {
@@ -2778,6 +3581,9 @@ void BackendAdapter::pollMessages() {
     if (!ensureInited(err)) {
         return;
     }
+    if (!c_api_) {
+        return;
+    }
 
     bool expected = false;
     if (!coreWorkActive_.compare_exchange_strong(expected, true)) {
@@ -2796,12 +3602,25 @@ void BackendAdapter::pollMessages() {
                 return;
             }
 
-            if (target_->core_.token().empty() && !target_->core_.HasPendingServerTrust()) {
-                target_->core_.Relogin();
+            if (!target_->c_api_) {
+                return;
             }
-            auto events = target_->core_.PollChat();
-            auto reqs = target_->core_.ListFriendRequests();
-            std::vector<mi::client::ClientCore::FriendEntry> syncedFriends;
+            const char* token = mi_client_token(target_->c_api_);
+            if ((!token || *token == '\0') && !target_->hasPendingServerTrust()) {
+                mi_client_relogin(target_->c_api_);
+            }
+            mi::sdk::ChatPollResult events;
+            std::string pollErr;
+            mi::sdk::PollResult polled;
+            (void)mi::sdk::PollEvents(target_->c_api_, 64, 0, polled, pollErr);
+            events = std::move(polled.chat);
+            std::vector<mi::sdk::FriendRequestEntry> reqs;
+            std::vector<mi_friend_request_entry_t> req_buffer(kMaxFriendRequestEntries);
+            const std::uint32_t req_count =
+                mi_client_list_friend_requests(target_->c_api_, req_buffer.data(),
+                                               kMaxFriendRequestEntries);
+            reqs = ToFriendRequestVector(req_buffer.data(), req_count);
+            std::vector<mi::sdk::FriendEntry> syncedFriends;
             bool syncChanged = false;
             std::string syncErr;
             bool didSync = false;
@@ -2810,8 +3629,19 @@ void BackendAdapter::pollMessages() {
             const bool force = target_->friendSyncForced_.load();
             if (force || (last == 0) || (now - last >= target_->friendSyncIntervalMs_)) {
                 didSync = true;
-                if (!target_->core_.SyncFriends(syncedFriends, syncChanged)) {
-                    syncErr = target_->core_.last_error();
+                std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+                int changed_flag = 0;
+                const std::uint32_t count =
+                    mi_client_sync_friends(target_->c_api_, buffer.data(),
+                                           kMaxFriendEntries, &changed_flag);
+                const char* err = mi_client_last_error(target_->c_api_);
+                if (err && *err) {
+                    syncErr = err;
+                } else {
+                    syncChanged = (changed_flag != 0);
+                    if (syncChanged) {
+                        syncedFriends = ToFriendVector(buffer.data(), count);
+                    }
                 }
                 target_->lastFriendSyncAtMs_.store(now);
                 target_->friendSyncForced_.store(false);
@@ -2843,8 +3673,8 @@ void BackendAdapter::pollMessages() {
     core_pool_.start(new PollTask(self));
 }
 
-void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult events,
-                                      std::vector<mi::client::ClientCore::FriendRequestEntry> friendRequests) {
+void BackendAdapter::handlePollResult(mi::sdk::ChatPollResult events,
+                                      std::vector<mi::sdk::FriendRequestEntry> friendRequests) {
     coreWorkActive_.store(false);
     const bool prevSuspend = pollingSuspended_;
     pollingSuspended_ = true;
@@ -2860,9 +3690,7 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
                                    0);
     }
     for (const auto &f : events.outgoing_files) {
-        mi::client::ClientCore::ChatFileMessage asFile;
-        asFile.from_username = f.peer_username;
-        asFile.message_id_hex = f.message_id_hex;
+        ChatFileEntry asFile;
         asFile.file_id = f.file_id;
         asFile.file_key = f.file_key;
         asFile.file_name = f.file_name;
@@ -2902,9 +3730,7 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
                                    0);
     }
     for (const auto &f : events.outgoing_group_files) {
-        mi::client::ClientCore::ChatFileMessage asFile;
-        asFile.from_username = f.group_id;
-        asFile.message_id_hex = f.message_id_hex;
+        ChatFileEntry asFile;
         asFile.file_id = f.file_id;
         asFile.file_key = f.file_key;
         asFile.file_name = f.file_name;
@@ -2965,7 +3791,12 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
     }
     for (const auto &f : events.files) {
         const std::string k = f.from_username + "|" + f.message_id_hex;
-        receivedFiles_[k] = f;
+        ChatFileEntry entry;
+        entry.file_id = f.file_id;
+        entry.file_key = f.file_key;
+        entry.file_name = f.file_name;
+        entry.file_size = f.file_size;
+        receivedFiles_[k] = std::move(entry);
         emit incomingMessage(QString::fromStdString(f.from_username),
                              false,
                              QString(),
@@ -2984,9 +3815,7 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
                              0);
     }
     for (const auto &f : events.group_files) {
-        mi::client::ClientCore::ChatFileMessage asFile;
-        asFile.from_username = f.from_username;
-        asFile.message_id_hex = f.message_id_hex;
+        ChatFileEntry asFile;
         asFile.file_id = f.file_id;
         asFile.file_key = f.file_key;
         asFile.file_name = f.file_name;
@@ -3023,9 +3852,9 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
             break;
         case 4: {
             QString roleText = QStringLiteral("成员");
-            if (n.role == mi::client::ClientCore::GroupMemberRole::kOwner) {
+            if (n.role == mi::sdk::GroupMemberRole::kOwner) {
                 roleText = QStringLiteral("群主");
-            } else if (n.role == mi::client::ClientCore::GroupMemberRole::kAdmin) {
+            } else if (n.role == mi::sdk::GroupMemberRole::kAdmin) {
                 roleText = QStringLiteral("管理员");
             }
             text = QStringLiteral("%1 将 %2 设为 %3").arg(actor, target, roleText);
@@ -3065,7 +3894,7 @@ void BackendAdapter::handlePollResult(mi::client::ClientCore::ChatPollResult eve
 }
 
 void BackendAdapter::applyFriendSync(
-    const std::vector<mi::client::ClientCore::FriendEntry> &friends,
+    const std::vector<mi::sdk::FriendEntry> &friends,
     bool changed, const QString &err, bool emitEvenIfUnchanged) {
     if (!err.isEmpty()) {
         if (emitEvenIfUnchanged && lastFriends_.isEmpty()) {

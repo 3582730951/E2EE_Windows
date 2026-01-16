@@ -18,6 +18,7 @@
 #include "buffer_pool.h"
 #include "crypto.h"
 #include "monocypher.h"
+#include "secure_buffer.h"
 
 namespace mi::server {
 
@@ -46,8 +47,8 @@ constexpr std::size_t kOfflineFileV3HeaderBytes =
     kOfflineFileV3PrefixBytes + kOfflineFileAeadNonceBytes;
 constexpr std::size_t kOfflineFileV3AdBytes = kOfflineFileV3PrefixBytes + 8;
 
-mi::shard::ByteBufferPool& OfflineStorageBufferPool() {
-  static mi::shard::ByteBufferPool pool(32, 16u * 1024u * 1024u);
+mi::common::ByteBufferPool& OfflineStorageBufferPool() {
+  static mi::common::ByteBufferPool pool(32, 16u * 1024u * 1024u);
   return pool;
 }
 
@@ -151,6 +152,12 @@ void DeriveBlock(const std::array<std::uint8_t, 32>& key,
 
 }  // namespace
 
+BlobDownloadChunkResult::~BlobDownloadChunkResult() {
+  if (!chunk.empty()) {
+    OfflineStorageBufferPool().Release(std::move(chunk));
+  }
+}
+
 OfflineStorage::OfflineStorage(std::filesystem::path base_dir,
                                std::chrono::seconds ttl,
                                SecureDeleteConfig secure_delete)
@@ -196,6 +203,9 @@ PutResult OfflineStorage::Put(const std::string& owner,
   std::array<std::uint8_t, 32> erase_key = GenerateKey();
   std::array<std::uint8_t, 32> storage_key =
       DeriveStorageKey(file_key, erase_key);
+  [[maybe_unused]] mi::common::ScopedWipe wipe_file_key(file_key);
+  [[maybe_unused]] mi::common::ScopedWipe wipe_erase_key(erase_key);
+  [[maybe_unused]] mi::common::ScopedWipe wipe_storage_key(storage_key);
   const auto base_nonce = RandomAeadNonce();
   const std::uint32_t chunk_bytes = kOfflineFileStreamChunkBytes;
   const std::uint64_t plain_size =
@@ -231,7 +241,7 @@ PutResult OfflineStorage::Put(const std::string& owner,
   std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
   std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
   auto& pool = OfflineStorageBufferPool();
-  mi::shard::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
+  mi::common::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
   auto& cipher = cipher_buf.get();
   std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
   std::uint64_t offset = 0;
@@ -653,6 +663,8 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
     const std::uint64_t remaining64 = sess.total_size - offset;
     const std::size_t to_read =
         static_cast<std::size_t>(std::min<std::uint64_t>(remaining64, max_len));
+    auto& pool = OfflineStorageBufferPool();
+    buf = pool.Acquire(to_read);
     buf.resize(to_read);
     ifs.read(reinterpret_cast<char*>(buf.data()),
              static_cast<std::streamsize>(buf.size()));
@@ -789,6 +801,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       std::array<std::uint8_t, 32> file_key_copy = file_key;
       std::array<std::uint8_t, 32> storage_key = file_key_copy;
       std::array<std::uint8_t, 32> erase_key{};
+      [[maybe_unused]] mi::common::ScopedWipe wipe_file_key(file_key_copy);
+      [[maybe_unused]] mi::common::ScopedWipe wipe_erase_key(erase_key);
+      [[maybe_unused]] mi::common::ScopedWipe wipe_storage_key(storage_key);
       std::string key_err;
       if (!LoadEraseKey(path, erase_key, key_err)) {
         error = key_err.empty() ? "erase key missing" : key_err;
@@ -810,7 +825,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       std::array<std::uint8_t, kOfflineFileV3AdBytes> ad{};
       std::memcpy(ad.data(), ad_prefix.data(), ad_prefix.size());
       auto& pool = OfflineStorageBufferPool();
-      mi::shard::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
+      mi::common::ScopedBuffer cipher_buf(pool, chunk_bytes, false);
       auto& cipher = cipher_buf.get();
       std::array<std::uint8_t, kOfflineFileAeadTagBytes> tag{};
       std::uint64_t offset = 0;
@@ -860,7 +875,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
         return std::nullopt;
       }
       auto& pool = OfflineStorageBufferPool();
-      mi::shard::ScopedBuffer content_buf(
+      mi::common::ScopedBuffer content_buf(
           pool, static_cast<std::size_t>(file_size2), false);
       auto& content = content_buf.get();
       content.resize(static_cast<std::size_t>(file_size2));
@@ -900,7 +915,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
         return t;
       }();
 
-      mi::shard::ScopedBuffer cipher_buf(pool, cipher_len, false);
+      mi::common::ScopedBuffer cipher_buf(pool, cipher_len, false);
       auto& cipher = cipher_buf.get();
       cipher.resize(cipher_len);
       std::memcpy(cipher.data(),
@@ -915,6 +930,9 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       std::array<std::uint8_t, 32> file_key_copy = file_key;
       std::array<std::uint8_t, 32> storage_key = file_key_copy;
       std::array<std::uint8_t, 32> erase_key{};
+      [[maybe_unused]] mi::common::ScopedWipe wipe_file_key(file_key_copy);
+      [[maybe_unused]] mi::common::ScopedWipe wipe_erase_key(erase_key);
+      [[maybe_unused]] mi::common::ScopedWipe wipe_storage_key(storage_key);
       if (version == kOfflineFileMagicVersionV2) {
         std::string key_err;
         if (!LoadEraseKey(path, erase_key, key_err)) {
@@ -954,7 +972,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       return std::nullopt;
     }
     auto& pool = OfflineStorageBufferPool();
-    mi::shard::ScopedBuffer content_buf(
+    mi::common::ScopedBuffer content_buf(
         pool, static_cast<std::size_t>(file_size2), false);
     auto& content = content_buf.get();
     content.resize(static_cast<std::size_t>(file_size2));
@@ -989,7 +1007,7 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
       return t;
     }();
 
-    mi::shard::ScopedBuffer cipher_buf(pool, cipher_len, false);
+    mi::common::ScopedBuffer cipher_buf(pool, cipher_len, false);
     auto& cipher = cipher_buf.get();
     cipher.resize(cipher_len);
     std::memcpy(cipher.data(), content.data() + nonce.size(), cipher_len);
@@ -1023,13 +1041,30 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
     error = "file not found";
     return std::nullopt;
   }
-  std::vector<std::uint8_t> content((std::istreambuf_iterator<char>(ifs)),
-                                    std::istreambuf_iterator<char>());
-  ifs.close();
-  if (content.empty()) {
+  std::error_code ec;
+  const std::uint64_t size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error = "file read failed";
+    return std::nullopt;
+  }
+  if (size == 0) {
     error = "empty file";
     return std::nullopt;
   }
+  if (size > static_cast<std::uint64_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    error = "file too large";
+    return std::nullopt;
+  }
+  std::vector<std::uint8_t> content;
+  content.resize(static_cast<std::size_t>(size));
+  ifs.read(reinterpret_cast<char*>(content.data()),
+           static_cast<std::streamsize>(content.size()));
+  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(content.size())) {
+    error = "file read failed";
+    return std::nullopt;
+  }
+  ifs.close();
 
   if (wipe_after_read) {
     WipeFile(path);

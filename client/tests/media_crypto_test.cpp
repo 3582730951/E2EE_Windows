@@ -49,10 +49,13 @@ int main() {
   std::array<std::uint8_t, 32> media_root{};
   media_root.fill(0x11);
   MediaKeyPair audio_keys;
+  MediaKeyPair audio_keys_remote;
   assert(DeriveStreamChainKeys(media_root, StreamKind::kAudio, true, audio_keys));
+  assert(
+      DeriveStreamChainKeys(media_root, StreamKind::kAudio, false, audio_keys_remote));
 
   MediaRatchet sender(audio_keys.send_ck, StreamKind::kAudio);
-  MediaRatchet receiver(audio_keys.recv_ck, StreamKind::kAudio);
+  MediaRatchet receiver(audio_keys_remote.recv_ck, StreamKind::kAudio);
 
   std::vector<std::uint8_t> packet;
   std::string err;

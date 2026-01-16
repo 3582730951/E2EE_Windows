@@ -60,8 +60,8 @@ private:
     int min_interval_ms_{33};
 };
 
-CallDialog::CallDialog(mi::client::ClientCore &core, QWidget *parent)
-    : QDialog(parent), controller_(core, this) {
+CallDialog::CallDialog(mi_client_handle* handle, QWidget *parent)
+    : QDialog(parent), controller_(handle, this) {
     setWindowTitle(UiSettings::Tr(QStringLiteral("通话"), QStringLiteral("Call")));
     setModal(false);
     setAttribute(Qt::WA_DeleteOnClose, true);

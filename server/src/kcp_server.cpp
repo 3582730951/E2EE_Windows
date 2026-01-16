@@ -1,34 +1,15 @@
 #include "kcp_server.h"
 
 #include <algorithm>
-#include <chrono>
-#include <cerrno>
 #include <cstring>
 #include <limits>
 #include <unordered_map>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX 1
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
-
 #include "crypto.h"
 #include "ikcp.h"
+#include "platform_net.h"
+#include "platform_time.h"
 
 namespace mi::server {
 
@@ -45,27 +26,14 @@ constexpr std::size_t kKcpCookieBytes = 16;
 constexpr std::size_t kKcpCookiePacketBytes = 24;
 
 std::uint32_t NowMs() {
-  static const auto kStart = std::chrono::steady_clock::now();
-  const auto now = std::chrono::steady_clock::now();
-  return static_cast<std::uint32_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(now - kStart)
-          .count());
+  return static_cast<std::uint32_t>(mi::platform::NowSteadyMs());
 }
 
-std::string IpToString(const sockaddr_storage& addr) {
-  char buf[64] = {};
-  if (addr.ss_family == AF_INET) {
-    const auto* in = reinterpret_cast<const sockaddr_in*>(&addr);
-#ifdef _WIN32
-    if (InetNtopA(AF_INET, const_cast<IN_ADDR*>(&in->sin_addr), buf,
-                  static_cast<DWORD>(sizeof(buf)))) {
-      return buf;
-    }
-#else
-    if (inet_ntop(AF_INET, &in->sin_addr, buf, sizeof(buf))) {
-      return buf;
-    }
-#endif
+std::string IpToString(const sockaddr_storage& addr, socklen_t addr_len) {
+  std::string out;
+  if (mi::platform::net::SockaddrToIp(
+          reinterpret_cast<const sockaddr*>(&addr), addr_len, out)) {
+    return out;
   }
   return {};
 }
@@ -155,62 +123,19 @@ std::array<std::uint8_t, kKcpCookieBytes> BuildCookie(
   return out;
 }
 
-std::string EndpointToString(const sockaddr_storage& addr) {
-  if (addr.ss_family == AF_INET) {
-    const auto* in = reinterpret_cast<const sockaddr_in*>(&addr);
-    std::string ip = IpToString(addr);
-    if (!ip.empty()) {
-      const std::uint16_t port = ntohs(in->sin_port);
-      ip += ":" + std::to_string(port);
-    }
-    return ip;
+std::string EndpointToString(const sockaddr_storage& addr,
+                             socklen_t addr_len) {
+  std::string out;
+  if (mi::platform::net::SockaddrToEndpoint(
+          reinterpret_cast<const sockaddr*>(&addr), addr_len, out)) {
+    return out;
   }
   return {};
 }
 
-bool SetNonBlocking(std::intptr_t sock) {
-#ifdef _WIN32
-  u_long mode = 1;
-  return ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &mode) == 0;
-#else
-  int flags = fcntl(static_cast<int>(sock), F_GETFL, 0);
-  if (flags < 0) {
-    return false;
-  }
-  return fcntl(static_cast<int>(sock), F_SETFL, flags | O_NONBLOCK) == 0;
-#endif
-}
-
 bool WouldBlock() {
-#ifdef _WIN32
-  const int err = WSAGetLastError();
-  return err == WSAEWOULDBLOCK;
-#else
-  return errno == EAGAIN || errno == EWOULDBLOCK;
-#endif
+  return mi::platform::net::SocketWouldBlock();
 }
-
-#ifdef _WIN32
-std::string Win32ErrorMessage(DWORD code) {
-  LPSTR msg = nullptr;
-  const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                      FORMAT_MESSAGE_IGNORE_INSERTS;
-  const DWORD n = FormatMessageA(
-      flags, nullptr, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-      reinterpret_cast<LPSTR>(&msg), 0, nullptr);
-  std::string out;
-  if (n && msg) {
-    out.assign(msg, msg + n);
-  }
-  if (msg) {
-    LocalFree(msg);
-  }
-  while (!out.empty() && (out.back() == '\r' || out.back() == '\n')) {
-    out.pop_back();
-  }
-  return out;
-}
-#endif
 
 struct KcpSession {
   ikcpcb* kcp{nullptr};
@@ -230,19 +155,11 @@ int KcpOutput(const char* buf, int len, ikcpcb* /*kcp*/, void* user) {
   }
   auto* sess = static_cast<KcpSession*>(user);
   const auto* data = reinterpret_cast<const std::uint8_t*>(buf);
-#ifdef _WIN32
-  const int sent = sendto(static_cast<SOCKET>(sess->sock),
-                          reinterpret_cast<const char*>(data), len, 0,
-                          reinterpret_cast<const sockaddr*>(&sess->addr),
-                          sess->addr_len);
+  const int sent = mi::platform::net::SendTo(
+      static_cast<mi::platform::net::Socket>(sess->sock), data,
+      static_cast<std::size_t>(len),
+      reinterpret_cast<const sockaddr*>(&sess->addr), sess->addr_len);
   return sent == len ? 0 : -1;
-#else
-  const ssize_t sent = sendto(static_cast<int>(sess->sock), data,
-                              static_cast<std::size_t>(len), 0,
-                              reinterpret_cast<const sockaddr*>(&sess->addr),
-                              sess->addr_len);
-  return sent == len ? 0 : -1;
-#endif
 }
 
 }  // namespace
@@ -286,85 +203,18 @@ void KcpServer::Stop() {
 
 bool KcpServer::StartSocket(std::string& error) {
   error.clear();
-#ifdef _WIN32
-  WSADATA wsa;
-  const int wsa_rc = WSAStartup(MAKEWORD(2, 2), &wsa);
-  if (wsa_rc != 0) {
-    error = "WSAStartup failed: " + std::to_string(wsa_rc) + " " +
-            Win32ErrorMessage(static_cast<DWORD>(wsa_rc));
-    return false;
-  }
-#endif
-#ifdef _WIN32
-  const SOCKET sock = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (sock == INVALID_SOCKET) {
-    const DWORD last = WSAGetLastError();
-    error = "socket(AF_INET,SOCK_DGRAM) failed: " + std::to_string(last) +
-            " " + Win32ErrorMessage(last);
-    WSACleanup();
+  mi::platform::net::Socket sock = mi::platform::net::kInvalidSocket;
+  if (!mi::platform::net::BindUdpSocket(port_, sock, error)) {
     return false;
   }
   sock_ = static_cast<std::intptr_t>(sock);
-#else
-  const int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) {
-    const int last = errno;
-    error = "socket(AF_INET,SOCK_DGRAM) failed: " + std::to_string(last) +
-            " " + std::strerror(last);
-    return false;
-  }
-  sock_ = static_cast<std::intptr_t>(sock);
-#endif
-
-  int yes = 1;
-#ifdef _WIN32
-  setsockopt(static_cast<SOCKET>(sock_), SOL_SOCKET, SO_REUSEADDR,
-             reinterpret_cast<const char*>(&yes), sizeof(yes));
-#else
-  ::setsockopt(static_cast<int>(sock_), SOL_SOCKET, SO_REUSEADDR, &yes,
-               sizeof(yes));
-#endif
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port_);
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);
-#ifdef _WIN32
-  if (::bind(static_cast<SOCKET>(sock_), reinterpret_cast<sockaddr*>(&addr),
-             sizeof(addr)) == SOCKET_ERROR) {
-    const DWORD last = WSAGetLastError();
-    error = "bind(0.0.0.0:" + std::to_string(port_) + ") failed: " +
-            std::to_string(last) + " " + Win32ErrorMessage(last);
-    StopSocket();
-    return false;
-  }
-#else
-  if (::bind(static_cast<int>(sock_), reinterpret_cast<sockaddr*>(&addr),
-             sizeof(addr)) < 0) {
-    const int last = errno;
-    error = "bind(0.0.0.0:" + std::to_string(port_) + ") failed: " +
-            std::to_string(last) + " " + std::strerror(last);
-    StopSocket();
-    return false;
-  }
-#endif
-
-  if (!SetNonBlocking(sock_)) {
-    error = "set non-blocking failed";
-    StopSocket();
-    return false;
-  }
   return true;
 }
 
 void KcpServer::StopSocket() {
   if (sock_ != -1) {
-#ifdef _WIN32
-    closesocket(static_cast<SOCKET>(sock_));
-    WSACleanup();
-#else
-    ::close(static_cast<int>(sock_));
-#endif
+    auto sock = static_cast<mi::platform::net::Socket>(sock_);
+    mi::platform::net::CloseSocket(sock);
     sock_ = -1;
   }
 }
@@ -437,51 +287,23 @@ void KcpServer::Run() {
   recv_buf.resize(std::max<std::uint32_t>(options_.mtu, 1200u) + 256u);
 
   while (running_.load()) {
-    fd_set readfds;
-    FD_ZERO(&readfds);
-#ifdef _WIN32
-    FD_SET(static_cast<SOCKET>(sock_), &readfds);
-    TIMEVAL tv{};
-    tv.tv_sec = 0;
-    tv.tv_usec = static_cast<long>(tick_ms) * 1000;
-    select(0, &readfds, nullptr, nullptr, &tv);
-#else
-    FD_SET(static_cast<int>(sock_), &readfds);
-    timeval tv{};
-    tv.tv_sec = 0;
-    tv.tv_usec = static_cast<long>(tick_ms) * 1000;
-    select(static_cast<int>(sock_) + 1, &readfds, nullptr, nullptr, &tv);
-#endif
+    mi::platform::net::WaitForReadable(
+        static_cast<mi::platform::net::Socket>(sock_), tick_ms);
 
     const std::uint32_t now = NowMs();
 
     while (running_.load()) {
       sockaddr_storage peer_addr{};
       socklen_t peer_len = sizeof(peer_addr);
-#ifdef _WIN32
-      const int n = recvfrom(static_cast<SOCKET>(sock_),
-                             reinterpret_cast<char*>(recv_buf.data()),
-                             static_cast<int>(recv_buf.size()), 0,
-                             reinterpret_cast<sockaddr*>(&peer_addr),
-                             &peer_len);
-      if (n == SOCKET_ERROR) {
-        if (WouldBlock()) {
-          break;
-        }
-        continue;
-      }
-#else
-      const ssize_t n = recvfrom(static_cast<int>(sock_), recv_buf.data(),
-                                 recv_buf.size(), 0,
-                                 reinterpret_cast<sockaddr*>(&peer_addr),
-                                 &peer_len);
+      const int n = mi::platform::net::RecvFrom(
+          static_cast<mi::platform::net::Socket>(sock_), recv_buf.data(),
+          recv_buf.size(), reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
       if (n < 0) {
         if (WouldBlock()) {
           break;
         }
         continue;
       }
-#endif
       if (n <= 0) {
         break;
       }
@@ -505,15 +327,10 @@ void KcpServer::Run() {
               BuildCookie(cookie_secret_, peer_addr, peer_len, conv, bucket);
           std::array<std::uint8_t, kKcpCookiePacketBytes> out{};
           BuildCookiePacket(conv, kKcpCookieChallenge, cookie, out);
-#ifdef _WIN32
-          sendto(static_cast<SOCKET>(sock_),
-                 reinterpret_cast<const char*>(out.data()),
-                 static_cast<int>(out.size()), 0,
-                 reinterpret_cast<const sockaddr*>(&peer_addr), peer_len);
-#else
-          sendto(static_cast<int>(sock_), out.data(), out.size(), 0,
-                 reinterpret_cast<const sockaddr*>(&peer_addr), peer_len);
-#endif
+          mi::platform::net::SendTo(
+              static_cast<mi::platform::net::Socket>(sock_), out.data(),
+              out.size(), reinterpret_cast<const sockaddr*>(&peer_addr),
+              peer_len);
           continue;
         }
         if (cookie_pkt.type != kKcpCookieResponse) {
@@ -532,8 +349,9 @@ void KcpServer::Run() {
           continue;
         }
 
-        const std::string remote_ip = IpToString(peer_addr);
-        const std::string remote_endpoint = EndpointToString(peer_addr);
+        const std::string remote_ip = IpToString(peer_addr, peer_len);
+        const std::string remote_endpoint =
+            EndpointToString(peer_addr, peer_len);
         if (!TryAcquireConnectionSlot(remote_ip)) {
           continue;
         }
@@ -565,7 +383,8 @@ void KcpServer::Run() {
         it = sessions.emplace(conv, std::move(sess)).first;
         continue;
       } else {
-        const std::string remote_endpoint = EndpointToString(peer_addr);
+        const std::string remote_endpoint =
+            EndpointToString(peer_addr, peer_len);
         if (!remote_endpoint.empty() &&
             it->second->remote_endpoint != remote_endpoint) {
           continue;

@@ -160,6 +160,16 @@ jobs:
           "REALESRGAN_RUNTIME_DIR=$($esrganExe.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "REALESRGAN_MODEL_DIR=$modelDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Install Python deps
+        run: python -m pip install --upgrade pip wordfreq
+
+      - name: Prepare Rime dictionaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $overlayRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay"
+          python .\\tools\\rime_dict_prepare.py --out $overlayRoot
+
       - name: Configure client
         run: >
           cmake -S client -B build/client
@@ -172,18 +182,8 @@ jobs:
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
 
-      - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_rime_precompile
-
-      - name: Install Python deps
-        run: python -m pip install --upgrade pip wordfreq
-
-      - name: Prepare Rime dictionaries
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $overlayRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay"
-          python .\\tools\\rime_dict_prepare.py --out $overlayRoot
+      - name: Build rime precompile tool
+        run: cmake --build build/client --config Release --target mi_rime_precompile
 
       - name: Precompile Rime user data
         run: |
@@ -200,6 +200,36 @@ jobs:
           }
           & $precompileExe.FullName --output-dir $prebuiltRoot --runtime-dir $runtimeDir --overlay-dir $overlayDir
 
+      - name: Verify Rime dictionaries
+        run: |
+          $prebuilt = Join-Path $env:GITHUB_WORKSPACE "build\\rime_prebuilt\\user"
+          if (-not (Test-Path $prebuilt)) {
+            throw "rime prebuilt not found: $prebuilt"
+          }
+          if (-not (Get-ChildItem -Path $prebuilt -Recurse -File | Select-Object -First 1)) {
+            throw "rime prebuilt empty: $prebuilt"
+          }
+          $share = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay\\share"
+          if (-not (Test-Path $share)) {
+            throw "rime overlay share not found: $share"
+          }
+          if (-not (Get-ChildItem -Path $share -Recurse -File | Select-Object -First 1)) {
+            throw "rime overlay share empty: $share"
+          }
+
+      - name: Build client
+        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
+
+      - name: Build Rust bindings
+        run: |
+          $env:MI_E2EE_CLIENT_LIB_DIR = Join-Path $env:GITHUB_WORKSPACE "build\\client\\Release"
+          cargo build --manifest-path bindings/rust/Cargo.toml --examples
+
+      - name: Python binding smoke
+        run: |
+          $env:MI_E2EE_CLIENT_DLL = Join-Path $env:GITHUB_WORKSPACE "build\\client\\Release\\mi_e2ee_client_sdk.dll"
+          python bindings\\python\\example_basic.py
+
       - name: Configure server
         run: >
           cmake -S server -B build/server
@@ -210,7 +240,7 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
 
       - name: Perf baseline
         run: .\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe --quick
@@ -240,264 +270,10 @@ jobs:
           }
 
       - name: Package artifacts
-        run: |
-          $workspace = $env:GITHUB_WORKSPACE
-          $distRoot = Join-Path $workspace "dist"
-          $clientRoot = Join-Path $distRoot "mi_e2ee_client"
-          $serverRoot = Join-Path $distRoot "mi_e2ee_server"
-          $clientDll = Join-Path $clientRoot "dll"
-          $clientConfig = Join-Path $clientRoot "config"
-          $clientDb = Join-Path $clientRoot "database"
-          $serverDll = Join-Path $serverRoot "dll"
-          $serverConfig = Join-Path $serverRoot "config"
-          $serverDb = Join-Path $serverRoot "database"
-          New-Item -ItemType Directory -Force -Path $clientDll, $clientConfig, $clientDb, $serverDll, $serverConfig, $serverDb | Out-Null
-          New-Item -ItemType Directory -Force -Path (Join-Path $serverDb "offline_store") | Out-Null
+        run: .\\tools\\package_windows.ps1
 
-          $prebuiltSrc = Join-Path $workspace "build\\rime_prebuilt\\user"
-          $prebuiltDst = Join-Path $clientDb "rime\\prebuilt"
-          if (Test-Path $prebuiltSrc) {
-            New-Item -ItemType Directory -Force -Path $prebuiltDst | Out-Null
-            Copy-Item (Join-Path $prebuiltSrc "*") $prebuiltDst -Recurse -Force
-          }
-          $overlayShare = Join-Path $workspace "build\\rime_overlay\\share"
-          $overlayDst = Join-Path $clientDb "rime\\share"
-          if (Test-Path $overlayShare) {
-            New-Item -ItemType Directory -Force -Path $overlayDst | Out-Null
-            Copy-Item (Join-Path $overlayShare "*") $overlayDst -Recurse -Force
-          }
-
-          $keysDir = Join-Path $distRoot "keys"
-          New-Item -ItemType Directory -Force -Path $keysDir | Out-Null
-          & "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_keygen.exe" --out-dir $keysDir --force
-
-          $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
-          $cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\\CurrentUser\\My"
-          $pwd = New-Object System.Security.SecureString
-          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
-          $cert = Get-PfxCertificate -FilePath $pfxPath
-          $der = $cert.Export("Cert")
-          $hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace("-", "").ToLower()
-
-          Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server.exe" (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
-          Copy-Item "$workspace\\build\\server\\Release\\mi_e2ee_server_launcher.exe" (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
-          Copy-Item "$workspace\\build\\server\\Release\\*.dll" $serverDll -Force
-          $crtNames = @(
-            "concrt140.dll",
-            "msvcp140.dll",
-            "msvcp140_1.dll",
-            "msvcp140_2.dll",
-            "msvcp140_atomic_wait.dll",
-            "msvcp140_codecvt_ids.dll",
-            "vcruntime140.dll",
-            "vcruntime140_1.dll",
-            "vcruntime140_threads.dll",
-            "vccorlib140.dll"
-          )
-          foreach ($name in $crtNames) {
-            $src = Join-Path $serverDll $name
-            if (Test-Path $src) {
-              Copy-Item $src $serverRoot -Force
-            }
-          }
-          Copy-Item "$workspace\\tools\\mi_e2ee_harden_acl.cmd" (Join-Path $serverRoot "mi_e2ee_harden_acl.cmd") -Force
-          if (Test-Path "$workspace\\build\\server\\Release\\test_user.txt") {
-            Copy-Item "$workspace\\build\\server\\Release\\test_user.txt" $serverRoot -Force
-          }
-          $serverTools = Join-Path $serverRoot "tools"
-          New-Item -ItemType Directory -Force -Path $serverTools | Out-Null
-          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_keygen.exe" $serverTools -Force
-          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_kt_pubinfo.exe" $serverTools -Force
-          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe" $serverTools -Force
-          Copy-Item "$workspace\\build\\server\\tools\\Release\\mi_e2ee_ops_health_view.exe" $serverTools -Force
-
-          Copy-Item "$keysDir\\kt_signing_key.bin" $serverConfig -Force
-          Copy-Item "$keysDir\\kt_root_pub.bin" $serverConfig -Force
-          Copy-Item $pfxPath $serverConfig -Force
-
-          Copy-Item "$keysDir\\kt_root_pub.bin" $clientConfig -Force
-
-          $serverConfigLines = @(
-            "[mode]",
-            "mode=0",
-            "[mysql]",
-            "mysql_ip=localhost",
-            "mysql_port=3306",
-            "mysql_database=mi_e2ee",
-            "mysql_username=root",
-            "mysql_password=123456",
-            "[server]",
-            "list_port=9000",
-            "rotation_threshold=10000",
-            "offline_dir=database/offline_store",
-            "debug_log=0",
-            "tls_enable=1",
-            "require_tls=1",
-            "tls_cert=config/mi_e2ee_server.pfx",
-            "kt_signing_key=kt_signing_key.bin"
-          )
-          $serverConfigLines | Set-Content -Path (Join-Path $serverConfig "config.ini") -Encoding ASCII
-
-          $clientConfigLines = @(
-            "[client]",
-            "server_ip=127.0.0.1",
-            "server_port=9000",
-            "use_tls=1",
-            "require_tls=1",
-            "trust_store=server_trust.ini",
-            "require_pinned_fingerprint=1",
-            "pinned_fingerprint=$hash",
-            "auth_mode=opaque",
-            "",
-            "[proxy]",
-            "type=none",
-            "host=",
-            "port=0",
-            "username=",
-            "password=",
-            "",
-            "[device_sync]",
-            "enabled=0",
-            "role=primary",
-            "key_path=e2ee_state/device_sync_key.bin",
-            "",
-            "[kt]",
-            "require_signature=1",
-            "root_pubkey_path=kt_root_pub.bin"
-          )
-          $clientConfigLines | Set-Content -Path (Join-Path $clientConfig "client_config.ini") -Encoding ASCII
-
-          "" | Set-Content -Path (Join-Path $clientDb "server_trust.ini") -Encoding ASCII
-
-          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee_client_ui_app.exe" $clientRoot -Force
-          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee_client_ui.exe" $clientRoot -Force
-          Copy-Item "$workspace\\build\\client\\ui\\Release\\mi_e2ee.exe" $clientRoot -Force
-
-          $uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
-          $uiRcc = Join-Path $uiRoot "ui_resources.rcc"
-          if (Test-Path $uiRcc) {
-            Copy-Item $uiRcc (Join-Path $clientDll "ui_resources.rcc") -Force
-          }
-          Get-ChildItem -Path $uiRoot -File -Filter "*.dll" |
-            Where-Object { $_.Name -notlike "qmldbg_*" } | ForEach-Object {
-              Copy-Item $_.FullName $clientDll -Force
-            }
-          $rimeRuntime = $env:RIME_RUNTIME_DIR
-          if (-not $rimeRuntime) {
-            $rimeRuntime = Join-Path $workspace "build\\rime_runtime"
-          }
-          if (Test-Path $rimeRuntime) {
-            Get-ChildItem -Path $rimeRuntime -File -Filter "*.dll" | ForEach-Object {
-              Copy-Item $_.FullName $clientDll -Force
-            }
-          }
-          if (Test-Path (Join-Path $rimeRuntime "opencc")) {
-            Copy-Item (Join-Path $rimeRuntime "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
-          }
-          $ffmpegRuntime = $env:FFMPEG_RUNTIME_DIR
-          if (-not $ffmpegRuntime) {
-            $ffmpegExe = Get-ChildItem -Path (Join-Path $workspace "build\\ffmpeg") -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($ffmpegExe) {
-              $ffmpegRuntime = $ffmpegExe.Directory.FullName
-            }
-          }
-          if ($ffmpegRuntime -and (Test-Path $ffmpegRuntime)) {
-            Get-ChildItem -Path $ffmpegRuntime -File | ForEach-Object {
-              Copy-Item $_.FullName $clientRoot -Force
-            }
-          }
-          $esrganRuntime = $env:REALESRGAN_RUNTIME_DIR
-          $esrganModels = $env:REALESRGAN_MODEL_DIR
-          if ($esrganRuntime -and (Test-Path $esrganRuntime)) {
-            $esrganDst = Join-Path $clientRoot "tools\\realesrgan"
-            New-Item -ItemType Directory -Force -Path $esrganDst | Out-Null
-            Get-ChildItem -Path $esrganRuntime -File | ForEach-Object {
-              Copy-Item $_.FullName $esrganDst -Force
-            }
-          }
-          if ($esrganModels -and (Test-Path $esrganModels)) {
-            $modelDst = Join-Path $clientDb "ai_models\\realesrgan"
-            New-Item -ItemType Directory -Force -Path $modelDst | Out-Null
-            Get-ChildItem -Path $esrganModels -File -Filter "*.param" | ForEach-Object {
-              Copy-Item $_.FullName $modelDst -Force
-            }
-            Get-ChildItem -Path $esrganModels -File -Filter "*.bin" | ForEach-Object {
-              Copy-Item $_.FullName $modelDst -Force
-            }
-          }
-          $skipDirs = @("qml", "translations", "icon", "assets", "runtime", "qmltooling")
-          Get-ChildItem -Path $uiRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name } | ForEach-Object {
-            Copy-Item $_.FullName $clientDll -Recurse -Force
-          }
-          if (Test-Path (Join-Path $uiRoot "qml")) {
-            Copy-Item (Join-Path $uiRoot "qml") (Join-Path $clientDll "qml") -Recurse -Force
-          }
-          if (Test-Path (Join-Path $uiRoot "translations")) {
-            Copy-Item (Join-Path $uiRoot "translations") (Join-Path $clientRoot "translations") -Recurse -Force
-          }
-          if (Test-Path (Join-Path $uiRoot "icon")) {
-            Copy-Item (Join-Path $uiRoot "icon") (Join-Path $clientRoot "icon") -Recurse -Force
-          }
-          if (Test-Path (Join-Path $uiRoot "assets")) {
-            Copy-Item (Join-Path $uiRoot "assets") (Join-Path $clientRoot "assets") -Recurse -Force
-          }
-          $sourceIcons = Join-Path $workspace "client\\ui\\icons"
-          if (Test-Path $sourceIcons) {
-            Copy-Item $sourceIcons (Join-Path $clientRoot "icon") -Recurse -Force
-          }
-          $sourceRef = Join-Path $workspace "client\\assets\\ref"
-          if (Test-Path $sourceRef) {
-            Copy-Item $sourceRef (Join-Path $clientRoot "assets\\ref") -Recurse -Force
-          }
-          if (Test-Path (Join-Path $uiRoot "runtime")) {
-            $runtimeRoot = Join-Path $uiRoot "runtime"
-            Get-ChildItem -Path $runtimeRoot -File | ForEach-Object {
-              if ($_.Extension -ieq ".dll" -and $_.Name -notlike "qmldbg_*") {
-                Copy-Item $_.FullName $clientDll -Force
-              } else {
-                Copy-Item $_.FullName $clientDb -Force
-              }
-            }
-            Get-ChildItem -Path $runtimeRoot -Directory | ForEach-Object {
-              Copy-Item $_.FullName (Join-Path $clientDb $_.Name) -Recurse -Force
-            }
-          }
-          $imeRoot = Join-Path $workspace "build\\client\\ui\\ime_rime\\Release"
-          $imeCandidates = @(
-            (Join-Path $workspace "build\\client\\ui\\Release\\mi_ime_rime.dll"),
-            (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\mi_ime_rime.dll"),
-            (Join-Path $workspace "build\\client\\ui\\ime_rime\\Release\\mi_ime_rime.dll"),
-            (Join-Path $workspace "build\\client\\ime_rime\\Release\\mi_ime_rime.dll")
-          )
-          $imeDllPath = $imeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $imeDllPath) {
-            $imeDllPath = Get-ChildItem -Path (Join-Path $workspace "build\\client") -Recurse -Filter "mi_ime_rime.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($imeDllPath) {
-              $imeDllPath = $imeDllPath.FullName
-            }
-          }
-          if ($imeDllPath) {
-            Copy-Item $imeDllPath $clientDll -Force
-            Copy-Item $imeDllPath $clientRoot -Force
-          }
-          $rimeDllPath = $null
-          $rimeCandidates = @(
-            (Join-Path $imeRoot "rime.dll"),
-            (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\rime.dll")
-          )
-          $rimeDllPath = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if ($rimeDllPath) {
-            Copy-Item $rimeDllPath $clientDll -Force
-          }
-          if (Test-Path (Join-Path $imeRoot "opencc")) {
-            Copy-Item (Join-Path $imeRoot "opencc") (Join-Path $clientDb "opencc") -Recurse -Force
-          }
-          Get-ChildItem -Path $clientRoot -Recurse -Filter "qmldbg_*.dll" | Remove-Item -Force
-
-          $clientZip = Join-Path $distRoot "mi_e2ee_client.zip"
-          $serverZip = Join-Path $distRoot "mi_e2ee_server.zip"
-          Compress-Archive -Path $clientRoot -DestinationPath $clientZip -Force
-          Compress-Archive -Path $serverRoot -DestinationPath $serverZip -Force
+      - name: Verify package
+        run: .\\tools\\verify_package_windows.ps1
 
       - name: Perf baseline (dist)
         run: .\\dist\\mi_e2ee_server\\tools\\mi_e2ee_perf_baseline.exe --quick
@@ -513,3 +289,119 @@ jobs:
         with:
           name: mi_e2ee_server
           path: dist/mi_e2ee_server.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libsecret-1-dev pkg-config openssl
+
+      - name: Configure server
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF
+
+      - name: Build server
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+
+      - name: Configure client
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
+
+      - name: Build client core
+        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust bindings
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
+
+      - name: Python binding smoke
+        env:
+          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.so
+        run: python bindings/python/example_basic.py
+
+      - name: Package artifacts
+        run: bash tools/package_posix.sh --platform linux
+
+      - name: Verify package
+        run: bash tools/verify_package_posix.sh --platform linux
+
+      - name: Upload client package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_client_linux
+          path: dist/mi_e2ee_client_linux.tar.gz
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_server_linux
+          path: dist/mi_e2ee_server_linux.tar.gz
+
+  build-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Install OpenSSL
+        run: brew install openssl@3 pkg-config
+
+      - name: Configure server
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+
+      - name: Build server
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+
+      - name: Configure client
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+
+      - name: Build client core
+        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust bindings
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
+
+      - name: Python binding smoke
+        env:
+          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.dylib
+        run: python bindings/python/example_basic.py
+
+      - name: Package artifacts
+        run: bash tools/package_posix.sh --platform macos --openssl "$(brew --prefix openssl@3)/bin/openssl"
+
+      - name: Verify package
+        run: bash tools/verify_package_posix.sh --platform macos
+
+      - name: Upload client package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_client_macos
+          path: dist/mi_e2ee_client_macos.tar.gz
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_server_macos
+          path: dist/mi_e2ee_server_macos.tar.gz

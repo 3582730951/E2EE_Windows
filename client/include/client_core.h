@@ -2,7 +2,6 @@
 #define MI_E2EE_CLIENT_CORE_H
 
 #include <array>
-#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -26,6 +25,12 @@ struct mi_server_handle;
 namespace mi::client {
 
 class ChatHistoryStore;
+class AuthService;
+class TransportService;
+class MessagingService;
+class MediaService;
+class StorageService;
+class SyncService;
 
 class ClientCore {
  public:
@@ -460,6 +465,14 @@ class ClientCore {
   bool DownloadChatFileToBytes(const ChatFileMessage& file,
                                std::vector<std::uint8_t>& out_bytes,
                                bool wipe_after_read = true);
+  void StoreAttachmentPreviewBytes(const std::string& file_id,
+                                   const std::string& file_name,
+                                   std::uint64_t file_size,
+                                   const std::vector<std::uint8_t>& bytes);
+  void StoreAttachmentPreviewFromPath(const std::string& file_id,
+                                      const std::string& file_name,
+                                      std::uint64_t file_size,
+                                      const std::filesystem::path& path);
 
   std::vector<HistoryEntry> LoadChatHistory(const std::string& conv_id,
                                             bool is_group,
@@ -475,12 +488,14 @@ class ClientCore {
 
   const std::string& token() const { return token_; }
   const std::string& last_error() const { return last_error_; }
+  void SetLastError(const std::string& error) { last_error_ = error; }
   const std::string& device_id() const { return device_id_; }
   bool device_sync_enabled() const { return device_sync_enabled_; }
   bool device_sync_is_primary() const { return device_sync_is_primary_; }
   bool is_remote_mode() const { return remote_mode_; }
   bool remote_ok() const { return !remote_mode_ || remote_ok_; }
   const std::string& remote_error() const { return remote_error_; }
+  const MediaConfig& media_config() const { return media_config_; }
   bool HasPendingServerTrust() const { return !pending_server_pin_.empty(); }
   const std::string& pending_server_fingerprint() const {
     return pending_server_fingerprint_;
@@ -492,9 +507,16 @@ class ClientCore {
   const mi::client::e2ee::PendingPeerTrust& pending_peer_trust() const {
     return e2ee_.pending_peer_trust();
   }
-  bool TrustPendingPeer(const std::string& pin);
+ bool TrustPendingPeer(const std::string& pin);
 
  private:
+  friend class AuthService;
+  friend class TransportService;
+  friend class MessagingService;
+  friend class MediaService;
+  friend class StorageService;
+  friend class SyncService;
+
   struct CachedPeerIdentity {
     std::vector<std::uint8_t> id_sig_pk;
     std::array<std::uint8_t, 32> id_dh_pk{};
@@ -527,7 +549,7 @@ class ClientCore {
     std::uint32_t version{0};
     std::vector<std::uint8_t> envelope;
     std::unordered_set<std::string> pending_members;
-    std::chrono::steady_clock::time_point last_sent{};
+    std::uint64_t last_sent_ms{0};
   };
 
   struct PendingGroupCipher {
@@ -695,6 +717,7 @@ class ClientCore {
   bool require_tls_{true};
   bool use_kcp_{false};
   KcpConfig kcp_cfg_{};
+  MediaConfig media_config_{};
   mi::server::TransportKind transport_kind_{mi::server::TransportKind::kLocal};
   AuthMode auth_mode_{AuthMode::kLegacy};
   ProxyConfig proxy_;
@@ -743,7 +766,7 @@ class ClientCore {
   std::uint32_t pqc_precompute_pool_{4};
   bool cover_traffic_enabled_{true};
   std::uint32_t cover_traffic_interval_sec_{30};
-  std::chrono::steady_clock::time_point cover_traffic_last_sent_{};
+  std::uint64_t cover_traffic_last_sent_ms_{0};
   std::uint32_t friend_sync_version_{0};
 
   std::unordered_map<std::string, CachedPeerIdentity> peer_id_cache_;
@@ -751,8 +774,7 @@ class ClientCore {
   std::unordered_map<std::string, GroupCallKeyState> group_call_keys_;
   std::unordered_map<std::string, PendingSenderKeyDistribution>
       pending_sender_key_dists_;
-  std::unordered_map<std::string, std::chrono::steady_clock::time_point>
-      sender_key_req_last_sent_;
+  std::unordered_map<std::string, std::uint64_t> sender_key_req_last_sent_;
   std::deque<PendingGroupCipher> pending_group_cipher_;
   std::unordered_set<std::string> group_membership_dirty_;
 

@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "path_security.h"
+#include "platform_secure_store.h"
 
 namespace mi::server {
 
@@ -111,7 +112,8 @@ bool CheckPathPermissions(const std::string& path, std::string& error) {
   if (mi::shard::security::CheckPathNotWorldWritable(path, error)) {
     return true;
   }
-  if (error != "insecure acl (world-writable)") {
+  const std::string kInsecureAclPrefix = "insecure acl (world-writable)";
+  if (error.compare(0, kInsecureAclPrefix.size(), kInsecureAclPrefix) != 0) {
     return false;
   }
   std::string fix_error;
@@ -132,7 +134,8 @@ bool CheckPathPermissions(const std::string& path, std::string& error) {
   const auto writable =
       std::filesystem::perms::group_write | std::filesystem::perms::others_write;
   if ((perms & writable) != std::filesystem::perms::none) {
-    error = "config file permissions too permissive";
+    error = "config file permissions too permissive: " + path +
+            "; fix: chmod 600 and remove group/world write";
     return false;
   }
 #endif
@@ -381,12 +384,11 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     error = "max_connection_bytes too small";
     return false;
   }
-#ifndef _WIN32
-  if (out_config.server.key_protection != KeyProtectionMode::kNone) {
+  if (out_config.server.key_protection != KeyProtectionMode::kNone &&
+      !mi::platform::SecureStoreSupported()) {
     error = "key_protection not supported on this platform";
     return false;
   }
-#endif
   if (out_config.server.require_tls && !out_config.server.tls_enable) {
     error = "require_tls=1 but tls_enable=0";
     return false;

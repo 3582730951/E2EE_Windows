@@ -3,7 +3,6 @@
 #include <array>
 #include <atomic>
 #include <cctype>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
@@ -30,55 +29,16 @@
 #endif
 
 #include "crypto.h"
+#include "hex_utils.h"
 #include "monocypher.h"
 #include "opaque_pake.h"
+#include "platform_time.h"
 
 namespace mi::server {
 
 namespace {
 
 constexpr char kOpaquePasswordPrefix[] = "opaque1$";
-
-std::string Sha256Hex(const std::string& data) {
-  crypto::Sha256Digest d;
-  crypto::Sha256(reinterpret_cast<const std::uint8_t*>(data.data()),
-                 data.size(), d);
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string out;
-  out.resize(d.bytes.size() * 2);
-  for (std::size_t i = 0; i < d.bytes.size(); ++i) {
-    out[i * 2] = kHex[d.bytes[i] >> 4];
-    out[i * 2 + 1] = kHex[d.bytes[i] & 0x0F];
-  }
-  return out;
-}
-
-int HexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
-  return -1;
-}
-
-bool HexToBytes(const std::string& hex, std::vector<std::uint8_t>& out) {
-  out.clear();
-  if ((hex.size() % 2) != 0) {
-    return false;
-  }
-  out.reserve(hex.size() / 2);
-  for (std::size_t i = 0; i < hex.size(); i += 2) {
-    const int hi = HexNibble(hex[i]);
-    const int lo = HexNibble(hex[i + 1]);
-    if (hi < 0 || lo < 0) {
-      out.clear();
-      return false;
-    }
-    out.push_back(
-        static_cast<std::uint8_t>((static_cast<unsigned>(hi) << 4) |
-                                  static_cast<unsigned>(lo)));
-  }
-  return true;
-}
 
 bool ConstantTimeEqual(const std::vector<std::uint8_t>& a,
                        const std::vector<std::uint8_t>& b) {
@@ -253,7 +213,8 @@ bool VerifyPasswordArgon2id(const std::string& input,
 
   std::vector<std::uint8_t> salt;
   std::vector<std::uint8_t> expected;
-  if (!HexToBytes(parts[3], salt) || !HexToBytes(parts[4], expected)) {
+  if (!mi::common::HexToBytes(parts[3], salt) ||
+      !mi::common::HexToBytes(parts[4], expected)) {
     return false;
   }
   if (salt.empty() || expected.empty()) {
@@ -296,10 +257,14 @@ bool VerifyPassword(const std::string& input, const std::string& stored) {
   if (pos != std::string::npos) {
     const std::string salt = stored.substr(0, pos);
     const std::string hash = stored.substr(pos + 1);
-    const std::string salted = Sha256Hex(salt + input);
+    const std::string salted_input = salt + input;
+    const std::string salted = mi::common::Sha256Hex(
+        reinterpret_cast<const std::uint8_t*>(salted_input.data()),
+        salted_input.size());
     return ConstantTimeEqualString(salted, hash);
   }
-  const std::string hashed = Sha256Hex(input);
+  const std::string hashed = mi::common::Sha256Hex(
+      reinterpret_cast<const std::uint8_t*>(input.data()), input.size());
   return ConstantTimeEqualString(stored, hashed);
 }
 
@@ -459,7 +424,7 @@ MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
     error = "mysql_connect failed";
     mysql_close(conn);
     if (attempt + 1 < kMaxAttempts) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      mi::platform::SleepMs(200);
     }
   }
   return nullptr;

@@ -86,7 +86,7 @@ class NetworkServer {
   std::intptr_t listen_fd_{-1};
 #endif
 
-#ifdef _WIN32
+#ifdef MI_E2EE_ENABLE_TCP_SERVER
   struct TlsServer;
   struct TlsServerDeleter {
     void operator()(TlsServer* p) const;

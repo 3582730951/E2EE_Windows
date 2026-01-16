@@ -9,7 +9,6 @@
 #include <memory>
 #include <vector>
 
-#include "../../include/client_core.h"
 #include "../../include/media_pipeline.h"
 #include "../../include/media_session.h"
 
@@ -20,12 +19,13 @@ class QIODevice;
 class QMediaCaptureSession;
 class QVideoFrame;
 class QVideoSink;
+struct mi_client_handle;
 
 class CallController : public QObject {
     Q_OBJECT
 
 public:
-    explicit CallController(mi::client::ClientCore &core, QObject *parent = nullptr);
+    explicit CallController(mi_client_handle* handle, QObject *parent = nullptr);
     ~CallController() override;
 
     bool Start(const QString &peerUsername,
@@ -66,8 +66,9 @@ private:
     bool SelectCameraFormat();
     QMediaCaptureSession *EnsureCaptureSession();
 
-    mi::client::ClientCore &core_;
+    mi_client_handle* handle_{nullptr};
     QTimer media_timer_;
+    std::unique_ptr<mi::client::media::MediaTransport> media_transport_;
     std::unique_ptr<mi::client::media::MediaSession> media_session_;
     std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
     std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;

@@ -2832,7 +2832,7 @@ void MainListWindow::startCall(const QString &peer, bool video) {
         return;
     }
     const QString callId = GenerateCallIdHex();
-    auto *dlg = new CallDialog(backend_->core(), this);
+    auto *dlg = new CallDialog(backend_->clientHandle(), this);
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
     QString err;
     if (!dlg->startOutgoing(target, callId, video, err)) {
@@ -2880,7 +2880,7 @@ bool MainListWindow::ensureCallDialog(bool incoming,
                     Toast::Level::Info);
         return false;
     }
-    auto *dlg = new CallDialog(backend_->core(), this);
+    auto *dlg = new CallDialog(backend_->clientHandle(), this);
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
     callDialog_ = dlg;
     connect(dlg, &CallDialog::callEnded, this, [this]() { callDialog_ = nullptr; });

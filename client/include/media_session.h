@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "client_core.h"
 #include "media_crypto.h"
 #include "media_jitter_buffer.h"
+#include "media_transport.h"
 
 namespace mi::client::media {
 
@@ -58,7 +58,7 @@ class MediaSessionInterface {
 
 class MediaSession : public MediaSessionInterface {
  public:
-  MediaSession(mi::client::ClientCore& core, MediaSessionConfig config);
+  MediaSession(MediaTransport& transport, MediaSessionConfig config);
 
   bool Init(std::string& error);
   bool SendAudioFrame(const std::vector<std::uint8_t>& payload,
@@ -96,7 +96,7 @@ class MediaSession : public MediaSessionInterface {
                             const std::vector<std::uint8_t>& packet,
                             std::string& error);
 
-  mi::client::ClientCore& core_;
+  MediaTransport& transport_;
   MediaSessionConfig config_;
   std::array<std::uint8_t, 32> media_root_{};
   std::unique_ptr<MediaRatchet> audio_send_;
@@ -109,6 +109,7 @@ class MediaSession : public MediaSessionInterface {
   bool ready_{false};
   std::vector<std::uint8_t> audio_packet_buf_;
   std::vector<std::uint8_t> video_packet_buf_;
+  std::vector<MediaRelayPacket> pull_packets_;
 };
 
 }  // namespace mi::client::media

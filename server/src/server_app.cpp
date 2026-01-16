@@ -3,27 +3,21 @@
 #include "api_service.h"
 #include "group_call_manager.h"
 #include "crypto.h"
+#include "hex_utils.h"
 #include "key_transparency.h"
 #include "opaque_pake.h"
 #include "path_security.h"
+#include "platform_log.h"
+#include "platform_secure_store.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <iterator>
 #include <limits>
 #include <vector>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <wincrypt.h>
-#endif
 
 namespace mi::server {
 
@@ -57,7 +51,8 @@ bool CheckPathNotWorldWritable(const std::filesystem::path& path,
   if (mi::shard::security::CheckPathNotWorldWritable(path, error)) {
     return true;
   }
-  if (error != "insecure acl (world-writable)") {
+  const std::string kInsecureAclPrefix = "insecure acl (world-writable)";
+  if (error.compare(0, kInsecureAclPrefix.size(), kInsecureAclPrefix) != 0) {
     return false;
   }
   std::string fix_error;
@@ -78,7 +73,8 @@ bool CheckPathNotWorldWritable(const std::filesystem::path& path,
   const auto writable =
       std::filesystem::perms::group_write | std::filesystem::perms::others_write;
   if ((perms & writable) != std::filesystem::perms::none) {
-    error = "insecure file permissions: " + path.string();
+    error = "insecure file permissions: " + path.string() +
+            "; fix: chmod 600 and remove group/world write";
     return false;
   }
   return true;
@@ -111,50 +107,12 @@ bool IsDpapiBlob(const std::vector<std::uint8_t>& data) {
                     data.begin());
 }
 
-#ifdef _WIN32
-bool ProtectDpapi(const std::vector<std::uint8_t>& plain,
-                  bool machine_scope,
-                  std::vector<std::uint8_t>& out,
-                  std::string& error) {
-  error.clear();
-  DATA_BLOB in{};
-  in.pbData = const_cast<BYTE*>(
-      reinterpret_cast<const BYTE*>(plain.data()));
-  in.cbData = static_cast<DWORD>(plain.size());
-  DATA_BLOB out_blob{};
-  DWORD flags = CRYPTPROTECT_UI_FORBIDDEN;
-  if (machine_scope) {
-    flags |= CRYPTPROTECT_LOCAL_MACHINE;
-  }
-  if (!CryptProtectData(&in, L"mi_e2ee", nullptr, nullptr, nullptr, flags,
-                        &out_blob)) {
-    error = "dpapi protect failed";
-    return false;
-  }
-  out.assign(out_blob.pbData, out_blob.pbData + out_blob.cbData);
-  LocalFree(out_blob.pbData);
-  return true;
+mi::platform::SecureStoreScope ScopeForKeyProtection(
+    KeyProtectionMode mode) {
+  return mode == KeyProtectionMode::kDpapiMachine
+             ? mi::platform::SecureStoreScope::kMachine
+             : mi::platform::SecureStoreScope::kUser;
 }
-
-bool UnprotectDpapi(const std::vector<std::uint8_t>& blob,
-                    std::vector<std::uint8_t>& out,
-                    std::string& error) {
-  error.clear();
-  DATA_BLOB in{};
-  in.pbData = const_cast<BYTE*>(
-      reinterpret_cast<const BYTE*>(blob.data()));
-  in.cbData = static_cast<DWORD>(blob.size());
-  DATA_BLOB out_blob{};
-  if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
-                          CRYPTPROTECT_UI_FORBIDDEN, &out_blob)) {
-    error = "dpapi unprotect failed";
-    return false;
-  }
-  out.assign(out_blob.pbData, out_blob.pbData + out_blob.cbData);
-  LocalFree(out_blob.pbData);
-  return true;
-}
-#endif
 
 bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
                               KeyProtectionMode mode,
@@ -165,14 +123,13 @@ bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
     out = plain;
     return true;
   }
-#ifdef _WIN32
   std::vector<std::uint8_t> blob;
-  const bool machine = (mode == KeyProtectionMode::kDpapiMachine);
-  if (!ProtectDpapi(plain, machine, blob, error)) {
+  if (!mi::platform::ProtectSecureBlobScoped(
+          plain, nullptr, 0, ScopeForKeyProtection(mode), blob, error)) {
     return false;
   }
   if (blob.size() > (std::numeric_limits<std::uint32_t>::max)()) {
-    error = "dpapi blob too large";
+    error = "secure store blob too large";
     return false;
   }
   const std::uint32_t len = static_cast<std::uint32_t>(blob.size());
@@ -185,10 +142,6 @@ bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
   out.push_back(static_cast<std::uint8_t>((len >> 24) & 0xFF));
   out.insert(out.end(), blob.begin(), blob.end());
   return true;
-#else
-  error = "key protection not supported";
-  return false;
-#endif
 }
 
 bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
@@ -203,7 +156,7 @@ bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
   }
   was_protected = true;
   if (file_bytes.size() < kDpapiHeaderBytes) {
-    error = "dpapi blob invalid";
+    error = "secure store blob invalid";
     return false;
   }
   const std::uint32_t len =
@@ -212,41 +165,29 @@ bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
       (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
       (static_cast<std::uint32_t>(file_bytes[11]) << 24);
   if (len == 0 || file_bytes.size() != kDpapiHeaderBytes + len) {
-    error = "dpapi blob size invalid";
+    error = "secure store blob size invalid";
     return false;
   }
-#ifdef _WIN32
   const std::vector<std::uint8_t> blob(file_bytes.begin() + kDpapiHeaderBytes,
                                        file_bytes.end());
-  return UnprotectDpapi(blob, out_plain, error);
-#else
-  error = "key protection not supported";
-  return false;
-#endif
-}
-
-int HexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
+  return mi::platform::UnprotectSecureBlobScoped(
+      blob, nullptr, 0, mi::platform::SecureStoreScope::kUser, out_plain,
+      error);
 }
 
 bool ParseSha256Hex(const std::string& hex,
                     std::array<std::uint8_t, 32>& out) {
-  if (hex.size() != 64) {
+  std::vector<std::uint8_t> tmp;
+  if (!mi::common::HexToBytes(hex, tmp) || tmp.size() != out.size()) {
     return false;
   }
-  for (std::size_t i = 0; i < out.size(); ++i) {
-    const int hi = HexNibble(hex[i * 2]);
-    const int lo = HexNibble(hex[i * 2 + 1]);
-    if (hi < 0 || lo < 0) {
-      return false;
-    }
-    out[i] = static_cast<std::uint8_t>((hi << 4) | lo);
-  }
+  std::copy_n(tmp.begin(), out.size(), out.begin());
   return true;
 }
+
+bool ReadFileToBytes(const std::filesystem::path& path,
+                     std::vector<std::uint8_t>& out,
+                     std::string& error);
 
 bool VerifyFileSha256(const std::filesystem::path& path,
                       const std::string& expected_hex,
@@ -260,15 +201,9 @@ bool VerifyFileSha256(const std::filesystem::path& path,
     error = "secure_delete_plugin_sha256 invalid";
     return false;
   }
-  std::ifstream ifs(path, std::ios::binary);
-  if (!ifs) {
-    error = "secure_delete_plugin read failed";
-    return false;
-  }
-  std::vector<std::uint8_t> bytes(
-      (std::istreambuf_iterator<char>(ifs)),
-      std::istreambuf_iterator<char>());
-  if (!ifs && !ifs.eof()) {
+  std::vector<std::uint8_t> bytes;
+  std::string read_err;
+  if (!ReadFileToBytes(path, bytes, read_err)) {
     error = "secure_delete_plugin read failed";
     return false;
   }
@@ -304,14 +239,12 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     if (!CheckPathNotWorldWritable(path, error)) {
       return false;
     }
-    std::ifstream ifs(path, std::ios::binary);
-    if (!ifs) {
+    std::vector<std::uint8_t> file_bytes;
+    std::string read_err;
+    if (!ReadFileToBytes(path, file_bytes, read_err)) {
       error = "opaque setup read failed";
       return false;
     }
-    std::vector<std::uint8_t> file_bytes(
-        (std::istreambuf_iterator<char>(ifs)),
-        std::istreambuf_iterator<char>());
     std::vector<std::uint8_t> decoded;
     bool was_protected = false;
     if (!DecodeProtectedFileBytes(file_bytes, decoded, was_protected, error)) {
@@ -525,12 +458,23 @@ bool ReadFileToBytes(const std::filesystem::path& path,
     error = "file read failed";
     return false;
   }
-  out.assign((std::istreambuf_iterator<char>(ifs)),
-             std::istreambuf_iterator<char>());
-  if (!ifs && !ifs.eof()) {
+  std::error_code ec;
+  const std::uint64_t size = std::filesystem::file_size(path, ec);
+  if (ec ||
+      size > static_cast<std::uint64_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
     error = "file read failed";
-    out.clear();
     return false;
+  }
+  out.resize(static_cast<std::size_t>(size));
+  if (!out.empty()) {
+    ifs.read(reinterpret_cast<char*>(out.data()),
+             static_cast<std::streamsize>(out.size()));
+    if (!ifs || ifs.gcount() != static_cast<std::streamsize>(out.size())) {
+      error = "file read failed";
+      out.clear();
+      return false;
+    }
   }
   return true;
 }
@@ -695,9 +639,10 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
   if (kt_generated) {
-    std::cout << "[mi_e2ee_server] generated kt_signing_key at "
-              << kt_signing_key.string()
-              << " and kt_root_pub at " << kt_root_pub.string() << "\n";
+    const std::string message =
+        "generated kt_signing_key at " + kt_signing_key.string() +
+        " and kt_root_pub at " + kt_root_pub.string();
+    mi::platform::log::Log(mi::platform::log::Level::kInfo, "server", message);
   }
 
   const bool require_secure_delete = config_.server.secure_delete_required;

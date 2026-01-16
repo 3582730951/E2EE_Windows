@@ -17,21 +17,24 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "client_core.h"
 #include "group_call_media_adapter.h"
 #include "group_call_session.h"
 #include "media_pipeline.h"
 #include "media_session.h"
+#include "sdk_client_types.h"
 
 class QAudioSink;
 class QAudioSource;
 class QCamera;
 class QIODevice;
 class QVideoFrame;
+struct mi_client_handle;
+struct mi_media_config_t;
+struct mi_history_entry_t;
 
 namespace mi::client::ui {
 
-// 轻量桥接：Qt Quick 与 client_core 的同步调用
+// 轻量桥接：Qt Quick 与 SDK/C API 的同步调用
 class QuickClient : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString token READ token NOTIFY tokenChanged)
@@ -236,13 +239,13 @@ class QuickClient : public QObject {
   void StopPolling();
   void PollOnce();
   void EmitMessage(const QVariantMap& message);
-  void UpdateFriendList(const std::vector<ClientCore::FriendEntry>& friends);
+  void UpdateFriendList(const std::vector<mi::sdk::FriendEntry>& friends);
   void UpdateFriendRequests(
-      const std::vector<ClientCore::FriendRequestEntry>& requests);
+      const std::vector<mi::sdk::FriendRequestEntry>& requests);
   bool AddGroupIfMissing(const QString& groupId);
   QVariantMap BuildStickerMeta(const QString& stickerId) const;
-  QVariantMap BuildHistoryMessage(const ClientCore::HistoryEntry& entry) const;
-  void HandlePollResult(const ClientCore::ChatPollResult& result);
+  QVariantMap BuildHistoryMessageFromC(const mi_history_entry_t& entry) const;
+  void HandlePollResult(const mi::sdk::ChatPollResult& result);
   void HandleSessionInvalid(const QString& message);
   void UpdateLastError(const QString& message);
   void UpdateConnectionState(bool force_emit);
@@ -276,7 +279,7 @@ class QuickClient : public QObject {
   void HandleAudioReady();
   void HandleLocalVideoFrame(const QVideoFrame& frame);
   void HandleGroupCallEvents(
-      const std::vector<ClientCore::GroupCallEvent>& events);
+      const std::vector<mi::sdk::GroupCallEvent>& events);
   void UpdateGroupCallRooms();
   void UpdateGroupCallParticipants(
       const std::vector<std::string>& members);
@@ -291,6 +294,9 @@ class QuickClient : public QObject {
   void TryActivatePendingGroupCall();
   void TryUpdateGroupCallKey();
   void ClearGroupCallState(bool notify);
+  void ResetMediaTransport();
+  bool LoadMediaConfig(mi_media_config_t& out_config,
+                       QString& out_error);
   bool ConvertVideoFrameToNv12(const QVideoFrame& frame,
                                std::vector<std::uint8_t>& out,
                                std::uint32_t& width,
@@ -330,7 +336,7 @@ class QuickClient : public QObject {
                            std::array<std::uint8_t, 32>& out);
 
   QString config_path_{QStringLiteral("config/client_config.ini")};
-  mi::client::ClientCore core_;
+  mi_client_handle* c_api_{nullptr};
   QString token_;
   QString username_;
   QString last_error_;
@@ -361,6 +367,7 @@ class QuickClient : public QObject {
   int ai_rec_perf_scale_{2};
   int ai_rec_quality_scale_{2};
   QHash<QString, QString> chat_backgrounds_;
+  std::unique_ptr<mi::client::media::MediaTransport> media_transport_;
   std::unique_ptr<mi::client::media::MediaSession> media_session_;
   std::unique_ptr<mi::client::media::AudioPipeline> audio_pipeline_;
   std::unique_ptr<mi::client::media::VideoPipeline> video_pipeline_;

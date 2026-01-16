@@ -72,6 +72,7 @@ class MediaRatchet {
   mi::media::StreamKind kind_{mi::media::StreamKind::kAudio};
   std::unordered_map<std::uint32_t, std::array<std::uint8_t, 32>> skipped_;
   std::deque<std::uint32_t> skipped_order_;
+  std::vector<std::uint8_t> plain_buf_;
 };
 
 }  // namespace mi::client::media

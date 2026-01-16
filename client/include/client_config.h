@@ -2,6 +2,7 @@
 #define MI_E2EE_CLIENT_CONFIG_H
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace mi::client {
@@ -73,6 +74,17 @@ struct KcpConfig {
   std::uint32_t session_idle_sec{60};
 };
 
+struct MediaConfig {
+  std::uint32_t audio_delay_ms{60};
+  std::uint32_t video_delay_ms{120};
+  std::uint32_t audio_max_frames{256};
+  std::uint32_t video_max_frames{256};
+  std::uint32_t pull_max_packets{32};
+  std::uint32_t pull_wait_ms{0};
+  std::uint32_t group_pull_max_packets{64};
+  std::uint32_t group_pull_wait_ms{0};
+};
+
 struct ClientConfig {
   std::string server_ip{"127.0.0.1"};
   std::uint16_t server_port{9000};
@@ -90,10 +102,13 @@ struct ClientConfig {
   PerformanceConfig perf;
   KtConfig kt;
   KcpConfig kcp;
+  MediaConfig media;
 };
 
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
                       std::string& error);
+std::filesystem::path ResolveConfigDir(const std::string& config_path);
+std::filesystem::path ResolveDataDir(const std::filesystem::path& config_dir);
 
 }  // namespace mi::client
 

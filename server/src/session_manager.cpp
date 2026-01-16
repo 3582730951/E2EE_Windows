@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "crypto.h"
+#include "hex_utils.h"
 #include "monocypher.h"
 #include "opaque_pake.h"
 
@@ -188,37 +189,12 @@ bool ConstantTimeEqual(const std::uint8_t* a, const std::uint8_t* b,
   return acc == 0;
 }
 
-int HexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
-  return -1;
-}
-
-bool HexToBytes(std::string_view hex, std::vector<std::uint8_t>& out) {
-  out.clear();
-  if (hex.empty() || (hex.size() % 2) != 0) {
-    return false;
-  }
-  out.reserve(hex.size() / 2);
-  for (std::size_t i = 0; i < hex.size(); i += 2) {
-    const int hi = HexNibble(hex[i]);
-    const int lo = HexNibble(hex[i + 1]);
-    if (hi < 0 || lo < 0) {
-      out.clear();
-      return false;
-    }
-    out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
-  }
-  return true;
-}
-
 bool LooksLikeSha256Hex(std::string_view s) {
   if (s.size() != 64) {
     return false;
   }
   for (char c : s) {
-    if (HexNibble(c) < 0) {
+    if (std::isxdigit(static_cast<unsigned char>(c)) == 0) {
       return false;
     }
   }
@@ -277,7 +253,8 @@ bool DerivePwKeyRecord(const std::string& stored, PwKeyRecord& out,
     }
     std::vector<std::uint8_t> salt;
     std::vector<std::uint8_t> hash;
-    if (!HexToBytes(parts[3], salt) || !HexToBytes(parts[4], hash) ||
+    if (!mi::common::HexToBytes(parts[3], salt) ||
+        !mi::common::HexToBytes(parts[4], hash) ||
         salt.empty() || hash.size() != out.key.size()) {
       error = "argon2id salt/hash invalid";
       return false;
@@ -300,7 +277,8 @@ bool DerivePwKeyRecord(const std::string& stored, PwKeyRecord& out,
       return false;
     }
     std::vector<std::uint8_t> hash;
-    if (!HexToBytes(hash_hex, hash) || hash.size() != out.key.size()) {
+    if (!mi::common::HexToBytes(hash_hex, hash) ||
+        hash.size() != out.key.size()) {
       error = "salted sha256 hash invalid";
       return false;
     }
@@ -312,7 +290,8 @@ bool DerivePwKeyRecord(const std::string& stored, PwKeyRecord& out,
 
   if (LooksLikeSha256Hex(stored)) {
     std::vector<std::uint8_t> hash;
-    if (!HexToBytes(stored, hash) || hash.size() != out.key.size()) {
+    if (!mi::common::HexToBytes(stored, hash) ||
+        hash.size() != out.key.size()) {
       error = "sha256 hex invalid";
       return false;
     }

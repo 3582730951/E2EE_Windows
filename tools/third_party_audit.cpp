@@ -4,11 +4,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "../server/include/crypto.h"
+#include "hex_utils.h"
 
 namespace {
 
@@ -46,18 +47,6 @@ bool SplitPipe(const std::string& line, std::vector<std::string>& out) {
   }
   out.push_back(current);
   return out.size() >= 5;
-}
-
-std::string HexLower(const std::uint8_t* data, std::size_t len) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string out;
-  out.resize(len * 2);
-  for (std::size_t i = 0; i < len; ++i) {
-    const std::uint8_t v = data[i];
-    out[i * 2] = kHex[v >> 4];
-    out[i * 2 + 1] = kHex[v & 0x0F];
-  }
-  return out;
 }
 
 bool LoadLockFile(const std::filesystem::path& path,
@@ -102,11 +91,25 @@ bool HashFile(const std::filesystem::path& path, std::string& out) {
   if (!ifs) {
     return false;
   }
-  std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(ifs)),
-                                  std::istreambuf_iterator<char>());
-  mi::server::crypto::Sha256Digest digest;
-  mi::server::crypto::Sha256(bytes.data(), bytes.size(), digest);
-  out = HexLower(digest.bytes.data(), digest.bytes.size());
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    return false;
+  }
+  if (size > static_cast<std::uintmax_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    return false;
+  }
+  std::vector<std::uint8_t> bytes;
+  bytes.resize(static_cast<std::size_t>(size));
+  if (!bytes.empty()) {
+    ifs.read(reinterpret_cast<char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+    if (!ifs || ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
+      return false;
+    }
+  }
+  out = mi::common::Sha256Hex(bytes.data(), bytes.size());
   return true;
 }
 
@@ -146,9 +149,7 @@ bool HashDirectory(const std::filesystem::path& root, std::string& out) {
     buf.insert(buf.end(), entry.second.begin(), entry.second.end());
     buf.push_back(0);
   }
-  mi::server::crypto::Sha256Digest digest;
-  mi::server::crypto::Sha256(buf.data(), buf.size(), digest);
-  out = HexLower(digest.bytes.data(), digest.bytes.size());
+  out = mi::common::Sha256Hex(buf.data(), buf.size());
   return true;
 }
 

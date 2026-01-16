@@ -20,6 +20,26 @@ struct mi_server_handle {
 
 extern "C" {
 
+void mi_server_get_version(mi_sdk_version* out_version) {
+  if (!out_version) {
+    return;
+  }
+  out_version->major = MI_E2EE_SERVER_SDK_VERSION_MAJOR;
+  out_version->minor = MI_E2EE_SERVER_SDK_VERSION_MINOR;
+  out_version->patch = MI_E2EE_SERVER_SDK_VERSION_PATCH;
+  out_version->abi = MI_E2EE_SERVER_SDK_ABI_VERSION;
+}
+
+std::uint32_t mi_server_get_capabilities(void) {
+  std::uint32_t caps =
+      MI_SERVER_CAP_TLS | MI_SERVER_CAP_KCP | MI_SERVER_CAP_OPAQUE |
+      MI_SERVER_CAP_OPS;
+#ifdef MI_E2EE_ENABLE_MYSQL
+  caps |= MI_SERVER_CAP_MYSQL;
+#endif
+  return caps;
+}
+
 mi_server_handle* mi_server_create(const char* config_path) {
   try {
     auto* handle = new (std::nothrow) mi_server_handle();

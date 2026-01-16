@@ -15,13 +15,23 @@
       "name": "monocypher",
       "version": "__git__",
       "licenses": [
-        { "license": { "id": "BSD-2-Clause OR CC0-1.0" } }
+        {
+          "license": {
+            "id": "BSD-2-Clause OR CC0-1.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "274f12b0b457003dc3ba00aee133f09ecf3004592f6339a4dc38fd3a12c3177c" }
+        {
+          "alg": "SHA-256",
+          "content": "274f12b0b457003dc3ba00aee133f09ecf3004592f6339a4dc38fd3a12c3177c"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/monocypher" }
+        {
+          "name": "path",
+          "value": "core/third_party/monocypher"
+        }
       ]
     },
     {
@@ -29,13 +39,23 @@
       "name": "miniz",
       "version": "3.1.0",
       "licenses": [
-        { "license": { "id": "public-domain" } }
+        {
+          "license": {
+            "id": "public-domain"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "10ce092315b2c2bdb69e3acb574ae9dfeb5065f13593e9fda9a1cb3177b0a9be" }
+        {
+          "alg": "SHA-256",
+          "content": "10ce092315b2c2bdb69e3acb574ae9dfeb5065f13593e9fda9a1cb3177b0a9be"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/miniz" }
+        {
+          "name": "path",
+          "value": "core/third_party/miniz"
+        }
       ]
     },
     {
@@ -43,13 +63,23 @@
       "name": "kcp",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "MIT" } }
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "3c77e0e8af2c2f91502a7be78520584eafca515817ae818e6846c65ae526c85a" }
+        {
+          "alg": "SHA-256",
+          "content": "3c77e0e8af2c2f91502a7be78520584eafca515817ae818e6846c65ae526c85a"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/kcp" }
+        {
+          "name": "path",
+          "value": "core/third_party/kcp"
+        }
       ]
     },
     {
@@ -57,13 +87,23 @@
       "name": "qrcodegen",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "MIT" } }
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "45e67766469682d31e0564227574fbbd0b13845a1230c1db6cfda84d6b44ab76" }
+        {
+          "alg": "SHA-256",
+          "content": "45e67766469682d31e0564227574fbbd0b13845a1230c1db6cfda84d6b44ab76"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/qrcodegen" }
+        {
+          "name": "path",
+          "value": "core/third_party/qrcodegen"
+        }
       ]
     },
     {
@@ -71,13 +111,23 @@
       "name": "rime-luna-pinyin",
       "version": "2024.02.10",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "405355580591bc45e7973aa69937e9044ad579ef1d2b99394570387e2f84807b" }
+        {
+          "alg": "SHA-256",
+          "content": "405355580591bc45e7973aa69937e9044ad579ef1d2b99394570387e2f84807b"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/ime_pinyin.dat" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/ime_pinyin.dat"
+        }
       ]
     },
     {
@@ -85,13 +135,23 @@
       "name": "rime-luna-pinyin-abbr",
       "version": "2024.02.10",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "6bc56357ace03f1e7c8f58a9e030ec061da63bc4a136b911a912c8e3a633822b" }
+        {
+          "alg": "SHA-256",
+          "content": "6bc56357ace03f1e7c8f58a9e030ec061da63bc4a136b911a912c8e3a633822b"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/ime_pinyin_short.dat" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/ime_pinyin_short.dat"
+        }
       ]
     },
     {
@@ -99,13 +159,23 @@
       "name": "rime-luna-pinyin-yaml",
       "version": "2024.02.10",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "38405bbec72fa9056c892f02ced8a6979ea3256a85484492d25586ad128f3ef4" }
+        {
+          "alg": "SHA-256",
+          "content": "38405bbec72fa9056c892f02ced8a6979ea3256a85484492d25586ad128f3ef4"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/luna_pinyin.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/luna_pinyin.dict.yaml"
+        }
       ]
     },
     {
@@ -113,13 +183,23 @@
       "name": "rime-luna-pinyin-config",
       "version": "2024.02.10",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "22915339d6505d8911edd929b055145235eb4f66ee6d4dbdedb832e31be40c35" }
+        {
+          "alg": "SHA-256",
+          "content": "22915339d6505d8911edd929b055145235eb4f66ee6d4dbdedb832e31be40c35"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/pinyin.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/pinyin.yaml"
+        }
       ]
     },
     {
@@ -127,13 +207,23 @@
       "name": "rime-luna-pinyin-schema",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "df48caa2901ca04d79978af926c79b118b3e6e5b5cf97b9d8c9b9d67d748a744" }
+        {
+          "alg": "SHA-256",
+          "content": "df48caa2901ca04d79978af926c79b118b3e6e5b5cf97b9d8c9b9d67d748a744"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/luna_pinyin.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/luna_pinyin.schema.yaml"
+        }
       ]
     },
     {
@@ -141,13 +231,23 @@
       "name": "rime-luna-pinyin-mi-schema",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "d2c29baac0449415f7bbc47e0fd8c5e59d1f09b3b346ad388f4cf8952260bbbd" }
+        {
+          "alg": "SHA-256",
+          "content": "d2c29baac0449415f7bbc47e0fd8c5e59d1f09b3b346ad388f4cf8952260bbbd"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/mi_pinyin.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/mi_pinyin.schema.yaml"
+        }
       ]
     },
     {
@@ -155,13 +255,23 @@
       "name": "rime-prelude-default",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "2c24e980fae4daa2c535178ef049dcf5ba1021e26fb61a2ee5a1331c18919015" }
+        {
+          "alg": "SHA-256",
+          "content": "2c24e980fae4daa2c535178ef049dcf5ba1021e26fb61a2ee5a1331c18919015"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/default.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/default.yaml"
+        }
       ]
     },
     {
@@ -169,13 +279,23 @@
       "name": "rime-prelude-key-bindings",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "5c484257cccbab899bc874dfeb9257ce7190c99fee3abc33321767c8dac56af9" }
+        {
+          "alg": "SHA-256",
+          "content": "5c484257cccbab899bc874dfeb9257ce7190c99fee3abc33321767c8dac56af9"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/key_bindings.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/key_bindings.yaml"
+        }
       ]
     },
     {
@@ -183,13 +303,23 @@
       "name": "rime-prelude-punctuation",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "d6f89592149098f0a2d0ed3e5c83f49adb6226cdf1d967b0bc0d293f4e5c496a" }
+        {
+          "alg": "SHA-256",
+          "content": "d6f89592149098f0a2d0ed3e5c83f49adb6226cdf1d967b0bc0d293f4e5c496a"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/punctuation.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/punctuation.yaml"
+        }
       ]
     },
     {
@@ -197,13 +327,23 @@
       "name": "rime-prelude-symbols",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "f12ee3a61bb9739c29fe6ba12890c5c9c50ca38f63ce9c85e1a16e223ae0b04f" }
+        {
+          "alg": "SHA-256",
+          "content": "f12ee3a61bb9739c29fe6ba12890c5c9c50ca38f63ce9c85e1a16e223ae0b04f"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/symbols.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/symbols.yaml"
+        }
       ]
     },
     {
@@ -211,13 +351,23 @@
       "name": "rime-stroke-schema",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "06f680cf7c9d9a69948681ee25e9f6aeccfde4d8d590f93e179d4c4b3caee879" }
+        {
+          "alg": "SHA-256",
+          "content": "06f680cf7c9d9a69948681ee25e9f6aeccfde4d8d590f93e179d4c4b3caee879"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/stroke.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/stroke.schema.yaml"
+        }
       ]
     },
     {
@@ -225,13 +375,23 @@
       "name": "rime-stroke-dict",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "LGPL-3.0" } }
+        {
+          "license": {
+            "id": "LGPL-3.0"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "e897ed2e3d1da8d6e6a347310165374bebf36b9710afd789f5e31abb4da0fe76" }
+        {
+          "alg": "SHA-256",
+          "content": "e897ed2e3d1da8d6e6a347310165374bebf36b9710afd789f5e31abb4da0fe76"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/stroke.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/stroke.dict.yaml"
+        }
       ]
     },
     {
@@ -239,13 +399,23 @@
       "name": "rime-ice-dict",
       "version": "2024-11-27",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "5914ec2eb9b2fbd4c175a7cc3c59410fd17d3ace3a3164b45be4cb65ca2d344f" }
+        {
+          "alg": "SHA-256",
+          "content": "5914ec2eb9b2fbd4c175a7cc3c59410fd17d3ace3a3164b45be4cb65ca2d344f"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/rime_ice.dict.yaml"
+        }
       ]
     },
     {
@@ -253,13 +423,23 @@
       "name": "rime-ice-schema",
       "version": "2025-11-02",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "801d59da3d786921f8b21951b9b9b99797ad63a444a66f3d9ca5cd46b949de85" }
+        {
+          "alg": "SHA-256",
+          "content": "801d59da3d786921f8b21951b9b9b99797ad63a444a66f3d9ca5cd46b949de85"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/rime_ice.schema.yaml"
+        }
       ]
     },
     {
@@ -267,13 +447,23 @@
       "name": "rime-ice-custom",
       "version": "local",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "db327d1987ef3cc4a9dd64773c781a9b8873225a100827ff6d80457fbb51f061" }
+        {
+          "alg": "SHA-256",
+          "content": "db327d1987ef3cc4a9dd64773c781a9b8873225a100827ff6d80457fbb51f061"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/rime_ice.custom.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/rime_ice.custom.yaml"
+        }
       ]
     },
     {
@@ -281,13 +471,23 @@
       "name": "rime-ice-symbols-v",
       "version": "2024-12-19",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "6cf79d99403087150681e47817ec59f224c1a3cabc073feb919994089a27da7e" }
+        {
+          "alg": "SHA-256",
+          "content": "6cf79d99403087150681e47817ec59f224c1a3cabc073feb919994089a27da7e"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/symbols_v.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/symbols_v.yaml"
+        }
       ]
     },
     {
@@ -295,13 +495,23 @@
       "name": "rime-ice-melt-eng-schema",
       "version": "2023-10-17",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "be2cf9f196e23e65d678a8a240d3d705db0328949b7745a28b89e881e936a10b" }
+        {
+          "alg": "SHA-256",
+          "content": "be2cf9f196e23e65d678a8a240d3d705db0328949b7745a28b89e881e936a10b"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/melt_eng.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/melt_eng.schema.yaml"
+        }
       ]
     },
     {
@@ -309,13 +519,23 @@
       "name": "rime-ice-melt-eng-dict",
       "version": "2023-10-17",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "e23bd4ea294d5e04e7b50fbd160fb253e489f44f28c2b8911af276d96db04973" }
+        {
+          "alg": "SHA-256",
+          "content": "e23bd4ea294d5e04e7b50fbd160fb253e489f44f28c2b8911af276d96db04973"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/melt_eng.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/melt_eng.dict.yaml"
+        }
       ]
     },
     {
@@ -323,13 +543,23 @@
       "name": "rime-ice-radical-pinyin-schema",
       "version": "2.0.0",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "4f080d704dbc092b848dc7a260006ff8c8319b56554643db7c886163f1398998" }
+        {
+          "alg": "SHA-256",
+          "content": "4f080d704dbc092b848dc7a260006ff8c8319b56554643db7c886163f1398998"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/radical_pinyin.schema.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/radical_pinyin.schema.yaml"
+        }
       ]
     },
     {
@@ -337,13 +567,23 @@
       "name": "rime-ice-radical-pinyin-dict",
       "version": "2.0.0",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "acc03e2e26d89082e580f8516e66b9553587b3866586a681dc9a833a975698fc" }
+        {
+          "alg": "SHA-256",
+          "content": "acc03e2e26d89082e580f8516e66b9553587b3866586a681dc9a833a975698fc"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/radical_pinyin.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/radical_pinyin.dict.yaml"
+        }
       ]
     },
     {
@@ -351,13 +591,23 @@
       "name": "rime-ice-cn-8105",
       "version": "2025-12-01",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "1f4669905d71fa192b26e1a254b03b4c314366bd1228c6a88dd5e4bf7e0a33dd" }
+        {
+          "alg": "SHA-256",
+          "content": "1f4669905d71fa192b26e1a254b03b4c314366bd1228c6a88dd5e4bf7e0a33dd"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/8105.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/cn_dicts/8105.dict.yaml"
+        }
       ]
     },
     {
@@ -365,13 +615,23 @@
       "name": "rime-ice-cn-base",
       "version": "2025-12-13",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "9e835d7b87449948e0008dd53a7b153cb7d1986fecab35cb394dd4f718e1468d" }
+        {
+          "alg": "SHA-256",
+          "content": "9e835d7b87449948e0008dd53a7b153cb7d1986fecab35cb394dd4f718e1468d"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/base.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/cn_dicts/base.dict.yaml"
+        }
       ]
     },
     {
@@ -379,13 +639,23 @@
       "name": "rime-ice-cn-ext",
       "version": "2025-12-13",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "dbcd39d01092e4a9ecf6764bd8a9d9180406a99e8190b27cec8cc07cecf5b781" }
+        {
+          "alg": "SHA-256",
+          "content": "dbcd39d01092e4a9ecf6764bd8a9d9180406a99e8190b27cec8cc07cecf5b781"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/ext.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/cn_dicts/ext.dict.yaml"
+        }
       ]
     },
     {
@@ -393,13 +663,23 @@
       "name": "rime-ice-cn-tencent",
       "version": "2025-12-13",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "e3d119a4e067a31cc15d07ea3fcfc66ba8c19d10d15c882ad8292c7c34618e22" }
+        {
+          "alg": "SHA-256",
+          "content": "e3d119a4e067a31cc15d07ea3fcfc66ba8c19d10d15c882ad8292c7c34618e22"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/tencent.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/cn_dicts/tencent.dict.yaml"
+        }
       ]
     },
     {
@@ -407,13 +687,23 @@
       "name": "rime-ice-cn-others",
       "version": "2025-12-13",
       "licenses": [
-        { "license": { "id": "GPL-3.0-only" } }
+        {
+          "license": {
+            "id": "GPL-3.0-only"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "63b1fff42199b973b652cd47d65cd0fb55964cc8e7f3fcd9a31a3c04096c1466" }
+        {
+          "alg": "SHA-256",
+          "content": "63b1fff42199b973b652cd47d65cd0fb55964cc8e7f3fcd9a31a3c04096c1466"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/rime/cn_dicts/others.dict.yaml" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/rime/cn_dicts/others.dict.yaml"
+        }
       ]
     },
     {
@@ -421,13 +711,23 @@
       "name": "librime",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "BSD-3-Clause" } }
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424" }
+        {
+          "alg": "SHA-256",
+          "content": "6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/ime_rime/third_party/rime_api.h" }
+        {
+          "name": "path",
+          "value": "core/client/ui/ime_rime/third_party/rime_api.h"
+        }
       ]
     },
     {
@@ -435,13 +735,23 @@
       "name": "word-list",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "MIT" } }
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "18257e34e5b70ce92548f65d359d2f249fadf8b8a2231524c1242284354ac293" }
+        {
+          "alg": "SHA-256",
+          "content": "18257e34e5b70ce92548f65d359d2f249fadf8b8a2231524c1242284354ac293"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/client/ui/data/ime_english.dat" }
+        {
+          "name": "path",
+          "value": "core/client/ui/data/ime_english.dat"
+        }
       ]
     },
     {
@@ -449,13 +759,23 @@
       "name": "pqclean_mlkem768_clean",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "CC0-1.0 AND MIT" } }
+        {
+          "license": {
+            "id": "CC0-1.0 AND MIT"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "9a9ed8cce6732c75ae7662ea8fd8216048cb71721248e965ba608a2e9bd50ee5" }
+        {
+          "alg": "SHA-256",
+          "content": "9a9ed8cce6732c75ae7662ea8fd8216048cb71721248e965ba608a2e9bd50ee5"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/pqclean_mlkem768_clean" }
+        {
+          "name": "path",
+          "value": "core/third_party/pqclean_mlkem768_clean"
+        }
       ]
     },
     {
@@ -463,13 +783,167 @@
       "name": "pqclean_mldsa65_clean",
       "version": "snapshot",
       "licenses": [
-        { "license": { "id": "CC0-1.0 AND MIT" } }
+        {
+          "license": {
+            "id": "CC0-1.0 AND MIT"
+          }
+        }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd" }
+        {
+          "alg": "SHA-256",
+          "content": "00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd"
+        }
       ],
       "properties": [
-        { "name": "path", "value": "core/third_party/pqclean_mldsa65_clean" }
+        {
+          "name": "path",
+          "value": "core/third_party/pqclean_mldsa65_clean"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-boy",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "ee51ad8379a5b966e1ef70e553ef23111152a0a2e6831bba72ba4b0b481f050f",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_contacts.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-chat",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "27db19a61f2f94500a23009695a8a033b9e879587d06d94b4f534717037a332e",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_chats.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-setting",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "6e9fde749dc890086bac1aabaefaf8a4bc1622fd613253f07d6d75298944ee62",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_settings.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-pin",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "ec398736655b607ee728867f58b0aee896f4353e6efd721f042598297a09fc94",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_pin.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-pencil",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "1281b60222474a95559aa63822230fc1fefbe66047721e377921568c7d9e65d5",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_compose.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "3dicons-phone-ringing",
+      "version": "2021.10.03",
+      "hashes": [
+        {
+          "content": "01901cf5d1114615f0ee3f786714304318903a0da391fa9346d6e42494c49726",
+          "alg": "SHA-256"
+        }
+      ],
+      "properties": [
+        {
+          "value": "core/android/app/src/main/res/drawable-nodpi/ic_3d_mute.png",
+          "name": "path"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
       ]
     }
   ]

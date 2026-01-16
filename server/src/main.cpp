@@ -1,8 +1,5 @@
 #include <memory>
 #include <string>
-#include <thread>
-#include <chrono>
-#include <iostream>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -15,18 +12,20 @@
 #include "server_app.h"
 #include "network_server.h"
 #include "kcp_server.h"
+#include "platform_log.h"
+#include "platform_time.h"
 
 namespace {
 
 void LogError(const std::string& msg) {
-  std::cerr << "[mi_e2ee_server] " << msg << "\n";
+  mi::platform::log::Log(mi::platform::log::Level::kError, "server", msg);
 }
 
 void LogInfo(bool enabled, const std::string& msg) {
   if (!enabled) {
     return;
   }
-  std::cout << "[mi_e2ee_server] " << msg << "\n";
+  mi::platform::log::Log(mi::platform::log::Level::kInfo, "server", msg);
 }
 
 #ifdef _WIN32
@@ -116,11 +115,14 @@ int main(int argc, char** argv) {
 
   const auto& cfg = app.config();
   const bool verbose = cfg.server.debug_log;
-  LogInfo(verbose, std::string("server config loaded. mode=") +
-                        (cfg.mode == mi::server::AuthMode::kDemo ? "demo"
-                                                                : "mysql") +
-                        " listen_port=" +
-                        std::to_string(cfg.server.listen_port));
+  if (verbose) {
+    const std::string mode =
+        cfg.mode == mi::server::AuthMode::kDemo ? "demo" : "mysql";
+    const std::string port = std::to_string(cfg.server.listen_port);
+    mi::platform::log::Log(mi::platform::log::Level::kInfo, "server",
+                           "server config loaded",
+                           {{"mode", mode}, {"listen_port", port}});
+  }
 
   mi::server::Listener listener(&app);
   mi::server::NetworkServerLimits limits;
@@ -180,7 +182,7 @@ int main(int argc, char** argv) {
     if (!app.RunOnce(tick_error) && !tick_error.empty()) {
       LogError(tick_error);
     }
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    mi::platform::SleepMs(1000);
   }
   return 0;
 }

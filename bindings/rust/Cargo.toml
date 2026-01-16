@@ -1,0 +1,16 @@
+[package]
+name = "mi_e2ee_client"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mi_e2ee_client"
+crate-type = ["rlib"]
+
+[features]
+bindgen = ["dep:bindgen"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = { version = "0.69", optional = true }

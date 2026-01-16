@@ -11,29 +11,49 @@
 #endif
 #include <windows.h>
 #include <aclapi.h>
+#else
+#include <sys/stat.h>
 #endif
 
 namespace mi::shard::security {
+
+inline std::string FormatPathForError(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return std::string("<empty>");
+  }
+  return path.generic_string();
+}
 
 inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
                                       std::string& error) {
   error.clear();
 #ifdef _WIN32
-  const std::wstring wpath = path.wstring();
+  std::filesystem::path check = path;
+  std::wstring wpath = check.wstring();
   PSECURITY_DESCRIPTOR sd = nullptr;
   PACL dacl = nullptr;
-  const DWORD rc = GetNamedSecurityInfoW(
+  DWORD rc = GetNamedSecurityInfoW(
       wpath.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr,
       nullptr, &dacl, nullptr, &sd);
+  if (rc == ERROR_FILE_NOT_FOUND || rc == ERROR_PATH_NOT_FOUND) {
+    if (check.has_parent_path()) {
+      check = check.parent_path();
+      wpath = check.wstring();
+      rc = GetNamedSecurityInfoW(
+          wpath.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr,
+          nullptr, &dacl, nullptr, &sd);
+    }
+  }
+  const std::string display = FormatPathForError(check);
   if (rc != ERROR_SUCCESS) {
-    error = "acl read failed";
+    error = "acl read failed: " + display;
     return false;
   }
   if (!dacl) {
     if (sd) {
       LocalFree(sd);
     }
-    error = "acl missing";
+    error = "acl missing: " + display;
     return false;
   }
 
@@ -44,7 +64,7 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
     if (sd) {
       LocalFree(sd);
     }
-    error = "acl sid failed";
+    error = "acl sid failed: " + display;
     return false;
   }
 
@@ -56,7 +76,7 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
     if (sd) {
       LocalFree(sd);
     }
-    error = "acl sid failed";
+    error = "acl sid failed: " + display;
     return false;
   }
 
@@ -68,7 +88,7 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
     if (sd) {
       LocalFree(sd);
     }
-    error = "acl sid failed";
+    error = "acl sid failed: " + display;
     return false;
   }
 
@@ -80,7 +100,7 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
     if (sd) {
       LocalFree(sd);
     }
-    error = "acl sid failed";
+    error = "acl sid failed: " + display;
     return false;
   }
 
@@ -106,7 +126,9 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
       PSID ace_sid = const_cast<void*>(sid_ptr);
       for (PSID target : target_sids) {
         if (EqualSid(ace_sid, target)) {
-          error = "insecure acl (world-writable)";
+          error =
+              "insecure acl (world-writable): " + display +
+              "; fix: remove write access for Everyone/Authenticated Users/Users/Guests";
           LocalFree(sd);
           return false;
         }
@@ -129,7 +151,9 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
       PSID ace_sid = const_cast<BYTE*>(ace_bytes + offset);
       for (PSID target : target_sids) {
         if (EqualSid(ace_sid, target)) {
-          error = "insecure acl (world-writable)";
+          error =
+              "insecure acl (world-writable): " + display +
+              "; fix: remove write access for Everyone/Authenticated Users/Users/Guests";
           LocalFree(sd);
           return false;
         }
@@ -142,8 +166,29 @@ inline bool CheckPathNotWorldWritable(const std::filesystem::path& path,
   }
   return true;
 #else
-  (void)path;
-  (void)error;
+  std::error_code ec;
+  std::filesystem::path check = path;
+  if (!std::filesystem::exists(check, ec)) {
+    if (check.has_parent_path()) {
+      check = check.parent_path();
+    }
+  }
+  if (check.empty()) {
+    error = "path empty";
+    return false;
+  }
+  const std::string display = FormatPathForError(check);
+  struct stat st;
+  if (::stat(check.c_str(), &st) != 0) {
+    error = "stat failed: " + display;
+    return false;
+  }
+  if ((st.st_mode & S_IWOTH) != 0 || (st.st_mode & S_IWGRP) != 0) {
+    error =
+        "insecure permissions (group/world-writable): " + display +
+        "; fix: chmod 600 and remove group/world write";
+    return false;
+  }
   return true;
 #endif
 }

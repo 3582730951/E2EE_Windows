@@ -1,16 +1,6 @@
-#ifndef MI_E2EE_ENDPOINT_HARDENING_H
-#define MI_E2EE_ENDPOINT_HARDENING_H
+#ifndef MI_E2EE_ENDPOINT_HARDENING_PUBLIC_H
+#define MI_E2EE_ENDPOINT_HARDENING_PUBLIC_H
 
-namespace mi::client::security {
+#include "../../runtime/client/security/endpoint_hardening.h"
 
-// Best-effort endpoint hardening for the local process.
-// - No logging / no persistence.
-// - On Windows: applies process mitigations and starts in-process self-check
-//   threads (fail-closed on detected tampering).
-// - On other platforms: currently no-op.
-void StartEndpointHardening() noexcept;
-
-}  // namespace mi::client::security
-
-#endif  // MI_E2EE_ENDPOINT_HARDENING_H
-
+#endif  // MI_E2EE_ENDPOINT_HARDENING_PUBLIC_H

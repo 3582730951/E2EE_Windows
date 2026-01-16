@@ -1,4 +1,7 @@
 #include "quick_client.h"
+#include "c_api_client.h"
+#include "cpp_client_adapter.h"
+#include "media_transport_capi.h"
 
 #include <QAbstractVideoBuffer>
 #include <QAudioDevice>
@@ -52,6 +55,7 @@
 #include "common/EmojiPackManager.h"
 #include "common/ImePluginLoader.h"
 #include "common/UiRuntimePaths.h"
+#include "platform_time.h"
 #include "protocol.h"
 
 namespace mi::client::ui {
@@ -215,10 +219,7 @@ QString RunCommandOutput(const QString& program,
 }
 
 std::uint64_t NowMonotonicMs() {
-  return static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
+  return mi::platform::NowSteadyMs();
 }
 
 QStringList ParseGpuNames(const QString& output) {
@@ -1744,8 +1745,26 @@ struct CacheTaskResult {
 
 QString FindFfmpegPath();
 
+struct ProgressAdapter {
+  std::function<void(double)> onProgress;
+};
+
+void ProgressThunk(std::uint64_t done,
+                   std::uint64_t total,
+                   void* user_data) {
+  if (!user_data || total == 0) {
+    return;
+  }
+  auto* adapter = static_cast<ProgressAdapter*>(user_data);
+  if (!adapter->onProgress) {
+    return;
+  }
+  adapter->onProgress(static_cast<double>(done) /
+                      static_cast<double>(total));
+}
+
 CacheTaskResult BuildAttachmentCache(
-    ClientCore& core,
+    mi_client_handle* c_api,
     const QString& fileId,
     const std::array<std::uint8_t, 32>& fileKey,
     const QString& fileName,
@@ -1765,6 +1784,31 @@ CacheTaskResult BuildAttachmentCache(
     ext = QStringLiteral("bin");
   }
   const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+  auto downloadToPath = [&](const QString& path) -> bool {
+    if (!c_api) {
+      result.error = QStringLiteral("未初始化");
+      return false;
+    }
+    const QByteArray pathUtf8 = path.toUtf8();
+    const QByteArray nameUtf8 = fileName.toUtf8();
+    const char* namePtr = nameUtf8.isEmpty() ? nullptr : nameUtf8.constData();
+    ProgressAdapter adapter{onProgress};
+    const mi_progress_callback_t cb = onProgress ? ProgressThunk : nullptr;
+    void* userData = onProgress ? &adapter : nullptr;
+    const std::uint64_t sizeValue =
+        fileSize > 0 ? static_cast<std::uint64_t>(fileSize) : 0;
+    const bool ok = mi_client_download_chat_file_to_path(
+                        c_api, fileId.toStdString().c_str(), fileKey.data(),
+                        static_cast<std::uint32_t>(fileKey.size()), namePtr,
+                        sizeValue, pathUtf8.constData(), 1, cb, userData) != 0;
+    if (!ok) {
+      const char* apiErr = mi_client_last_error(c_api);
+      if (apiErr && *apiErr) {
+        result.error = QString::fromUtf8(apiErr);
+      }
+    }
+    return ok;
+  };
 
   if (isMedia) {
     const QString filePath =
@@ -1772,23 +1816,7 @@ CacheTaskResult BuildAttachmentCache(
     const QString previewPath =
         cacheRoot.filePath(safeId + QStringLiteral(".preview.jpg"));
     if (!QFileInfo::exists(filePath)) {
-      ClientCore::ChatFileMessage file;
-      file.file_id = fileId.toStdString();
-      file.file_key = fileKey;
-      file.file_name = fileName.toStdString();
-      if (fileSize > 0) {
-        file.file_size = static_cast<std::uint64_t>(fileSize);
-      }
-      if (!core.DownloadChatFileToPath(
-              file, filePath.toStdString(), true,
-              [onProgress](std::uint64_t done, std::uint64_t total) {
-                if (!onProgress || total == 0) {
-                  return;
-                }
-                onProgress(static_cast<double>(done) /
-                           static_cast<double>(total));
-              })) {
-        result.error = QString::fromStdString(core.last_error());
+      if (!downloadToPath(filePath)) {
         return result;
       }
     }
@@ -1853,23 +1881,7 @@ CacheTaskResult BuildAttachmentCache(
     QFile::remove(tempPath);
   }
 
-  ClientCore::ChatFileMessage file;
-  file.file_id = fileId.toStdString();
-  file.file_key = fileKey;
-  file.file_name = fileName.toStdString();
-  if (fileSize > 0) {
-    file.file_size = static_cast<std::uint64_t>(fileSize);
-  }
-  if (!core.DownloadChatFileToPath(
-          file, tempPath.toStdString(), true,
-          [onProgress](std::uint64_t done, std::uint64_t total) {
-            if (!onProgress || total == 0) {
-              return;
-            }
-            onProgress(static_cast<double>(done) /
-                       static_cast<double>(total));
-          })) {
-    result.error = QString::fromStdString(core.last_error());
+  if (!downloadToPath(tempPath)) {
     return result;
   }
 
@@ -2092,7 +2104,12 @@ QuickClient::~QuickClient() {
   }
   StopMedia();
   StopPolling();
-  core_.Logout();
+  media_transport_.reset();
+  if (c_api_) {
+    mi_client_logout(c_api_);
+    mi_client_destroy(c_api_);
+    c_api_ = nullptr;
+  }
 }
 
 bool QuickClient::init(const QString& configPath) {
@@ -2131,18 +2148,29 @@ bool QuickClient::init(const QString& configPath) {
       config_path_ = baseDir + QStringLiteral("/config/client_config.ini");
     }
   }
-  const bool ok = core_.Init(config_path_.toStdString());
+  if (c_api_) {
+    mi_client_destroy(c_api_);
+    c_api_ = nullptr;
+  }
+  c_api_ = mi_client_create(config_path_.toStdString().c_str());
+  const bool ok = c_api_ != nullptr;
   if (!ok) {
-    UpdateLastError(QStringLiteral("初始化失败"));
+    const char* err = mi_client_last_create_error();
+    const QString msg = err ? QString::fromUtf8(err) : QString();
+    UpdateLastError(msg.isEmpty() ? QStringLiteral("初始化失败") : msg);
     emit status(QStringLiteral("初始化失败"));
   } else {
     UpdateLastError(QString());
     emit deviceChanged();
+    StopMedia();
+    ResetMediaTransport();
   }
   bool historySave = history_save_enabled_;
   LoadPrivacySettings(historySave);
   history_save_enabled_ = historySave;
-  core_.SetHistoryEnabled(history_save_enabled_);
+  if (c_api_) {
+    mi_client_set_history_enabled(c_api_, history_save_enabled_ ? 1 : 0);
+  }
   LoadChatBackgrounds(chat_backgrounds_);
   return ok;
 }
@@ -2154,10 +2182,18 @@ bool QuickClient::registerUser(const QString& user, const QString& pass) {
     emit status(QStringLiteral("注册失败"));
     return false;
   }
-  const bool ok = core_.Register(account.toStdString(), pass.toStdString());
+  bool ok = false;
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(QStringLiteral("注册失败"));
+    return false;
+  }
+  ok = mi_client_register(c_api_, account.toStdString().c_str(),
+                          pass.toStdString().c_str()) != 0;
   if (!ok) {
-    const QString err = QString::fromStdString(core_.last_error());
-    UpdateLastError(err.isEmpty() ? QStringLiteral("注册失败") : err);
+    const char* err = mi_client_last_error(c_api_);
+    const QString msg = err ? QString::fromUtf8(err) : QString();
+    UpdateLastError(msg.isEmpty() ? QStringLiteral("注册失败") : msg);
     emit status(QStringLiteral("注册失败"));
   } else {
     UpdateLastError(QString());
@@ -2168,35 +2204,54 @@ bool QuickClient::registerUser(const QString& user, const QString& pass) {
 }
 
 bool QuickClient::login(const QString& user, const QString& pass) {
-  const bool ok = core_.Login(user.toStdString(), pass.toStdString());
+  bool ok = false;
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(QStringLiteral("登录失败"));
+    return false;
+  }
+  ok = mi_client_login(c_api_, user.toStdString().c_str(),
+                       pass.toStdString().c_str()) != 0;
   if (!ok) {
     emit status(QStringLiteral("登录失败"));
     token_.clear();
     username_.clear();
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     StopPolling();
   } else {
-    token_ = QString::fromStdString(core_.token());
+    const char* token = mi_client_token(c_api_);
+    token_ = token ? QString::fromUtf8(token) : QString();
     username_ = user.trimmed();
     QString historyErr;
     if (!history_save_enabled_) {
-      std::string hist_err;
-      if (!core_.ClearAllHistory(true, false, hist_err)) {
-        historyErr = QString::fromStdString(hist_err);
+      if (!mi_client_clear_all_history(c_api_, 1, 0)) {
+        const char* err = mi_client_last_error(c_api_);
+        historyErr = err ? QString::fromUtf8(err) : QString();
       }
-      core_.SetHistoryEnabled(false);
+      mi_client_set_history_enabled(c_api_, 0);
     }
     emit status(QStringLiteral("登录成功"));
     UpdateLastError(historyErr);
     StartPolling();
-    std::vector<ClientCore::FriendEntry> synced;
-    bool changed = false;
-    if (core_.SyncFriends(synced, changed)) {
-      UpdateFriendList(synced);
-    } else {
-      UpdateFriendList(core_.ListFriends());
+    std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+    int changed = 0;
+    std::uint32_t count =
+        mi_client_sync_friends(c_api_, buffer.data(), kMaxFriendEntries,
+                               &changed);
+    const char* sync_err = mi_client_last_error(c_api_);
+    if (sync_err && *sync_err) {
+      count = mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
     }
-    UpdateFriendRequests(core_.ListFriendRequests());
+    UpdateFriendList(ReadFriendEntries(buffer.data(), count));
+
+    std::vector<mi_friend_request_entry_t> req_buffer(
+        kMaxFriendRequestEntries);
+    const std::uint32_t req_count =
+        mi_client_list_friend_requests(c_api_, req_buffer.data(),
+                                       kMaxFriendRequestEntries);
+    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+                                                  req_count));
     emit deviceChanged();
   }
   UpdateConnectionState(true);
@@ -2209,7 +2264,9 @@ bool QuickClient::login(const QString& user, const QString& pass) {
 void QuickClient::logout() {
   StopPolling();
   StopMedia();
-  core_.Logout();
+  if (c_api_) {
+    mi_client_logout(c_api_);
+  }
   token_.clear();
   username_.clear();
   UpdateLastError(QString());
@@ -2238,24 +2295,44 @@ void QuickClient::logout() {
 
 bool QuickClient::joinGroup(const QString& groupId) {
   const QString trimmed = groupId.trimmed();
-  const bool ok = core_.JoinGroup(trimmed.toStdString());
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(QStringLiteral("加入群失败"));
+    return false;
+  }
+  const bool ok =
+      mi_client_join_group(c_api_, trimmed.toStdString().c_str()) != 0;
+  if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
+  }
   if (ok) {
     if (AddGroupIfMissing(trimmed)) {
       emit groupsChanged();
     }
     UpdateLastError(QString());
-  } else {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
   }
   emit status(ok ? QStringLiteral("加入群成功") : QStringLiteral("加入群失败"));
   return ok;
 }
 
 QString QuickClient::createGroup() {
-  std::string out_id;
-  if (!core_.CreateGroup(out_id)) {
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
     emit status(QStringLiteral("创建群失败"));
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    return {};
+  }
+  std::string out_id;
+  char* out_group = nullptr;
+  const bool ok = mi_client_create_group(c_api_, &out_group) != 0;
+  if (out_group) {
+    out_id.assign(out_group);
+    mi_client_free(out_group);
+  }
+  if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
+    emit status(QStringLiteral("创建群失败"));
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     return {};
   }
   const QString group_id = QString::fromStdString(out_id);
@@ -2275,11 +2352,23 @@ bool QuickClient::sendGroupInvite(const QString& groupId,
     UpdateLastError(QStringLiteral("群或成员为空"));
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(QStringLiteral("邀请失败"));
+    return false;
+  }
   std::string msg_id;
+  char* out_id = nullptr;
   const bool ok =
-      core_.SendGroupInvite(gid.toStdString(), peer.toStdString(), msg_id);
+      mi_client_send_group_invite(c_api_, gid.toStdString().c_str(),
+                                  peer.toStdString().c_str(), &out_id) != 0;
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     emit status(QStringLiteral("邀请失败"));
     return false;
   }
@@ -2294,17 +2383,28 @@ bool QuickClient::sendText(const QString& convId, const QString& text, bool isGr
   if (trimmed.isEmpty() || message.isEmpty()) {
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
   std::string msg_id;
   bool ok = false;
+  char* out_id = nullptr;
   if (isGroup) {
-    ok = core_.SendGroupChatText(trimmed.toStdString(), message.toStdString(),
-                                 msg_id);
+    ok = mi_client_send_group_text(c_api_, trimmed.toStdString().c_str(),
+                                   message.toStdString().c_str(), &out_id) != 0;
   } else {
-    ok = core_.SendChatText(trimmed.toStdString(), message.toStdString(), msg_id);
+    ok = mi_client_send_private_text(c_api_, trimmed.toStdString().c_str(),
+                                     message.toStdString().c_str(), &out_id) != 0;
+  }
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
   }
   if (!ok) {
     emit status(QStringLiteral("发送失败"));
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     return false;
   }
 
@@ -2327,6 +2427,10 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   if (trimmed.isEmpty() || path.trimmed().isEmpty()) {
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
   QString resolved = path;
   if (resolved.startsWith(QStringLiteral("file:"))) {
     resolved = QUrl(resolved).toLocalFile();
@@ -2338,16 +2442,23 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   }
   std::string msg_id;
   bool ok = false;
+  char* out_id = nullptr;
+  const QByteArray pathUtf8 = info.absoluteFilePath().toUtf8();
   if (isGroup) {
-    ok = core_.SendGroupChatFile(
-        trimmed.toStdString(), ToFsPath(info.absoluteFilePath()), msg_id);
+    ok = mi_client_send_group_file(c_api_, trimmed.toStdString().c_str(),
+                                   pathUtf8.constData(), &out_id) != 0;
   } else {
-    ok = core_.SendChatFile(
-        trimmed.toStdString(), ToFsPath(info.absoluteFilePath()), msg_id);
+    ok = mi_client_send_private_file(c_api_, trimmed.toStdString().c_str(),
+                                     pathUtf8.constData(), &out_id) != 0;
+  }
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
   }
   if (!ok) {
     emit status(QStringLiteral("文件发送失败"));
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     return false;
   }
 
@@ -2384,13 +2495,24 @@ bool QuickClient::sendSticker(const QString& convId,
     emit status(QStringLiteral("群聊暂不支持贴纸"));
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
 
   std::string msg_id;
-  const bool ok =
-      core_.SendChatSticker(trimmed.toStdString(), sid.toStdString(), msg_id);
+  bool ok = false;
+  char* out_id = nullptr;
+  ok = mi_client_send_private_sticker(c_api_, trimmed.toStdString().c_str(),
+                                      sid.toStdString().c_str(), &out_id) != 0;
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
   if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
     emit status(QStringLiteral("贴纸发送失败"));
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     return false;
   }
 
@@ -2420,6 +2542,10 @@ bool QuickClient::sendLocation(const QString& convId,
   if (trimmed.isEmpty()) {
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
   if (isGroup) {
     if (!std::isfinite(lat) || !std::isfinite(lon)) {
       emit status(QStringLiteral("位置参数无效"));
@@ -2433,11 +2559,18 @@ bool QuickClient::sendLocation(const QString& convId,
     }
     const QString text = FormatLocationText(lat, lon, label);
     std::string msg_id;
-    const bool ok = core_.SendGroupChatText(trimmed.toStdString(),
-                                            text.toStdString(), msg_id);
+    bool ok = false;
+    char* out_id = nullptr;
+    ok = mi_client_send_group_text(c_api_, trimmed.toStdString().c_str(),
+                                   text.toStdString().c_str(), &out_id) != 0;
+    if (out_id) {
+      msg_id.assign(out_id);
+      mi_client_free(out_id);
+    }
     if (!ok) {
+      const char* err = mi_client_last_error(c_api_);
       emit status(QStringLiteral("位置发送失败"));
-      UpdateLastError(QString::fromStdString(core_.last_error()));
+      UpdateLastError(err ? QString::fromUtf8(err) : QString());
       return false;
     }
     UpdateLastError(QString());
@@ -2469,11 +2602,20 @@ bool QuickClient::sendLocation(const QString& convId,
   const auto lat_e7 = static_cast<std::int32_t>(std::llround(lat * 10000000.0));
   const auto lon_e7 = static_cast<std::int32_t>(std::llround(lon * 10000000.0));
   std::string msg_id;
-  const bool ok = core_.SendChatLocation(trimmed.toStdString(), lat_e7, lon_e7,
-                                         label.toStdString(), msg_id);
+  bool ok = false;
+  char* out_id = nullptr;
+  ok = mi_client_send_private_location(c_api_, trimmed.toStdString().c_str(),
+                                       lat_e7, lon_e7,
+                                       label.toStdString().c_str(),
+                                       &out_id) != 0;
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
   if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
     emit status(QStringLiteral("位置发送失败"));
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     return false;
   }
 
@@ -2502,21 +2644,31 @@ bool QuickClient::recallMessage(const QString& convId,
     UpdateLastError(QStringLiteral("撤回参数无效"));
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
   const QString payload =
       QString::fromLatin1(kRecallPrefix) + msgId;
   std::string out_id;
   bool ok = false;
+  char* out_msg = nullptr;
   if (isGroup) {
-    ok = core_.SendGroupChatText(target.toStdString(),
-                                 payload.toStdString(),
-                                 out_id);
+    ok = mi_client_send_group_text(c_api_, target.toStdString().c_str(),
+                                   payload.toStdString().c_str(),
+                                   &out_msg) != 0;
   } else {
-    ok = core_.SendChatText(target.toStdString(),
-                            payload.toStdString(),
-                            out_id);
+    ok = mi_client_send_private_text(c_api_, target.toStdString().c_str(),
+                                     payload.toStdString().c_str(),
+                                     &out_msg) != 0;
+  }
+  if (out_msg) {
+    out_id.assign(out_msg);
+    mi_client_free(out_msg);
   }
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   }
   return ok;
 }
@@ -2887,7 +3039,7 @@ void QuickClient::QueueAttachmentCacheTask(
       return;
     }
     const CacheTaskResult result = BuildAttachmentCache(
-        self->core_, fileId, fileKey, fileName, fileSize,
+        self->c_api_, fileId, fileKey, fileName, fileSize,
         [self, fileId](double progress) {
           if (!self) {
             return;
@@ -3059,11 +3211,17 @@ QVariantList QuickClient::loadHistory(const QString& convId, bool isGroup) {
   if (trimmed.isEmpty()) {
     return out;
   }
-  const auto entries =
-      core_.LoadChatHistory(trimmed.toStdString(), isGroup, 200);
-  out.reserve(static_cast<int>(entries.size()));
-  for (const auto& entry : entries) {
-    out.push_back(BuildHistoryMessage(entry));
+  if (!c_api_) {
+    return out;
+  }
+  std::vector<mi_history_entry_t> buffer(kMaxHistoryEntries);
+  const std::uint32_t count =
+      mi_client_load_chat_history(c_api_, trimmed.toStdString().c_str(),
+                                  isGroup ? 1 : 0, kMaxHistoryEntries,
+                                  buffer.data(), kMaxHistoryEntries);
+  out.reserve(static_cast<int>(count));
+  for (std::uint32_t i = 0; i < count; ++i) {
+    out.push_back(BuildHistoryMessageFromC(buffer[i]));
   }
   return out;
 }
@@ -3074,14 +3232,24 @@ QVariantList QuickClient::listGroupMembersInfo(const QString& groupId) {
   if (gid.isEmpty()) {
     return out;
   }
-  const auto members = core_.ListGroupMembersInfo(gid.toStdString());
-  out.reserve(static_cast<int>(members.size()));
-  for (const auto& m : members) {
+  if (!c_api_) {
+    return out;
+  }
+  std::vector<mi_group_member_entry_t> buffer(kMaxGroupMemberEntries);
+  const std::uint32_t count =
+      mi_client_list_group_members_info(c_api_, gid.toStdString().c_str(),
+                                        buffer.data(), kMaxGroupMemberEntries);
+  out.reserve(static_cast<int>(count));
+  for (std::uint32_t i = 0; i < count; ++i) {
     QVariantMap map;
-    map.insert(QStringLiteral("username"),
-               QString::fromStdString(m.username));
+    if (buffer[i].username) {
+      map.insert(QStringLiteral("username"),
+                 QString::fromUtf8(buffer[i].username));
+    } else {
+      map.insert(QStringLiteral("username"), QString());
+    }
     map.insert(QStringLiteral("role"),
-               static_cast<int>(m.role));
+               static_cast<int>(buffer[i].role));
     out.push_back(map);
   }
   return out;
@@ -3125,13 +3293,21 @@ bool QuickClient::sendFriendRequest(const QString& targetUsername,
   if (target.isEmpty()) {
     return false;
   }
-  const bool ok = core_.SendFriendRequest(target.toStdString(), remark.toStdString());
-  emit status(ok ? QStringLiteral("好友请求已发送") : QStringLiteral("好友请求失败"));
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_send_friend_request(
+           c_api_, target.toStdString().c_str(),
+           remark.toStdString().c_str()) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   } else {
     UpdateLastError(QString());
   }
+  emit status(ok ? QStringLiteral("好友请求已发送") : QStringLiteral("好友请求失败"));
   return ok;
 }
 
@@ -3141,17 +3317,33 @@ bool QuickClient::respondFriendRequest(const QString& requesterUsername,
   if (requester.isEmpty()) {
     return false;
   }
-  const bool ok = core_.RespondFriendRequest(requester.toStdString(), accept);
-  emit status(ok ? QStringLiteral("好友请求已处理") : QStringLiteral("好友请求处理失败"));
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_respond_friend_request(
+           c_api_, requester.toStdString().c_str(), accept ? 1 : 0) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   } else {
     UpdateLastError(QString());
   }
+  emit status(ok ? QStringLiteral("好友请求已处理") : QStringLiteral("好友请求处理失败"));
   if (ok) {
-    UpdateFriendRequests(core_.ListFriendRequests());
+    std::vector<mi_friend_request_entry_t> req_buffer(
+        kMaxFriendRequestEntries);
+    const std::uint32_t req_count =
+        mi_client_list_friend_requests(c_api_, req_buffer.data(),
+                                       kMaxFriendRequestEntries);
+    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+                                                  req_count));
     if (accept) {
-      UpdateFriendList(core_.ListFriends());
+      std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+      const std::uint32_t count =
+          mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
+      UpdateFriendList(ReadFriendEntries(buffer.data(), count));
     }
   }
   return ok;
@@ -3159,14 +3351,24 @@ bool QuickClient::respondFriendRequest(const QString& requesterUsername,
 
 QVariantList QuickClient::listDevices() {
   QVariantList out;
-  const auto devices = core_.ListDevices();
-  out.reserve(static_cast<int>(devices.size()));
-  for (const auto& d : devices) {
+  if (!c_api_) {
+    return out;
+  }
+  constexpr std::uint32_t kMaxDeviceEntries = 128;
+  std::vector<mi_device_entry_t> buffer(kMaxDeviceEntries);
+  const std::uint32_t count =
+      mi_client_list_devices(c_api_, buffer.data(), kMaxDeviceEntries);
+  out.reserve(static_cast<int>(count));
+  for (std::uint32_t i = 0; i < count; ++i) {
     QVariantMap map;
-    map.insert(QStringLiteral("deviceId"),
-               QString::fromStdString(d.device_id));
+    if (buffer[i].device_id) {
+      map.insert(QStringLiteral("deviceId"),
+                 QString::fromUtf8(buffer[i].device_id));
+    } else {
+      map.insert(QStringLiteral("deviceId"), QString());
+    }
     map.insert(QStringLiteral("lastSeenSec"),
-               static_cast<int>(d.last_seen_sec));
+               static_cast<int>(buffer[i].last_seen_sec));
     out.push_back(map);
   }
   return out;
@@ -3178,9 +3380,15 @@ bool QuickClient::kickDevice(const QString& deviceId) {
     UpdateLastError(QStringLiteral("设备 ID 为空"));
     return false;
   }
-  const bool ok = core_.KickDevice(id.toStdString());
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_kick_device(c_api_, id.toStdString().c_str()) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     emit status(QStringLiteral("踢出失败"));
     return false;
   }
@@ -3196,10 +3404,17 @@ bool QuickClient::sendReadReceipt(const QString& peerUsername,
   if (peer.isEmpty() || msgId.isEmpty()) {
     return false;
   }
-  const bool ok =
-      core_.SendChatReadReceipt(peer.toStdString(), msgId.toStdString());
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_send_read_receipt(c_api_,
+                                   peer.toStdString().c_str(),
+                                   msgId.toStdString().c_str()) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   }
   return ok;
 }
@@ -3210,9 +3425,15 @@ bool QuickClient::trustPendingServer(const QString& pin) {
     UpdateLastError(QStringLiteral("验证码为空"));
     return false;
   }
-  const bool ok = core_.TrustPendingServer(p.toStdString());
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_trust_pending_server(c_api_, p.toStdString().c_str()) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   } else {
     UpdateLastError(QString());
   }
@@ -3227,9 +3448,15 @@ bool QuickClient::trustPendingPeer(const QString& pin) {
     UpdateLastError(QStringLiteral("验证码为空"));
     return false;
   }
-  const bool ok = core_.TrustPendingPeer(p.toStdString());
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  bool ok = false;
+  ok = mi_client_trust_pending_peer(c_api_, p.toStdString().c_str()) != 0;
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   } else {
     UpdateLastError(QString());
   }
@@ -3240,6 +3467,10 @@ bool QuickClient::trustPendingPeer(const QString& pin) {
 QString QuickClient::startVoiceCall(const QString& peerUsername) {
   const QString peer = peerUsername.trimmed();
   if (peer.isEmpty()) {
+    return {};
+  }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
     return {};
   }
   if (group_call_session_) {
@@ -3260,7 +3491,13 @@ QString QuickClient::startVoiceCall(const QString& peerUsername) {
   const QString invite =
       QString::fromLatin1(kCallVoicePrefix) + call_hex;
   std::string msg_id;
-  core_.SendChatText(peer.toStdString(), invite.toStdString(), msg_id);
+  char* out_id = nullptr;
+  (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
+                                    invite.toStdString().c_str(), &out_id);
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
 
   QVariantMap msg;
   msg.insert(QStringLiteral("convId"), peer);
@@ -3284,6 +3521,10 @@ QString QuickClient::startVideoCall(const QString& peerUsername) {
   if (peer.isEmpty()) {
     return {};
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return {};
+  }
   if (group_call_session_) {
     emit status(QStringLiteral("当前已有群通话进行中"));
     return {};
@@ -3302,7 +3543,13 @@ QString QuickClient::startVideoCall(const QString& peerUsername) {
   const QString invite =
       QString::fromLatin1(kCallVideoPrefix) + call_hex;
   std::string msg_id;
-  core_.SendChatText(peer.toStdString(), invite.toStdString(), msg_id);
+  char* out_id = nullptr;
+  (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
+                                    invite.toStdString().c_str(), &out_id);
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
 
   QVariantMap msg;
   msg.insert(QStringLiteral("convId"), peer);
@@ -3348,14 +3595,25 @@ bool QuickClient::sendCallEnd(const QString& peerUsername,
   if (peer.isEmpty() || callId.isEmpty()) {
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
   const QString payload =
       QString::fromLatin1(kCallEndPrefix) + callId;
   std::string msg_id;
-  const bool ok = core_.SendChatText(peer.toStdString(),
-                                    payload.toStdString(),
-                                    msg_id);
+  char* out_id = nullptr;
+  const bool ok =
+      mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
+                                  payload.toStdString().c_str(),
+                                  &out_id) != 0;
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
   if (!ok) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
   } else {
     UpdateLastError(QString());
   }
@@ -3367,14 +3625,23 @@ QString QuickClient::startGroupCall(const QString& groupId, bool video) {
   if (group.isEmpty()) {
     return {};
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(lastError());
+    return {};
+  }
   if (!active_call_id_.isEmpty() || group_call_session_) {
     emit status(QStringLiteral("当前已有通话进行中"));
     return {};
   }
   std::array<std::uint8_t, 16> call_id{};
   std::uint32_t key_id = 0;
-  if (!core_.StartGroupCall(group.toStdString(), video, call_id, key_id)) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+  if (mi_client_start_group_call(c_api_, group.toStdString().c_str(),
+                                 video ? 1 : 0, call_id.data(),
+                                 static_cast<std::uint32_t>(call_id.size()),
+                                 &key_id) == 0) {
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     emit status(lastError());
     return {};
   }
@@ -3383,19 +3650,50 @@ QString QuickClient::startGroupCall(const QString& groupId, bool video) {
     emit status(err.isEmpty() ? QStringLiteral("群通话初始化失败") : err);
     return {};
   }
-  const auto snap = core_.SendGroupCallSignal(
-      kGroupCallOpPing, group.toStdString(), call_id, video, key_id);
-  if (snap.success) {
-    UpdateGroupCallParticipants(snap.members);
+  std::vector<std::string> members;
+  bool snap_ok = false;
+  std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
+  std::uint32_t count = 0;
+  std::array<std::uint8_t, 16> snap_call{};
+  std::uint32_t snap_key_id = 0;
+  snap_ok = mi_client_send_group_call_signal(
+                c_api_, kGroupCallOpPing, group.toStdString().c_str(),
+                call_id.data(), static_cast<std::uint32_t>(call_id.size()),
+                video ? 1 : 0, key_id, 0, 0, nullptr, 0, snap_call.data(),
+                static_cast<std::uint32_t>(snap_call.size()), &snap_key_id,
+                buffer.data(),
+                static_cast<std::uint32_t>(buffer.size()), &count) != 0;
+  if (snap_ok) {
+    members = ReadGroupCallMembers(buffer.data(), count);
+  }
+  if (snap_ok) {
+    UpdateGroupCallParticipants(members);
   } else {
-    UpdateGroupCallParticipants(
-        core_.ListGroupMembers(group.toStdString()));
+    std::vector<std::string> members;
+    std::vector<mi_group_member_entry_t> member_buffer(kMaxGroupMemberEntries);
+    const std::uint32_t member_count =
+        mi_client_list_group_members_info(c_api_, group.toStdString().c_str(),
+                                          member_buffer.data(),
+                                          kMaxGroupMemberEntries);
+    members.reserve(member_count);
+    for (std::uint32_t i = 0; i < member_count; ++i) {
+      if (member_buffer[i].username) {
+        members.emplace_back(member_buffer[i].username);
+      }
+    }
+    UpdateGroupCallParticipants(members);
   }
 
   const std::string notify_text =
       video ? "[groupcall] video started" : "[groupcall] voice started";
   std::string msg_id;
-  (void)core_.SendGroupChatText(group.toStdString(), notify_text, msg_id);
+  char* out_id = nullptr;
+  (void)mi_client_send_group_text(c_api_, group.toStdString().c_str(),
+                                  notify_text.c_str(), &out_id);
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
 
   group_call_rooms_map_[group.toStdString()] = call_id;
   group_call_media_flags_[group.toStdString()] =
@@ -3412,6 +3710,11 @@ bool QuickClient::joinGroupCall(const QString& groupId,
   if (group.isEmpty()) {
     return false;
   }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    emit status(lastError());
+    return false;
+  }
   if (!active_call_id_.isEmpty() || group_call_session_) {
     emit status(QStringLiteral("当前已有通话进行中"));
     return false;
@@ -3422,27 +3725,61 @@ bool QuickClient::joinGroupCall(const QString& groupId,
     return false;
   }
   std::uint32_t key_id = 0;
-  if (!core_.JoinGroupCall(group.toStdString(), call_id, video, key_id)) {
-    UpdateLastError(QString::fromStdString(core_.last_error()));
+  if (mi_client_join_group_call(
+          c_api_, group.toStdString().c_str(), call_id.data(),
+          static_cast<std::uint32_t>(call_id.size()), video ? 1 : 0,
+          &key_id) == 0) {
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
     emit status(lastError());
     return false;
   }
 
   std::array<std::uint8_t, 32> call_key{};
-  if (core_.GetGroupCallKey(group.toStdString(), call_id, key_id, call_key)) {
+  const bool has_key =
+      mi_client_get_group_call_key(
+          c_api_, group.toStdString().c_str(), call_id.data(),
+          static_cast<std::uint32_t>(call_id.size()), key_id, call_key.data(),
+          static_cast<std::uint32_t>(call_key.size())) != 0;
+  if (has_key) {
     QString err;
     if (!InitGroupCallSession(group, call_id, key_id, video, false, err)) {
       emit status(err.isEmpty() ? QStringLiteral("加入群通话失败") : err);
       return false;
     }
-    const auto snap =
-        core_.SendGroupCallSignal(kGroupCallOpPing, group.toStdString(),
-                                  call_id, video, key_id);
-    if (snap.success) {
-      UpdateGroupCallParticipants(snap.members);
+    std::vector<std::string> members;
+    bool snap_ok = false;
+    std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
+    std::uint32_t count = 0;
+    std::array<std::uint8_t, 16> snap_call{};
+    std::uint32_t snap_key_id = 0;
+    snap_ok = mi_client_send_group_call_signal(
+                  c_api_, kGroupCallOpPing, group.toStdString().c_str(),
+                  call_id.data(),
+                  static_cast<std::uint32_t>(call_id.size()), video ? 1 : 0,
+                  key_id, 0, 0, nullptr, 0, snap_call.data(),
+                  static_cast<std::uint32_t>(snap_call.size()), &snap_key_id,
+                  buffer.data(),
+                  static_cast<std::uint32_t>(buffer.size()), &count) != 0;
+    if (snap_ok) {
+      members = ReadGroupCallMembers(buffer.data(), count);
+    }
+    if (snap_ok) {
+      UpdateGroupCallParticipants(members);
     } else {
-      UpdateGroupCallParticipants(
-          core_.ListGroupMembers(group.toStdString()));
+      std::vector<std::string> members;
+      std::vector<mi_group_member_entry_t> member_buffer(kMaxGroupMemberEntries);
+      const std::uint32_t member_count =
+          mi_client_list_group_members_info(
+              c_api_, group.toStdString().c_str(), member_buffer.data(),
+              kMaxGroupMemberEntries);
+      members.reserve(member_count);
+      for (std::uint32_t i = 0; i < member_count; ++i) {
+        if (member_buffer[i].username) {
+          members.emplace_back(member_buffer[i].username);
+        }
+      }
+      UpdateGroupCallParticipants(members);
     }
   } else {
     pending_group_call_id_bytes_ = call_id;
@@ -3469,11 +3806,23 @@ void QuickClient::leaveGroupCall() {
     if (active_group_call_owner_) {
       const std::string notify_text = "[groupcall] ended";
       std::string msg_id;
-      (void)core_.SendGroupChatText(active_group_call_group_.toStdString(),
-                                    notify_text, msg_id);
+      if (c_api_) {
+        char* out_id = nullptr;
+        (void)mi_client_send_group_text(
+            c_api_, active_group_call_group_.toStdString().c_str(),
+            notify_text.c_str(), &out_id);
+        if (out_id) {
+          msg_id.assign(out_id);
+          mi_client_free(out_id);
+        }
+      }
     }
-    (void)core_.LeaveGroupCall(active_group_call_group_.toStdString(),
-                               active_group_call_id_bytes_);
+    if (c_api_) {
+      (void)mi_client_leave_group_call(
+          c_api_, active_group_call_group_.toStdString().c_str(),
+          active_group_call_id_bytes_.data(),
+          static_cast<std::uint32_t>(active_group_call_id_bytes_.size()));
+    }
   }
   StopMedia();
   emit groupCallStateChanged();
@@ -3487,17 +3836,34 @@ void QuickClient::endGroupCall() {
   }
   if (!active_group_call_group_.isEmpty()) {
     if (active_group_call_owner_) {
-      (void)core_.SendGroupCallSignal(kGroupCallOpEnd,
-                                      active_group_call_group_.toStdString(),
-                                      active_group_call_id_bytes_,
-                                      active_group_call_video_);
+      if (c_api_) {
+        (void)mi_client_send_group_call_signal(
+            c_api_, kGroupCallOpEnd,
+            active_group_call_group_.toStdString().c_str(),
+            active_group_call_id_bytes_.data(),
+            static_cast<std::uint32_t>(active_group_call_id_bytes_.size()),
+            active_group_call_video_ ? 1 : 0, 0, 0, 0, nullptr, 0, nullptr, 0,
+            nullptr, nullptr, 0, nullptr);
+      }
       const std::string notify_text = "[groupcall] ended";
       std::string msg_id;
-      (void)core_.SendGroupChatText(active_group_call_group_.toStdString(),
-                                    notify_text, msg_id);
+      if (c_api_) {
+        char* out_id = nullptr;
+        (void)mi_client_send_group_text(
+            c_api_, active_group_call_group_.toStdString().c_str(),
+            notify_text.c_str(), &out_id);
+        if (out_id) {
+          msg_id.assign(out_id);
+          mi_client_free(out_id);
+        }
+      }
     } else {
-      (void)core_.LeaveGroupCall(active_group_call_group_.toStdString(),
-                                 active_group_call_id_bytes_);
+      if (c_api_) {
+        (void)mi_client_leave_group_call(
+            c_api_, active_group_call_group_.toStdString().c_str(),
+            active_group_call_id_bytes_.data(),
+            static_cast<std::uint32_t>(active_group_call_id_bytes_.size()));
+      }
     }
   }
   StopMedia();
@@ -3546,9 +3912,15 @@ void QuickClient::EndCallInternal(bool notify_peer) {
     const QString payload =
         QString::fromLatin1(kCallEndPrefix) + callId;
     std::string msg_id;
-    (void)core_.SendChatText(peer.toStdString(),
-                             payload.toStdString(),
-                             msg_id);
+    if (c_api_) {
+      char* out_id = nullptr;
+      (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
+                                        payload.toStdString().c_str(), &out_id);
+      if (out_id) {
+        msg_id.assign(out_id);
+        mi_client_free(out_id);
+      }
+    }
   }
   StopMedia();
   active_call_id_.clear();
@@ -3750,11 +4122,13 @@ bool QuickClient::historySaveEnabled() const {
 void QuickClient::setHistorySaveEnabled(bool enabled) {
   history_save_enabled_ = enabled;
   SavePrivacySettings(history_save_enabled_);
-  core_.SetHistoryEnabled(history_save_enabled_);
-  if (!history_save_enabled_ && loggedIn()) {
-    std::string err;
-    if (!core_.ClearAllHistory(true, false, err)) {
-      UpdateLastError(QString::fromStdString(err));
+  if (c_api_) {
+    mi_client_set_history_enabled(c_api_, history_save_enabled_ ? 1 : 0);
+  }
+  if (!history_save_enabled_ && loggedIn() && c_api_) {
+    if (!mi_client_clear_all_history(c_api_, 1, 0)) {
+      const char* err = mi_client_last_error(c_api_);
+      UpdateLastError(err ? QString::fromUtf8(err) : QString());
     }
   }
 }
@@ -3857,53 +4231,158 @@ QVariantList QuickClient::friendRequests() const {
 }
 
 QString QuickClient::deviceId() const {
-  return QString::fromStdString(core_.device_id());
+  if (c_api_) {
+    const char* value = mi_client_device_id(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
+  }
+  return {};
 }
 
 bool QuickClient::remoteOk() const {
-  return core_.remote_ok();
+  if (c_api_) {
+    return mi_client_remote_ok(c_api_) != 0;
+  }
+  return false;
 }
 
 QString QuickClient::remoteError() const {
-  return QString::fromStdString(core_.remote_error());
+  if (c_api_) {
+    const char* value = mi_client_remote_error(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
+  }
+  return {};
 }
 
 bool QuickClient::hasPendingServerTrust() const {
-  return core_.HasPendingServerTrust();
+  if (c_api_) {
+    return mi_client_has_pending_server_trust(c_api_) != 0;
+  }
+  return false;
 }
 
 QString QuickClient::pendingServerFingerprint() const {
-  return QString::fromStdString(core_.pending_server_fingerprint());
+  if (c_api_) {
+    const char* value = mi_client_pending_server_fingerprint(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
+  }
+  return {};
 }
 
 QString QuickClient::pendingServerPin() const {
-  return QString::fromStdString(core_.pending_server_pin());
+  if (c_api_) {
+    const char* value = mi_client_pending_server_pin(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
+  }
+  return {};
 }
 
 bool QuickClient::hasPendingPeerTrust() const {
-  return core_.HasPendingPeerTrust();
+  if (c_api_) {
+    return mi_client_has_pending_peer_trust(c_api_) != 0;
+  }
+  return false;
 }
 
 QString QuickClient::pendingPeerUsername() const {
-  if (!core_.HasPendingPeerTrust()) {
-    return {};
+  if (c_api_) {
+    if (mi_client_has_pending_peer_trust(c_api_) == 0) {
+      return {};
+    }
+    const char* value = mi_client_pending_peer_username(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
   }
-  return QString::fromStdString(core_.pending_peer_trust().peer_username);
+  return {};
 }
 
 QString QuickClient::pendingPeerFingerprint() const {
-  if (!core_.HasPendingPeerTrust()) {
-    return {};
+  if (c_api_) {
+    if (mi_client_has_pending_peer_trust(c_api_) == 0) {
+      return {};
+    }
+    const char* value = mi_client_pending_peer_fingerprint(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
   }
-  return QString::fromStdString(core_.pending_peer_trust().fingerprint_hex);
+  return {};
 }
 
 QString QuickClient::pendingPeerPin() const {
-  if (!core_.HasPendingPeerTrust()) {
-    return {};
+  if (c_api_) {
+    if (mi_client_has_pending_peer_trust(c_api_) == 0) {
+      return {};
+    }
+    const char* value = mi_client_pending_peer_pin(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
   }
-  return QString::fromStdString(core_.pending_peer_trust().pin6);
+  return {};
 }
+
+namespace {
+
+constexpr std::uint32_t kMaxFriendEntries = 512;
+constexpr std::uint32_t kMaxFriendRequestEntries = 256;
+constexpr std::uint32_t kMaxGroupMemberEntries = 256;
+constexpr std::uint32_t kMaxGroupCallMembers = 256;
+constexpr std::uint32_t kMaxHistoryEntries = 200;
+
+std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
+    const mi_friend_entry_t* entries,
+    std::uint32_t count) {
+  std::vector<mi::sdk::FriendEntry> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    mi::sdk::FriendEntry e;
+    if (entries[i].username) {
+      e.username = entries[i].username;
+    }
+    if (entries[i].remark) {
+      e.remark = entries[i].remark;
+    }
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+
+std::vector<mi::sdk::FriendRequestEntry> ReadFriendRequestEntries(
+    const mi_friend_request_entry_t* entries,
+    std::uint32_t count) {
+  std::vector<mi::sdk::FriendRequestEntry> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    mi::sdk::FriendRequestEntry e;
+    if (entries[i].requester_username) {
+      e.requester_username = entries[i].requester_username;
+    }
+    if (entries[i].requester_remark) {
+      e.requester_remark = entries[i].requester_remark;
+    }
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+
+std::vector<std::string> ReadGroupCallMembers(
+    const mi_group_call_member_t* entries,
+    std::uint32_t count) {
+  std::vector<std::string> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (entries[i].username) {
+      out.emplace_back(entries[i].username);
+    }
+  }
+  return out;
+}
+
+}  // namespace
 
 void QuickClient::StartPolling() {
   if (!poll_timer_.isActive()) {
@@ -3924,14 +4403,22 @@ void QuickClient::PollOnce() {
   if (!loggedIn()) {
     return;
   }
-  const auto poll_result = core_.PollChat();
-  const QString poll_error = QString::fromStdString(core_.last_error());
+  if (!c_api_) {
+    return;
+  }
+  mi::sdk::ChatPollResult poll_result;
+  std::vector<mi::sdk::GroupCallEvent> call_events;
+  std::string poll_err;
+  mi::sdk::PollResult polled;
+  (void)mi::sdk::PollEvents(c_api_, 64, 0, polled, poll_err);
+  poll_result = std::move(polled.chat);
+  call_events = std::move(polled.group_calls);
+  const QString poll_error = QString::fromStdString(poll_err);
   if (IsSessionInvalidError(poll_error)) {
     HandleSessionInvalid(QStringLiteral("登录已失效，请重新登录"));
     return;
   }
   HandlePollResult(poll_result);
-  const auto call_events = core_.PullGroupCallEvents(32, 0);
   if (!call_events.empty()) {
     HandleGroupCallEvents(call_events);
   }
@@ -3942,35 +4429,51 @@ void QuickClient::PollOnce() {
 
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
   if (now - last_friend_sync_ms_ > 2000) {
-    std::vector<ClientCore::FriendEntry> out;
-    bool changed = false;
-    if (core_.SyncFriends(out, changed) && changed) {
-      UpdateFriendList(out);
+    std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+    int changed = 0;
+    const std::uint32_t count =
+        mi_client_sync_friends(c_api_, buffer.data(), kMaxFriendEntries,
+                               &changed);
+    if (changed) {
+      UpdateFriendList(ReadFriendEntries(buffer.data(), count));
     }
     last_friend_sync_ms_ = now;
   }
   if (now - last_request_sync_ms_ > 4000) {
-    UpdateFriendRequests(core_.ListFriendRequests());
+    std::vector<mi_friend_request_entry_t> req_buffer(
+        kMaxFriendRequestEntries);
+    const std::uint32_t req_count =
+        mi_client_list_friend_requests(c_api_, req_buffer.data(),
+                                       kMaxFriendRequestEntries);
+    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+                                                  req_count));
     last_request_sync_ms_ = now;
   }
   if (now - last_heartbeat_ms_ > 5000) {
-    core_.Heartbeat();
+    mi_client_heartbeat(c_api_);
     last_heartbeat_ms_ = now;
   }
 
   if (group_call_session_ && active_group_call_key_id_ != 0 &&
       now - last_group_call_ping_ms_ > 3000) {
-    core_.SendGroupCallSignal(kGroupCallOpPing,
-                              active_group_call_group_.toStdString(),
-                              active_group_call_id_bytes_,
-                              active_group_call_video_,
-                              active_group_call_key_id_);
+    (void)mi_client_send_group_call_signal(
+        c_api_, kGroupCallOpPing,
+        active_group_call_group_.toStdString().c_str(),
+        active_group_call_id_bytes_.data(),
+        static_cast<std::uint32_t>(active_group_call_id_bytes_.size()),
+        active_group_call_video_ ? 1 : 0, active_group_call_key_id_, 0, 0,
+        nullptr, 0, nullptr, 0, nullptr, nullptr, 0, nullptr);
     last_group_call_ping_ms_ = now;
   }
 
   if (media_session_ && !media_timer_.isActive()) {
-    std::string err;
-    media_session_->PollIncoming(16, 0, err);
+    mi_media_config_t media_cfg{};
+    QString cfg_err;
+    if (LoadMediaConfig(media_cfg, cfg_err)) {
+      std::string err;
+      media_session_->PollIncoming(media_cfg.pull_max_packets,
+                                   media_cfg.pull_wait_ms, err);
+    }
   }
 }
 
@@ -3979,7 +4482,7 @@ void QuickClient::EmitMessage(const QVariantMap& message) {
 }
 
 void QuickClient::UpdateFriendList(
-    const std::vector<ClientCore::FriendEntry>& friends) {
+    const std::vector<mi::sdk::FriendEntry>& friends) {
   QVariantList updated;
   updated.reserve(static_cast<int>(friends.size()));
   for (const auto& entry : friends) {
@@ -3994,7 +4497,7 @@ void QuickClient::UpdateFriendList(
 }
 
 void QuickClient::UpdateFriendRequests(
-    const std::vector<ClientCore::FriendRequestEntry>& requests) {
+    const std::vector<mi::sdk::FriendRequestEntry>& requests) {
   QVariantList updated;
   updated.reserve(static_cast<int>(requests.size()));
   for (const auto& entry : requests) {
@@ -4038,14 +4541,17 @@ QVariantMap QuickClient::BuildStickerMeta(const QString& stickerId) const {
   return meta;
 }
 
-QVariantMap QuickClient::BuildHistoryMessage(
-    const ClientCore::HistoryEntry& entry) const {
+QVariantMap QuickClient::BuildHistoryMessageFromC(
+    const mi_history_entry_t& entry) const {
   QVariantMap msg;
-  msg.insert(QStringLiteral("convId"), QString::fromStdString(entry.conv_id));
-  msg.insert(QStringLiteral("sender"), QString::fromStdString(entry.sender));
-  msg.insert(QStringLiteral("outgoing"), entry.outgoing);
-  msg.insert(QStringLiteral("isGroup"), entry.is_group);
-  const QString messageId = QString::fromStdString(entry.message_id_hex);
+  msg.insert(QStringLiteral("convId"),
+             entry.conv_id ? QString::fromUtf8(entry.conv_id) : QString());
+  msg.insert(QStringLiteral("sender"),
+             entry.sender ? QString::fromUtf8(entry.sender) : QString());
+  msg.insert(QStringLiteral("outgoing"), entry.outgoing != 0);
+  msg.insert(QStringLiteral("isGroup"), entry.is_group != 0);
+  const QString messageId =
+      entry.message_id ? QString::fromUtf8(entry.message_id) : QString();
   msg.insert(QStringLiteral("messageId"), messageId);
   msg.insert(QStringLiteral("time"),
              QDateTime::fromSecsSinceEpoch(
@@ -4053,17 +4559,17 @@ QVariantMap QuickClient::BuildHistoryMessage(
                  .toString(QStringLiteral("HH:mm:ss")));
   msg.insert(QStringLiteral("timestampSec"),
              static_cast<qint64>(entry.timestamp_sec));
-  switch (entry.status) {
-    case ClientCore::HistoryStatus::kSent:
+  switch (static_cast<mi::sdk::HistoryStatus>(entry.status)) {
+    case mi::sdk::HistoryStatus::kSent:
       msg.insert(QStringLiteral("status"), QStringLiteral("sent"));
       break;
-    case ClientCore::HistoryStatus::kDelivered:
+    case mi::sdk::HistoryStatus::kDelivered:
       msg.insert(QStringLiteral("status"), QStringLiteral("delivered"));
       break;
-    case ClientCore::HistoryStatus::kRead:
+    case mi::sdk::HistoryStatus::kRead:
       msg.insert(QStringLiteral("status"), QStringLiteral("read"));
       break;
-    case ClientCore::HistoryStatus::kFailed:
+    case mi::sdk::HistoryStatus::kFailed:
       msg.insert(QStringLiteral("status"), QStringLiteral("failed"));
       break;
     default:
@@ -4071,24 +4577,32 @@ QVariantMap QuickClient::BuildHistoryMessage(
       break;
   }
 
-  switch (entry.kind) {
-    case ClientCore::HistoryKind::kText:
+  switch (static_cast<mi::sdk::HistoryKind>(entry.kind)) {
+    case mi::sdk::HistoryKind::kText:
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-      msg.insert(QStringLiteral("text"), QString::fromStdString(entry.text_utf8));
+      msg.insert(QStringLiteral("text"),
+                 entry.text ? QString::fromUtf8(entry.text) : QString());
       break;
-    case ClientCore::HistoryKind::kFile:
+    case mi::sdk::HistoryKind::kFile: {
       msg.insert(QStringLiteral("kind"), QStringLiteral("file"));
       msg.insert(QStringLiteral("fileName"),
-                 QString::fromStdString(entry.file_name));
+                 entry.file_name ? QString::fromUtf8(entry.file_name) : QString());
       msg.insert(QStringLiteral("fileSize"),
                  static_cast<qint64>(entry.file_size));
-      msg.insert(QStringLiteral("fileId"), QString::fromStdString(entry.file_id));
-      msg.insert(QStringLiteral("fileKey"), BytesToHex32(entry.file_key));
+      msg.insert(QStringLiteral("fileId"),
+                 entry.file_id ? QString::fromUtf8(entry.file_id) : QString());
+      std::array<std::uint8_t, 32> key{};
+      if (entry.file_key && entry.file_key_len == key.size()) {
+        std::memcpy(key.data(), entry.file_key, key.size());
+      }
+      msg.insert(QStringLiteral("fileKey"), BytesToHex32(key));
       if (!messageId.isEmpty()) {
         const QString enhancedPath = EnhancedImagePathIfExists(messageId);
         if (!enhancedPath.isEmpty()) {
           const QString ext =
-              QFileInfo(QString::fromStdString(entry.file_name)).suffix();
+              QFileInfo(entry.file_name ? QString::fromUtf8(entry.file_name)
+                                        : QString())
+                  .suffix();
           if (IsImageExt(ext)) {
             msg.insert(QStringLiteral("fileUrl"),
                        QUrl::fromLocalFile(enhancedPath));
@@ -4097,9 +4611,11 @@ QVariantMap QuickClient::BuildHistoryMessage(
         }
       }
       break;
-    case ClientCore::HistoryKind::kSticker: {
+    }
+    case mi::sdk::HistoryKind::kSticker: {
       msg.insert(QStringLiteral("kind"), QStringLiteral("sticker"));
-      const QString sid = QString::fromStdString(entry.sticker_id);
+      const QString sid =
+          entry.sticker_id ? QString::fromUtf8(entry.sticker_id) : QString();
       msg.insert(QStringLiteral("stickerId"), sid);
       const auto meta = BuildStickerMeta(sid);
       msg.insert(QStringLiteral("stickerUrl"),
@@ -4108,9 +4624,10 @@ QVariantMap QuickClient::BuildHistoryMessage(
                  meta.value(QStringLiteral("stickerAnimated")));
       break;
     }
-    case ClientCore::HistoryKind::kSystem:
+    case mi::sdk::HistoryKind::kSystem:
       msg.insert(QStringLiteral("kind"), QStringLiteral("system"));
-      msg.insert(QStringLiteral("text"), QString::fromStdString(entry.text_utf8));
+      msg.insert(QStringLiteral("text"),
+                 entry.text ? QString::fromUtf8(entry.text) : QString());
       break;
     default:
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
@@ -4119,7 +4636,7 @@ QVariantMap QuickClient::BuildHistoryMessage(
   return msg;
 }
 
-void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
+void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
   const QString now = NowTimeString();
   const qint64 nowSec = QDateTime::currentSecsSinceEpoch();
 
@@ -4489,7 +5006,7 @@ void QuickClient::HandlePollResult(const ClientCore::ChatPollResult& result) {
 }
 
 void QuickClient::HandleGroupCallEvents(
-    const std::vector<ClientCore::GroupCallEvent>& events) {
+    const std::vector<mi::sdk::GroupCallEvent>& events) {
   bool rooms_changed = false;
   for (const auto& ev : events) {
     if (ev.group_id.empty()) {
@@ -4527,30 +5044,67 @@ void QuickClient::HandleGroupCallEvents(
 
       if (ev.key_id > active_group_call_key_id_ &&
           active_group_call_key_id_ != 0) {
-        const auto snap =
-            core_.SendGroupCallSignal(kGroupCallOpPing, ev.group_id,
-                                      ev.call_id, active_group_call_video_,
-                                      ev.key_id);
-        if (snap.success) {
+        std::vector<std::string> members;
+        bool snap_ok = false;
+        std::uint32_t snap_key_id = 0;
+        std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
+        std::uint32_t count = 0;
+        std::array<std::uint8_t, 16> snap_call{};
+        snap_ok = mi_client_send_group_call_signal(
+                      c_api_, kGroupCallOpPing, ev.group_id.c_str(),
+                      ev.call_id.data(),
+                      static_cast<std::uint32_t>(ev.call_id.size()),
+                      active_group_call_video_ ? 1 : 0, ev.key_id, 0, 0,
+                      nullptr, 0, snap_call.data(),
+                      static_cast<std::uint32_t>(snap_call.size()),
+                      &snap_key_id, buffer.data(),
+                      static_cast<std::uint32_t>(buffer.size()), &count) != 0;
+        if (snap_ok) {
+          members = ReadGroupCallMembers(buffer.data(), count);
+        }
+        if (snap_ok) {
           if (active_group_call_owner_) {
-            if (core_.RotateGroupCallKey(ev.group_id, ev.call_id,
-                                         snap.key_id, snap.members)) {
+            std::vector<const char*> member_ptrs;
+            member_ptrs.reserve(members.size());
+            for (const auto& m : members) {
+              member_ptrs.push_back(m.c_str());
+            }
+            const bool rotated =
+                mi_client_rotate_group_call_key(
+                    c_api_, ev.group_id.c_str(), ev.call_id.data(),
+                    static_cast<std::uint32_t>(ev.call_id.size()), snap_key_id,
+                    member_ptrs.data(),
+                    static_cast<std::uint32_t>(member_ptrs.size())) != 0;
+            if (rotated) {
               std::string err;
-              group_call_session_->SetActiveKey(snap.key_id, err);
-              active_group_call_key_id_ = snap.key_id;
+              group_call_session_->SetActiveKey(snap_key_id, err);
+              active_group_call_key_id_ = snap_key_id;
               pending_group_call_key_id_ = 0;
             }
           } else {
             std::array<std::uint8_t, 32> call_key{};
-            if (!core_.GetGroupCallKey(ev.group_id, ev.call_id, snap.key_id,
-                                       call_key)) {
-              core_.RequestGroupCallKey(ev.group_id, ev.call_id, snap.key_id,
-                                        snap.members);
-              pending_group_call_key_id_ = snap.key_id;
+            const bool has_key =
+                mi_client_get_group_call_key(
+                    c_api_, ev.group_id.c_str(), ev.call_id.data(),
+                    static_cast<std::uint32_t>(ev.call_id.size()), snap_key_id,
+                    call_key.data(),
+                    static_cast<std::uint32_t>(call_key.size())) != 0;
+            if (!has_key) {
+              std::vector<const char*> member_ptrs;
+              member_ptrs.reserve(members.size());
+              for (const auto& m : members) {
+                member_ptrs.push_back(m.c_str());
+              }
+              (void)mi_client_request_group_call_key(
+                  c_api_, ev.group_id.c_str(), ev.call_id.data(),
+                  static_cast<std::uint32_t>(ev.call_id.size()), snap_key_id,
+                  member_ptrs.data(),
+                  static_cast<std::uint32_t>(member_ptrs.size()));
+              pending_group_call_key_id_ = snap_key_id;
             } else {
               std::string err;
-              group_call_session_->SetActiveKey(snap.key_id, err);
-              active_group_call_key_id_ = snap.key_id;
+              group_call_session_->SetActiveKey(snap_key_id, err);
+              active_group_call_key_id_ = snap_key_id;
               pending_group_call_key_id_ = 0;
             }
           }
@@ -4725,16 +5279,27 @@ void QuickClient::UpdateGroupCallSubscriptions() {
   if (!group_call_session_ || active_group_call_group_.isEmpty()) {
     return;
   }
+  if (!c_api_) {
+    return;
+  }
   std::vector<std::uint8_t> payload;
   BuildGroupCallSubscriptionPayload(payload);
   if (payload == group_call_subscribe_payload_) {
     return;
   }
-  const auto resp = core_.SendGroupCallSignal(
-      kGroupCallOpUpdate, active_group_call_group_.toStdString(),
-      active_group_call_id_bytes_, active_group_call_video_,
-      active_group_call_key_id_, 0, 0, payload);
-  if (resp.success) {
+  bool ok = false;
+  const std::uint8_t* ext_ptr =
+      payload.empty() ? nullptr : payload.data();
+  const std::uint32_t ext_len =
+      static_cast<std::uint32_t>(payload.size());
+  ok = mi_client_send_group_call_signal(
+           c_api_, kGroupCallOpUpdate,
+           active_group_call_group_.toStdString().c_str(),
+           active_group_call_id_bytes_.data(),
+           static_cast<std::uint32_t>(active_group_call_id_bytes_.size()),
+           active_group_call_video_ ? 1 : 0, active_group_call_key_id_, 0, 0,
+           ext_ptr, ext_len, nullptr, 0, nullptr, nullptr, 0, nullptr) != 0;
+  if (ok) {
     group_call_subscribe_payload_ = std::move(payload);
   }
 }
@@ -4789,13 +5354,21 @@ void QuickClient::TryActivatePendingGroupCall() {
       pending_group_call_group_.isEmpty()) {
     return;
   }
+  if (!c_api_) {
+    return;
+  }
   const std::array<std::uint8_t, 16> call_id = pending_group_call_id_bytes_;
   const QString group = pending_group_call_group_;
   const bool video = pending_group_call_video_;
   const bool owner = pending_group_call_owner_;
   const std::uint32_t key_id = pending_group_call_key_id_;
   std::array<std::uint8_t, 32> call_key{};
-  if (!core_.GetGroupCallKey(group.toStdString(), call_id, key_id, call_key)) {
+  const bool has_key = mi_client_get_group_call_key(
+                           c_api_, group.toStdString().c_str(), call_id.data(),
+                           static_cast<std::uint32_t>(call_id.size()), key_id,
+                           call_key.data(),
+                           static_cast<std::uint32_t>(call_key.size())) != 0;
+  if (!has_key) {
     return;
   }
   QString err;
@@ -4803,13 +5376,38 @@ void QuickClient::TryActivatePendingGroupCall() {
     emit status(err.isEmpty() ? QStringLiteral("加入群通话失败") : err);
     return;
   }
-  const auto snap = core_.SendGroupCallSignal(
-      kGroupCallOpPing, group.toStdString(), call_id, video, key_id);
-  if (snap.success) {
-    UpdateGroupCallParticipants(snap.members);
+  std::vector<std::string> members;
+  bool snap_ok = false;
+  std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
+  std::uint32_t count = 0;
+  std::array<std::uint8_t, 16> snap_call{};
+  std::uint32_t snap_key_id = 0;
+  snap_ok = mi_client_send_group_call_signal(
+                c_api_, kGroupCallOpPing, group.toStdString().c_str(),
+                call_id.data(), static_cast<std::uint32_t>(call_id.size()),
+                video ? 1 : 0, key_id, 0, 0, nullptr, 0, snap_call.data(),
+                static_cast<std::uint32_t>(snap_call.size()), &snap_key_id,
+                buffer.data(),
+                static_cast<std::uint32_t>(buffer.size()), &count) != 0;
+  if (snap_ok) {
+    members = ReadGroupCallMembers(buffer.data(), count);
+  }
+  if (snap_ok) {
+    UpdateGroupCallParticipants(members);
   } else {
-    UpdateGroupCallParticipants(
-        core_.ListGroupMembers(pending_group_call_group_.toStdString()));
+    std::vector<std::string> members;
+    std::vector<mi_group_member_entry_t> member_buffer(kMaxGroupMemberEntries);
+    const std::uint32_t member_count =
+        mi_client_list_group_members_info(
+            c_api_, pending_group_call_group_.toStdString().c_str(),
+            member_buffer.data(), kMaxGroupMemberEntries);
+    members.reserve(member_count);
+    for (std::uint32_t i = 0; i < member_count; ++i) {
+      if (member_buffer[i].username) {
+        members.emplace_back(member_buffer[i].username);
+      }
+    }
+    UpdateGroupCallParticipants(members);
   }
 }
 
@@ -4818,10 +5416,18 @@ void QuickClient::TryUpdateGroupCallKey() {
       active_group_call_group_.isEmpty()) {
     return;
   }
+  if (!c_api_) {
+    return;
+  }
   std::array<std::uint8_t, 32> call_key{};
-  if (!core_.GetGroupCallKey(active_group_call_group_.toStdString(),
-                             active_group_call_id_bytes_,
-                             pending_group_call_key_id_, call_key)) {
+  const bool has_key =
+      mi_client_get_group_call_key(
+          c_api_, active_group_call_group_.toStdString().c_str(),
+          active_group_call_id_bytes_.data(),
+          static_cast<std::uint32_t>(active_group_call_id_bytes_.size()),
+          pending_group_call_key_id_, call_key.data(),
+          static_cast<std::uint32_t>(call_key.size())) != 0;
+  if (!has_key) {
     return;
   }
   std::string err;
@@ -4866,7 +5472,9 @@ void QuickClient::HandleSessionInvalid(const QString& message) {
 
   StopPolling();
   StopMedia();
-  core_.Logout();
+  if (c_api_) {
+    mi_client_logout(c_api_);
+  }
   token_.clear();
   username_.clear();
   friends_.clear();
@@ -4910,8 +5518,13 @@ void QuickClient::UpdateLastError(const QString& message) {
 }
 
 void QuickClient::UpdateConnectionState(bool force_emit) {
-  const bool ok = core_.remote_ok();
-  const QString err = QString::fromStdString(core_.remote_error());
+  bool ok = false;
+  QString err;
+  if (c_api_) {
+    ok = mi_client_remote_ok(c_api_) != 0;
+    const char* value = mi_client_remote_error(c_api_);
+    err = value ? QString::fromUtf8(value) : QString();
+  }
   if (!force_emit && ok == last_remote_ok_ && err == last_remote_error_) {
     return;
   }
@@ -4922,7 +5535,7 @@ void QuickClient::UpdateConnectionState(bool force_emit) {
 
 void QuickClient::MaybeEmitTrustSignals() {
   bool changed = false;
-  if (core_.HasPendingServerTrust()) {
+  if (hasPendingServerTrust()) {
     const QString fp = pendingServerFingerprint();
     if (fp != last_pending_server_fingerprint_) {
       last_pending_server_fingerprint_ = fp;
@@ -4934,7 +5547,7 @@ void QuickClient::MaybeEmitTrustSignals() {
     changed = true;
   }
 
-  if (core_.HasPendingPeerTrust()) {
+  if (hasPendingPeerTrust()) {
     const QString fp = pendingPeerFingerprint();
     if (fp != last_pending_peer_fingerprint_) {
       last_pending_peer_fingerprint_ = fp;
@@ -4962,6 +5575,35 @@ void QuickClient::EmitDownloadProgress(const QString& fileId,
   emit attachmentDownloadProgress(fileId, savePath, scaled);
 }
 
+void QuickClient::ResetMediaTransport() {
+  if (media_session_ || group_call_session_) {
+    return;
+  }
+  if (!c_api_) {
+    media_transport_.reset();
+    return;
+  }
+  media_transport_ = std::make_unique<CapiMediaTransport>(c_api_);
+}
+
+bool QuickClient::LoadMediaConfig(mi_media_config_t& out_config,
+                                  QString& out_error) {
+  out_error.clear();
+  if (c_api_) {
+    if (mi_client_get_media_config(c_api_, &out_config) == 0) {
+      const char* err = mi_client_last_error(c_api_);
+      out_error = err ? QString::fromUtf8(err) : QString();
+      if (out_error.isEmpty()) {
+        out_error = QStringLiteral("媒体配置读取失败");
+      }
+      return false;
+    }
+    return true;
+  }
+  out_error = QStringLiteral("媒体通道不可用");
+  return false;
+}
+
 bool QuickClient::InitMediaSession(const QString& peerUsername,
                                    const QString& callIdHex,
                                    bool initiator,
@@ -4969,6 +5611,11 @@ bool QuickClient::InitMediaSession(const QString& peerUsername,
                                    QString& outError) {
   outError.clear();
   StopMedia();
+  ResetMediaTransport();
+  if (!media_transport_) {
+    outError = QStringLiteral("媒体通道不可用");
+    return false;
+  }
   const QString peer = peerUsername.trimmed();
   if (peer.isEmpty() || callIdHex.trimmed().isEmpty()) {
     outError = QStringLiteral("通话参数无效");
@@ -4985,8 +5632,17 @@ bool QuickClient::InitMediaSession(const QString& peerUsername,
   cfg.initiator = initiator;
   cfg.enable_audio = true;
   cfg.enable_video = video;
+  mi_media_config_t media_cfg{};
+  if (!LoadMediaConfig(media_cfg, outError)) {
+    return false;
+  }
+  cfg.audio_delay_ms = media_cfg.audio_delay_ms;
+  cfg.video_delay_ms = media_cfg.video_delay_ms;
+  cfg.audio_max_frames = media_cfg.audio_max_frames;
+  cfg.video_max_frames = media_cfg.video_max_frames;
 
-  auto session = std::make_unique<mi::client::media::MediaSession>(core_, cfg);
+  auto session =
+      std::make_unique<mi::client::media::MediaSession>(*media_transport_, cfg);
   std::string err;
   if (!session->Init(err)) {
     outError = err.empty() ? QStringLiteral("通话初始化失败")
@@ -5044,6 +5700,11 @@ bool QuickClient::InitGroupCallSession(
     QString& outError) {
   outError.clear();
   StopMedia();
+  ResetMediaTransport();
+  if (!media_transport_) {
+    outError = QStringLiteral("媒体通道不可用");
+    return false;
+  }
   const QString group = groupId.trimmed();
   if (group.isEmpty()) {
     outError = QStringLiteral("群 ID 不能为空");
@@ -5059,9 +5720,17 @@ bool QuickClient::InitGroupCallSession(
   cfg.key_id = keyId;
   cfg.enable_audio = true;
   cfg.enable_video = video;
+  mi_media_config_t media_cfg{};
+  if (!LoadMediaConfig(media_cfg, outError)) {
+    return false;
+  }
+  cfg.audio_delay_ms = media_cfg.audio_delay_ms;
+  cfg.video_delay_ms = media_cfg.video_delay_ms;
+  cfg.audio_max_frames = media_cfg.audio_max_frames;
+  cfg.video_max_frames = media_cfg.video_max_frames;
 
-  auto session =
-      std::make_unique<mi::client::media::GroupCallSession>(core_, cfg);
+  auto session = std::make_unique<mi::client::media::GroupCallSession>(
+      *media_transport_, cfg);
   std::string err;
   if (!session->Init(err)) {
     outError = err.empty() ? QStringLiteral("群通话初始化失败")
@@ -5159,8 +5828,13 @@ void QuickClient::StopMedia() {
 
 void QuickClient::PumpMedia() {
   if (media_session_) {
-    std::string err;
-    media_session_->PollIncoming(32, 0, err);
+    mi_media_config_t media_cfg{};
+    QString cfg_err;
+    if (LoadMediaConfig(media_cfg, cfg_err)) {
+      std::string err;
+      media_session_->PollIncoming(media_cfg.pull_max_packets,
+                                   media_cfg.pull_wait_ms, err);
+    }
 
     if (audio_pipeline_) {
       audio_pipeline_->PumpIncoming();
@@ -5226,8 +5900,13 @@ void QuickClient::PumpGroupCall() {
   if (!group_call_session_) {
     return;
   }
-  std::string err;
-  group_call_session_->PollIncoming(64, 0, err);
+  mi_media_config_t media_cfg{};
+  QString cfg_err;
+  if (LoadMediaConfig(media_cfg, cfg_err)) {
+    std::string err;
+    group_call_session_->PollIncoming(media_cfg.group_pull_max_packets,
+                                      media_cfg.group_pull_wait_ms, err);
+  }
 
   const std::uint64_t now_ms = NowMonotonicMs();
   mi::client::media::GroupMediaFrame frame;

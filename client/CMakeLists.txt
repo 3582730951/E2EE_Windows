@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(MI_E2EE_BUILD_UI "Build Qt Quick UI demo" ON)
 option(MI_E2EE_BUILD_DEMO_CLIENT "Build demo client CLI" ON)
+option(MI_E2EE_BUILD_SDK_SHARED "Build shared C SDK library for bindings" ON)
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
@@ -80,32 +81,115 @@ if(NOT TARGET pqclean_mldsa65_clean)
   target_link_libraries(pqclean_mldsa65_clean PRIVATE pqclean_mlkem768_clean)
 endif()
 
-add_library(mi_e2ee_client_core STATIC
-    src/chat_history_store.cpp
-    src/client_core.cpp
-    src/client_config.cpp
-    src/dpapi_util.cpp
-    src/endpoint_hardening.cpp
-    src/e2ee_engine.cpp
-    src/media_jitter_buffer.cpp
-    src/media_crypto.cpp
-    src/media_pipeline.cpp
-    src/media_session.cpp
-    src/group_call_media_adapter.cpp
-    src/group_call_session.cpp
-)
-target_include_directories(mi_e2ee_client_core PUBLIC
-    include
-    ../server/include
-    ../shard
-)
-target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_core)
-target_link_libraries(mi_e2ee_client_core PUBLIC mi_e2ee_build_flags)
-target_link_libraries(mi_e2ee_client_core PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
-if(WIN32)
-  target_link_libraries(mi_e2ee_client_core PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt
-      mfplat mf mfreadwrite mfuuid ole32)
+if(NOT WIN32)
+  find_package(OpenSSL REQUIRED)
+  if(APPLE)
+    find_library(MI_E2EE_SECURITY_FRAMEWORK Security REQUIRED)
+    find_library(MI_E2EE_COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(MI_E2EE_LIBSECRET REQUIRED libsecret-1)
+  endif()
 endif()
+
+set(MI_E2EE_CLIENT_CORE_SOURCES
+    ../runtime/client/storage/chat_history_store.cpp
+    ../runtime/client/core/client_core.cpp
+    ../sdk/c_api_client.cpp
+    ../sdk/cpp_client_adapter.cpp
+    ../runtime/client/auth/client_auth.cpp
+    ../runtime/client/auth/auth_service.cpp
+    ../runtime/client/auth/e2ee_engine.cpp
+    ../runtime/client/config/client_config.cpp
+    ../runtime/client/config/config_service.cpp
+    ../runtime/client/messaging/client_messaging.cpp
+    ../runtime/client/messaging/messaging_service.cpp
+    ../runtime/client/sync/client_sync.cpp
+    ../runtime/client/sync/sync_service.cpp
+    ../runtime/client/storage/client_storage.cpp
+    ../runtime/client/storage/storage_service.cpp
+    ../runtime/client/security/dpapi_util.cpp
+    ../runtime/client/security/endpoint_hardening.cpp
+    ../runtime/client/security/security_service.cpp
+    ../runtime/client/security/trust_store.cpp
+    ../runtime/client/security/client_trust.cpp
+    ../runtime/client/transport/client_transport.cpp
+    ../runtime/client/transport/transport_service.cpp
+    ../runtime/client/media/media_jitter_buffer.cpp
+    ../runtime/client/media/media_crypto.cpp
+    ../runtime/client/media/media_pipeline.cpp
+    ../runtime/client/media/media_service.cpp
+    ../runtime/client/media/media_session.cpp
+    ../runtime/client/media/group_call_media_adapter.cpp
+    ../runtime/client/media/group_call_session.cpp
+)
+if(WIN32)
+  list(APPEND MI_E2EE_CLIENT_CORE_SOURCES
+      ../platform/win/platform_secure_store_win.cpp
+      ../platform/win/platform_time_win.cpp
+      ../platform/win/platform_random_win.cpp
+      ../platform/win/platform_fs_win.cpp
+      ../platform/win/platform_identity_win.cpp
+      ../platform/win/platform_media_win.cpp
+      ../platform/win/platform_net_win.cpp
+      ../platform/win/platform_security_win.cpp
+      ../platform/win/platform_sys_win.cpp
+      ../platform/win/platform_tls_win.cpp
+      ../platform/win/platform_log_win.cpp
+  )
+else()
+  list(APPEND MI_E2EE_CLIENT_CORE_SOURCES
+      ../platform/posix/platform_secure_store_posix.cpp
+      ../platform/posix/platform_time_posix.cpp
+      ../platform/posix/platform_random_posix.cpp
+      ../platform/posix/platform_fs_posix.cpp
+      ../platform/posix/platform_identity_posix.cpp
+      ../platform/posix/platform_media_posix.cpp
+      ../platform/posix/platform_net_posix.cpp
+      ../platform/posix/platform_security_posix.cpp
+      ../platform/posix/platform_sys_posix.cpp
+      ../platform/posix/platform_tls_posix.cpp
+      ../platform/posix/platform_log_posix.cpp
+  )
+endif()
+
+add_library(mi_e2ee_client_core STATIC ${MI_E2EE_CLIENT_CORE_SOURCES})
+if(MI_E2EE_BUILD_SDK_SHARED)
+  add_library(mi_e2ee_client_sdk SHARED ${MI_E2EE_CLIENT_CORE_SOURCES})
+  target_compile_definitions(mi_e2ee_client_sdk PRIVATE MI_E2EE_SDK_EXPORTS)
+endif()
+
+set(MI_E2EE_CLIENT_CORE_TARGETS mi_e2ee_client_core)
+if(MI_E2EE_BUILD_SDK_SHARED)
+  list(APPEND MI_E2EE_CLIENT_CORE_TARGETS mi_e2ee_client_sdk)
+endif()
+
+foreach(target IN LISTS MI_E2EE_CLIENT_CORE_TARGETS)
+  target_include_directories(${target} PUBLIC
+      include
+      ../common
+      ../sdk
+      ../server/include
+      ../shard
+      ../platform/include
+  )
+  target_link_libraries(${target} PUBLIC mi_e2ee_core)
+  target_link_libraries(${target} PUBLIC mi_e2ee_build_flags)
+  target_link_libraries(${target} PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
+  if(WIN32)
+    target_link_libraries(${target} PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt
+        mfplat mf mfreadwrite mfuuid ole32 psapi)
+  else()
+    target_link_libraries(${target} PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+    if(APPLE)
+      target_link_libraries(${target} PUBLIC ${MI_E2EE_SECURITY_FRAMEWORK} ${MI_E2EE_COREFOUNDATION_FRAMEWORK})
+    else()
+      target_include_directories(${target} PRIVATE ${MI_E2EE_LIBSECRET_INCLUDE_DIRS})
+      target_compile_options(${target} PRIVATE ${MI_E2EE_LIBSECRET_CFLAGS_OTHER})
+      target_link_libraries(${target} PUBLIC ${MI_E2EE_LIBSECRET_LIBRARIES})
+    endif()
+  endif()
+endforeach()
 
 if(MI_E2EE_BUILD_DEMO_CLIENT)
   add_executable(mi_e2ee_client

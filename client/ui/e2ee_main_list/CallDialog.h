@@ -7,12 +7,13 @@
 class QLabel;
 class QPushButton;
 class QVBoxLayout;
+struct mi_client_handle;
 
 class CallDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit CallDialog(mi::client::ClientCore &core, QWidget *parent = nullptr);
+    explicit CallDialog(mi_client_handle* handle, QWidget *parent = nullptr);
 
     bool startOutgoing(const QString &peer, const QString &callIdHex, bool video, QString &outError);
     void showIncoming(const QString &peer, const QString &callIdHex, bool video);

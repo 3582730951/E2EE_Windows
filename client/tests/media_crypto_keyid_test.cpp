@@ -35,11 +35,14 @@ int main() {
 
   std::array<std::uint8_t, 32> media_root{};
   media_root.fill(0x11);
-  MediaKeyPair keys;
-  assert(DeriveStreamChainKeys(media_root, StreamKind::kAudio, true, keys));
+  MediaKeyPair sender_keys;
+  MediaKeyPair receiver_keys;
+  assert(DeriveStreamChainKeys(media_root, StreamKind::kAudio, true, sender_keys));
+  assert(
+      DeriveStreamChainKeys(media_root, StreamKind::kAudio, false, receiver_keys));
 
-  MediaRatchet sender(keys.send_ck, StreamKind::kAudio, 0, 7);
-  MediaRatchet receiver(keys.recv_ck, StreamKind::kAudio, 0, 7);
+  MediaRatchet sender(sender_keys.send_ck, StreamKind::kAudio, 0, 7);
+  MediaRatchet receiver(receiver_keys.recv_ck, StreamKind::kAudio, 0, 7);
   std::vector<std::uint8_t> packet;
   std::string err;
   assert(sender.EncryptFrame(frame, packet, err));

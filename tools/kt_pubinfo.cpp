@@ -3,10 +3,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "crypto.h"
+#include "hex_utils.h"
 #include "key_transparency.h"
 #include "qrcodegen.hpp"
 
@@ -64,95 +66,47 @@ bool ReadFileBytes(const std::filesystem::path& path,
     error = "kt root pubkey not found";
     return false;
   }
-  out.assign(std::istreambuf_iterator<char>(ifs),
-             std::istreambuf_iterator<char>());
-  if (out.empty()) {
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(path, ec);
+  if (ec) {
+    error = "kt root pubkey read failed";
+    return false;
+  }
+  if (size == 0) {
     error = "kt root pubkey empty";
     return false;
   }
-  return true;
-}
-
-std::string HexLower(const std::uint8_t* data, std::size_t len) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string out;
-  out.resize(len * 2);
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i * 2] = kHex[data[i] >> 4];
-    out[i * 2 + 1] = kHex[data[i] & 0x0F];
-  }
-  return out;
-}
-
-int HexNibble(char c) {
-  if (c >= '0' && c <= '9') {
-    return c - '0';
-  }
-  if (c >= 'a' && c <= 'f') {
-    return 10 + (c - 'a');
-  }
-  if (c >= 'A' && c <= 'F') {
-    return 10 + (c - 'A');
-  }
-  return -1;
-}
-
-bool HexToBytes(const std::string& hex, std::vector<std::uint8_t>& out) {
-  out.clear();
-  if (hex.empty() || (hex.size() % 2) != 0) {
+  if (size > static_cast<std::uintmax_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    error = "kt root pubkey too large";
     return false;
   }
-  out.reserve(hex.size() / 2);
-  for (std::size_t i = 0; i < hex.size(); i += 2) {
-    const int hi = HexNibble(hex[i]);
-    const int lo = HexNibble(hex[i + 1]);
-    if (hi < 0 || lo < 0) {
-      out.clear();
-      return false;
-    }
-    out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
+  out.resize(static_cast<std::size_t>(size));
+  ifs.read(reinterpret_cast<char*>(out.data()),
+           static_cast<std::streamsize>(out.size()));
+  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(out.size())) {
+    error = "kt root pubkey read failed";
+    return false;
   }
   return true;
-}
-
-std::string Sha256Hex(const std::vector<std::uint8_t>& data) {
-  if (data.empty()) {
-    return {};
-  }
-  mi::server::crypto::Sha256Digest d;
-  mi::server::crypto::Sha256(data.data(), data.size(), d);
-  return HexLower(d.bytes.data(), d.bytes.size());
-}
-
-std::string GroupHex4(const std::string& hex) {
-  if (hex.empty()) {
-    return {};
-  }
-  std::string out;
-  out.reserve(hex.size() + (hex.size() / 4));
-  for (std::size_t i = 0; i < hex.size(); ++i) {
-    if (i != 0 && (i % 4) == 0) {
-      out.push_back('-');
-    }
-    out.push_back(hex[i]);
-  }
-  return out;
 }
 
 std::string FingerprintSasHex(const std::string& sha256_hex) {
   std::vector<std::uint8_t> fp_bytes;
-  if (!HexToBytes(sha256_hex, fp_bytes) || fp_bytes.size() != 32) {
+  if (!mi::common::HexToBytes(sha256_hex, fp_bytes) ||
+      fp_bytes.size() != 32) {
     return {};
   }
   std::vector<std::uint8_t> msg;
   static constexpr char kPrefix[] = "MI_KT_ROOT_SAS_V1";
   msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
   msg.insert(msg.end(), fp_bytes.begin(), fp_bytes.end());
-  const std::string digest = Sha256Hex(msg);
+  const std::string digest =
+      mi::common::Sha256Hex(msg.data(), msg.size());
   if (digest.size() < 20) {
     return {};
   }
-  return GroupHex4(digest.substr(0, 20));
+  return mi::common::GroupHex4(digest.substr(0, 20));
 }
 
 bool WriteQrSvg(const qrcodegen::QrCode& qr,
@@ -214,7 +168,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const std::string fingerprint = Sha256Hex(key_bytes);
+  const std::string fingerprint =
+      mi::common::Sha256Hex(key_bytes.data(), key_bytes.size());
   const std::string sas = FingerprintSasHex(fingerprint);
   const std::string payload = "mi_e2ee_kt_root_sha256=" + fingerprint;
 

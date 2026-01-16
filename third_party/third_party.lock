@@ -64,3 +64,9 @@ rime-ice-lua-cold-word-drop-reduce-freq-words|snapshot|GPL-3.0-only|../client/ui
 rime-ice-lua-cold-word-drop-string|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/string.lua|a84155b7fe1e6f3f1eed6cfa89efa3b72536d37d37f8b47674cdc4472a44ab16
 librime|snapshot|BSD-3-Clause|../client/ui/ime_rime/third_party/rime_api.h|6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424
 word-list|snapshot|MIT|../client/ui/data/ime_english.dat|18257e34e5b70ce92548f65d359d2f249fadf8b8a2231524c1242284354ac293
+3dicons-boy|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_contacts.png|ee51ad8379a5b966e1ef70e553ef23111152a0a2e6831bba72ba4b0b481f050f
+3dicons-chat|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_chats.png|27db19a61f2f94500a23009695a8a033b9e879587d06d94b4f534717037a332e
+3dicons-setting|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_settings.png|6e9fde749dc890086bac1aabaefaf8a4bc1622fd613253f07d6d75298944ee62
+3dicons-pin|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_pin.png|ec398736655b607ee728867f58b0aee896f4353e6efd721f042598297a09fc94
+3dicons-pencil|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_compose.png|1281b60222474a95559aa63822230fc1fefbe66047721e377921568c7d9e65d5
+3dicons-phone-ringing|2021.10.03|CC0-1.0|../android/app/src/main/res/drawable-nodpi/ic_3d_mute.png|01901cf5d1114615f0ee3f786714304318903a0da391fa9346d6e42494c49726

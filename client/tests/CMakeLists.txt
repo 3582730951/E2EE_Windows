@@ -41,3 +41,69 @@ if (COMMAND mi_copy_msvc_runtime)
 endif()
 
 add_test(NAME group_call_key_test COMMAND group_call_key_test)
+
+add_executable(sdk_c_api_event_test
+    sdk_c_api_event_test.cpp
+)
+
+target_link_libraries(sdk_c_api_event_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(sdk_c_api_event_test)
+endif()
+
+add_test(NAME sdk_c_api_event_test COMMAND sdk_c_api_event_test)
+
+add_executable(sdk_c_api_friend_test
+    sdk_c_api_friend_test.cpp
+)
+
+target_link_libraries(sdk_c_api_friend_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(sdk_c_api_friend_test)
+endif()
+
+add_test(NAME sdk_c_api_friend_test COMMAND sdk_c_api_friend_test)
+
+add_executable(sdk_c_api_version_test
+    sdk_c_api_version_test.cpp
+)
+
+target_link_libraries(sdk_c_api_version_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(sdk_c_api_version_test)
+endif()
+
+add_test(NAME sdk_c_api_version_test COMMAND sdk_c_api_version_test)
+
+add_executable(sdk_c_api_status_test
+    sdk_c_api_status_test.cpp
+)
+
+target_link_libraries(sdk_c_api_status_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(sdk_c_api_status_test)
+endif()
+
+add_test(NAME sdk_c_api_status_test COMMAND sdk_c_api_status_test)
+
+add_executable(client_config_media_test
+    client_config_media_test.cpp
+)
+
+target_link_libraries(client_config_media_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(client_config_media_test)
+endif()
+
+add_test(NAME client_config_media_test COMMAND client_config_media_test)
+
+add_executable(platform_fs_lock_test
+    platform_fs_lock_test.cpp
+)
+
+target_link_libraries(platform_fs_lock_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(platform_fs_lock_test)
+endif()
+
+add_test(NAME platform_fs_lock_test COMMAND platform_fs_lock_test)

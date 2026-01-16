@@ -5,23 +5,8 @@
 #include <cstring>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <bcrypt.h>
-#else
-#include <fcntl.h>
-#include <unistd.h>
-#if defined(__linux__)
-#include <sys/random.h>
-#endif
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__)
-#include <stdlib.h>
-#endif
-#endif
+
+#include "platform_random.h"
 
 namespace mi::server::crypto {
 
@@ -115,46 +100,6 @@ void ProcessChunk(const std::uint8_t chunk[64], std::uint32_t state[8]) {
   state[6] += g;
   state[7] += h;
 }
-
-#ifndef _WIN32
-bool ReadUrandom(std::uint8_t* out, std::size_t len) {
-  int fd = open("/dev/urandom", O_RDONLY);
-  if (fd < 0) {
-    return false;
-  }
-  std::size_t offset = 0;
-  while (offset < len) {
-    const ssize_t n = read(fd, out + offset, len - offset);
-    if (n < 0) {
-      if (errno == EINTR) {
-        continue;
-      }
-      break;
-    }
-    if (n == 0) {
-      break;
-    }
-    offset += static_cast<std::size_t>(n);
-  }
-  close(fd);
-  return offset == len;
-}
-
-bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
-#if defined(__linux__)
-  const ssize_t rc = getrandom(out, len, 0);
-  if (rc == static_cast<ssize_t>(len)) {
-    return true;
-  }
-#endif
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__)
-  arc4random_buf(out, len);
-  return true;
-#endif
-  return ReadUrandom(out, len);
-}
-#endif
 
 }  // namespace
 
@@ -296,12 +241,7 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
     return false;
   }
-#ifdef _WIN32
-  return BCryptGenRandom(nullptr, out, static_cast<ULONG>(len),
-                         BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
-#else
-  return OsRandomBytes(out, len);
-#endif
+  return mi::platform::RandomBytes(out, len);
 }
 
 }  // namespace mi::server::crypto

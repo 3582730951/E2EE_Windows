@@ -10,6 +10,17 @@ option(MI_E2EE_ENABLE_TCP_SERVER "Enable simple TCP server listener" ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/mi_e2ee_build_options.cmake)
 
+if(NOT WIN32)
+  find_package(OpenSSL REQUIRED)
+  if(APPLE)
+    find_library(MI_E2EE_SECURITY_FRAMEWORK Security REQUIRED)
+    find_library(MI_E2EE_COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(MI_E2EE_LIBSECRET REQUIRED libsecret-1)
+  endif()
+endif()
+
 if(NOT TARGET monocypher)
   add_library(monocypher STATIC
       ../third_party/monocypher/monocypher.c
@@ -241,8 +252,9 @@ target_link_libraries(shard_secure PUBLIC mi_e2ee_build_flags)
 
 add_library(mi_crypto STATIC
     src/crypto.cpp
+    ../common/hex_utils.cpp
 )
-target_include_directories(mi_crypto PUBLIC include)
+target_include_directories(mi_crypto PUBLIC include ../common)
 target_link_libraries(mi_crypto PUBLIC mi_e2ee_build_flags)
 if(WIN32)
   target_link_libraries(mi_crypto PUBLIC bcrypt)
@@ -250,7 +262,33 @@ endif()
 
 add_subdirectory(../tools tools)
 
+set(MI_E2EE_CORE_PLATFORM_SOURCES "")
+if(WIN32)
+  list(APPEND MI_E2EE_CORE_PLATFORM_SOURCES
+      ../platform/win/platform_net_win.cpp
+      ../platform/win/platform_time_win.cpp
+      ../platform/win/platform_random_win.cpp
+      ../platform/win/platform_fs_win.cpp
+      ../platform/win/platform_sys_win.cpp
+      ../platform/win/platform_tls_win.cpp
+      ../platform/win/platform_secure_store_win.cpp
+      ../platform/win/platform_log_win.cpp
+  )
+else()
+  list(APPEND MI_E2EE_CORE_PLATFORM_SOURCES
+      ../platform/posix/platform_net_posix.cpp
+      ../platform/posix/platform_time_posix.cpp
+      ../platform/posix/platform_random_posix.cpp
+      ../platform/posix/platform_fs_posix.cpp
+      ../platform/posix/platform_sys_posix.cpp
+      ../platform/posix/platform_tls_posix.cpp
+      ../platform/posix/platform_secure_store_posix.cpp
+      ../platform/posix/platform_log_posix.cpp
+  )
+endif()
+
 add_library(mi_e2ee_core STATIC
+    ${MI_E2EE_CORE_PLATFORM_SOURCES}
     src/config.cpp
     src/auth_provider.cpp
     src/pake.cpp
@@ -274,13 +312,22 @@ add_library(mi_e2ee_core STATIC
     src/c_api.cpp
 )
 
-target_include_directories(mi_e2ee_core PUBLIC include ../shard)
+target_include_directories(mi_e2ee_core PUBLIC include ../shard ../common ../platform/include)
 target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(TARGET mi_opaque_pake_rust)
   target_link_libraries(mi_e2ee_core PUBLIC mi_opaque_pake_rust)
 endif()
 if(WIN32)
   target_link_libraries(mi_e2ee_core PUBLIC crypt32 psapi)
+else()
+  target_link_libraries(mi_e2ee_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+  if(APPLE)
+    target_link_libraries(mi_e2ee_core PUBLIC ${MI_E2EE_SECURITY_FRAMEWORK} ${MI_E2EE_COREFOUNDATION_FRAMEWORK})
+  else()
+    target_include_directories(mi_e2ee_core PRIVATE ${MI_E2EE_LIBSECRET_INCLUDE_DIRS})
+    target_compile_options(mi_e2ee_core PRIVATE ${MI_E2EE_LIBSECRET_CFLAGS_OTHER})
+    target_link_libraries(mi_e2ee_core PUBLIC ${MI_E2EE_LIBSECRET_LIBRARIES})
+  endif()
 endif()
 
 if(MSVC)
@@ -293,7 +340,7 @@ add_executable(mi_e2ee_server
     src/main.cpp
 )
 
-target_include_directories(mi_e2ee_server PRIVATE include ../shard)
+target_include_directories(mi_e2ee_server PRIVATE include ../shard ../common ../platform/include)
 target_link_libraries(mi_e2ee_server PRIVATE mi_e2ee_core)
 mi_copy_msvc_runtime(mi_e2ee_server)
 

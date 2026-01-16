@@ -1,4 +1,6 @@
 #include "CallController.h"
+#include "../media_transport_capi.h"
+#include "c_api_client.h"
 
 #include <QAbstractVideoBuffer>
 #include <QAudioDevice>
@@ -198,10 +200,33 @@ void AdjustAudioConfigForDevices(
     }
 }
 
+bool LoadMediaConfig(mi_client_handle* handle,
+                     mi_media_config_t& out_config,
+                     QString& out_error) {
+    out_error.clear();
+    std::memset(&out_config, 0, sizeof(out_config));
+    if (!handle) {
+        out_error = QStringLiteral("媒体通道不可用");
+        return false;
+    }
+    if (mi_client_get_media_config(handle, &out_config) == 0) {
+        const char* err = mi_client_last_error(handle);
+        out_error = err ? QString::fromUtf8(err) : QString();
+        if (out_error.isEmpty()) {
+            out_error = QStringLiteral("媒体配置读取失败");
+        }
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
-CallController::CallController(mi::client::ClientCore &core, QObject *parent)
-    : QObject(parent), core_(core) {
+CallController::CallController(mi_client_handle* handle, QObject *parent)
+    : QObject(parent), handle_(handle) {
+    if (handle_) {
+        media_transport_ = std::make_unique<mi::client::ui::CapiMediaTransport>(handle_);
+    }
     media_timer_.setInterval(20);
     media_timer_.setTimerType(Qt::PreciseTimer);
     connect(&media_timer_, &QTimer::timeout, this, &CallController::PumpMedia);
@@ -239,8 +264,25 @@ bool CallController::Start(const QString &peerUsername,
     cfg.initiator = initiator;
     cfg.enable_audio = true;
     cfg.enable_video = video;
+    mi_media_config_t media_cfg{};
+    if (!LoadMediaConfig(handle_, media_cfg, outError)) {
+        return false;
+    }
+    cfg.audio_delay_ms = media_cfg.audio_delay_ms;
+    cfg.video_delay_ms = media_cfg.video_delay_ms;
+    cfg.audio_max_frames = media_cfg.audio_max_frames;
+    cfg.video_max_frames = media_cfg.video_max_frames;
 
-    auto session = std::make_unique<mi::client::media::MediaSession>(core_, cfg);
+    if (!media_transport_) {
+        if (!handle_) {
+            outError = QStringLiteral("媒体通道不可用");
+            return false;
+        }
+        media_transport_ = std::make_unique<mi::client::ui::CapiMediaTransport>(handle_);
+    }
+
+    auto session =
+        std::make_unique<mi::client::media::MediaSession>(*media_transport_, cfg);
     std::string err;
     if (!session->Init(err)) {
         outError = err.empty() ? QStringLiteral("通话初始化失败")
@@ -373,8 +415,13 @@ void CallController::PumpMedia() {
     if (!media_session_) {
         return;
     }
-    std::string err;
-    media_session_->PollIncoming(32, 0, err);
+    mi_media_config_t media_cfg{};
+    QString cfg_err;
+    if (LoadMediaConfig(handle_, media_cfg, cfg_err)) {
+        std::string err;
+        media_session_->PollIncoming(media_cfg.pull_max_packets,
+                                     media_cfg.pull_wait_ms, err);
+    }
 
     if (audio_pipeline_) {
         audio_pipeline_->PumpIncoming();

@@ -8,9 +8,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "client_core.h"
 #include "media_crypto.h"
 #include "media_jitter_buffer.h"
+#include "media_transport.h"
 
 namespace mi::client::media {
 
@@ -33,7 +33,7 @@ struct GroupMediaFrame {
 
 class GroupCallSession {
  public:
-  GroupCallSession(mi::client::ClientCore& core, GroupCallSessionConfig config);
+  GroupCallSession(MediaTransport& transport, GroupCallSessionConfig config);
 
   bool Init(std::string& error);
   bool SetActiveKey(std::uint32_t key_id, std::string& error);
@@ -74,7 +74,7 @@ class GroupCallSession {
                             const std::vector<std::uint8_t>& packet,
                             std::string& error);
 
-  mi::client::ClientCore& core_;
+  MediaTransport& transport_;
   GroupCallSessionConfig config_;
   std::uint32_t active_key_id_{0};
   std::unique_ptr<MediaRatchet> audio_send_;
@@ -82,6 +82,7 @@ class GroupCallSession {
   std::unordered_map<std::string, SenderState> senders_;
   std::vector<std::uint8_t> audio_packet_buf_;
   std::vector<std::uint8_t> video_packet_buf_;
+  std::vector<MediaRelayPacket> pull_packets_;
   bool ready_{false};
 };
 

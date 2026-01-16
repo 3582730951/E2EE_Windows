@@ -1,7 +1,8 @@
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
-#include <iterator>
+#include <limits>
 #include <vector>
 
 #include "frame.h"
@@ -28,8 +29,22 @@ int main(int argc, char** argv) {
   if (!ifs) {
     return 0;
   }
-  std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(ifs)),
-                                 std::istreambuf_iterator<char>());
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(argv[1], ec);
+  if (ec || size == 0) {
+    return 0;
+  }
+  if (size > static_cast<std::uintmax_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    return 0;
+  }
+  std::vector<std::uint8_t> data;
+  data.resize(static_cast<std::size_t>(size));
+  ifs.read(reinterpret_cast<char*>(data.data()),
+           static_cast<std::streamsize>(data.size()));
+  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(data.size())) {
+    return 0;
+  }
   if (data.empty()) {
     return 0;
   }
@@ -37,4 +52,3 @@ int main(int argc, char** argv) {
   return 0;
 }
 #endif
-

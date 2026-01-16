@@ -10,19 +10,10 @@
 #include <string_view>
 #include <utility>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX 1
-#endif
-#include <windows.h>
-#include <psapi.h>
-#else
-#include <sys/resource.h>
-#endif
-
 #include "buffer_pool.h"
 #include "protocol.h"
 #include "secure_channel.h"
+#include "platform_sys.h"
 
 namespace mi::server {
 
@@ -34,7 +25,7 @@ ConnectionHandler::ConnectionHandler(ServerApp* app)
 namespace {
 class PayloadPoolGuard {
  public:
-  PayloadPoolGuard(mi::shard::ByteBufferPool& pool,
+  PayloadPoolGuard(mi::common::ByteBufferPool& pool,
                    std::vector<std::uint8_t>* buffer)
       : pool_(&pool), buffer_(buffer) {}
   ~PayloadPoolGuard() { Release(); }
@@ -48,7 +39,7 @@ class PayloadPoolGuard {
   }
 
  private:
-  mi::shard::ByteBufferPool* pool_{nullptr};
+  mi::common::ByteBufferPool* pool_{nullptr};
   std::vector<std::uint8_t>* buffer_{nullptr};
 };
 
@@ -120,26 +111,7 @@ bool LooksLikeSessionToken(std::string_view token) {
 constexpr std::uint64_t kPerfSampleIntervalNs = 1000000000ull;
 
 std::uint64_t GetProcessRssBytes() {
-#ifdef _WIN32
-  PROCESS_MEMORY_COUNTERS_EX pmc{};
-  if (GetProcessMemoryInfo(GetCurrentProcess(),
-                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
-                           sizeof(pmc))) {
-    return static_cast<std::uint64_t>(pmc.WorkingSetSize);
-  }
-  return 0;
-#else
-  struct rusage usage {};
-  if (getrusage(RUSAGE_SELF, &usage) == 0) {
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__)
-    return static_cast<std::uint64_t>(usage.ru_maxrss);
-#else
-    return static_cast<std::uint64_t>(usage.ru_maxrss) * 1024ull;
-#endif
-  }
-  return 0;
-#endif
+  return mi::platform::ProcessRssBytes();
 }
 
 void RecordLatencySample(ConnectionHandler::OpsMetrics& metrics,
@@ -435,7 +407,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   };
   Frame out;
   std::string error;
-  auto& byte_pool = mi::shard::GlobalByteBufferPool();
+  auto& byte_pool = mi::common::GlobalByteBufferPool();
   out.payload = byte_pool.Acquire(4096);
   PayloadPoolGuard out_guard(byte_pool, &out.payload);
 
@@ -721,7 +693,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   std::lock_guard<std::mutex> state_lock(state->mutex);
 
   auto& pool = byte_pool;
-  mi::shard::ScopedBuffer plain_buf(pool, cipher_len, true);
+  mi::common::ScopedBuffer plain_buf(pool, cipher_len, true);
   auto& plain = plain_buf.get();
   if (!state->channel.Decrypt(payload.data + offset, cipher_len, in.type,
                               plain)) {
@@ -744,7 +716,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
     return false;
   }
 
-  mi::shard::ScopedBuffer cipher_buf(pool, out.payload.size() + 64, false);
+  mi::common::ScopedBuffer cipher_buf(pool, out.payload.size() + 64, false);
   auto& cipher_out = cipher_buf.get();
   if (!state->channel.Encrypt(state->send_seq, out.type, out.payload,
                               cipher_out)) {
