@@ -212,7 +212,7 @@ if [[ -f "$workspace/bindings/README.md" ]]; then
 fi
 
 collect_deps_linux() {
-  ldd "$1" 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^\\//) print $i}' \
+  ldd "$1" 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i}' \
     | grep -vE 'linux-vdso|ld-linux' | sort -u
 }
 
@@ -265,7 +265,12 @@ copy_deps() {
     linux) collect_deps_linux "$bin" ;;
     macos) collect_deps_macos "$bin" ;;
   esac | while read -r lib; do
-    cp -L "$lib" "$dest/"
+    local base
+    base="$(basename "$lib")"
+    if [[ -f "$dest/$base" ]]; then
+      continue
+    fi
+    cp -L "$lib" "$dest/$base"
   done
 }
 
