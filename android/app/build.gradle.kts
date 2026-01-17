@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val miOpaqueEnabled = (project.findProperty("miE2eeOpaque") as? String)
+    ?.equals("true", ignoreCase = true) ?: true
+
 android {
     namespace = "mi.e2ee.android"
     compileSdk = 34
@@ -19,6 +22,9 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+            arguments.add(
+                "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" + if (miOpaqueEnabled) "ON" else "OFF"
+            )
         }
     }
 

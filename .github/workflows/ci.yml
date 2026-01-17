@@ -405,3 +405,44 @@ jobs:
         with:
           name: mi_e2ee_server_macos
           path: dist/mi_e2ee_server_macos.tar.gz
+
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android components
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;25.2.9519653"
+
+      - name: Configure local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+
+      - name: Build Android debug
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleDebug -PmiE2eeOpaque=false --no-daemon
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_android_debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
