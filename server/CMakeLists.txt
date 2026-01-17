@@ -252,6 +252,7 @@ target_link_libraries(shard_secure PUBLIC mi_e2ee_build_flags)
 
 add_library(mi_crypto STATIC
     src/crypto.cpp
+    src/crypto_random.cpp
     ../common/hex_utils.cpp
 )
 target_include_directories(mi_crypto PUBLIC include ../common ../platform/include)

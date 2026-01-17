@@ -15,8 +15,8 @@ bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
   if (!out || len == 0) {
     return false;
   }
-#if defined(__linux__)
   std::size_t done = 0;
+#if defined(__linux__)
   while (done < len) {
     const ssize_t got = getrandom(out + done, len - done, 0);
     if (got <= 0) {
@@ -33,7 +33,7 @@ bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
   if (fd < 0) {
     return false;
   }
-  std::size_t done = 0;
+  done = 0;
   while (done < len) {
     const ssize_t got = ::read(fd, out + done, len - done);
     if (got <= 0) {

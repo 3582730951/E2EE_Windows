@@ -78,6 +78,69 @@ constexpr int kMaxAbbrInputLength = 10;
 constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
 constexpr const char kPinyinAbbrDictResourcePath[] =
     ":/mi/e2ee/ui/ime/pinyin_short.dat";
+constexpr std::uint32_t kMaxFriendEntries = 512;
+constexpr std::uint32_t kMaxFriendRequestEntries = 256;
+constexpr std::uint32_t kMaxGroupMemberEntries = 256;
+constexpr std::uint32_t kMaxGroupCallMembers = 256;
+constexpr std::uint32_t kMaxHistoryEntries = 200;
+
+std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
+    const mi_friend_entry_t* entries,
+    std::uint32_t count) {
+  std::vector<mi::sdk::FriendEntry> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    mi::sdk::FriendEntry e;
+    if (entries[i].username) {
+      e.username = entries[i].username;
+    }
+    if (entries[i].remark) {
+      e.remark = entries[i].remark;
+    }
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+
+std::vector<mi::sdk::FriendRequestEntry> ReadFriendRequestEntries(
+    const mi_friend_request_entry_t* entries,
+    std::uint32_t count) {
+  std::vector<mi::sdk::FriendRequestEntry> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    mi::sdk::FriendRequestEntry e;
+    if (entries[i].requester_username) {
+      e.requester_username = entries[i].requester_username;
+    }
+    if (entries[i].requester_remark) {
+      e.requester_remark = entries[i].requester_remark;
+    }
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+
+std::vector<std::string> ReadGroupCallMembers(
+    const mi_group_call_member_t* entries,
+    std::uint32_t count) {
+  std::vector<std::string> out;
+  if (!entries || count == 0) {
+    return out;
+  }
+  out.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (entries[i].username) {
+      out.emplace_back(entries[i].username);
+    }
+  }
+  return out;
+}
 
 std::filesystem::path ToFsPath(const QString& path) {
 #ifdef _WIN32
@@ -4315,74 +4378,6 @@ QString QuickClient::pendingPeerPin() const {
   }
   return {};
 }
-
-namespace {
-
-constexpr std::uint32_t kMaxFriendEntries = 512;
-constexpr std::uint32_t kMaxFriendRequestEntries = 256;
-constexpr std::uint32_t kMaxGroupMemberEntries = 256;
-constexpr std::uint32_t kMaxGroupCallMembers = 256;
-constexpr std::uint32_t kMaxHistoryEntries = 200;
-
-std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
-    const mi_friend_entry_t* entries,
-    std::uint32_t count) {
-  std::vector<mi::sdk::FriendEntry> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    mi::sdk::FriendEntry e;
-    if (entries[i].username) {
-      e.username = entries[i].username;
-    }
-    if (entries[i].remark) {
-      e.remark = entries[i].remark;
-    }
-    out.push_back(std::move(e));
-  }
-  return out;
-}
-
-std::vector<mi::sdk::FriendRequestEntry> ReadFriendRequestEntries(
-    const mi_friend_request_entry_t* entries,
-    std::uint32_t count) {
-  std::vector<mi::sdk::FriendRequestEntry> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    mi::sdk::FriendRequestEntry e;
-    if (entries[i].requester_username) {
-      e.requester_username = entries[i].requester_username;
-    }
-    if (entries[i].requester_remark) {
-      e.requester_remark = entries[i].requester_remark;
-    }
-    out.push_back(std::move(e));
-  }
-  return out;
-}
-
-std::vector<std::string> ReadGroupCallMembers(
-    const mi_group_call_member_t* entries,
-    std::uint32_t count) {
-  std::vector<std::string> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    if (entries[i].username) {
-      out.emplace_back(entries[i].username);
-    }
-  }
-  return out;
-}
-
-}  // namespace
 
 void QuickClient::StartPolling() {
   if (!poll_timer_.isActive()) {
