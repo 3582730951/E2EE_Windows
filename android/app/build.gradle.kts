@@ -16,15 +16,18 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+        externalNativeBuild {
+            cmake {
+                arguments += "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" +
+                    if (miOpaqueEnabled) "ON" else "OFF"
+            }
+        }
     }
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
-            arguments.add(
-                "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" + if (miOpaqueEnabled) "ON" else "OFF"
-            )
         }
     }
 
