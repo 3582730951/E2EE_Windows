@@ -237,6 +237,8 @@ private fun CallLayout(
     onHangup: () -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
+    val strings = LocalStrings.current
+    fun t(key: String, fallback: String): String = strings.get(key, fallback)
     val showDebugTools = BuildConfig.DEBUG
     var toolsOpen by remember(callIdHex) { mutableStateOf(false) }
     var toolsResult by remember(callIdHex) { mutableStateOf<String?>(null) }
@@ -338,14 +340,14 @@ private fun CallLayout(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = {
                                 clipboard.setText(AnnotatedString(callIdHex))
-                                toolsResult = tr("call_tools_copied", "Copied")
+                                toolsResult = t("call_tools_copied", "Copied")
                             }) {
                                 Text(tr("call_tools_copy", "Copy call id"))
                             }
                             if (onAddSubscription != null) {
                                 TextButton(onClick = {
                                     onAddSubscription()
-                                    toolsResult = tr("call_tools_sub_added", "Subscription added")
+                                    toolsResult = t("call_tools_sub_added", "Subscription added")
                                 }) {
                                     Text(tr("call_tools_subscribe", "Add subscription"))
                                 }
@@ -354,7 +356,7 @@ private fun CallLayout(
                         if (onClearSubscriptions != null) {
                             TextButton(onClick = {
                                 onClearSubscriptions()
-                                toolsResult = tr("call_tools_sub_cleared", "Subscriptions cleared")
+                                toolsResult = t("call_tools_sub_cleared", "Subscriptions cleared")
                             }) {
                                 Text(tr("call_tools_clear_subs", "Clear subscriptions"))
                             }

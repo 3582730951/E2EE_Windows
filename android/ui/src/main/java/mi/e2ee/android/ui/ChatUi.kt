@@ -542,7 +542,8 @@ fun ChatScreen(
     var pinnedId by remember(resolvedConversationId) {
         mutableStateOf(loadPinnedId(prefs, resolvedConversationId))
     }
-    val normalizedPinnedId = pinnedId?.takeIf { it.isNotBlank() }
+    val pinnedIdValue = pinnedId
+    val normalizedPinnedId = pinnedIdValue?.takeIf { it.isNotBlank() }
     val normalizedMessages = items
         .filterNot { it is PinnedMessage }
         .map { item ->
@@ -569,8 +570,8 @@ fun ChatScreen(
         buildPinnedMessage(message)
     } ?: defaultPinned
     val pinnedMessage = when {
-        pinnedId == null -> pinnedFromDefault
-        pinnedId.isBlank() -> null
+        pinnedIdValue == null -> pinnedFromDefault
+        pinnedIdValue.isBlank() -> null
         else -> pinnedFromId
     }
     val lastIncomingMessage = visibleMessages.filterIsInstance<ChatMessage>().lastOrNull { !it.isMine }
@@ -928,7 +929,7 @@ fun ChatScreen(
                             }
                             TextButton(onClick = {
                                 onSendPresence(toolsPresenceOnline)
-                                toolsResult = tr("chat_tools_presence_sent", "Presence sent")
+                                toolsResult = t("chat_tools_presence_sent", "Presence sent")
                             }) {
                                 Text(tr("chat_tools_send_presence", "Send presence"))
                             }
@@ -948,9 +949,9 @@ fun ChatScreen(
                                 onClick = {
                                     if (toolsReceiptId.isNotBlank()) {
                                         onSendReadReceipt(toolsReceiptId.trim())
-                                        toolsResult = tr("chat_tools_receipt_sent", "Read receipt sent")
+                                        toolsResult = t("chat_tools_receipt_sent", "Read receipt sent")
                                     } else {
-                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        toolsResult = t("chat_tools_invalid", "Invalid input")
                                     }
                                 }
                             ) {
@@ -987,10 +988,10 @@ fun ChatScreen(
                             TextButton(
                                 onClick = {
                                     if (toolsResendId.isBlank() || toolsResendText.isBlank()) {
-                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        toolsResult = t("chat_tools_invalid", "Invalid input")
                                     } else if (toolsResendReplyTo.isNotBlank()) {
                                         if (toolsResendReplyPreview.isBlank()) {
-                                            toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                            toolsResult = t("chat_tools_invalid", "Invalid input")
                                         } else {
                                             val ok = onResendTextWithReply(
                                                 toolsResendId.trim(),
@@ -999,17 +1000,17 @@ fun ChatScreen(
                                                 toolsResendReplyPreview.trim()
                                             )
                                             toolsResult = if (ok) {
-                                                tr("chat_tools_resend_ok", "Resend queued")
+                                                t("chat_tools_resend_ok", "Resend queued")
                                             } else {
-                                                tr("chat_tools_resend_failed", "Resend failed")
+                                                t("chat_tools_resend_failed", "Resend failed")
                                             }
                                         }
                                     } else {
                                         val ok = onResendText(toolsResendId.trim(), toolsResendText.trim())
                                         toolsResult = if (ok) {
-                                            tr("chat_tools_resend_ok", "Resend queued")
+                                            t("chat_tools_resend_ok", "Resend queued")
                                         } else {
-                                            tr("chat_tools_resend_failed", "Resend failed")
+                                            t("chat_tools_resend_failed", "Resend failed")
                                         }
                                     }
                                 }
@@ -1036,13 +1037,13 @@ fun ChatScreen(
                             TextButton(
                                 onClick = {
                                     if (toolsResendFileId.isBlank() || toolsResendFilePath.isBlank()) {
-                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        toolsResult = t("chat_tools_invalid", "Invalid input")
                                     } else {
                                         val ok = onResendFile(toolsResendFileId.trim(), toolsResendFilePath.trim())
                                         toolsResult = if (ok) {
-                                            tr("chat_tools_resend_ok", "Resend queued")
+                                            t("chat_tools_resend_ok", "Resend queued")
                                         } else {
-                                            tr("chat_tools_resend_failed", "Resend failed")
+                                            t("chat_tools_resend_failed", "Resend failed")
                                         }
                                     }
                                 }

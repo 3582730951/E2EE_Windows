@@ -559,8 +559,8 @@ private fun ThreeDIconBadge(
                 val stroke = 2.dp.toPx()
                 drawLine(
                     color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f),
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width, 0f),
+                    start = Offset(0f, this.size.height),
+                    end = Offset(this.size.width, 0f),
                     strokeWidth = stroke,
                     cap = StrokeCap.Round
                 )

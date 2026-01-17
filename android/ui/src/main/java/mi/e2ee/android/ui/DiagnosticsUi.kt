@@ -46,6 +46,8 @@ fun DiagnosticsScreen(
     onBack: () -> Unit = {}
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val strings = LocalStrings.current
+    fun t(key: String, fallback: String): String = strings.get(key, fallback)
     var remoteMode by remember { mutableStateOf<Boolean?>(null) }
     var mediaConfig by remember { mutableStateOf<MediaConfig?>(null) }
     var mediaConfigResult by remember { mutableStateOf("") }
@@ -226,7 +228,7 @@ fun DiagnosticsScreen(
                             onClick = {
                                 mediaConfig = sdk.getMediaConfig()
                                 mediaConfigResult = if (mediaConfig == null) {
-                                    sdk.lastError.ifBlank { tr("diagnostics_load_failed", "Failed to load") }
+                                    sdk.lastError.ifBlank { t("diagnostics_load_failed", "Failed to load") }
                                 } else {
                                     ""
                                 }
@@ -268,9 +270,9 @@ fun DiagnosticsScreen(
                             onClick = {
                                 val callId = parseCallIdHex(subCallIdHex)
                                 if (callId == null) {
-                                    subResult = tr("diagnostics_invalid_call_id", "Invalid call id")
+                                    subResult = t("diagnostics_invalid_call_id", "Invalid call id")
                                 } else if (subIsGroup && subGroupId.isBlank()) {
-                                    subResult = tr("diagnostics_group_required", "Group id required")
+                                    subResult = t("diagnostics_group_required", "Group id required")
                                 } else {
                                     val ok = sdk.addMediaSubscription(
                                         callId,
@@ -278,9 +280,9 @@ fun DiagnosticsScreen(
                                         groupId = subGroupId.takeIf { subIsGroup }
                                     )
                                     subResult = if (ok) {
-                                        tr("diagnostics_subscription_added", "Subscription added")
+                                        t("diagnostics_subscription_added", "Subscription added")
                                     } else {
-                                        sdk.lastError.ifBlank { tr("diagnostics_subscription_failed", "Failed") }
+                                        sdk.lastError.ifBlank { t("diagnostics_subscription_failed", "Failed") }
                                     }
                                 }
                             }
@@ -290,7 +292,7 @@ fun DiagnosticsScreen(
                             fillMaxWidth = false,
                             onClick = {
                                 sdk.clearMediaSubscriptions()
-                                subResult = tr("diagnostics_cleared", "Cleared")
+                                subResult = t("diagnostics_cleared", "Cleared")
                             }
                         )
                     }
@@ -322,7 +324,7 @@ fun DiagnosticsScreen(
                             enabled = presenceUser.isNotBlank(),
                             onClick = {
                                 sdk.sendPresence(presenceUser.trim(), presenceOnline)
-                                presenceResult = tr("diagnostics_presence_sent", "Presence sent")
+                                presenceResult = t("diagnostics_presence_sent", "Presence sent")
                             }
                         )
                     }
@@ -352,7 +354,7 @@ fun DiagnosticsScreen(
                             enabled = receiptUser.isNotBlank() && receiptMessageId.isNotBlank(),
                             onClick = {
                                 sdk.sendReadReceipt(receiptUser.trim(), receiptMessageId.trim())
-                                receiptResult = tr("diagnostics_receipt_sent", "Read receipt sent")
+                                receiptResult = t("diagnostics_receipt_sent", "Read receipt sent")
                             }
                         )
                     }
@@ -428,17 +430,17 @@ fun DiagnosticsScreen(
                                 val seq = signalSeq.toIntOrNull()
                                 val ts = signalTsMs.toLongOrNull()
                                 if (signalGroupId.isBlank() || callId == null || op == null || key == null || seq == null || ts == null) {
-                                    signalResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    signalResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ext = hexToBytesOrNull(signalExtHex)
                                     if (signalExtHex.isNotBlank() && ext == null) {
-                                        signalResult = tr("diagnostics_invalid_input", "Invalid input")
+                                        signalResult = t("diagnostics_invalid_input", "Invalid input")
                                     } else {
                                         val result = sdk.sendGroupCallSignal(op, signalGroupId.trim(), callId, signalVideo, key, seq, ts, ext)
                                         signalResult = if (result == null) {
-                                            sdk.lastError.ifBlank { tr("diagnostics_send_failed", "Send failed") }
+                                            sdk.lastError.ifBlank { t("diagnostics_send_failed", "Send failed") }
                                         } else {
-                                            tr("diagnostics_signal_ok", "keyId=%d members=%d")
+                                            t("diagnostics_signal_ok", "keyId=%d members=%d")
                                                 .format(result.keyId, result.members.size)
                                         }
                                     }
@@ -485,11 +487,11 @@ fun DiagnosticsScreen(
                                 val callId = parseCallIdHex(keyCallIdHex)
                                 val parsedKeyId = keyId.toIntOrNull()
                                 if (keyGroupId.isBlank() || callId == null || parsedKeyId == null) {
-                                    keyResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    keyResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val keyBytes = sdk.getGroupCallKey(keyGroupId.trim(), callId, parsedKeyId)
                                     keyResult = keyBytes?.let { bytesToHex(it) }
-                                        ?: tr("diagnostics_no_key", "No key")
+                                        ?: t("diagnostics_no_key", "No key")
                                 }
                             }
                         )
@@ -501,10 +503,10 @@ fun DiagnosticsScreen(
                                 val parsedKeyId = keyId.toIntOrNull()
                                 val members = parseCsv(keyMembers)
                                 if (keyGroupId.isBlank() || callId == null || parsedKeyId == null || members.isEmpty()) {
-                                    keyResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    keyResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.rotateGroupCallKey(keyGroupId.trim(), callId, parsedKeyId, members)
-                                    keyResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    keyResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -516,10 +518,10 @@ fun DiagnosticsScreen(
                                 val parsedKeyId = keyId.toIntOrNull()
                                 val members = parseCsv(keyMembers)
                                 if (keyGroupId.isBlank() || callId == null || parsedKeyId == null || members.isEmpty()) {
-                                    keyResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    keyResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.requestGroupCallKey(keyGroupId.trim(), callId, parsedKeyId, members)
-                                    keyResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    keyResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -571,10 +573,10 @@ fun DiagnosticsScreen(
                                 val callId = parseCallIdHex(peerCallIdHex)
                                 val payload = hexToBytesOrNull(peerPayloadHex)
                                 if (peerUsername.isBlank() || callId == null || payload == null) {
-                                    peerMediaResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    peerMediaResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.pushMedia(peerUsername.trim(), callId, payload)
-                                    peerMediaResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    peerMediaResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -586,7 +588,7 @@ fun DiagnosticsScreen(
                                 val maxPackets = peerPullMaxPackets.toIntOrNull() ?: 0
                                 val waitMs = peerPullWaitMs.toIntOrNull() ?: 0
                                 if (callId == null) {
-                                    peerMediaResult = tr("diagnostics_invalid_call_id", "Invalid call id")
+                                    peerMediaResult = t("diagnostics_invalid_call_id", "Invalid call id")
                                 } else {
                                     val packets = sdk.pullMedia(callId, maxPackets, waitMs)
                                     peerMediaResult = formatPacketsResult(packets)
@@ -641,10 +643,10 @@ fun DiagnosticsScreen(
                                 val callId = parseCallIdHex(groupCallIdHex)
                                 val payload = hexToBytesOrNull(groupPayloadHex)
                                 if (groupIdForMedia.isBlank() || callId == null || payload == null) {
-                                    groupMediaResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    groupMediaResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.pushGroupMedia(groupIdForMedia.trim(), callId, payload)
-                                    groupMediaResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    groupMediaResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -656,7 +658,7 @@ fun DiagnosticsScreen(
                                 val maxPackets = groupPullMaxPackets.toIntOrNull() ?: 0
                                 val waitMs = groupPullWaitMs.toIntOrNull() ?: 0
                                 if (callId == null) {
-                                    groupMediaResult = tr("diagnostics_invalid_call_id", "Invalid call id")
+                                    groupMediaResult = t("diagnostics_invalid_call_id", "Invalid call id")
                                 } else {
                                     val packets = sdk.pullGroupMedia(callId, maxPackets, waitMs)
                                     groupMediaResult = formatPacketsResult(packets)
@@ -690,11 +692,11 @@ fun DiagnosticsScreen(
                             onClick = {
                                 val callId = parseCallIdHex(rootCallIdHex)
                                 if (rootPeer.isBlank() || callId == null) {
-                                    rootResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    rootResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val root = sdk.deriveMediaRoot(rootPeer.trim(), callId)
                                     rootResult = root?.let { bytesToHex(it) }
-                                        ?: sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                        ?: sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -738,7 +740,7 @@ fun DiagnosticsScreen(
                                 val size = previewFileSize.toLongOrNull()
                                 val payload = hexToBytesOrNull(previewPayloadHex)
                                 if (previewFileId.isBlank() || previewFileName.isBlank() || size == null || payload == null) {
-                                    previewResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    previewResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.storeAttachmentPreviewBytes(
                                         previewFileId.trim(),
@@ -746,7 +748,7 @@ fun DiagnosticsScreen(
                                         size,
                                         payload
                                     )
-                                    previewResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    previewResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -798,7 +800,7 @@ fun DiagnosticsScreen(
                                 val size = downloadFileSize.toLongOrNull()
                                 val fileKey = hexToBytesOrNull(downloadFileKeyHex)
                                 if (downloadFileId.isBlank() || downloadFileName.isBlank() || size == null || fileKey == null) {
-                                    downloadResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    downloadResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val bytes = sdk.downloadChatFileToBytes(
                                         downloadFileId.trim(),
@@ -808,9 +810,9 @@ fun DiagnosticsScreen(
                                         downloadWipe
                                     )
                                     downloadResult = if (bytes == null) {
-                                        sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                        sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                     } else {
-                                        tr("diagnostics_bytes_len", "Bytes: %d").format(bytes.size)
+                                        t("diagnostics_bytes_len", "Bytes: %d").format(bytes.size)
                                     }
                                 }
                             }
@@ -867,10 +869,10 @@ fun DiagnosticsScreen(
                             fillMaxWidth = false,
                             onClick = {
                                 if (resendTarget.isBlank() || resendMessageId.isBlank() || resendText.isBlank()) {
-                                    resendTextResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    resendTextResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else if (resendIsGroup) {
                                     val ok = sdk.resendGroupText(resendTarget.trim(), resendMessageId.trim(), resendText.trim())
-                                    resendTextResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendTextResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 } else if (resendReplyTo.isNotBlank()) {
                                     val ok = sdk.resendPrivateTextWithReply(
                                         resendTarget.trim(),
@@ -879,10 +881,10 @@ fun DiagnosticsScreen(
                                         resendReplyTo.trim(),
                                         resendReplyPreview.trim()
                                     )
-                                    resendTextResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendTextResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 } else {
                                     val ok = sdk.resendPrivateText(resendTarget.trim(), resendMessageId.trim(), resendText.trim())
-                                    resendTextResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendTextResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -926,13 +928,13 @@ fun DiagnosticsScreen(
                             fillMaxWidth = false,
                             onClick = {
                                 if (resendFileTarget.isBlank() || resendFileMessageId.isBlank() || resendFilePath.isBlank()) {
-                                    resendFileResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    resendFileResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else if (resendFileIsGroup) {
                                     val ok = sdk.resendGroupFile(resendFileTarget.trim(), resendFileMessageId.trim(), resendFilePath.trim())
-                                    resendFileResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendFileResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 } else {
                                     val ok = sdk.resendPrivateFile(resendFileTarget.trim(), resendFileMessageId.trim(), resendFilePath.trim())
-                                    resendFileResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendFileResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -968,14 +970,14 @@ fun DiagnosticsScreen(
                             fillMaxWidth = false,
                             onClick = {
                                 if (resendStickerTarget.isBlank() || resendStickerMessageId.isBlank() || resendStickerId.isBlank()) {
-                                    resendStickerResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    resendStickerResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.resendPrivateSticker(
                                         resendStickerTarget.trim(),
                                         resendStickerMessageId.trim(),
                                         resendStickerId.trim()
                                     )
-                                    resendStickerResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendStickerResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -1029,7 +1031,7 @@ fun DiagnosticsScreen(
                                 if (resendLocationTarget.isBlank() || resendLocationMessageId.isBlank() ||
                                     resendLocationLabel.isBlank() || lat == null || lon == null
                                 ) {
-                                    resendLocationResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    resendLocationResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.resendPrivateLocation(
                                         resendLocationTarget.trim(),
@@ -1038,7 +1040,7 @@ fun DiagnosticsScreen(
                                         lon,
                                         resendLocationLabel.trim()
                                     )
-                                    resendLocationResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendLocationResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )
@@ -1082,7 +1084,7 @@ fun DiagnosticsScreen(
                                 if (resendContactTarget.isBlank() || resendContactMessageId.isBlank() ||
                                     resendContactUsername.isBlank() || resendContactDisplay.isBlank()
                                 ) {
-                                    resendContactResult = tr("diagnostics_invalid_input", "Invalid input")
+                                    resendContactResult = t("diagnostics_invalid_input", "Invalid input")
                                 } else {
                                     val ok = sdk.resendPrivateContact(
                                         resendContactTarget.trim(),
@@ -1090,7 +1092,7 @@ fun DiagnosticsScreen(
                                         resendContactUsername.trim(),
                                         resendContactDisplay.trim()
                                     )
-                                    resendContactResult = if (ok) tr("diagnostics_ok", "OK") else sdk.lastError.ifBlank { tr("diagnostics_failed", "Failed") }
+                                    resendContactResult = if (ok) t("diagnostics_ok", "OK") else sdk.lastError.ifBlank { t("diagnostics_failed", "Failed") }
                                 }
                             }
                         )

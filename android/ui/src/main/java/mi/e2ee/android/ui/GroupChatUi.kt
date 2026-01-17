@@ -290,7 +290,8 @@ fun GroupChatScreen(
     var pinnedId by remember(resolvedConversationId) {
         mutableStateOf(loadGroupPinnedId(prefs, resolvedConversationId))
     }
-    val normalizedPinnedId = pinnedId?.takeIf { it.isNotBlank() }
+    val pinnedIdValue = pinnedId
+    val normalizedPinnedId = pinnedIdValue?.takeIf { it.isNotBlank() }
     val normalizedItems = items.map { item ->
         if (item is GroupMessage && recalledIds.contains(item.id)) {
             recalledGroupMessageCopy(item)
@@ -309,8 +310,8 @@ fun GroupChatScreen(
         .firstOrNull()
         ?.let { message -> buildGroupPinnedMessage(message) }
     val pinnedMessage = when {
-        pinnedId == null -> defaultPinned
-        pinnedId.isBlank() -> null
+        pinnedIdValue == null -> defaultPinned
+        pinnedIdValue.isBlank() -> null
         else -> pinnedFromId
     }
     val lastOutgoingMessage = visibleItems.filterIsInstance<GroupMessage>().lastOrNull { it.isMine }

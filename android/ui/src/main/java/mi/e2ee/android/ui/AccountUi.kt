@@ -55,6 +55,8 @@ fun AccountScreen(
     val pairingCode = remember { mutableStateOf<String?>(null) }
     val linkedCode = remember { mutableStateOf("") }
     val linkedStatus = remember { mutableStateOf<String?>(null) }
+    val strings = LocalStrings.current
+    fun t(key: String, fallback: String): String = strings.get(key, fallback)
     LaunchedEffect(Unit) {
         sdk.refreshDevices()
         sdk.pollDevicePairingRequests()
@@ -236,9 +238,9 @@ fun AccountScreen(
                                 if (linkedCode.value.isNotBlank()) {
                                     val ok = sdk.beginDevicePairingLinked(linkedCode.value.trim())
                                     linkedStatus.value = if (ok) {
-                                        tr("account_pair_linking", "Linking...")
+                                        t("account_pair_linking", "Linking...")
                                     } else {
-                                        tr("account_pair_failed", "Failed")
+                                        t("account_pair_failed", "Failed")
                                     }
                                 }
                             },
@@ -254,9 +256,9 @@ fun AccountScreen(
                             onClick = {
                                 val ok = sdk.pollDevicePairingLinked()
                                 linkedStatus.value = if (ok) {
-                                    tr("account_pair_done", "Linked")
+                                    t("account_pair_done", "Linked")
                                 } else {
-                                    tr("account_pair_pending", "Pending")
+                                    t("account_pair_pending", "Pending")
                                 }
                             },
                             colors = ButtonDefaults.filledTonalButtonColors(
