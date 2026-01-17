@@ -218,13 +218,23 @@ collect_deps_linux() {
 
 collect_deps_macos() {
   local target="$1"
-  declare -A seen
+  local -a seen_list=()
+  has_seen() {
+    local needle="$1"
+    local item
+    for item in "${seen_list[@]}"; do
+      if [[ "$item" == "$needle" ]]; then
+        return 0
+      fi
+    done
+    return 1
+  }
   _walk() {
     local bin="$1"
     if [[ -z "$bin" || ! -f "$bin" ]]; then
       return
     fi
-    otool -L "$bin" | tail -n +2 | awk '{print $1}' | while read -r dep; do
+    while IFS= read -r dep; do
       if [[ -z "$dep" ]]; then
         continue
       fi
@@ -234,13 +244,13 @@ collect_deps_macos() {
       if [[ "$dep" == /usr/lib/* || "$dep" == /System/Library/* ]]; then
         continue
       fi
-      if [[ -n "${seen[$dep]:-}" ]]; then
+      if has_seen "$dep"; then
         continue
       fi
-      seen["$dep"]=1
+      seen_list+=("$dep")
       echo "$dep"
       _walk "$dep"
-    done
+    done < <(otool -L "$bin" | tail -n +2 | awk '{print $1}')
   }
   _walk "$target"
 }

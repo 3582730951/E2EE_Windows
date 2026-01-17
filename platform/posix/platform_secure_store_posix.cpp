@@ -224,7 +224,7 @@ const SecretSchema& SecureStoreSchema() {
       SECRET_SCHEMA_NONE,
       {{"name", SECRET_SCHEMA_ATTRIBUTE_STRING},
        {"uid", SECRET_SCHEMA_ATTRIBUTE_STRING},
-       {nullptr, 0}}};
+       {nullptr, SECRET_SCHEMA_ATTRIBUTE_STRING}}};
   return kSchema;
 }
 
