@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -78,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import mi.e2ee.android.BuildConfig
 
 sealed interface GroupChatItem {
     val id: String
@@ -258,6 +260,8 @@ fun GroupChatScreen(
     onSendFile: (String) -> Boolean = { false },
     onSendLocation: (Double, Double, String) -> Boolean = { _, _, _ -> false },
     onRecallMessage: (String) -> Boolean = { false },
+    onResendText: (String, String) -> Boolean = { _, _ -> false },
+    onResendFile: (String, String) -> Boolean = { _, _ -> false },
     onDownloadAttachment: (Attachment) -> Unit = {}
 ) {
     var actionTarget by remember { mutableStateOf<GroupMessage?>(null) }
@@ -266,6 +270,12 @@ fun GroupChatScreen(
     var composerText by remember { mutableStateOf("") }
     var composerDialog by remember { mutableStateOf<GroupComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingGroupDelete?>(null) }
+    var toolsOpen by remember { mutableStateOf(false) }
+    var toolsResendId by remember { mutableStateOf("") }
+    var toolsResendText by remember { mutableStateOf("") }
+    var toolsResendFileId by remember { mutableStateOf("") }
+    var toolsResendFilePath by remember { mutableStateOf("") }
+    var toolsResult by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
@@ -303,6 +313,10 @@ fun GroupChatScreen(
         pinnedId.isBlank() -> null
         else -> pinnedFromId
     }
+    val lastOutgoingMessage = visibleItems.filterIsInstance<GroupMessage>().lastOrNull { it.isMine }
+    val lastOutgoingFileMessage = visibleItems.filterIsInstance<GroupMessage>()
+        .lastOrNull { it.isMine && it.attachment?.kind == AttachmentKind.File }
+    val showDebugTools = BuildConfig.DEBUG
     var highlightedMessageId by remember(resolvedConversationId) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -329,6 +343,16 @@ fun GroupChatScreen(
         }
     }
 
+    fun openTools() {
+        if (!showDebugTools) return
+        toolsResendId = lastOutgoingMessage?.id ?: ""
+        toolsResendText = lastOutgoingMessage?.body ?: ""
+        toolsResendFileId = lastOutgoingFileMessage?.id ?: ""
+        toolsResendFilePath = loadGroupLastFilePath(prefs, resolvedConversationId) ?: ""
+        toolsResult = null
+        toolsOpen = true
+    }
+
     fun setPinnedMessage(message: GroupMessage?) {
         pinnedId = message?.id ?: ""
         persistGroupPinnedId(prefs, resolvedConversationId, pinnedId)
@@ -351,7 +375,8 @@ fun GroupChatScreen(
                 onBack = onBack,
                 onOpenGroupDetail = onOpenGroupDetail,
                 onStartVoiceCall = onStartVoiceCall,
-                onStartVideoCall = onStartVideoCall
+                onStartVideoCall = onStartVideoCall,
+                onTools = { openTools() }
             )
         },
         bottomBar = {
@@ -478,6 +503,92 @@ fun GroupChatScreen(
                     }
                 )
             }
+            if (showDebugTools && toolsOpen) {
+                AlertDialog(
+                    onDismissRequest = { toolsOpen = false },
+                    title = { Text(tr("chat_tools_title", "Quick tools")) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                text = tr("chat_tools_resend_group", "Resend group text"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = toolsResendId,
+                                onValueChange = { toolsResendId = it },
+                                label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toolsResendText,
+                                onValueChange = { toolsResendText = it },
+                                label = { Text(tr("chat_tools_text", "Text")) }
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (toolsResendId.isBlank() || toolsResendText.isBlank()) {
+                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                    } else {
+                                        val ok = onResendText(toolsResendId.trim(), toolsResendText.trim())
+                                        toolsResult = if (ok) {
+                                            tr("chat_tools_resend_ok", "Resend queued")
+                                        } else {
+                                            tr("chat_tools_resend_failed", "Resend failed")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(tr("chat_tools_resend_send", "Resend"))
+                            }
+                            Text(
+                                text = tr("chat_tools_resend_file", "Resend file"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = toolsResendFileId,
+                                onValueChange = { toolsResendFileId = it },
+                                label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toolsResendFilePath,
+                                onValueChange = { toolsResendFilePath = it },
+                                label = { Text(tr("chat_tools_file_path", "File path")) }
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (toolsResendFileId.isBlank() || toolsResendFilePath.isBlank()) {
+                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                    } else {
+                                        val ok = onResendFile(toolsResendFileId.trim(), toolsResendFilePath.trim())
+                                        toolsResult = if (ok) {
+                                            tr("chat_tools_resend_ok", "Resend queued")
+                                        } else {
+                                            tr("chat_tools_resend_failed", "Resend failed")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(tr("chat_tools_resend_send", "Resend"))
+                            }
+                            toolsResult?.let { result ->
+                                Text(
+                                    text = result,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { toolsOpen = false }) {
+                            Text(tr("chat_close", "Close"))
+                        }
+                    }
+                )
+            }
             if (composerDialog != null) {
                 when (composerDialog) {
                     GroupComposerDialog.File -> {
@@ -498,6 +609,7 @@ fun GroupChatScreen(
                                 TextButton(
                                     onClick = {
                                         if (path.isNotBlank() && onSendFile(path)) {
+                                            persistGroupLastFilePath(prefs, resolvedConversationId, path)
                                             composerDialog = null
                                         }
                                     },
@@ -607,6 +719,7 @@ private fun GroupChatTopBar(
     onOpenGroupDetail: () -> Unit,
     onStartVoiceCall: () -> Unit,
     onStartVideoCall: () -> Unit,
+    onTools: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -649,6 +762,13 @@ private fun GroupChatTopBar(
                 contentDescription = tr("group_call_video", "Video call"),
                 onClick = onStartVideoCall
             )
+            if (BuildConfig.DEBUG) {
+                CompactTopBarIconButton(
+                    icon = Icons.Filled.BugReport,
+                    contentDescription = tr("chat_tools", "Tools"),
+                    onClick = onTools
+                )
+            }
             CompactTopBarIconButton(
                 icon = Icons.Filled.Group,
                 contentDescription = tr("group_members_section", "Members"),
@@ -1329,6 +1449,7 @@ private const val GROUP_PREFS_NAME = "mi_chat_prefs"
 private fun keyGroupDeleted(conversationId: String) = "grp_deleted_$conversationId"
 private fun keyGroupRecalled(conversationId: String) = "grp_recalled_$conversationId"
 private fun keyGroupPinned(conversationId: String) = "grp_pinned_$conversationId"
+private fun keyGroupLastFilePath(conversationId: String) = "grp_last_file_path_$conversationId"
 
 private fun loadGroupDeletedIds(
     prefs: SharedPreferences,
@@ -1382,5 +1503,22 @@ private fun persistGroupPinnedId(
 ) {
     prefs.edit()
         .putString(keyGroupPinned(conversationId), messageId ?: "")
+        .apply()
+}
+
+private fun loadGroupLastFilePath(
+    prefs: SharedPreferences,
+    conversationId: String
+): String? {
+    return prefs.getString(keyGroupLastFilePath(conversationId), null)
+}
+
+private fun persistGroupLastFilePath(
+    prefs: SharedPreferences,
+    conversationId: String,
+    path: String
+) {
+    prefs.edit()
+        .putString(keyGroupLastFilePath(conversationId), path)
         .apply()
 }

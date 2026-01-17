@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import java.io.File
+import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupMemberRole
 
 private sealed interface FlowScreen {
@@ -31,11 +32,15 @@ private sealed interface FlowScreen {
     data object Settings : FlowScreen
     data object Account : FlowScreen
     data object Privacy : FlowScreen
+    data object Diagnostics : FlowScreen
     data object AddFriend : FlowScreen
     data object FriendRequests : FlowScreen
     data class ContactDetail(val username: String) : FlowScreen
     data class GroupDetail(val groupId: String) : FlowScreen
     data class AddGroupMembers(val groupId: String) : FlowScreen
+    data class PeerCall(val callIdHex: String) : FlowScreen
+    data class GroupCall(val groupId: String, val callIdHex: String) : FlowScreen
+    data object BlockedUsers : FlowScreen
 }
 
 @Composable
@@ -47,6 +52,7 @@ fun UiHost(
     var stack by remember { mutableStateOf(listOf<FlowScreen>(FlowScreen.Login)) }
     val current = stack.last()
     val context = LocalContext.current
+    val callController = remember(context, sdk) { CallMediaController(context, sdk) }
 
     fun navigate(screen: FlowScreen) {
         stack = stack + screen
@@ -66,6 +72,7 @@ fun UiHost(
         if (sdk.loggedIn) {
             resetTo(FlowScreen.Conversations)
         } else {
+            callController.stop()
             resetTo(FlowScreen.Login)
         }
     }
@@ -158,8 +165,27 @@ fun UiHost(
                 },
                 onOpenAccount = { navigate(FlowScreen.Account) },
                 onOpenSettings = { navigate(FlowScreen.Settings) },
-                onStartCall = { sdk.sendCallInvite(convId, video = false) },
-                onStartVideoCall = { sdk.sendCallInvite(convId, video = true) },
+                onStartCall = {
+                    val state = sdk.startPeerCall(convId, video = false)
+                    if (state != null) {
+                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    }
+                },
+                onStartVideoCall = {
+                    val state = sdk.startPeerCall(convId, video = true)
+                    if (state != null) {
+                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    }
+                },
+                onSendPresence = { online -> sdk.sendPresence(convId, online) },
+                onSendReadReceipt = { messageId -> sdk.sendReadReceipt(convId, messageId) },
+                onResendText = { messageId, text -> sdk.resendPrivateText(convId, messageId, text) },
+                onResendTextWithReply = { messageId, text, replyId, preview ->
+                    sdk.resendPrivateTextWithReply(convId, messageId, text, replyId, preview)
+                },
+                onResendFile = { messageId, filePath ->
+                    sdk.resendPrivateFile(convId, messageId, filePath)
+                },
                 onSendMessage = { text, reply -> sdk.sendText(convId, text, reply, isGroup = false) },
                 onSendFile = { path -> sdk.sendFile(convId, path, isGroup = false) },
                 onSendLocation = { lat, lon, label -> sdk.sendLocation(convId, lat, lon, label, isGroup = false) },
@@ -192,16 +218,90 @@ fun UiHost(
                 },
                 onOpenGroupDetail = { navigate(FlowScreen.GroupDetail(groupId)) },
                 activeCall = activeCall,
-                onStartVoiceCall = { sdk.startGroupCall(groupId, video = false) },
-                onStartVideoCall = { sdk.startGroupCall(groupId, video = true) },
-                onJoinCall = { room -> sdk.joinGroupCallHex(groupId, room.callId, room.video) },
-                onLeaveCall = { room -> sdk.leaveGroupCallHex(groupId, room.callId) },
+                onStartVoiceCall = {
+                    val info = sdk.startGroupCall(groupId, video = false)
+                    val active = sdk.activeGroupCall
+                    if (info != null && active != null) {
+                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    }
+                },
+                onStartVideoCall = {
+                    val info = sdk.startGroupCall(groupId, video = true)
+                    val active = sdk.activeGroupCall
+                    if (info != null && active != null) {
+                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    }
+                },
+                onJoinCall = { room ->
+                    val info = sdk.joinGroupCallHex(groupId, room.callId, room.video)
+                    val active = sdk.activeGroupCall
+                    if (info != null && active != null) {
+                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    }
+                },
+                onLeaveCall = { room ->
+                    sdk.leaveGroupCallHex(groupId, room.callId)
+                    val active = sdk.activeGroupCall
+                    if (active != null && active.groupId == groupId && active.callIdHex == room.callId) {
+                        callController.stop()
+                    }
+                },
                 onSendMessage = { text -> sdk.sendText(groupId, text, isGroup = true) },
                 onSendFile = { path -> sdk.sendFile(groupId, path, isGroup = true) },
                 onSendLocation = { lat, lon, label -> sdk.sendLocation(groupId, lat, lon, label, isGroup = true) },
                 onRecallMessage = { messageId -> sdk.sendRecall(groupId, messageId, isGroup = true) },
+                onResendText = { messageId, text -> sdk.resendGroupText(groupId, messageId, text) },
+                onResendFile = { messageId, filePath -> sdk.resendGroupFile(groupId, messageId, filePath) },
                 onDownloadAttachment = { attachment -> downloadAttachment(attachment) }
             )
+        }
+        is FlowScreen.PeerCall -> {
+            val callState = sdk.activePeerCall
+            if (callState == null || callState.callIdHex != current.callIdHex) {
+                LaunchedEffect(callState?.callIdHex, current.callIdHex) {
+                    callController.stop()
+                    goBack()
+                }
+            } else {
+                PeerCallScreen(
+                    controller = callController,
+                    call = callState,
+                    onHangup = {
+                        sdk.endPeerCall()
+                        callController.stop()
+                        goBack()
+                    },
+                    onAddSubscription = {
+                        sdk.addMediaSubscription(callState.callId, isGroup = false)
+                    },
+                    onClearSubscriptions = { sdk.clearMediaSubscriptions() }
+                )
+            }
+        }
+        is FlowScreen.GroupCall -> {
+            val callState = sdk.activeGroupCall
+            if (callState == null || callState.callIdHex != current.callIdHex || callState.groupId != current.groupId) {
+                LaunchedEffect(callState?.callIdHex, current.callIdHex, current.groupId) {
+                    callController.stop()
+                    goBack()
+                }
+            } else {
+                val groupTitle = sdk.groups.firstOrNull { it.id == callState.groupId }?.name ?: callState.groupId
+                GroupCallScreen(
+                    controller = callController,
+                    call = callState,
+                    title = groupTitle,
+                    onHangup = {
+                        sdk.leaveGroupCallHex(callState.groupId, callState.callIdHex)
+                        callController.stop()
+                        goBack()
+                    },
+                    onAddSubscription = {
+                        sdk.addMediaSubscription(callState.callId, isGroup = true, groupId = callState.groupId)
+                    },
+                    onClearSubscriptions = { sdk.clearMediaSubscriptions() }
+                )
+            }
         }
         FlowScreen.Settings -> SettingsScreen(
             sdk = sdk,
@@ -210,11 +310,30 @@ fun UiHost(
             onBack = { goBack() },
             onOpenAccount = { navigate(FlowScreen.Account) },
             onOpenPrivacy = { navigate(FlowScreen.Privacy) },
+            onOpenDiagnostics = { navigate(FlowScreen.Diagnostics) },
             onOpenChats = { navigate(FlowScreen.Conversations) },
             onOpenContacts = { navigate(FlowScreen.AddFriend) }
         )
         FlowScreen.Account -> AccountScreen(sdk = sdk, onBack = { goBack() })
-        FlowScreen.Privacy -> PrivacyScreen(sdk = sdk, onBack = { goBack() })
+        FlowScreen.Privacy -> PrivacyScreen(
+            sdk = sdk,
+            onBack = { goBack() },
+            onOpenBlockedUsers = { navigate(FlowScreen.BlockedUsers) }
+        )
+        FlowScreen.Diagnostics -> {
+            if (BuildConfig.DEBUG) {
+                DiagnosticsScreen(
+                    sdk = sdk,
+                    onBack = { goBack() }
+                )
+            } else {
+                LaunchedEffect(Unit) { goBack() }
+            }
+        }
+        FlowScreen.BlockedUsers -> BlockedUsersScreen(
+            sdk = sdk,
+            onBack = { goBack() }
+        )
         FlowScreen.AddFriend -> AddFriendScreen(
             friends = sdk.friends,
             requests = sdk.friendRequests,
@@ -244,6 +363,12 @@ fun UiHost(
                     sdk.setActiveConversation(friend.username, false)
                     sdk.loadHistory(friend.username, false)
                     navigate(FlowScreen.Chat(friend.username))
+                },
+                onCall = {
+                    val state = sdk.startPeerCall(friend.username, video = false)
+                    if (state != null) {
+                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    }
                 },
                 onDelete = { sdk.deleteFriend(friend.username) },
                 onToggleBlock = { blocked -> sdk.setUserBlocked(friend.username, blocked) },
@@ -292,6 +417,33 @@ fun UiHost(
                 }
             )
         }
+        }
+        val incoming = sdk.pendingCall
+        if (incoming != null) {
+            AlertDialog(
+                onDismissRequest = { sdk.declineIncomingCall() },
+                title = { Text(tr("call_incoming_title", "Incoming call")) },
+                text = {
+                    Text(
+                        tr("call_incoming_body", "%s is calling you").format(incoming.peerUsername)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val state = sdk.acceptIncomingCall()
+                        if (state != null) {
+                            navigate(FlowScreen.PeerCall(state.callIdHex))
+                        }
+                    }) {
+                        Text(tr("call_accept", "Accept"))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { sdk.declineIncomingCall() }) {
+                        Text(tr("call_decline", "Decline"))
+                    }
+                }
+            )
         }
         if (sdk.hasPendingServerTrust) {
             TrustDialog(

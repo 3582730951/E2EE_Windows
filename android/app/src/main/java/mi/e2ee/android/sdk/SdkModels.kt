@@ -41,6 +41,14 @@ data class MediaPacket(
     val payload: ByteArray
 )
 
+data class MediaVideoFrame(
+    val width: Int,
+    val height: Int,
+    val stride: Int,
+    val keyframe: Boolean,
+    val data: ByteArray
+)
+
 data class MediaConfig(
     val audioDelayMs: Int,
     val videoDelayMs: Int,

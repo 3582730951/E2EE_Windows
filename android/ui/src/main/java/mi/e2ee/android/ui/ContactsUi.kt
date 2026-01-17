@@ -391,6 +391,7 @@ fun ContactDetailScreen(
     isBlocked: Boolean,
     onBack: () -> Unit = {},
     onMessage: () -> Unit = {},
+    onCall: () -> Unit = {},
     onDelete: () -> Unit = {},
     onToggleBlock: (Boolean) -> Unit = {},
     onUpdateRemark: (String) -> Unit = {}
@@ -440,7 +441,7 @@ fun ContactDetailScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = onMessage) { Text(tr("contacts_message", "Message")) }
-                        FilledTonalButton(onClick = {}) { Text(tr("contacts_call", "Call")) }
+                        FilledTonalButton(onClick = onCall) { Text(tr("contacts_call", "Call")) }
                     }
                 }
             }

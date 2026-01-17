@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Devices
@@ -51,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import mi.e2ee.android.BuildConfig
 
 data class SettingEntry(
     val title: String,
@@ -84,6 +86,7 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onOpenPrivacy: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onOpenChats: () -> Unit = {},
     onOpenContacts: () -> Unit = {}
 ) {
@@ -111,26 +114,43 @@ fun SettingsScreen(
         )
     )
 
-    val appSettings = listOf(
-        SettingEntry(
-            title = tr("settings_chat_storage", "Chat and storage"),
-            subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-            icon = { Icon(Icons.Filled.Storage, contentDescription = "Storage") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
-        ),
-        SettingEntry(
-            title = tr("settings_devices", "Devices"),
-            subtitle = tr("settings_devices_sub", "Active sessions"),
-            icon = { Icon(Icons.Filled.Devices, contentDescription = "Devices") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
-        ),
-        SettingEntry(
-            title = tr("settings_appearance", "Appearance"),
-            subtitle = tr("settings_appearance_sub", "Theme, font size"),
-            icon = { Icon(Icons.Filled.Tune, contentDescription = "Appearance") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+    val appSettings = buildList {
+        add(
+            SettingEntry(
+                title = tr("settings_chat_storage", "Chat and storage"),
+                subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
+                icon = { Icon(Icons.Filled.Storage, contentDescription = "Storage") },
+                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+            )
         )
-    )
+        add(
+            SettingEntry(
+                title = tr("settings_devices", "Devices"),
+                subtitle = tr("settings_devices_sub", "Active sessions"),
+                icon = { Icon(Icons.Filled.Devices, contentDescription = "Devices") },
+                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+            )
+        )
+        add(
+            SettingEntry(
+                title = tr("settings_appearance", "Appearance"),
+                subtitle = tr("settings_appearance_sub", "Theme, font size"),
+                icon = { Icon(Icons.Filled.Tune, contentDescription = "Appearance") },
+                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+            )
+        )
+        if (BuildConfig.DEBUG) {
+            add(
+                SettingEntry(
+                    title = tr("settings_diagnostics", "Diagnostics"),
+                    subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
+                    icon = { Icon(Icons.Filled.BugReport, contentDescription = "Diagnostics") },
+                    trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                    onClick = onOpenDiagnostics
+                )
+            )
+        }
+    }
     val connectionEntries = listOf(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),

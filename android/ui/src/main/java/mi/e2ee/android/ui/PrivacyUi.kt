@@ -36,8 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
@@ -45,10 +43,12 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun PrivacyScreen(
     sdk: SdkBridge,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onOpenBlockedUsers: () -> Unit = {}
 ) {
     val deleteAttachments = remember { mutableStateOf(true) }
     val secureWipe = remember { mutableStateOf(false) }
+    val blockedCount = sdk.blockedUsers.values.count { it }
 
     Scaffold(
         topBar = {
@@ -211,7 +211,12 @@ fun PrivacyScreen(
                     SimplePrivacyRow(
                         icon = Icons.Filled.Block,
                         title = tr("privacy_blocked_users", "Blocked users"),
-                        subtitle = "3 users"
+                        subtitle = if (blockedCount > 0) {
+                            tr("privacy_blocked_count", "%d users").format(blockedCount)
+                        } else {
+                            tr("privacy_blocked_none", "None")
+                        },
+                        onClick = onOpenBlockedUsers
                     )
                 }
             }
@@ -258,11 +263,18 @@ private fun ToggleRow(
 private fun SimplePrivacyRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    subtitle: String
+    subtitle: String,
+    onClick: (() -> Unit)? = null
 ) {
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable { onClick() }
+    } else {
+        Modifier
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(clickModifier)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

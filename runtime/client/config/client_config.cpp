@@ -359,11 +359,13 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     error = "legacy auth disabled (set allow_legacy_login=1 to override)";
     return false;
   }
+#ifndef MI_E2EE_ALLOW_PLAINTEXT_LEGACY
   if (out_cfg.auth_mode == AuthMode::kLegacy &&
       (!out_cfg.use_tls || !out_cfg.require_tls)) {
     error = "legacy auth requires TLS (use_tls=1, require_tls=1)";
     return false;
   }
+#endif
   if (!out_cfg.require_pinned_fingerprint) {
     if (!out_cfg.kcp.enable) {
       error = "require_pinned_fingerprint must be enabled";

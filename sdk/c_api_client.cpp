@@ -686,9 +686,14 @@ void mi_client_get_version(mi_sdk_version* out_version) {
 }
 
 std::uint32_t mi_client_get_capabilities(void) {
-  return MI_CLIENT_CAP_CHAT | MI_CLIENT_CAP_GROUP | MI_CLIENT_CAP_MEDIA |
-         MI_CLIENT_CAP_GROUP_CALL | MI_CLIENT_CAP_OFFLINE |
-         MI_CLIENT_CAP_DEVICE_SYNC | MI_CLIENT_CAP_KCP | MI_CLIENT_CAP_OPAQUE;
+  std::uint32_t caps = MI_CLIENT_CAP_CHAT | MI_CLIENT_CAP_GROUP |
+                       MI_CLIENT_CAP_MEDIA | MI_CLIENT_CAP_GROUP_CALL |
+                       MI_CLIENT_CAP_OFFLINE | MI_CLIENT_CAP_DEVICE_SYNC |
+                       MI_CLIENT_CAP_KCP;
+#ifndef MI_E2EE_OPAQUE_DISABLED
+  caps |= MI_CLIENT_CAP_OPAQUE;
+#endif
+  return caps;
 }
 
 mi_client_handle* mi_client_create(const char* config_path) {

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEmotions
@@ -86,6 +87,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -124,6 +126,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import mi.e2ee.android.BuildConfig
 
 sealed interface ChatItem {
     val id: String
@@ -490,6 +493,11 @@ fun ChatScreen(
     onOpenSettings: () -> Unit = {},
     onStartCall: () -> Unit = {},
     onStartVideoCall: () -> Unit = {},
+    onSendPresence: (Boolean) -> Unit = {},
+    onSendReadReceipt: (String) -> Unit = {},
+    onResendText: (String, String) -> Boolean = { _, _ -> false },
+    onResendTextWithReply: (String, String, String, String) -> Boolean = { _, _, _, _ -> false },
+    onResendFile: (String, String) -> Boolean = { _, _ -> false },
     onSendMessage: (String, ReplyPreview?) -> Boolean = { _, _ -> false },
     onSendFile: (String) -> Boolean = { false },
     onSendLocation: (Double, Double, String) -> Boolean = { _, _, _ -> false },
@@ -506,6 +514,16 @@ fun ChatScreen(
     var composerText by remember { mutableStateOf("") }
     var composerDialog by remember { mutableStateOf<ComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingMessageDelete?>(null) }
+    var toolsOpen by remember { mutableStateOf(false) }
+    var toolsPresenceOnline by remember { mutableStateOf(true) }
+    var toolsReceiptId by remember { mutableStateOf("") }
+    var toolsResendId by remember { mutableStateOf("") }
+    var toolsResendText by remember { mutableStateOf("") }
+    var toolsResendReplyTo by remember { mutableStateOf("") }
+    var toolsResendReplyPreview by remember { mutableStateOf("") }
+    var toolsResendFileId by remember { mutableStateOf("") }
+    var toolsResendFilePath by remember { mutableStateOf("") }
+    var toolsResult by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val resolvedConversationId = if (conversationId.isNotBlank()) conversationId else "default"
     val prefs = remember { context.getSharedPreferences(CHAT_PREFS_NAME, Context.MODE_PRIVATE) }
@@ -555,6 +573,11 @@ fun ChatScreen(
         pinnedId.isBlank() -> null
         else -> pinnedFromId
     }
+    val lastIncomingMessage = visibleMessages.filterIsInstance<ChatMessage>().lastOrNull { !it.isMine }
+    val lastOutgoingMessage = visibleMessages.filterIsInstance<ChatMessage>().lastOrNull { it.isMine }
+    val lastOutgoingFileMessage = visibleMessages.filterIsInstance<ChatMessage>()
+        .lastOrNull { it.isMine && it.attachment?.kind == AttachmentKind.File }
+    val showDebugTools = BuildConfig.DEBUG
     val clipboard = LocalClipboardManager.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
@@ -624,6 +647,20 @@ fun ChatScreen(
         }
     }
 
+    fun openTools() {
+        if (!showDebugTools) return
+        toolsPresenceOnline = true
+        toolsReceiptId = lastIncomingMessage?.id ?: ""
+        toolsResendId = lastOutgoingMessage?.id ?: ""
+        toolsResendText = lastOutgoingMessage?.body ?: ""
+        toolsResendReplyTo = lastOutgoingMessage?.replyTo?.messageId ?: ""
+        toolsResendReplyPreview = lastOutgoingMessage?.replyTo?.snippet ?: ""
+        toolsResendFileId = lastOutgoingFileMessage?.id ?: ""
+        toolsResendFilePath = loadLastFilePath(prefs, resolvedConversationId) ?: ""
+        toolsResult = null
+        toolsOpen = true
+    }
+
     fun setPinnedMessage(message: ChatMessage?) {
         pinnedId = message?.id ?: ""
         persistPinnedId(prefs, resolvedConversationId, pinnedId)
@@ -659,6 +696,7 @@ fun ChatScreen(
                 onSettings = onOpenSettings,
                 onCall = onStartCall,
                 onVideoCall = onStartVideoCall,
+                onTools = { openTools() },
                 modifier = Modifier
                     .alpha(headerAlpha)
                     .padding(top = headerOffset)
@@ -866,6 +904,168 @@ fun ChatScreen(
                     }
                 )
             }
+            if (showDebugTools && toolsOpen) {
+                AlertDialog(
+                    onDismissRequest = { toolsOpen = false },
+                    title = { Text(tr("chat_tools_title", "Quick tools")) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                text = tr("chat_tools_presence", "Presence"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(tr("chat_tools_online", "Online"))
+                                Spacer(modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = toolsPresenceOnline,
+                                    onCheckedChange = { toolsPresenceOnline = it }
+                                )
+                            }
+                            TextButton(onClick = {
+                                onSendPresence(toolsPresenceOnline)
+                                toolsResult = tr("chat_tools_presence_sent", "Presence sent")
+                            }) {
+                                Text(tr("chat_tools_send_presence", "Send presence"))
+                            }
+
+                            Text(
+                                text = tr("chat_tools_receipt", "Read receipt"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = toolsReceiptId,
+                                onValueChange = { toolsReceiptId = it },
+                                label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                singleLine = true
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (toolsReceiptId.isNotBlank()) {
+                                        onSendReadReceipt(toolsReceiptId.trim())
+                                        toolsResult = tr("chat_tools_receipt_sent", "Read receipt sent")
+                                    } else {
+                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                    }
+                                }
+                            ) {
+                                Text(tr("chat_tools_send_receipt", "Send receipt"))
+                            }
+
+                            Text(
+                                text = tr("chat_tools_resend", "Resend text"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = toolsResendId,
+                                onValueChange = { toolsResendId = it },
+                                label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toolsResendText,
+                                onValueChange = { toolsResendText = it },
+                                label = { Text(tr("chat_tools_text", "Text")) }
+                            )
+                            OutlinedTextField(
+                                value = toolsResendReplyTo,
+                                onValueChange = { toolsResendReplyTo = it },
+                                label = { Text(tr("chat_tools_reply_id", "Reply message id (optional)")) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toolsResendReplyPreview,
+                                onValueChange = { toolsResendReplyPreview = it },
+                                label = { Text(tr("chat_tools_reply_preview", "Reply preview (optional)")) }
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (toolsResendId.isBlank() || toolsResendText.isBlank()) {
+                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                    } else if (toolsResendReplyTo.isNotBlank()) {
+                                        if (toolsResendReplyPreview.isBlank()) {
+                                            toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        } else {
+                                            val ok = onResendTextWithReply(
+                                                toolsResendId.trim(),
+                                                toolsResendText.trim(),
+                                                toolsResendReplyTo.trim(),
+                                                toolsResendReplyPreview.trim()
+                                            )
+                                            toolsResult = if (ok) {
+                                                tr("chat_tools_resend_ok", "Resend queued")
+                                            } else {
+                                                tr("chat_tools_resend_failed", "Resend failed")
+                                            }
+                                        }
+                                    } else {
+                                        val ok = onResendText(toolsResendId.trim(), toolsResendText.trim())
+                                        toolsResult = if (ok) {
+                                            tr("chat_tools_resend_ok", "Resend queued")
+                                        } else {
+                                            tr("chat_tools_resend_failed", "Resend failed")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(tr("chat_tools_resend_send", "Resend"))
+                            }
+
+                            Text(
+                                text = tr("chat_tools_resend_file", "Resend file"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = toolsResendFileId,
+                                onValueChange = { toolsResendFileId = it },
+                                label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toolsResendFilePath,
+                                onValueChange = { toolsResendFilePath = it },
+                                label = { Text(tr("chat_tools_file_path", "File path")) }
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (toolsResendFileId.isBlank() || toolsResendFilePath.isBlank()) {
+                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                    } else {
+                                        val ok = onResendFile(toolsResendFileId.trim(), toolsResendFilePath.trim())
+                                        toolsResult = if (ok) {
+                                            tr("chat_tools_resend_ok", "Resend queued")
+                                        } else {
+                                            tr("chat_tools_resend_failed", "Resend failed")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(tr("chat_tools_resend_send", "Resend"))
+                            }
+
+                            toolsResult?.let { result ->
+                                Text(
+                                    text = result,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { toolsOpen = false }) {
+                            Text(tr("chat_close", "Close"))
+                        }
+                    }
+                )
+            }
             if (composerDialog != null) {
                 when (composerDialog) {
                     ComposerDialog.File -> {
@@ -886,6 +1086,7 @@ fun ChatScreen(
                                 TextButton(
                                     onClick = {
                                         if (path.isNotBlank() && onSendFile(path)) {
+                                            persistLastFilePath(prefs, resolvedConversationId, path)
                                             composerDialog = null
                                         }
                                     },
@@ -1075,6 +1276,7 @@ private fun ChatTopBar(
     onSettings: () -> Unit,
     onCall: () -> Unit,
     onVideoCall: () -> Unit,
+    onTools: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -1130,6 +1332,13 @@ private fun ChatTopBar(
                 contentDescription = tr("chat_video_call", "Video call"),
                 onClick = onVideoCall
             )
+            if (BuildConfig.DEBUG) {
+                CompactTopBarIconButton(
+                    icon = Icons.Filled.BugReport,
+                    contentDescription = tr("chat_tools", "Tools"),
+                    onClick = onTools
+                )
+            }
             CompactTopBarIconButton(
                 icon = Icons.Filled.Settings,
                 contentDescription = tr("settings_title", "Settings"),
@@ -3078,6 +3287,7 @@ private fun keyMessageDeleted(conversationId: String) = "msg_deleted_$conversati
 private fun keyMessageRecalled(conversationId: String) = "msg_recalled_$conversationId"
 private fun keyMessagePinned(conversationId: String) = "msg_pinned_$conversationId"
 private fun keyMessageFavorite(conversationId: String) = "msg_favorite_$conversationId"
+private fun keyLastFilePath(conversationId: String) = "msg_last_file_path_$conversationId"
 
 private fun loadDeletedIds(
     prefs: SharedPreferences,
@@ -3150,5 +3360,22 @@ private fun persistFavoriteIds(
 ) {
     prefs.edit()
         .putStringSet(keyMessageFavorite(conversationId), HashSet(ids))
+        .apply()
+}
+
+private fun loadLastFilePath(
+    prefs: SharedPreferences,
+    conversationId: String
+): String? {
+    return prefs.getString(keyLastFilePath(conversationId), null)
+}
+
+private fun persistLastFilePath(
+    prefs: SharedPreferences,
+    conversationId: String,
+    path: String
+) {
+    prefs.edit()
+        .putString(keyLastFilePath(conversationId), path)
         .apply()
 }

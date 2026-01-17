@@ -1,6 +1,7 @@
 package mi.e2ee.android.ui
 
 import android.content.Context
+import android.system.Os
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -8,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import java.io.File
+import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,10 +57,20 @@ private const val CALL_VOICE_PREFIX = "[call]voice:"
 private const val CALL_VIDEO_PREFIX = "[call]video:"
 private const val CALL_END_PREFIX = "[call]end:"
 
+private const val GROUP_CALL_OP_CREATE = 1
+private const val GROUP_CALL_OP_JOIN = 2
+private const val GROUP_CALL_OP_LEAVE = 3
+private const val GROUP_CALL_OP_END = 4
+private const val GROUP_CALL_OP_UPDATE = 5
+private const val GROUP_CALL_OP_PING = 6
+
+private const val GROUP_CALL_PING_INTERVAL_MS = 3_000L
+
 private const val POLL_INTERVAL_MS = 600L
 private const val FRIEND_SYNC_INTERVAL_MS = 2_000L
 private const val REQUEST_SYNC_INTERVAL_MS = 4_000L
 private const val HEARTBEAT_INTERVAL_MS = 5_000L
+private const val EVENT_LOG_LIMIT = 120
 
 class SdkBridge(private val context: Context) {
     var initialized by mutableStateOf(false)
@@ -99,6 +111,13 @@ class SdkBridge(private val context: Context) {
     var pendingPeerPin by mutableStateOf("")
         private set
 
+    var pendingCall by mutableStateOf<IncomingCall?>(null)
+        private set
+    var activePeerCall by mutableStateOf<PeerCallState?>(null)
+        private set
+    var activeGroupCall by mutableStateOf<GroupCallState?>(null)
+        private set
+
     var historyEnabled by mutableStateOf(true)
         private set
     var readReceiptsEnabled by mutableStateOf(true)
@@ -120,6 +139,8 @@ class SdkBridge(private val context: Context) {
     val conversations = mutableStateListOf<ConversationPreview>()
     val groupCallRooms = mutableStateListOf<GroupCallRoomUi>()
     val blockedUsers = mutableStateMapOf<String, Boolean>()
+    val mediaRelayEvents = mutableStateListOf<MediaRelayLog>()
+    val offlinePayloads = mutableStateListOf<OfflinePayloadLog>()
 
     private val chatItems = mutableStateMapOf<String, SnapshotStateList<ChatItem>>()
     private val groupItems = mutableStateMapOf<String, SnapshotStateList<GroupChatItem>>()
@@ -133,8 +154,14 @@ class SdkBridge(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private val rng = SecureRandom()
+    private var pendingGroupCallKeyId = 0
+    private var lastGroupCallPingMs = 0L
 
     fun init(configPath: String? = null): Boolean {
+        runCatching {
+            Os.setenv("MI_E2EE_DATA_DIR", context.filesDir.absolutePath, true)
+        }
         if (!NativeSdk.available) {
             seedMockData()
             statusMessage = "Native SDK not loaded; using mock data"
@@ -177,6 +204,13 @@ class SdkBridge(private val context: Context) {
         username = ""
         activeConversationId = null
         activeConversationIsGroup = false
+        pendingCall = null
+        activePeerCall = null
+        activeGroupCall = null
+        pendingGroupCallKeyId = 0
+        lastGroupCallPingMs = 0L
+        mediaRelayEvents.clear()
+        offlinePayloads.clear()
     }
 
     fun register(usernameInput: String, password: String): Boolean {
@@ -222,6 +256,11 @@ class SdkBridge(private val context: Context) {
         val ok = NativeSdk.relogin(handle)
         lastError = if (ok) "" else NativeSdk.lastError(handle)
         return ok
+    }
+
+    fun isRemoteMode(): Boolean {
+        if (!ensureHandle()) return false
+        return NativeSdk.isRemoteMode(handle)
     }
 
     fun heartbeat(): Boolean {
@@ -335,6 +374,89 @@ class SdkBridge(private val context: Context) {
         return ok
     }
 
+    fun resendPrivateText(peerUsername: String, messageId: String, text: String): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendPrivateText(handle, peerUsername, messageId, text)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendPrivateTextWithReply(
+        peerUsername: String,
+        messageId: String,
+        text: String,
+        replyToMessageId: String,
+        replyPreview: String
+    ): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendPrivateTextWithReply(
+            handle,
+            peerUsername,
+            messageId,
+            text,
+            replyToMessageId,
+            replyPreview
+        )
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendGroupText(groupId: String, messageId: String, text: String): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendGroupText(handle, groupId, messageId, text)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendPrivateFile(peerUsername: String, messageId: String, filePath: String): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendPrivateFile(handle, peerUsername, messageId, filePath)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendGroupFile(groupId: String, messageId: String, filePath: String): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendGroupFile(handle, groupId, messageId, filePath)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendPrivateSticker(peerUsername: String, messageId: String, stickerId: String): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendPrivateSticker(handle, peerUsername, messageId, stickerId)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendPrivateLocation(
+        peerUsername: String,
+        messageId: String,
+        lat: Double,
+        lon: Double,
+        label: String
+    ): Boolean {
+        if (!ensureHandle()) return false
+        if (!lat.isFinite() || !lon.isFinite()) return false
+        val latE7 = (lat * 10000000.0).toLong().toInt()
+        val lonE7 = (lon * 10000000.0).toLong().toInt()
+        val ok = NativeSdk.resendPrivateLocation(handle, peerUsername, messageId, latE7, lonE7, label)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
+    fun resendPrivateContact(
+        peerUsername: String,
+        messageId: String,
+        cardUsername: String,
+        cardDisplay: String
+    ): Boolean {
+        if (!ensureHandle()) return false
+        val ok = NativeSdk.resendPrivateContact(handle, peerUsername, messageId, cardUsername, cardDisplay)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
+    }
+
     fun sendRecall(convId: String, messageId: String, isGroup: Boolean): Boolean {
         if (!ensureHandle()) return false
         val payload = "$RECALL_PREFIX$messageId"
@@ -361,9 +483,14 @@ class SdkBridge(private val context: Context) {
         NativeSdk.sendPresence(handle, peerUsername, online)
     }
 
-    fun sendCallInvite(peerUsername: String, video: Boolean): Boolean {
-        if (!ensureHandle() || peerUsername.isBlank()) return false
-        val payload = if (video) CALL_VIDEO_PREFIX else CALL_VOICE_PREFIX
+    fun startPeerCall(peerUsername: String, video: Boolean): PeerCallState? {
+        if (!ensureHandle() || peerUsername.isBlank()) return null
+        val callId = ByteArray(16)
+        do {
+            rng.nextBytes(callId)
+        } while (callId.all { it == 0.toByte() })
+        val callIdHex = bytesToHex(callId)
+        val payload = (if (video) CALL_VIDEO_PREFIX else CALL_VOICE_PREFIX) + callIdHex
         val result = NativeSdk.sendPrivateText(handle, peerUsername, payload)
         val ok = result != null
         lastError = if (ok) "" else NativeSdk.lastError(handle)
@@ -373,8 +500,43 @@ class SdkBridge(private val context: Context) {
                 if (video) "Outgoing video call" else "Outgoing voice call",
                 false
             )
+            pendingCall = null
+            activePeerCall = PeerCallState(peerUsername, callId, callIdHex, video, initiator = true)
+            return activePeerCall
         }
-        return ok
+        return null
+    }
+
+    fun acceptIncomingCall(): PeerCallState? {
+        val incoming = pendingCall ?: return null
+        val state = PeerCallState(
+            peerUsername = incoming.peerUsername,
+            callId = incoming.callId,
+            callIdHex = incoming.callIdHex,
+            video = incoming.video,
+            initiator = false
+        )
+        pendingCall = null
+        activePeerCall = state
+        return state
+    }
+
+    fun declineIncomingCall() {
+        val incoming = pendingCall ?: return
+        sendCallEnd(incoming.peerUsername, incoming.callIdHex)
+        pendingCall = null
+        appendSystemNotice(incoming.peerUsername, "Call declined", false)
+    }
+
+    fun endPeerCall() {
+        val active = activePeerCall ?: return
+        sendCallEnd(active.peerUsername, active.callIdHex)
+        activePeerCall = null
+        appendSystemNotice(active.peerUsername, "Call ended", false)
+    }
+
+    fun sendCallInvite(peerUsername: String, video: Boolean): Boolean {
+        return startPeerCall(peerUsername, video) != null
     }
 
     fun sendReadReceipt(peerUsername: String, messageId: String) {
@@ -476,7 +638,11 @@ class SdkBridge(private val context: Context) {
         val ok = NativeSdk.setUserBlocked(handle, username, blocked)
         lastError = if (ok) "" else NativeSdk.lastError(handle)
         if (ok) {
-            blockedUsers[username] = blocked
+            if (blocked) {
+                blockedUsers[username] = true
+            } else {
+                blockedUsers.remove(username)
+            }
         }
         return ok
     }
@@ -663,14 +829,22 @@ class SdkBridge(private val context: Context) {
         return NativeSdk.getMediaConfig(handle)
     }
 
+    internal fun clientHandle(): Long {
+        return handle
+    }
+
     fun deriveMediaRoot(peerUsername: String, callId: ByteArray): ByteArray? {
         if (!ensureHandle()) return null
-        return NativeSdk.deriveMediaRoot(handle, peerUsername, callId)
+        val root = NativeSdk.deriveMediaRoot(handle, peerUsername, callId)
+        lastError = if (root != null) "" else NativeSdk.lastError(handle)
+        return root
     }
 
     fun pushMedia(peerUsername: String, callId: ByteArray, packet: ByteArray): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.pushMedia(handle, peerUsername, callId, packet)
+        val ok = NativeSdk.pushMedia(handle, peerUsername, callId, packet)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
     }
 
     fun pullMedia(callId: ByteArray, maxPackets: Int, waitMs: Int): Array<MediaPacket> {
@@ -680,7 +854,9 @@ class SdkBridge(private val context: Context) {
 
     fun pushGroupMedia(groupId: String, callId: ByteArray, packet: ByteArray): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.pushGroupMedia(handle, groupId, callId, packet)
+        val ok = NativeSdk.pushGroupMedia(handle, groupId, callId, packet)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
     }
 
     fun pullGroupMedia(callId: ByteArray, maxPackets: Int, waitMs: Int): Array<MediaPacket> {
@@ -690,7 +866,9 @@ class SdkBridge(private val context: Context) {
 
     fun addMediaSubscription(callId: ByteArray, isGroup: Boolean, groupId: String? = null): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.addMediaSubscription(handle, callId, isGroup, groupId)
+        val ok = NativeSdk.addMediaSubscription(handle, callId, isGroup, groupId)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
     }
 
     fun clearMediaSubscriptions() {
@@ -703,6 +881,7 @@ class SdkBridge(private val context: Context) {
         val info = NativeSdk.startGroupCall(handle, groupId, video)
         lastError = if (info != null) "" else NativeSdk.lastError(handle)
         if (info != null) {
+            addMediaSubscription(info.callId, isGroup = true, groupId = groupId)
             val room = GroupCallRoomUi(
                 groupId = groupId,
                 callId = bytesToHex(info.callId),
@@ -714,6 +893,17 @@ class SdkBridge(private val context: Context) {
             } else {
                 groupCallRooms[existing] = room
             }
+            pendingGroupCallKeyId = 0
+            lastGroupCallPingMs = 0L
+            activeGroupCall = GroupCallState(
+                groupId = groupId,
+                callId = info.callId,
+                callIdHex = bytesToHex(info.callId),
+                keyId = info.keyId,
+                video = video,
+                owner = true,
+                keyReady = true
+            )
         }
         return info
     }
@@ -723,6 +913,7 @@ class SdkBridge(private val context: Context) {
         val info = NativeSdk.joinGroupCall(handle, groupId, callId, video)
         lastError = if (info != null) "" else NativeSdk.lastError(handle)
         if (info != null) {
+            addMediaSubscription(callId, isGroup = true, groupId = groupId)
             val room = GroupCallRoomUi(
                 groupId = groupId,
                 callId = bytesToHex(callId),
@@ -733,6 +924,21 @@ class SdkBridge(private val context: Context) {
                 groupCallRooms.add(room)
             } else {
                 groupCallRooms[existing] = room
+            }
+            val hasKey = getGroupCallKey(groupId, callId, info.keyId) != null
+            pendingGroupCallKeyId = if (hasKey) 0 else info.keyId
+            lastGroupCallPingMs = 0L
+            activeGroupCall = GroupCallState(
+                groupId = groupId,
+                callId = callId,
+                callIdHex = bytesToHex(callId),
+                keyId = info.keyId,
+                video = video,
+                owner = false,
+                keyReady = hasKey
+            )
+            if (!hasKey) {
+                requestGroupCallKeyFromPing(activeGroupCall!!)
             }
         }
         return info
@@ -748,7 +954,16 @@ class SdkBridge(private val context: Context) {
 
     fun leaveGroupCall(groupId: String, callId: ByteArray): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.leaveGroupCall(handle, groupId, callId)
+        val ok = NativeSdk.leaveGroupCall(handle, groupId, callId)
+        if (ok) {
+            val active = activeGroupCall
+            if (active != null && active.groupId == groupId && active.callIdHex == bytesToHex(callId)) {
+                activeGroupCall = null
+                pendingGroupCallKeyId = 0
+                lastGroupCallPingMs = 0L
+            }
+        }
+        return ok
     }
 
     fun getGroupCallKey(groupId: String, callId: ByteArray, keyId: Int): ByteArray? {
@@ -758,12 +973,16 @@ class SdkBridge(private val context: Context) {
 
     fun rotateGroupCallKey(groupId: String, callId: ByteArray, keyId: Int, members: Array<String>): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.rotateGroupCallKey(handle, groupId, callId, keyId, members)
+        val ok = NativeSdk.rotateGroupCallKey(handle, groupId, callId, keyId, members)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
     }
 
     fun requestGroupCallKey(groupId: String, callId: ByteArray, keyId: Int, members: Array<String>): Boolean {
         if (!ensureHandle()) return false
-        return NativeSdk.requestGroupCallKey(handle, groupId, callId, keyId, members)
+        val ok = NativeSdk.requestGroupCallKey(handle, groupId, callId, keyId, members)
+        lastError = if (ok) "" else NativeSdk.lastError(handle)
+        return ok
     }
 
     fun sendGroupCallSignal(
@@ -777,7 +996,97 @@ class SdkBridge(private val context: Context) {
         ext: ByteArray?
     ): GroupCallSignalResult? {
         if (!ensureHandle()) return null
-        return NativeSdk.sendGroupCallSignal(handle, op, groupId, callId, video, keyId, seq, tsMs, ext)
+        val result = NativeSdk.sendGroupCallSignal(handle, op, groupId, callId, video, keyId, seq, tsMs, ext)
+        lastError = if (result != null) "" else NativeSdk.lastError(handle)
+        return result
+    }
+
+    private fun maybeActivatePendingGroupCallKey() {
+        val active = activeGroupCall ?: return
+        val pending = pendingGroupCallKeyId
+        if (pending == 0) return
+        val key = getGroupCallKey(active.groupId, active.callId, pending)
+        if (key != null) {
+            pendingGroupCallKeyId = 0
+            updateActiveGroupCallKey(pending, true)
+        }
+    }
+
+    private fun maybeSendGroupCallPing(now: Long) {
+        val active = activeGroupCall ?: return
+        if (active.keyId <= 0) return
+        if (now - lastGroupCallPingMs < GROUP_CALL_PING_INTERVAL_MS) return
+        sendGroupCallSignal(
+            op = GROUP_CALL_OP_PING,
+            groupId = active.groupId,
+            callId = active.callId,
+            video = active.video,
+            keyId = active.keyId,
+            seq = 0,
+            tsMs = 0,
+            ext = null
+        )
+        lastGroupCallPingMs = now
+    }
+
+    private fun updateActiveGroupCallKey(newKeyId: Int, ready: Boolean) {
+        val active = activeGroupCall ?: return
+        if (newKeyId <= 0) return
+        if (active.keyId == newKeyId && active.keyReady == ready) return
+        activeGroupCall = active.copy(keyId = newKeyId, keyReady = ready)
+    }
+
+    private fun resolveGroupCallMembers(groupId: String, result: GroupCallSignalResult?): Array<String> {
+        val members = result?.members
+            ?.mapNotNull { it.username.trim().takeIf { name -> name.isNotEmpty() } }
+            ?: emptyList()
+        if (members.isNotEmpty()) {
+            return members.toTypedArray()
+        }
+        if (handle == 0L) return emptyArray()
+        return NativeSdk.listGroupMembers(handle, groupId)
+            .mapNotNull { it.username.trim().takeIf { name -> name.isNotEmpty() } }
+            .toTypedArray()
+    }
+
+    private fun handleGroupCallKeyChange(
+        active: GroupCallState,
+        keyId: Int,
+        members: Array<String>
+    ) {
+        if (keyId <= 0 || members.isEmpty()) return
+        if (active.owner) {
+            val rotated = rotateGroupCallKey(active.groupId, active.callId, keyId, members)
+            if (rotated) {
+                pendingGroupCallKeyId = 0
+                updateActiveGroupCallKey(keyId, true)
+            }
+        } else {
+            val hasKey = getGroupCallKey(active.groupId, active.callId, keyId) != null
+            if (!hasKey) {
+                requestGroupCallKey(active.groupId, active.callId, keyId, members)
+                pendingGroupCallKeyId = keyId
+            } else {
+                pendingGroupCallKeyId = 0
+                updateActiveGroupCallKey(keyId, true)
+            }
+        }
+    }
+
+    private fun requestGroupCallKeyFromPing(active: GroupCallState) {
+        val result = sendGroupCallSignal(
+            op = GROUP_CALL_OP_PING,
+            groupId = active.groupId,
+            callId = active.callId,
+            video = active.video,
+            keyId = active.keyId,
+            seq = 0,
+            tsMs = 0,
+            ext = null
+        )
+        val keyId = result?.keyId ?: active.keyId
+        val members = resolveGroupCallMembers(active.groupId, result)
+        handleGroupCallKeyChange(active, keyId, members)
     }
 
     fun setReadReceiptsEnabled(enabled: Boolean) {
@@ -804,6 +1113,15 @@ class SdkBridge(private val context: Context) {
         privacyGroupInvites = value
         prefs.edit().putString(PREFS_PRIVACY_INVITES, value).apply()
     }
+
+    fun clearMediaRelayEvents() {
+        mediaRelayEvents.clear()
+    }
+
+    fun clearOfflinePayloads() {
+        offlinePayloads.clear()
+    }
+
     private fun startPolling() {
         stopPolling()
         pollJob = scope.launch {
@@ -822,6 +1140,8 @@ class SdkBridge(private val context: Context) {
                     }
                 }
                 val now = System.currentTimeMillis()
+                maybeActivatePendingGroupCallKey()
+                maybeSendGroupCallPing(now)
                 if (now - lastFriendSync > FRIEND_SYNC_INTERVAL_MS) {
                     refreshFriends(false)
                     lastFriendSync = now
@@ -864,6 +1184,9 @@ class SdkBridge(private val context: Context) {
                 MiEventType.TYPING -> handleTyping(event)
                 MiEventType.PRESENCE -> handlePresence(event)
                 MiEventType.GROUP_CALL -> handleGroupCall(event)
+                MiEventType.MEDIA_RELAY -> handleMediaRelay(event, isGroup = false)
+                MiEventType.GROUP_MEDIA_RELAY -> handleMediaRelay(event, isGroup = true)
+                MiEventType.OFFLINE_PAYLOAD -> handleOfflinePayload(event)
             }
         }
     }
@@ -878,10 +1201,33 @@ class SdkBridge(private val context: Context) {
             }
         }
         if (text.startsWith(CALL_END_PREFIX)) {
+            val callIdHex = cleanCallIdHex(text.removePrefix(CALL_END_PREFIX))
+            val active = activePeerCall
+            if (active != null && active.peerUsername == event.sender &&
+                (callIdHex == null || active.callIdHex == callIdHex)) {
+                activePeerCall = null
+            }
+            val pending = pendingCall
+            if (pending != null && pending.peerUsername == event.sender &&
+                (callIdHex == null || pending.callIdHex == callIdHex)) {
+                pendingCall = null
+            }
             appendSystemNotice(event.sender, "Call ended", false)
             return
         }
         if (text.startsWith(CALL_VOICE_PREFIX) || text.startsWith(CALL_VIDEO_PREFIX)) {
+            val video = text.startsWith(CALL_VIDEO_PREFIX)
+            val prefix = if (video) CALL_VIDEO_PREFIX else CALL_VOICE_PREFIX
+            val callIdHex = cleanCallIdHex(text.removePrefix(prefix))
+            val callId = callIdHex?.let { runCatching { hexToBytes(it) }.getOrNull() }
+            if (callId != null && callId.size == 16) {
+                pendingCall = IncomingCall(
+                    peerUsername = event.sender,
+                    callId = callId,
+                    callIdHex = callIdHex,
+                    video = video
+                )
+            }
             appendSystemNotice(event.sender, "Incoming call", false)
             return
         }
@@ -1088,6 +1434,35 @@ class SdkBridge(private val context: Context) {
         appendGroupMessage(event.groupId, msg, outgoing = true)
     }
 
+    private fun handleMediaRelay(event: SdkEvent, isGroup: Boolean) {
+        val ts = if (event.tsMs > 0) event.tsMs else System.currentTimeMillis()
+        val entry = MediaRelayLog(
+            timestampMs = ts,
+            isGroup = isGroup,
+            peer = event.peer,
+            sender = event.sender,
+            groupId = event.groupId,
+            payloadSize = event.payload.size,
+            payloadPreview = payloadPreview(event.payload)
+        )
+        mediaRelayEvents.add(0, entry)
+        trimLog(mediaRelayEvents)
+    }
+
+    private fun handleOfflinePayload(event: SdkEvent) {
+        val ts = if (event.tsMs > 0) event.tsMs else System.currentTimeMillis()
+        val entry = OfflinePayloadLog(
+            timestampMs = ts,
+            peer = event.peer,
+            sender = event.sender,
+            groupId = event.groupId,
+            payloadSize = event.payload.size,
+            payloadPreview = payloadPreview(event.payload)
+        )
+        offlinePayloads.add(0, entry)
+        trimLog(offlinePayloads)
+    }
+
     private fun handleGroupInvite(event: SdkEvent) {
         appendGroupNotice(event.groupId, "Group invite from ${event.sender}")
     }
@@ -1130,9 +1505,17 @@ class SdkBridge(private val context: Context) {
     private fun handleGroupCall(event: SdkEvent) {
         if (event.groupId.isBlank()) return
         val existing = groupCallRooms.indexOfFirst { it.groupId == event.groupId }
-        if (event.callOp == 0 || event.callOp == 4) {
+        if (event.callOp == GROUP_CALL_OP_END || event.callOp == 0) {
             if (existing != -1) {
                 groupCallRooms.removeAt(existing)
+            }
+            val active = activeGroupCall
+            if (active != null &&
+                active.groupId == event.groupId &&
+                active.callId.contentEquals(event.callId)) {
+                activeGroupCall = null
+                pendingGroupCallKeyId = 0
+                lastGroupCallPingMs = 0L
             }
             return
         }
@@ -1145,6 +1528,26 @@ class SdkBridge(private val context: Context) {
             groupCallRooms.add(room)
         } else {
             groupCallRooms[existing] = room
+        }
+        val active = activeGroupCall
+        if (active != null &&
+            active.groupId == event.groupId &&
+            active.callId.contentEquals(event.callId) &&
+            event.callKeyId > active.keyId &&
+            active.keyId != 0) {
+            val result = sendGroupCallSignal(
+                op = GROUP_CALL_OP_PING,
+                groupId = event.groupId,
+                callId = event.callId,
+                video = active.video,
+                keyId = event.callKeyId,
+                seq = 0,
+                tsMs = 0,
+                ext = null
+            )
+            val keyId = result?.keyId ?: event.callKeyId
+            val members = resolveGroupCallMembers(event.groupId, result)
+            handleGroupCallKeyChange(active, keyId, members)
         }
     }
 
@@ -1336,6 +1739,13 @@ class SdkBridge(private val context: Context) {
     }
     private fun nowTimeLabel(): String = timeFormat.format(Date())
 
+    private fun sendCallEnd(peerUsername: String, callIdHex: String) {
+        if (!ensureHandle() || peerUsername.isBlank()) return
+        val payload = CALL_END_PREFIX + callIdHex
+        val result = NativeSdk.sendPrivateText(handle, peerUsername, payload)
+        lastError = if (result != null) "" else NativeSdk.lastError(handle)
+    }
+
     private fun initials(name: String): String {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return "?"
@@ -1358,12 +1768,35 @@ class SdkBridge(private val context: Context) {
         return String.format(Locale.getDefault(), "%.1f %s", value, units[idx])
     }
 
+    private fun cleanCallIdHex(raw: String): String? {
+        val hex = raw.trim().lowercase(Locale.getDefault())
+        if (hex.length != 32) return null
+        for (c in hex) {
+            val isHex = (c in '0'..'9') || (c in 'a'..'f')
+            if (!isHex) return null
+        }
+        return hex
+    }
+
     private fun bytesToHex(bytes: ByteArray): String {
         val sb = StringBuilder(bytes.size * 2)
         for (b in bytes) {
             sb.append(String.format("%02x", b))
         }
         return sb.toString()
+    }
+
+    private fun payloadPreview(payload: ByteArray, limit: Int = 24): String {
+        if (payload.isEmpty()) return ""
+        val slice = if (payload.size <= limit) payload else payload.copyOfRange(0, limit)
+        val hex = bytesToHex(slice)
+        return if (payload.size > limit) "$hex..." else hex
+    }
+
+    private fun <T> trimLog(list: SnapshotStateList<T>) {
+        while (list.size > EVENT_LOG_LIMIT) {
+            list.removeAt(list.lastIndex)
+        }
     }
 
     private fun hexToBytes(hex: String): ByteArray {
@@ -1636,4 +2069,48 @@ data class DeviceUi(val deviceId: String, val lastSeenSec: Int)
 
 data class PairingRequestUi(val deviceId: String, val requestId: String)
 
+data class MediaRelayLog(
+    val timestampMs: Long,
+    val isGroup: Boolean,
+    val peer: String,
+    val sender: String,
+    val groupId: String,
+    val payloadSize: Int,
+    val payloadPreview: String
+)
+
+data class OfflinePayloadLog(
+    val timestampMs: Long,
+    val peer: String,
+    val sender: String,
+    val groupId: String,
+    val payloadSize: Int,
+    val payloadPreview: String
+)
+
 data class GroupCallRoomUi(val groupId: String, val callId: String, val video: Boolean)
+
+data class IncomingCall(
+    val peerUsername: String,
+    val callId: ByteArray,
+    val callIdHex: String,
+    val video: Boolean
+)
+
+data class PeerCallState(
+    val peerUsername: String,
+    val callId: ByteArray,
+    val callIdHex: String,
+    val video: Boolean,
+    val initiator: Boolean
+)
+
+data class GroupCallState(
+    val groupId: String,
+    val callId: ByteArray,
+    val callIdHex: String,
+    val keyId: Int,
+    val video: Boolean,
+    val owner: Boolean,
+    val keyReady: Boolean
+)
