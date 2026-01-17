@@ -254,7 +254,7 @@ add_library(mi_crypto STATIC
     src/crypto.cpp
     ../common/hex_utils.cpp
 )
-target_include_directories(mi_crypto PUBLIC include ../common)
+target_include_directories(mi_crypto PUBLIC include ../common ../platform/include)
 target_link_libraries(mi_crypto PUBLIC mi_e2ee_build_flags)
 if(WIN32)
   target_link_libraries(mi_crypto PUBLIC bcrypt)
