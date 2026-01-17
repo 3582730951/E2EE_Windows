@@ -222,7 +222,7 @@ collect_deps_macos() {
   has_seen() {
     local needle="$1"
     local item
-    for item in "${seen_list[@]}"; do
+    for item in "${seen_list[@]-}"; do
       if [[ "$item" == "$needle" ]]; then
         return 0
       fi

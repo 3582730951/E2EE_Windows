@@ -257,18 +257,18 @@ add_library(mi_crypto STATIC
 )
 target_include_directories(mi_crypto PUBLIC include ../common ../platform/include)
 target_link_libraries(mi_crypto PUBLIC mi_e2ee_build_flags)
-if(WIN32)
-  target_link_libraries(mi_crypto PUBLIC bcrypt)
-endif()
 
 add_subdirectory(../tools tools)
 
 set(MI_E2EE_CORE_PLATFORM_SOURCES "")
+set(MI_E2EE_PLATFORM_RANDOM_SOURCES "")
 if(WIN32)
+  list(APPEND MI_E2EE_PLATFORM_RANDOM_SOURCES
+      ../platform/win/platform_random_win.cpp
+  )
   list(APPEND MI_E2EE_CORE_PLATFORM_SOURCES
       ../platform/win/platform_net_win.cpp
       ../platform/win/platform_time_win.cpp
-      ../platform/win/platform_random_win.cpp
       ../platform/win/platform_fs_win.cpp
       ../platform/win/platform_sys_win.cpp
       ../platform/win/platform_tls_win.cpp
@@ -276,10 +276,12 @@ if(WIN32)
       ../platform/win/platform_log_win.cpp
   )
 else()
+  list(APPEND MI_E2EE_PLATFORM_RANDOM_SOURCES
+      ../platform/posix/platform_random_posix.cpp
+  )
   list(APPEND MI_E2EE_CORE_PLATFORM_SOURCES
       ../platform/posix/platform_net_posix.cpp
       ../platform/posix/platform_time_posix.cpp
-      ../platform/posix/platform_random_posix.cpp
       ../platform/posix/platform_fs_posix.cpp
       ../platform/posix/platform_sys_posix.cpp
       ../platform/posix/platform_tls_posix.cpp
@@ -287,6 +289,16 @@ else()
       ../platform/posix/platform_log_posix.cpp
   )
 endif()
+
+add_library(mi_platform_random STATIC
+    ${MI_E2EE_PLATFORM_RANDOM_SOURCES}
+)
+target_include_directories(mi_platform_random PUBLIC ../platform/include)
+target_link_libraries(mi_platform_random PUBLIC mi_e2ee_build_flags)
+if(WIN32)
+  target_link_libraries(mi_platform_random PUBLIC bcrypt)
+endif()
+target_link_libraries(mi_crypto PUBLIC mi_platform_random)
 
 add_library(mi_e2ee_core STATIC
     ${MI_E2EE_CORE_PLATFORM_SOURCES}
@@ -314,7 +326,7 @@ add_library(mi_e2ee_core STATIC
 )
 
 target_include_directories(mi_e2ee_core PUBLIC include ../shard ../common ../platform/include)
-target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
+target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags mi_platform_random shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(TARGET mi_opaque_pake_rust)
   target_link_libraries(mi_e2ee_core PUBLIC mi_opaque_pake_rust)
 endif()
