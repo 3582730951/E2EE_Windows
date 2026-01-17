@@ -53,6 +53,7 @@ fun RegisterScreen(
     val password = remember { mutableStateOf("") }
     val confirm = remember { mutableStateOf("") }
     val localError = remember { mutableStateOf<String?>(null) }
+    val passwordMismatchText = tr("register_password_mismatch", "Passwords do not match")
 
     Box(modifier = Modifier.fillMaxSize()) {
         RegisterBackground()
@@ -172,7 +173,7 @@ fun RegisterScreen(
                             confirm.value.isNotBlank(),
                         onClick = {
                             if (password.value != confirm.value) {
-                                localError.value = tr("register_password_mismatch", "Passwords do not match")
+                                localError.value = passwordMismatchText
                             } else {
                                 localError.value = null
                                 onCreateAccount(email.value.trim(), password.value)

@@ -1161,7 +1161,7 @@ private fun UndoPill(
     }
 }
 
-private fun sampleConversations(): List<ConversationPreview> {
+internal fun sampleConversations(): List<ConversationPreview> {
     return listOf(
         ConversationPreview(
             id = "c1",

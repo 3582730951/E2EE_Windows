@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
 #include <sys/random.h>
 #endif
 
@@ -16,7 +16,7 @@ bool OsRandomBytes(std::uint8_t* out, std::size_t len) {
     return false;
   }
   std::size_t done = 0;
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
   while (done < len) {
     const ssize_t got = getrandom(out + done, len - done, 0);
     if (got <= 0) {

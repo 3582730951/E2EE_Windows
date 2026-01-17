@@ -528,13 +528,13 @@ fun GroupChatScreen(
                             TextButton(
                                 onClick = {
                                     if (toolsResendId.isBlank() || toolsResendText.isBlank()) {
-                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        toolsResult = t("chat_tools_invalid", "Invalid input")
                                     } else {
                                         val ok = onResendText(toolsResendId.trim(), toolsResendText.trim())
                                         toolsResult = if (ok) {
-                                            tr("chat_tools_resend_ok", "Resend queued")
+                                            t("chat_tools_resend_ok", "Resend queued")
                                         } else {
-                                            tr("chat_tools_resend_failed", "Resend failed")
+                                            t("chat_tools_resend_failed", "Resend failed")
                                         }
                                     }
                                 }
@@ -560,13 +560,13 @@ fun GroupChatScreen(
                             TextButton(
                                 onClick = {
                                     if (toolsResendFileId.isBlank() || toolsResendFilePath.isBlank()) {
-                                        toolsResult = tr("chat_tools_invalid", "Invalid input")
+                                        toolsResult = t("chat_tools_invalid", "Invalid input")
                                     } else {
                                         val ok = onResendFile(toolsResendFileId.trim(), toolsResendFilePath.trim())
                                         toolsResult = if (ok) {
-                                            tr("chat_tools_resend_ok", "Resend queued")
+                                            t("chat_tools_resend_ok", "Resend queued")
                                         } else {
-                                            tr("chat_tools_resend_failed", "Resend failed")
+                                            t("chat_tools_resend_failed", "Resend failed")
                                         }
                                     }
                                 }
@@ -1418,7 +1418,7 @@ private fun groupPinnedSnippet(message: GroupMessage): String {
     return if (base.length > 90) base.take(90) + "..." else base
 }
 
-private fun recalledGroupMessageCopy(message: GroupMessage): GroupMessage {
+internal fun recalledGroupMessageCopy(message: GroupMessage): GroupMessage {
     return message.copy(
         body = "",
         isRevoked = true,

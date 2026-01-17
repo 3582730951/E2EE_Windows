@@ -2913,7 +2913,7 @@ private fun messageCopyText(message: ChatMessage): String {
     return "Message"
 }
 
-private fun recalledMessageCopy(message: ChatMessage): ChatMessage {
+internal fun recalledMessageCopy(message: ChatMessage): ChatMessage {
     return message.copy(
         body = "",
         isEdited = false,
