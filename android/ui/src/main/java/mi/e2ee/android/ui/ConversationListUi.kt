@@ -555,10 +555,11 @@ private fun ThreeDIconBadge(
             contentScale = ContentScale.Fit
         )
         if (overlaySlash) {
+            val slashColor = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
             Canvas(modifier = Modifier.size(iconSize)) {
                 val stroke = 2.dp.toPx()
                 drawLine(
-                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f),
+                    color = slashColor,
                     start = Offset(0f, this.size.height),
                     end = Offset(this.size.width, 0f),
                     strokeWidth = stroke,
