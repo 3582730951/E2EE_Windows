@@ -14,6 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.jvm.JvmName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -120,14 +121,19 @@ class SdkBridge(private val context: Context) {
 
     var historyEnabled by mutableStateOf(true)
         private set
+    @set:JvmName("setReadReceiptsEnabledState")
     var readReceiptsEnabled by mutableStateOf(true)
         private set
+    @set:JvmName("setScreenshotAlertsEnabledState")
     var screenshotAlertsEnabled by mutableStateOf(true)
         private set
+    @set:JvmName("setPrivacyLastSeenState")
     var privacyLastSeen by mutableStateOf("contacts")
         private set
+    @set:JvmName("setPrivacyProfilePhotoState")
     var privacyProfilePhoto by mutableStateOf("contacts")
         private set
+    @set:JvmName("setPrivacyGroupInvitesState")
     var privacyGroupInvites by mutableStateOf("contacts")
         private set
 
