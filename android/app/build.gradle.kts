@@ -9,10 +9,16 @@ val miOllvmEnabled = (project.findProperty("miE2eeOllvm") as? String)
     ?.equals("true", ignoreCase = true) ?: false
 val miOllvmClang = project.findProperty("miE2eeOllvmClang") as? String
 val miOllvmClangxx = project.findProperty("miE2eeOllvmClangxx") as? String
+val miNdkVersion = (project.findProperty("miE2eeNdkVersion") as? String)
+    ?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MI_E2EE_ANDROID_NDK_VERSION")?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "mi.e2ee.android"
     compileSdk = 34
+    if (miNdkVersion != null) {
+        ndkVersion = miNdkVersion
+    }
 
     defaultConfig {
         applicationId = "mi.e2ee.android.ui"
