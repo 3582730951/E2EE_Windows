@@ -415,6 +415,7 @@ jobs:
       MI_E2EE_ANDROID_OLLVM: ${{ vars.MI_E2EE_ANDROID_OLLVM || '1' }}
       MI_E2EE_OLLVM_URL_TEMPLATE: ${{ vars.MI_E2EE_OLLVM_URL_TEMPLATE || '' }}
       MI_E2EE_ANDROID_NDK_VERSION: ${{ vars.MI_E2EE_ANDROID_NDK_VERSION || '25.2.9519653' }}
+      MI_E2EE_OLLVM_FALLBACK_URL: ${{ vars.MI_E2EE_OLLVM_FALLBACK_URL || 'https://github.com/codetronik/ollvm-ndk/releases/download/r23c-release/clang' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -501,33 +502,66 @@ jobs:
         if: env.MI_E2EE_ANDROID_OLLVM == '1' || env.MI_E2EE_ANDROID_OLLVM == 'true'
         run: |
           set -euo pipefail
+          OLLVM_VALID=1
           if [ -z "${OLLVM_URL:-}" ]; then
-            echo "OLLVM_URL not set. Ensure Prepare OLLVM URL ran successfully." >&2
-            exit 1
+            echo "OLLVM_URL not set. Falling back to standalone OLLVM clang." >&2
+            OLLVM_VALID=0
+          else
+            echo "Using OLLVM URL: $OLLVM_URL"
+            mkdir -p build/ollvm
+            if [ ! -f build/ollvm/ollvm.tar.gz ]; then
+              curl -L "$OLLVM_URL" -o build/ollvm/ollvm.tar.gz
+            fi
+            tar -xf build/ollvm/ollvm.tar.gz -C build/ollvm
+            OLLVM_NDK_ROOT=$(find build/ollvm -type f -name source.properties -print -quit | xargs -r dirname)
+            if [ -z "$OLLVM_NDK_ROOT" ]; then
+              echo "OLLVM NDK root not found in build/ollvm" >&2
+              OLLVM_VALID=0
+            else
+              OLLVM_CLANG="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+              OLLVM_CLANGXX="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+              if [ ! -x "$OLLVM_CLANG" ] || [ ! -x "$OLLVM_CLANGXX" ]; then
+                echo "OLLVM clang binaries not found in $OLLVM_NDK_ROOT" >&2
+                OLLVM_VALID=0
+              fi
+            fi
           fi
-          echo "Using OLLVM URL: $OLLVM_URL"
-          mkdir -p build/ollvm
-          if [ ! -f build/ollvm/ollvm.tar.gz ]; then
-            curl -L "$OLLVM_URL" -o build/ollvm/ollvm.tar.gz
+          if [ "$OLLVM_VALID" = "1" ]; then
+            if ! "$OLLVM_CLANG" --version >/dev/null 2>&1; then
+              echo "OLLVM clang is not runnable on this runner. Falling back." >&2
+              OLLVM_VALID=0
+            fi
           fi
-          tar -xf build/ollvm/ollvm.tar.gz -C build/ollvm
-          OLLVM_NDK_ROOT=$(find build/ollvm -type f -name source.properties -print -quit | xargs -r dirname)
-          if [ -z "$OLLVM_NDK_ROOT" ]; then
-            echo "OLLVM NDK root not found in build/ollvm" >&2
-            exit 1
+          if [ "$OLLVM_VALID" = "1" ]; then
+            OLLVM_CLANG=$(realpath "$OLLVM_CLANG")
+            OLLVM_CLANGXX=$(realpath "$OLLVM_CLANGXX")
+            OLLVM_NDK_ROOT=$(realpath "$OLLVM_NDK_ROOT")
+            echo "MI_E2EE_OLLVM_CLANG=$OLLVM_CLANG" >> $GITHUB_ENV
+            echo "MI_E2EE_OLLVM_CLANGXX=$OLLVM_CLANGXX" >> $GITHUB_ENV
+            echo "MI_E2EE_OLLVM_NDK=$OLLVM_NDK_ROOT" >> $GITHUB_ENV
+          else
+            FALLBACK_URL="${MI_E2EE_OLLVM_FALLBACK_URL}"
+            FALLBACK_DIR="build/ollvm/fallback/bin"
+            mkdir -p "$FALLBACK_DIR"
+            curl -L "$FALLBACK_URL" -o "$FALLBACK_DIR/clang"
+            chmod +x "$FALLBACK_DIR/clang"
+            cat > "$FALLBACK_DIR/clang++" <<'EOF'
+#!/usr/bin/env bash
+DIR=$(cd "$(dirname "$0")" && pwd)
+exec "$DIR/clang" --driver-mode=g++ "$@"
+EOF
+            chmod +x "$FALLBACK_DIR/clang++"
+            if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>&1; then
+              echo "Fallback OLLVM clang is not runnable on this runner." >&2
+              exit 1
+            fi
+            OLLVM_CLANG=$(realpath "$FALLBACK_DIR/clang")
+            OLLVM_CLANGXX=$(realpath "$FALLBACK_DIR/clang++")
+            echo "MI_E2EE_OLLVM_CLANG=$OLLVM_CLANG" >> $GITHUB_ENV
+            echo "MI_E2EE_OLLVM_CLANGXX=$OLLVM_CLANGXX" >> $GITHUB_ENV
+            echo "MI_E2EE_OLLVM_NDK=" >> $GITHUB_ENV
+            echo "MI_E2EE_OLLVM_FALLBACK=1" >> $GITHUB_ENV
           fi
-          OLLVM_CLANG="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-          OLLVM_CLANGXX="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
-          if [ ! -x "$OLLVM_CLANG" ] || [ ! -x "$OLLVM_CLANGXX" ]; then
-            echo "OLLVM clang binaries not found in $OLLVM_NDK_ROOT" >&2
-            exit 1
-          fi
-          OLLVM_CLANG=$(realpath "$OLLVM_CLANG")
-          OLLVM_CLANGXX=$(realpath "$OLLVM_CLANGXX")
-          OLLVM_NDK_ROOT=$(realpath "$OLLVM_NDK_ROOT")
-          echo "MI_E2EE_OLLVM_CLANG=$OLLVM_CLANG" >> $GITHUB_ENV
-          echo "MI_E2EE_OLLVM_CLANGXX=$OLLVM_CLANGXX" >> $GITHUB_ENV
-          echo "MI_E2EE_OLLVM_NDK=$OLLVM_NDK_ROOT" >> $GITHUB_ENV
 
       - name: Configure local.properties
         run: |
