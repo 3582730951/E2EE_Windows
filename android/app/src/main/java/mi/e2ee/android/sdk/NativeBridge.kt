@@ -1,6 +1,7 @@
 package mi.e2ee.android.sdk
 
 import android.content.Context
+import mi.e2ee.android.ui.PeerCallState
 import mi.e2ee.android.ui.SdkBridge
 
 object NativeBridge {
