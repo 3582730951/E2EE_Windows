@@ -411,6 +411,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      MI_E2EE_ANDROID_OLLVM: ${{ vars.MI_E2EE_ANDROID_OLLVM || '1' }}
+      MI_E2EE_OLLVM_URL_TEMPLATE: ${{ vars.MI_E2EE_OLLVM_URL_TEMPLATE || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -431,17 +434,118 @@ jobs:
         run: |
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;25.2.9519653"
 
-      - name: Configure local.properties
-        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Prepare OLLVM URL
+        if: env.MI_E2EE_ANDROID_OLLVM == '1' || env.MI_E2EE_ANDROID_OLLVM == 'true'
+        run: |
+          set -euo pipefail
+          NDK_ROOT=$(ls -d "$ANDROID_SDK_ROOT/ndk/"* 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$NDK_ROOT" ]; then
+            echo "NDK not found under $ANDROID_SDK_ROOT/ndk" >&2
+            exit 1
+          fi
+          CLANG_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if [ ! -x "$CLANG_BIN" ]; then
+            echo "clang not found: $CLANG_BIN" >&2
+            exit 1
+          fi
+          LLVM_FULL=$("$CLANG_BIN" --version | head -n 1 | sed -E 's/.*clang version ([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/')
+          if [ -z "$LLVM_FULL" ]; then
+            echo "Failed to parse clang version from $CLANG_BIN" >&2
+            exit 1
+          fi
+          LLVM_MAJOR=$(echo "$LLVM_FULL" | cut -d. -f1)
+          NDK_REV=$(grep -E '^Pkg.Revision' "$NDK_ROOT/source.properties" | cut -d= -f2 | tr -d ' ')
+          URL=""
+          if [ -n "${MI_E2EE_OLLVM_URL_TEMPLATE:-}" ]; then
+            URL="$MI_E2EE_OLLVM_URL_TEMPLATE"
+            URL="${URL//\\{LLVM_FULL\\}/$LLVM_FULL}"
+            URL="${URL//\\{LLVM_MAJOR\\}/$LLVM_MAJOR}"
+          else
+            OLLVM_NDK_TAG=""
+            case "$NDK_REV" in
+              25.2.*) OLLVM_NDK_TAG="r25c" ;;
+              26.*) OLLVM_NDK_TAG="r26d" ;;
+              23.2.*) OLLVM_NDK_TAG="r23c" ;;
+            esac
+            if [ -z "$OLLVM_NDK_TAG" ]; then
+              echo "Unsupported NDK revision for default OLLVM mapping: $NDK_REV" >&2
+              echo "Set MI_E2EE_OLLVM_URL_TEMPLATE to override." >&2
+              exit 1
+            fi
+            URL="https://github.com/Saint-Theana/ollvm-ndk-android/releases/download/0.0/android-ndk-${OLLVM_NDK_TAG}-linux.tar.gz"
+            if ! curl -sfI "$URL" >/dev/null; then
+              URL="https://github.com/Saint-Theana/ollvm-ndk-android/releases/download/0.0/android-ndk-${OLLVM_NDK_TAG}-android.tar.gz"
+            fi
+          fi
+          if [ -z "$URL" ]; then
+            echo "OLLVM URL is empty" >&2
+            exit 1
+          fi
+          mkdir -p build/ollvm
+          echo "$NDK_REV|$LLVM_FULL|$URL" > build/ollvm/cache_key.txt
+          echo "NDK_REV=$NDK_REV" >> $GITHUB_ENV
+          echo "OLLVM_URL=$URL" >> $GITHUB_ENV
 
-      - name: Build Android debug
+      - name: Cache OLLVM download
+        if: env.MI_E2EE_ANDROID_OLLVM == '1' || env.MI_E2EE_ANDROID_OLLVM == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/ollvm/ollvm.tar.gz
+          key: ollvm-${{ runner.os }}-${{ hashFiles('build/ollvm/cache_key.txt') }}
+
+      - name: Fetch OLLVM toolchain
+        if: env.MI_E2EE_ANDROID_OLLVM == '1' || env.MI_E2EE_ANDROID_OLLVM == 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "${OLLVM_URL:-}" ]; then
+            echo "OLLVM_URL not set. Ensure Prepare OLLVM URL ran successfully." >&2
+            exit 1
+          fi
+          echo "Using OLLVM URL: $OLLVM_URL"
+          mkdir -p build/ollvm
+          if [ ! -f build/ollvm/ollvm.tar.gz ]; then
+            curl -L "$OLLVM_URL" -o build/ollvm/ollvm.tar.gz
+          fi
+          tar -xf build/ollvm/ollvm.tar.gz -C build/ollvm
+          OLLVM_NDK_ROOT=$(find build/ollvm -type f -name source.properties -print -quit | xargs -r dirname)
+          if [ -z "$OLLVM_NDK_ROOT" ]; then
+            echo "OLLVM NDK root not found in build/ollvm" >&2
+            exit 1
+          fi
+          OLLVM_CLANG="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          OLLVM_CLANGXX="$OLLVM_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+          if [ ! -x "$OLLVM_CLANG" ] || [ ! -x "$OLLVM_CLANGXX" ]; then
+            echo "OLLVM clang binaries not found in $OLLVM_NDK_ROOT" >&2
+            exit 1
+          fi
+          OLLVM_CLANG=$(realpath "$OLLVM_CLANG")
+          OLLVM_CLANGXX=$(realpath "$OLLVM_CLANGXX")
+          OLLVM_NDK_ROOT=$(realpath "$OLLVM_NDK_ROOT")
+          echo "MI_E2EE_OLLVM_CLANG=$OLLVM_CLANG" >> $GITHUB_ENV
+          echo "MI_E2EE_OLLVM_CLANGXX=$OLLVM_CLANGXX" >> $GITHUB_ENV
+          echo "MI_E2EE_OLLVM_NDK=$OLLVM_NDK_ROOT" >> $GITHUB_ENV
+
+      - name: Configure local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          if [ -n "${MI_E2EE_OLLVM_NDK:-}" ]; then
+            echo "ndk.dir=$MI_E2EE_OLLVM_NDK" >> android/local.properties
+          fi
+
+      - name: Build Android release
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew :app:assembleDebug -PmiE2eeOpaque=false --no-daemon
+          OLLVM_ARGS=()
+          if [ "${MI_E2EE_ANDROID_OLLVM}" = "1" ] || [ "${MI_E2EE_ANDROID_OLLVM}" = "true" ]; then
+            OLLVM_ARGS+=("-PmiE2eeOllvm=true")
+            OLLVM_ARGS+=("-PmiE2eeOllvmClang=${MI_E2EE_OLLVM_CLANG}")
+            OLLVM_ARGS+=("-PmiE2eeOllvmClangxx=${MI_E2EE_OLLVM_CLANGXX}")
+          fi
+          ./gradlew :app:assembleRelease -PmiE2eeOpaque=false "${OLLVM_ARGS[@]}" --no-daemon
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mi_e2ee_android_debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: mi_e2ee_android_release
+          path: android/app/build/outputs/apk/release/*.apk

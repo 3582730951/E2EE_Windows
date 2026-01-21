@@ -1,4 +1,14 @@
 cmake_minimum_required(VERSION 3.22)
+
+set(MI_E2EE_OLLVM_C_COMPILER "" CACHE FILEPATH "Path to OLLVM clang")
+set(MI_E2EE_OLLVM_CXX_COMPILER "" CACHE FILEPATH "Path to OLLVM clang++")
+if(MI_E2EE_OLLVM_C_COMPILER)
+  set(CMAKE_C_COMPILER "${MI_E2EE_OLLVM_C_COMPILER}")
+endif()
+if(MI_E2EE_OLLVM_CXX_COMPILER)
+  set(CMAKE_CXX_COMPILER "${MI_E2EE_OLLVM_CXX_COMPILER}")
+endif()
+
 project(mi_e2ee_sdk LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -10,6 +20,9 @@ include("${MI_E2EE_ROOT}/cmake/mi_e2ee_build_options.cmake")
 
 option(MI_E2EE_ANDROID_USE_RUST_OPAQUE "Build Rust OPAQUE PAKE library" ON)
 option(MI_E2EE_ANDROID_USE_OPENSSL "Use OpenSSL TLS implementation" OFF)
+option(MI_E2EE_ANDROID_OLLVM "Use OLLVM for backend library" OFF)
+set(MI_E2EE_OLLVM_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub" CACHE STRING "OLLVM flags")
+separate_arguments(MI_E2EE_OLLVM_FLAGS)
 
 find_program(MI_E2EE_CARGO_EXECUTABLE cargo)
 if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND NOT MI_E2EE_CARGO_EXECUTABLE)
@@ -190,17 +203,20 @@ else()
   add_compile_definitions(MI_E2EE_ALLOW_PLAINTEXT_LEGACY)
 endif()
 
-add_library(mi_e2ee_sdk SHARED
+add_library(mi_e2ee_backend SHARED
   ${MI_E2EE_PLATFORM_SOURCES}
   ${MI_E2EE_COMMON_SOURCES}
   ${MI_E2EE_SHARD_SOURCES}
   ${MI_E2EE_SERVER_SOURCES}
   ${MI_E2EE_RUNTIME_SOURCES}
   ${MI_E2EE_SDK_SOURCES}
+)
+
+add_library(mi_e2ee_jni SHARED
   ${MI_E2EE_JNI_SOURCES}
 )
 
-target_include_directories(mi_e2ee_sdk PRIVATE
+target_include_directories(mi_e2ee_backend PRIVATE
   "${MI_E2EE_ROOT}/client/include"
   "${MI_E2EE_ROOT}/client/ui"
   "${MI_E2EE_ROOT}/common"
@@ -211,7 +227,18 @@ target_include_directories(mi_e2ee_sdk PRIVATE
   "${MI_E2EE_ROOT}/platform/include"
 )
 
-target_link_libraries(mi_e2ee_sdk PRIVATE
+target_include_directories(mi_e2ee_jni PRIVATE
+  "${MI_E2EE_ROOT}/client/include"
+  "${MI_E2EE_ROOT}/client/ui"
+  "${MI_E2EE_ROOT}/common"
+  "${MI_E2EE_ROOT}/sdk"
+  "${MI_E2EE_ROOT}/server/include"
+  "${MI_E2EE_ROOT}/runtime"
+  "${MI_E2EE_ROOT}/shard"
+  "${MI_E2EE_ROOT}/platform/include"
+)
+
+target_link_libraries(mi_e2ee_backend PRIVATE
   monocypher
   miniz
   kcp
@@ -222,11 +249,49 @@ target_link_libraries(mi_e2ee_sdk PRIVATE
 )
 
 if(MI_E2EE_ANDROID_USE_OPENSSL)
-  target_link_libraries(mi_e2ee_sdk PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  target_link_libraries(mi_e2ee_backend PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 if(MI_E2EE_ANDROID_USE_RUST_OPAQUE)
   if(MI_E2EE_OPAQUE_LIB)
-    target_link_libraries(mi_e2ee_sdk PRIVATE "${MI_E2EE_OPAQUE_LIB}")
+    target_link_libraries(mi_e2ee_backend PRIVATE "${MI_E2EE_OPAQUE_LIB}")
   endif()
 endif()
+
+target_link_libraries(mi_e2ee_jni PRIVATE mi_e2ee_backend log)
+
+set(MI_E2EE_BACKEND_EXPORTS "${CMAKE_CURRENT_LIST_DIR}/exports_backend.map")
+set(MI_E2EE_JNI_EXPORTS "${CMAKE_CURRENT_LIST_DIR}/exports_jni.map")
+
+if(MI_E2EE_ANDROID_OLLVM)
+  target_compile_options(mi_e2ee_backend PRIVATE $<$<CONFIG:Release>:${MI_E2EE_OLLVM_FLAGS}>)
+endif()
+
+target_compile_options(mi_e2ee_backend PRIVATE
+  $<$<CONFIG:Release>:-ffunction-sections>
+  $<$<CONFIG:Release>:-fdata-sections>
+  $<$<CONFIG:Release>:-fno-unwind-tables>
+  $<$<CONFIG:Release>:-fno-asynchronous-unwind-tables>
+)
+target_compile_options(mi_e2ee_jni PRIVATE
+  -fvisibility=hidden
+  $<$<CONFIG:Release>:-ffunction-sections>
+  $<$<CONFIG:Release>:-fdata-sections>
+  $<$<CONFIG:Release>:-fno-unwind-tables>
+  $<$<CONFIG:Release>:-fno-asynchronous-unwind-tables>
+)
+
+target_link_options(mi_e2ee_backend PRIVATE
+  $<$<CONFIG:Release>:-Wl,--gc-sections>
+  $<$<CONFIG:Release>:-Wl,--strip-all>
+  $<$<CONFIG:Release>:-Wl,--exclude-libs,ALL>
+  $<$<CONFIG:Release>:-Wl,--build-id=none>
+  $<$<CONFIG:Release>:-Wl,--version-script=${MI_E2EE_BACKEND_EXPORTS}>
+)
+target_link_options(mi_e2ee_jni PRIVATE
+  $<$<CONFIG:Release>:-Wl,--gc-sections>
+  $<$<CONFIG:Release>:-Wl,--strip-all>
+  $<$<CONFIG:Release>:-Wl,--exclude-libs,ALL>
+  $<$<CONFIG:Release>:-Wl,--build-id=none>
+  $<$<CONFIG:Release>:-Wl,--version-script=${MI_E2EE_JNI_EXPORTS}>
+)

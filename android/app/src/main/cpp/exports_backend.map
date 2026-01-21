@@ -1,0 +1,9 @@
+{
+  global:
+    mi_client_*;
+    _ZN2mi6client5media*;
+    _ZN2mi6client2ui*;
+    _ZN2mi8platform*;
+  local:
+    *;
+};

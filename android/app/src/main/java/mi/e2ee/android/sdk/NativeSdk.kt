@@ -1,10 +1,12 @@
 package mi.e2ee.android.sdk
 
 object NativeSdk {
-    private const val LIB_NAME = "mi_e2ee_sdk"
+    private const val BACKEND_LIB_NAME = "mi_e2ee_backend"
+    private const val JNI_LIB_NAME = "mi_e2ee_jni"
 
     val available: Boolean = runCatching {
-        System.loadLibrary(LIB_NAME)
+        System.loadLibrary(BACKEND_LIB_NAME)
+        System.loadLibrary(JNI_LIB_NAME)
         true
     }.getOrDefault(false)
 

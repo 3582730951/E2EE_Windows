@@ -5,6 +5,10 @@ plugins {
 
 val miOpaqueEnabled = (project.findProperty("miE2eeOpaque") as? String)
     ?.equals("true", ignoreCase = true) ?: true
+val miOllvmEnabled = (project.findProperty("miE2eeOllvm") as? String)
+    ?.equals("true", ignoreCase = true) ?: false
+val miOllvmClang = project.findProperty("miE2eeOllvmClang") as? String
+val miOllvmClangxx = project.findProperty("miE2eeOllvmClangxx") as? String
 
 android {
     namespace = "mi.e2ee.android"
@@ -16,6 +20,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
         externalNativeBuild {
             cmake {
                 arguments += "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" +
@@ -28,6 +35,38 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    buildTypes {
+        debug {
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DMI_E2EE_ANDROID_OLLVM=OFF"
+                }
+            }
+        }
+        release {
+            ndk {
+                debugSymbolLevel = "NONE"
+            }
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DMI_E2EE_ANDROID_OLLVM=" +
+                        if (miOllvmEnabled) "ON" else "OFF"
+                    if (!miOllvmClang.isNullOrBlank()) {
+                        arguments += "-DMI_E2EE_OLLVM_C_COMPILER=$miOllvmClang"
+                    }
+                    if (!miOllvmClangxx.isNullOrBlank()) {
+                        arguments += "-DMI_E2EE_OLLVM_CXX_COMPILER=$miOllvmClangxx"
+                    }
+                    if (miOllvmEnabled) {
+                        arguments += "-DMI_E2EE_ENABLE_LTO=OFF"
+                        arguments += "-DMI_E2EE_PGO_INSTRUMENT=OFF"
+                        arguments += "-DMI_E2EE_PGO_USE=OFF"
+                    }
+                }
+            }
         }
     }
 

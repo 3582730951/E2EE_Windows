@@ -1,0 +1,8 @@
+{
+  global:
+    JNI_OnLoad;
+    JNI_OnUnload;
+    Java_mi_e2ee_android_*;
+  local:
+    *;
+};
