@@ -545,11 +545,11 @@ jobs:
             mkdir -p "$FALLBACK_DIR"
             curl -L "$FALLBACK_URL" -o "$FALLBACK_DIR/clang"
             chmod +x "$FALLBACK_DIR/clang"
-            cat > "$FALLBACK_DIR/clang++" <<'EOF'
-            #!/usr/bin/env bash
-            DIR=$(cd "$(dirname "$0")" && pwd)
-            exec "$DIR/clang" --driver-mode=g++ "$@"
-            EOF
+            printf '%s\n' \
+              '#!/usr/bin/env bash' \
+              'DIR=$(cd "$(dirname "$0")" && pwd)' \
+              'exec "$DIR/clang" --driver-mode=g++ "$@"' \
+              > "$FALLBACK_DIR/clang++"
             chmod +x "$FALLBACK_DIR/clang++"
             if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>&1; then
               echo "Fallback OLLVM clang is not runnable on this runner." >&2
