@@ -577,6 +577,12 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
 
+      - name: Build Android debug
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleDebug -PmiE2eeOpaque=false --no-daemon
+
       - name: Build Android release
         run: |
           chmod +x android/gradlew
@@ -589,7 +595,13 @@ jobs:
           fi
           ./gradlew :app:assembleRelease -PmiE2eeOpaque=false "${OLLVM_ARGS[@]}" --no-daemon
 
-      - name: Upload Android artifact
+      - name: Upload Android debug artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_android_debug
+          path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload Android release artifact
         uses: actions/upload-artifact@v4
         with:
           name: mi_e2ee_android_release
