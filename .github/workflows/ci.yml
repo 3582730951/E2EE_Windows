@@ -576,11 +576,6 @@ jobs:
       - name: Configure local.properties
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          if [ -n "${MI_E2EE_OLLVM_NDK:-}" ]; then
-            echo "ndk.dir=$MI_E2EE_OLLVM_NDK" >> android/local.properties
-          else
-            echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/$MI_E2EE_ANDROID_NDK_VERSION" >> android/local.properties
-          fi
 
       - name: Build Android release
         run: |
