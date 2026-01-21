@@ -432,6 +432,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install OLLVM host deps
+        run: |
+          sudo apt-get update
+          if ! sudo apt-get install -y libtinfo5 libncurses5; then
+            sudo apt-get install -y libtinfo6 libncurses6
+          fi
+
       - name: Install Android components
         run: |
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;${MI_E2EE_ANDROID_NDK_VERSION}"
@@ -551,8 +558,11 @@ jobs:
               'exec "$DIR/clang" --driver-mode=g++ "$@"' \
               > "$FALLBACK_DIR/clang++"
             chmod +x "$FALLBACK_DIR/clang++"
-            if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>&1; then
+            if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>build/ollvm/fallback/clang_error.log; then
               echo "Fallback OLLVM clang is not runnable on this runner." >&2
+              cat build/ollvm/fallback/clang_error.log >&2 || true
+              file "$FALLBACK_DIR/clang" >&2 || true
+              ldd "$FALLBACK_DIR/clang" >&2 || true
               exit 1
             fi
             OLLVM_CLANG=$(realpath "$FALLBACK_DIR/clang")
