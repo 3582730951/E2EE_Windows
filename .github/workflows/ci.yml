@@ -435,8 +435,8 @@ jobs:
       - name: Install OLLVM host deps
         run: |
           sudo apt-get update
-          if ! sudo apt-get install -y libtinfo5 libncurses5; then
-            sudo apt-get install -y libtinfo6 libncurses6
+          if ! sudo apt-get install -y libtinfo5 libncurses5 libc++1 libc++abi1; then
+            sudo apt-get install -y libtinfo6 libncurses6 libc++1 libc++abi1
           fi
 
       - name: Install Android components
