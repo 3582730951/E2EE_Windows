@@ -581,27 +581,27 @@ class SdkBridge(private val context: Context) {
         return NativeBridge.sendGroupCallSignal(nativeHandle, op, groupId, callId, video, keyId, seq, tsMs, ext)
     }
 
-    fun setReadReceiptsEnabled(enabled: Boolean) {
+    fun updateReadReceiptsEnabled(enabled: Boolean) {
         if (!ensureHandle()) return
         NativeBridge.setReadReceiptsEnabled(nativeHandle, enabled)
     }
 
-    fun setScreenshotAlertsEnabled(enabled: Boolean) {
+    fun updateScreenshotAlertsEnabled(enabled: Boolean) {
         if (!ensureHandle()) return
         NativeBridge.setScreenshotAlertsEnabled(nativeHandle, enabled)
     }
 
-    fun setPrivacyLastSeen(value: String) {
+    fun updatePrivacyLastSeen(value: String) {
         if (!ensureHandle()) return
         NativeBridge.setPrivacyLastSeen(nativeHandle, value)
     }
 
-    fun setPrivacyProfilePhoto(value: String) {
+    fun updatePrivacyProfilePhoto(value: String) {
         if (!ensureHandle()) return
         NativeBridge.setPrivacyProfilePhoto(nativeHandle, value)
     }
 
-    fun setPrivacyGroupInvites(value: String) {
+    fun updatePrivacyGroupInvites(value: String) {
         if (!ensureHandle()) return
         NativeBridge.setPrivacyGroupInvites(nativeHandle, value)
     }

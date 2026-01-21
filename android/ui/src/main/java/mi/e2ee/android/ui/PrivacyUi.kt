@@ -85,7 +85,7 @@ fun PrivacyScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     SegmentedChoice(
                         selected = sdk.privacyLastSeen,
-                        onSelect = { sdk.setPrivacyLastSeen(it) }
+                        onSelect = { sdk.updatePrivacyLastSeen(it) }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -95,7 +95,7 @@ fun PrivacyScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     SegmentedChoice(
                         selected = sdk.privacyProfilePhoto,
-                        onSelect = { sdk.setPrivacyProfilePhoto(it) }
+                        onSelect = { sdk.updatePrivacyProfilePhoto(it) }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -105,7 +105,7 @@ fun PrivacyScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     SegmentedChoice(
                         selected = sdk.privacyGroupInvites,
-                        onSelect = { sdk.setPrivacyGroupInvites(it) }
+                        onSelect = { sdk.updatePrivacyGroupInvites(it) }
                     )
                 }
             }
@@ -124,7 +124,7 @@ fun PrivacyScreen(
                             "Allow others to see when messages are read"
                         ),
                         checked = sdk.readReceiptsEnabled,
-                        onCheckedChange = { sdk.setReadReceiptsEnabled(it) }
+                        onCheckedChange = { sdk.updateReadReceiptsEnabled(it) }
                     )
                     if (!sdk.readReceiptsEnabled) {
                         Text(
@@ -146,7 +146,7 @@ fun PrivacyScreen(
                             "Notify when screenshots are taken"
                         ),
                         checked = sdk.screenshotAlertsEnabled,
-                        onCheckedChange = { sdk.setScreenshotAlertsEnabled(it) }
+                        onCheckedChange = { sdk.updateScreenshotAlertsEnabled(it) }
                     )
                 }
             }
