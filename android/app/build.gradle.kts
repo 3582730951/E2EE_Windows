@@ -5,6 +5,19 @@ plugins {
 
 val miOpaqueEnabled = (project.findProperty("miE2eeOpaque") as? String)
     ?.equals("true", ignoreCase = true) ?: true
+val miOpenSslEnabled = (project.findProperty("miE2eeAndroidUseOpenSsl") as? String)
+    ?.equals("true", ignoreCase = true)
+    ?: (System.getenv("MI_E2EE_ANDROID_USE_OPENSSL")
+        ?.let { it == "1" || it.equals("true", ignoreCase = true) }
+        ?: true)
+val miAllowTlsStub = (project.findProperty("miE2eeAndroidAllowTlsStub") as? String)
+    ?.equals("true", ignoreCase = true)
+    ?: (System.getenv("MI_E2EE_ANDROID_ALLOW_TLS_STUB") == "1")
+val miOpenSslRoot = (project.findProperty("miE2eeAndroidOpenSslRoot") as? String)
+    ?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MI_E2EE_ANDROID_OPENSSL_ROOT")?.takeIf { it.isNotBlank() }
+    ?: rootDir.resolve("../build/openssl/android")
+        .takeIf { it.exists() }?.absolutePath
 val miOllvmEnabled = (project.findProperty("miE2eeOllvm") as? String)
     ?.equals("true", ignoreCase = true) ?: false
 val miOllvmClang = project.findProperty("miE2eeOllvmClang") as? String
@@ -26,6 +39,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
@@ -33,6 +47,13 @@ android {
             cmake {
                 arguments += "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" +
                     if (miOpaqueEnabled) "ON" else "OFF"
+                arguments += "-DMI_E2EE_ANDROID_USE_OPENSSL=" +
+                    if (miOpenSslEnabled) "ON" else "OFF"
+                arguments += "-DMI_E2EE_ANDROID_ALLOW_TLS_STUB=" +
+                    if (miAllowTlsStub) "ON" else "OFF"
+                if (!miOpenSslRoot.isNullOrBlank()) {
+                    arguments += "-DMI_E2EE_ANDROID_OPENSSL_ROOT=$miOpenSslRoot"
+                }
             }
         }
     }
@@ -120,4 +141,6 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

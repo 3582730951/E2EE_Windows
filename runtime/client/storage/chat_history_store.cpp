@@ -4201,6 +4201,14 @@ bool ChatHistoryStore::EnsureKeyLoaded(std::string& error) {
                 std::filesystem::perms::owner_write,
             std::filesystem::perm_options::replace, perm_ec);
       }
+#else
+      {
+        std::string acl_err;
+        if (!mi::shard::security::HardenPathAcl(key_path_, acl_err)) {
+          error = acl_err.empty() ? "history key acl harden failed" : acl_err;
+          return false;
+        }
+      }
 #endif
     }
     std::memcpy(master_key_.data(), plain.data(), master_key_.size());
@@ -4239,14 +4247,22 @@ bool ChatHistoryStore::EnsureKeyLoaded(std::string& error) {
     return false;
   }
 #ifndef _WIN32
-  {
-    std::error_code perm_ec;
-    std::filesystem::permissions(
-        key_path_,
-        std::filesystem::perms::owner_read |
-            std::filesystem::perms::owner_write,
-        std::filesystem::perm_options::replace, perm_ec);
-  }
+    {
+      std::error_code perm_ec;
+      std::filesystem::permissions(
+          key_path_,
+          std::filesystem::perms::owner_read |
+              std::filesystem::perms::owner_write,
+          std::filesystem::perm_options::replace, perm_ec);
+    }
+#else
+    {
+      std::string acl_err;
+      if (!mi::shard::security::HardenPathAcl(key_path_, acl_err)) {
+        error = acl_err.empty() ? "history key acl harden failed" : acl_err;
+        return false;
+      }
+    }
 #endif
 
   master_key_ = k;
@@ -4370,14 +4386,22 @@ bool ChatHistoryStore::EnsureTagKeyLoaded(std::string& error) {
       return false;
     }
 #ifndef _WIN32
-    {
-      std::error_code perm_ec;
-      std::filesystem::permissions(
-          tag_key_path_,
-          std::filesystem::perms::owner_read |
-              std::filesystem::perms::owner_write,
-          std::filesystem::perm_options::replace, perm_ec);
-    }
+      {
+        std::error_code perm_ec;
+        std::filesystem::permissions(
+            tag_key_path_,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, perm_ec);
+      }
+#else
+      {
+        std::string acl_err;
+        if (!mi::shard::security::HardenPathAcl(tag_key_path_, acl_err)) {
+          error = acl_err.empty() ? "history tag key acl harden failed" : acl_err;
+          return false;
+        }
+      }
 #endif
   }
 

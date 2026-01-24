@@ -715,6 +715,9 @@ class ClientCore {
   std::uint16_t server_port_{0};
   bool use_tls_{false};
   bool require_tls_{true};
+  TlsVerifyMode tls_verify_mode_{TlsVerifyMode::kPin};
+  bool tls_verify_hostname_{true};
+  std::string tls_ca_bundle_path_;
   bool use_kcp_{false};
   KcpConfig kcp_cfg_{};
   MediaConfig media_config_{};
@@ -761,6 +764,17 @@ class ClientCore {
   std::filesystem::path device_sync_key_path_;
   bool device_sync_key_loaded_{false};
   std::array<std::uint8_t, 32> device_sync_key_{};
+  std::uint32_t device_sync_rotate_interval_sec_{86400};
+  std::uint32_t device_sync_rotate_message_limit_{2048};
+  bool device_sync_ratchet_enable_{true};
+  std::uint32_t device_sync_ratchet_max_skip_{2048};
+  std::uint64_t device_sync_last_rotate_ms_{0};
+  std::uint32_t device_sync_send_count_{0};
+  std::uint64_t device_sync_send_counter_{0};
+  std::uint64_t device_sync_recv_counter_{0};
+  std::array<std::uint8_t, 32> device_sync_prev_key_{};
+  std::uint64_t device_sync_prev_key_until_ms_{0};
+  std::uint64_t device_sync_prev_recv_counter_{0};
   mi::client::e2ee::Engine e2ee_;
   mi::client::e2ee::IdentityPolicy identity_policy_{};
   std::uint32_t pqc_precompute_pool_{4};

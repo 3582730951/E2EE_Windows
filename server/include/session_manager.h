@@ -2,6 +2,7 @@
 #define MI_E2EE_SERVER_SESSION_MANAGER_H
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -66,7 +67,8 @@ class SessionManager {
  public:
   explicit SessionManager(std::unique_ptr<AuthProvider> auth,
                           std::chrono::seconds ttl = std::chrono::minutes(30),
-                          std::vector<std::uint8_t> opaque_server_setup = {});
+                          std::vector<std::uint8_t> opaque_server_setup = {},
+                          std::filesystem::path persist_dir = {});
 
   bool Login(const std::string& username, const std::string& password,
              TransportKind transport, Session& out_session,
@@ -128,6 +130,8 @@ class SessionManager {
                                 std::chrono::steady_clock::time_point now);
   void ClearLoginFailuresLocked(const std::string& username);
   void CleanupLoginFailuresLocked(std::chrono::steady_clock::time_point now);
+  bool LoadSessionsLocked();
+  bool SaveSessionsLocked();
 
   std::unique_ptr<AuthProvider> auth_;
   std::chrono::seconds ttl_;
@@ -138,6 +142,9 @@ class SessionManager {
   std::chrono::seconds pending_opaque_ttl_{std::chrono::seconds(90)};
   std::unordered_map<std::string, LoginFailureState> login_failures_;
   std::uint64_t login_failure_ops_{0};
+  std::filesystem::path persist_path_;
+  bool persistence_enabled_{false};
+  bool dirty_{false};
 };
 
 }  // namespace mi::server

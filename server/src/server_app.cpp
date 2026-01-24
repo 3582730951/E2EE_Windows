@@ -84,8 +84,12 @@ bool CheckPathNotWorldWritable(const std::filesystem::path& path,
 bool SetOwnerOnlyPermissions(const std::filesystem::path& path,
                              std::string& error) {
 #ifdef _WIN32
-  (void)path;
-  (void)error;
+  std::string acl_err;
+  if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+    error = acl_err.empty() ? "acl set failed" : acl_err;
+    return false;
+  }
+  error.clear();
   return true;
 #else
   std::error_code ec;
@@ -575,7 +579,12 @@ bool EnsureKtSigningKey(const std::filesystem::path& signing_key,
 }  // namespace
 
 ServerApp::ServerApp() = default;
-ServerApp::~ServerApp() = default;
+ServerApp::~ServerApp() {
+  if (state_lock_held_) {
+    mi::platform::fs::ReleaseFileLock(state_lock_);
+    state_lock_held_ = false;
+  }
+}
 
 bool ServerApp::Init(const std::string& config_path, std::string& error) {
   if (!LoadConfig(config_path, config_, error)) {
@@ -615,6 +624,34 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     }
   }
   std::filesystem::remove(probe, ec);
+
+  const auto state_dir = storage_dir / "state";
+  std::filesystem::create_directories(state_dir, ec);
+  if (ec) {
+    error = "state dir not accessible";
+    return false;
+  }
+  {
+    const auto probe = state_dir / ".probe";
+    std::ofstream ofs(probe, std::ios::binary | std::ios::trunc);
+    if (!ofs) {
+      error = "state dir not writable";
+      return false;
+    }
+  }
+  std::filesystem::remove(state_dir / ".probe", ec);
+  if (!state_lock_held_) {
+    const auto lock_path = state_dir / "server.lock";
+    const auto lock_status =
+        mi::platform::fs::AcquireExclusiveFileLock(lock_path, state_lock_);
+    if (lock_status != mi::platform::fs::FileLockStatus::kOk) {
+      error = (lock_status == mi::platform::fs::FileLockStatus::kBusy)
+                  ? "server state locked (another instance running)"
+                  : "server state lock failed";
+      return false;
+    }
+    state_lock_held_ = true;
+  }
 
   std::filesystem::path kt_signing_key = config_.server.kt_signing_key;
   if (!kt_signing_key.is_absolute() && !kt_signing_key.empty()) {
@@ -679,8 +716,9 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   sessions_ = std::make_unique<SessionManager>(
       std::move(auth_),
       std::chrono::seconds(config_.server.session_ttl_sec),
-      std::move(opaque_setup));
-  groups_ = std::make_unique<GroupManager>();
+      std::move(opaque_setup),
+      state_dir);
+  groups_ = std::make_unique<GroupManager>(state_dir);
   GroupCallConfig call_cfg;
   call_cfg.enable_group_call = config_.call.enable_group_call;
   call_cfg.max_room_size = config_.call.max_room_size;
@@ -688,7 +726,7 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   call_cfg.call_timeout_sec = config_.call.call_timeout_sec;
   call_cfg.max_subscriptions = config_.call.max_subscriptions;
   group_calls_ = std::make_unique<GroupCallManager>(call_cfg);
-  directory_ = std::make_unique<GroupDirectory>();
+  directory_ = std::make_unique<GroupDirectory>(state_dir);
   offline_storage_ = std::make_unique<OfflineStorage>(
       storage_dir, std::chrono::hours(12), secure_delete);
   if ((secure_delete.enabled || require_secure_delete) &&
@@ -698,7 +736,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                 : offline_storage_->SecureDeleteError();
     return false;
   }
-  offline_queue_ = std::make_unique<OfflineQueue>();
+  offline_queue_ = std::make_unique<OfflineQueue>(
+      std::chrono::seconds::zero(), storage_dir / "offline_queue");
   media_relay_ = std::make_unique<MediaRelay>(
       2048, std::chrono::milliseconds(config_.call.media_ttl_ms));
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),

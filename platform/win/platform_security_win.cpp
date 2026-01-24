@@ -4,6 +4,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cctype>
+#include <string>
 #include <thread>
 
 #include "monocypher.h"
@@ -21,6 +24,8 @@ namespace mi::platform {
 namespace {
 
 std::atomic<bool> gStarted{false};
+enum class HardeningLevel : std::uint8_t { kOff = 0, kLow = 1, kMedium = 2, kHigh = 3 };
+std::atomic<HardeningLevel> gLevel{HardeningLevel::kHigh};
 
 using SetProcessMitigationPolicyFn = BOOL(WINAPI*)(int, PVOID, SIZE_T);
 using NtQueryInformationProcessFn =
@@ -62,7 +67,10 @@ struct TextRegion {
   std::size_t size{0};
 };
 
-void ApplyBestEffortMitigations() noexcept {
+void ApplyBestEffortMitigations(HardeningLevel level) noexcept {
+  if (level == HardeningLevel::kOff) {
+    return;
+  }
   HeapSetInformation(nullptr, HeapEnableTerminationOnCorruption, nullptr, 0);
 
   SetDllDirectoryW(L"");
@@ -77,6 +85,9 @@ void ApplyBestEffortMitigations() noexcept {
   if (setDefaultDllDirectories) {
     setDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32 |
                              LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
+  }
+  if (level == HardeningLevel::kLow) {
+    return;
   }
 
   const auto ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -252,17 +263,22 @@ void ScanThreadMain(TextRegion region,
 }
 
 void MonitorThreadMain() noexcept {
+  const auto level = gLevel.load();
+  if (level == HardeningLevel::kOff || level == HardeningLevel::kLow) {
+    return;
+  }
+  const bool check_hw_breakpoints = (level == HardeningLevel::kHigh);
   if (IsDebuggerPresentFast() || IsDebuggerPresentNt() ||
-      HasHardwareBreakpoints()) {
+      (check_hw_breakpoints && HasHardwareBreakpoints())) {
     TerminateFailClosed(0xE2EE0002u);
   }
   std::uint32_t tick = 0;
   for (;;) {
-    ApplyBestEffortMitigations();
+    ApplyBestEffortMitigations(level);
     if (IsDebuggerPresentFast() || IsDebuggerPresentNt()) {
       TerminateFailClosed(0xE2EE0002u);
     }
-    if ((++tick % 3u) == 0u) {
+    if (check_hw_breakpoints && (++tick % 3u) == 0u) {
       if (HasHardwareBreakpoints()) {
         TerminateFailClosed(0xE2EE0003u);
       }
@@ -271,7 +287,10 @@ void MonitorThreadMain() noexcept {
   }
 }
 
-void StartThreadsBestEffort() noexcept {
+void StartThreadsBestEffort(HardeningLevel level) noexcept {
+  if (level == HardeningLevel::kOff) {
+    return;
+  }
   TextRegion region{};
   if (!GetMainModuleTextRegion(region)) {
     return;
@@ -279,10 +298,41 @@ void StartThreadsBestEffort() noexcept {
   const auto baseline = HashText(region);
 
   try {
-    std::thread(ScanThreadMain, region, baseline).detach();
-    std::thread(MonitorThreadMain).detach();
+    if (level == HardeningLevel::kHigh) {
+      std::thread(ScanThreadMain, region, baseline).detach();
+    }
+    if (level >= HardeningLevel::kMedium) {
+      std::thread(MonitorThreadMain).detach();
+    }
   } catch (...) {
   }
+}
+
+HardeningLevel ParseHardeningLevel() noexcept {
+  const char* env = std::getenv("MI_E2EE_HARDENING");
+  if (!env || *env == '\0') {
+    env = std::getenv("MI_E2EE_HARDENING_LEVEL");
+  }
+  if (!env || *env == '\0') {
+    return HardeningLevel::kHigh;
+  }
+  std::string v(env);
+  for (auto& ch : v) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  if (v == "0" || v == "off" || v == "false" || v == "disable") {
+    return HardeningLevel::kOff;
+  }
+  if (v == "1" || v == "low") {
+    return HardeningLevel::kLow;
+  }
+  if (v == "2" || v == "medium" || v == "med") {
+    return HardeningLevel::kMedium;
+  }
+  if (v == "3" || v == "high" || v == "on" || v == "true") {
+    return HardeningLevel::kHigh;
+  }
+  return HardeningLevel::kHigh;
 }
 
 }  // namespace
@@ -291,8 +341,10 @@ void StartEndpointHardening() noexcept {
   if (gStarted.exchange(true)) {
     return;
   }
-  ApplyBestEffortMitigations();
-  StartThreadsBestEffort();
+  const auto level = ParseHardeningLevel();
+  gLevel.store(level);
+  ApplyBestEffortMitigations(level);
+  StartThreadsBestEffort(level);
 }
 
 }  // namespace mi::platform

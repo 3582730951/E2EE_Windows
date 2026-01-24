@@ -4,11 +4,15 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <random>
 #include <string_view>
 #include <vector>
 #include <utility>
 
+#include "path_security.h"
 #include "crypto.h"
 #include "hex_utils.h"
 #include "monocypher.h"
@@ -22,12 +26,102 @@ int PQCLEAN_MLKEM768_CLEAN_crypto_kem_enc(std::uint8_t* ct,
 
 namespace mi::server {
 
+namespace {
+
+constexpr std::array<std::uint8_t, 8> kSessionMagic = {
+    'M', 'I', 'S', 'E', 'S', 'S', '0', '1'};
+constexpr std::uint8_t kSessionVersion = 1;
+constexpr std::size_t kSessionHeaderBytes =
+    kSessionMagic.size() + 1 + 3 + 4;
+
+void WriteUint32Le(std::uint32_t v, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(v & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFFu));
+}
+
+void WriteUint64Le(std::uint64_t v, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(v & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 32) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 40) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 48) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 56) & 0xFFu));
+}
+
+std::uint32_t ReadUint32Le(const std::uint8_t* in) {
+  return static_cast<std::uint32_t>(in[0]) |
+         (static_cast<std::uint32_t>(in[1]) << 8) |
+         (static_cast<std::uint32_t>(in[2]) << 16) |
+         (static_cast<std::uint32_t>(in[3]) << 24);
+}
+
+std::uint64_t ReadUint64Le(const std::uint8_t* in) {
+  return static_cast<std::uint64_t>(in[0]) |
+         (static_cast<std::uint64_t>(in[1]) << 8) |
+         (static_cast<std::uint64_t>(in[2]) << 16) |
+         (static_cast<std::uint64_t>(in[3]) << 24) |
+         (static_cast<std::uint64_t>(in[4]) << 32) |
+         (static_cast<std::uint64_t>(in[5]) << 40) |
+         (static_cast<std::uint64_t>(in[6]) << 48) |
+         (static_cast<std::uint64_t>(in[7]) << 56);
+}
+
+std::uint64_t UnixMsFrom(const std::chrono::system_clock::time_point& tp) {
+  const auto ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          tp.time_since_epoch())
+          .count();
+  return ms < 0 ? 0u : static_cast<std::uint64_t>(ms);
+}
+
+std::chrono::system_clock::time_point UnixMsToTimepoint(std::uint64_t ms) {
+  return std::chrono::system_clock::time_point(
+      std::chrono::milliseconds(ms));
+}
+
+void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
+#ifdef _WIN32
+  std::string acl_err;
+  (void)mi::shard::security::HardenPathAcl(path, acl_err);
+#else
+  std::error_code ec;
+  std::filesystem::permissions(
+      path, std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+#endif
+}
+
+}  // namespace
+
 SessionManager::SessionManager(std::unique_ptr<AuthProvider> auth,
                                std::chrono::seconds ttl,
-                               std::vector<std::uint8_t> opaque_server_setup)
+                               std::vector<std::uint8_t> opaque_server_setup,
+                               std::filesystem::path persist_dir)
     : auth_(std::move(auth)),
       ttl_(ttl),
-      opaque_server_setup_(std::move(opaque_server_setup)) {}
+      opaque_server_setup_(std::move(opaque_server_setup)) {
+  if (persist_dir.empty()) {
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(persist_dir, ec);
+  if (ec) {
+    return;
+  }
+  persist_path_ = persist_dir / "sessions.bin";
+  persistence_enabled_ = true;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!LoadSessionsLocked()) {
+    const auto bad_path = persist_path_.string() + ".bad";
+    std::filesystem::rename(persist_path_, bad_path, ec);
+  }
+  dirty_ = false;
+}
 
 std::string SessionManager::GenerateToken() {
   std::array<std::uint8_t, 32> rnd{};
@@ -42,6 +136,240 @@ std::string SessionManager::GenerateToken() {
     token[i * 2 + 1] = kHex[rnd[i] & 0x0F];
   }
   return token;
+}
+
+bool SessionManager::LoadSessionsLocked() {
+  if (!persistence_enabled_ || persist_path_.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(persist_path_, ec) || ec) {
+    return true;
+  }
+  const auto size = std::filesystem::file_size(persist_path_, ec);
+  if (ec || size < kSessionHeaderBytes ||
+      size > static_cast<std::uint64_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    return false;
+  }
+  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+  std::ifstream ifs(persist_path_, std::ios::binary);
+  if (!ifs) {
+    return false;
+  }
+  ifs.read(reinterpret_cast<char*>(bytes.data()),
+           static_cast<std::streamsize>(bytes.size()));
+  if (!ifs ||
+      ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
+    return false;
+  }
+
+  std::size_t off = 0;
+  if (!std::equal(kSessionMagic.begin(), kSessionMagic.end(),
+                  bytes.begin())) {
+    return false;
+  }
+  off += kSessionMagic.size();
+  const std::uint8_t version = bytes[off++];
+  if (version != kSessionVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 4 > bytes.size()) {
+    return false;
+  }
+  const std::uint32_t session_count = ReadUint32Le(bytes.data() + off);
+  off += 4;
+
+  std::unordered_map<std::string, Session> loaded;
+  loaded.reserve(session_count);
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+
+  for (std::uint32_t i = 0; i < session_count; ++i) {
+    if (off + 8 + 16 + 128 > bytes.size()) {
+      return false;
+    }
+    const std::uint32_t token_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t user_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint64_t created_ms = ReadUint64Le(bytes.data() + off);
+    off += 8;
+    const std::uint64_t last_seen_ms = ReadUint64Le(bytes.data() + off);
+    off += 8;
+
+    DerivedKeys keys{};
+    std::memcpy(keys.root_key.data(), bytes.data() + off,
+                keys.root_key.size());
+    off += keys.root_key.size();
+    std::memcpy(keys.header_key.data(), bytes.data() + off,
+                keys.header_key.size());
+    off += keys.header_key.size();
+    std::memcpy(keys.kcp_key.data(), bytes.data() + off,
+                keys.kcp_key.size());
+    off += keys.kcp_key.size();
+    std::memcpy(keys.ratchet_root.data(), bytes.data() + off,
+                keys.ratchet_root.size());
+    off += keys.ratchet_root.size();
+
+    if (token_len == 0 || user_len == 0 ||
+        off + token_len + user_len > bytes.size()) {
+      return false;
+    }
+    std::string token(
+        reinterpret_cast<const char*>(bytes.data() + off),
+        reinterpret_cast<const char*>(bytes.data() + off + token_len));
+    off += token_len;
+    std::string username(
+        reinterpret_cast<const char*>(bytes.data() + off),
+        reinterpret_cast<const char*>(bytes.data() + off + user_len));
+    off += user_len;
+
+    auto created_sys = UnixMsToTimepoint(created_ms);
+    auto last_seen_sys = UnixMsToTimepoint(last_seen_ms);
+    if (created_sys > now_sys) {
+      created_sys = now_sys;
+    }
+    if (last_seen_sys > now_sys) {
+      last_seen_sys = now_sys;
+    }
+    if (last_seen_sys < created_sys) {
+      last_seen_sys = created_sys;
+    }
+
+    if (ttl_.count() > 0 &&
+        now_sys - last_seen_sys > ttl_) {
+      continue;
+    }
+
+    const auto created_age = now_sys - created_sys;
+    const auto last_seen_age = now_sys - last_seen_sys;
+    const auto created_steady =
+        now_steady - std::chrono::duration_cast<
+                         std::chrono::steady_clock::duration>(created_age);
+    const auto last_seen_steady =
+        now_steady - std::chrono::duration_cast<
+                         std::chrono::steady_clock::duration>(last_seen_age);
+
+    Session s;
+    s.token = std::move(token);
+    s.username = std::move(username);
+    s.keys = keys;
+    s.created_at = created_steady;
+    s.last_seen = last_seen_steady;
+    loaded.emplace(s.token, std::move(s));
+  }
+
+  if (off != bytes.size()) {
+    return false;
+  }
+  sessions_.swap(loaded);
+  return true;
+}
+
+bool SessionManager::SaveSessionsLocked() {
+  if (!persistence_enabled_ || persist_path_.empty()) {
+    return true;
+  }
+  if (sessions_.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  std::vector<std::string> keys;
+  keys.reserve(sessions_.size());
+  for (const auto& kv : sessions_) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kSessionHeaderBytes + keys.size() * 196);
+  out.insert(out.end(), kSessionMagic.begin(), kSessionMagic.end());
+  out.push_back(kSessionVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), out);
+
+  for (const auto& token : keys) {
+    const auto it = sessions_.find(token);
+    if (it == sessions_.end()) {
+      continue;
+    }
+    const auto& session = it->second;
+    if (token.empty() || session.username.empty()) {
+      return false;
+    }
+    if (token.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        session.username.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+
+    const auto created_age =
+        now_steady > session.created_at
+            ? (now_steady - session.created_at)
+            : std::chrono::steady_clock::duration::zero();
+    const auto last_seen_age =
+        now_steady > session.last_seen
+            ? (now_steady - session.last_seen)
+            : std::chrono::steady_clock::duration::zero();
+    const auto created_sys =
+        now_sys -
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            created_age);
+    const auto last_seen_sys =
+        now_sys -
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            last_seen_age);
+
+    WriteUint32Le(static_cast<std::uint32_t>(token.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(session.username.size()), out);
+    WriteUint64Le(UnixMsFrom(created_sys), out);
+    WriteUint64Le(UnixMsFrom(last_seen_sys), out);
+    out.insert(out.end(), session.keys.root_key.begin(),
+               session.keys.root_key.end());
+    out.insert(out.end(), session.keys.header_key.begin(),
+               session.keys.header_key.end());
+    out.insert(out.end(), session.keys.kcp_key.begin(),
+               session.keys.kcp_key.end());
+    out.insert(out.end(), session.keys.ratchet_root.begin(),
+               session.keys.ratchet_root.end());
+    out.insert(out.end(), token.begin(), token.end());
+    out.insert(out.end(), session.username.begin(), session.username.end());
+  }
+
+  const std::filesystem::path tmp = persist_path_.string() + ".tmp";
+  std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    return false;
+  }
+  ofs.write(reinterpret_cast<const char*>(out.data()),
+            static_cast<std::streamsize>(out.size()));
+  ofs.close();
+  if (!ofs.good()) {
+    std::error_code rm_ec;
+    std::filesystem::remove(tmp, rm_ec);
+    return false;
+  }
+  std::error_code ec;
+  std::filesystem::remove(persist_path_, ec);
+  std::filesystem::rename(tmp, persist_path_, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+  SetOwnerOnlyPermissions(persist_path_);
+  dirty_ = false;
+  return true;
 }
 
 bool SessionManager::IsLoginBannedLocked(
@@ -159,6 +487,8 @@ bool SessionManager::Login(const std::string& username,
     std::lock_guard<std::mutex> lock(mutex_);
     ClearLoginFailuresLocked(username);
     sessions_[session.token] = session;
+    dirty_ = true;
+    SaveSessionsLocked();
   }
   out_session = session;
   error.clear();
@@ -430,6 +760,8 @@ bool SessionManager::LoginHybrid(
     std::lock_guard<std::mutex> lock(mutex_);
     ClearLoginFailuresLocked(username);
     sessions_[session.token] = session;
+    dirty_ = true;
+    SaveSessionsLocked();
   }
   out_session = session;
   return true;
@@ -709,6 +1041,8 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
     std::lock_guard<std::mutex> lock(mutex_);
     ClearLoginFailuresLocked(p.username);
     sessions_[session.token] = session;
+    dirty_ = true;
+    SaveSessionsLocked();
   }
   out_session = session;
   return true;
@@ -733,9 +1067,11 @@ std::optional<Session> SessionManager::GetSession(const std::string& token) {
   if (ttl_.count() > 0 &&
       now - it->second.last_seen > ttl_) {
     sessions_.erase(it);
+    dirty_ = true;
     return std::nullopt;
   }
   it->second.last_seen = now;
+  dirty_ = true;
   return it->second;
 }
 
@@ -749,9 +1085,11 @@ bool SessionManager::TouchSession(const std::string& token) {
   if (ttl_.count() > 0 &&
       now - it->second.last_seen > ttl_) {
     sessions_.erase(it);
+    dirty_ = true;
     return false;
   }
   it->second.last_seen = now;
+  dirty_ = true;
   return true;
 }
 
@@ -766,6 +1104,8 @@ std::optional<DerivedKeys> SessionManager::GetKeys(const std::string& token) {
 void SessionManager::Logout(const std::string& token) {
   std::lock_guard<std::mutex> lock(mutex_);
   sessions_.erase(token);
+  dirty_ = true;
+  SaveSessionsLocked();
 }
 
 SessionManagerStats SessionManager::GetStats() {
@@ -781,10 +1121,12 @@ SessionManagerStats SessionManager::GetStats() {
 void SessionManager::Cleanup() {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto now = std::chrono::steady_clock::now();
+  bool removed = false;
   for (auto it = sessions_.begin(); it != sessions_.end();) {
     if (ttl_.count() > 0 &&
         now - it->second.last_seen > ttl_) {
       it = sessions_.erase(it);
+      removed = true;
     } else {
       ++it;
     }
@@ -795,6 +1137,9 @@ void SessionManager::Cleanup() {
     } else {
       ++it;
     }
+  }
+  if ((removed || dirty_) && persistence_enabled_) {
+    SaveSessionsLocked();
   }
 }
 

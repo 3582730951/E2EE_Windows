@@ -112,6 +112,23 @@ bool ParseAuthMode(const std::string& text, AuthMode& out) {
   return false;
 }
 
+bool ParseTlsVerifyMode(const std::string& text, TlsVerifyMode& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "pin" || t == "pinned" || t == "fingerprint" || t == "0") {
+    out = TlsVerifyMode::kPin;
+    return true;
+  }
+  if (t == "ca" || t == "cert" || t == "certificate" || t == "pkix" || t == "1") {
+    out = TlsVerifyMode::kCa;
+    return true;
+  }
+  if (t == "hybrid" || t == "both" || t == "pin+ca" || t == "ca+pin" || t == "2") {
+    out = TlsVerifyMode::kHybrid;
+    return true;
+  }
+  return false;
+}
+
 bool ParseCoverTrafficMode(const std::string& text, CoverTrafficMode& out) {
   const std::string t = ToLower(Trim(text));
   if (t.empty() || t == "auto" || t == "adaptive" || t == "2") {
@@ -189,6 +206,7 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   std::string line;
   std::size_t line_no = 0;
   bool cover_traffic_mode_set = false;
+  bool tls_verify_mode_set = false;
   while (std::getline(f, line)) {
     ++line_no;
     std::string t = StripInlineComment(Trim(line));
@@ -222,6 +240,16 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         ParseBool(val, out_cfg.require_pinned_fingerprint);
       } else if (key == "pinned_fingerprint") {
         out_cfg.pinned_fingerprint = val;
+      } else if (key == "tls_verify_mode") {
+        if (!ParseTlsVerifyMode(val, out_cfg.tls_verify_mode)) {
+          error = "invalid tls_verify_mode at line " + std::to_string(line_no);
+          return false;
+        }
+        tls_verify_mode_set = true;
+      } else if (key == "tls_ca_bundle_path") {
+        out_cfg.tls_ca_bundle_path = val;
+      } else if (key == "tls_verify_hostname") {
+        ParseBool(val, out_cfg.tls_verify_hostname);
       } else if (key == "auth_mode") {
         if (!ParseAuthMode(val, out_cfg.auth_mode)) {
           error = "invalid auth_mode at line " + std::to_string(line_no);
@@ -249,6 +277,14 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
         ParseDeviceSyncRole(val, out_cfg.device_sync.role);
       } else if (key == "key_path") {
         out_cfg.device_sync.key_path = val;
+      } else if (key == "rotate_interval_sec") {
+        ParseUint32(val, out_cfg.device_sync.rotate_interval_sec);
+      } else if (key == "rotate_message_limit") {
+        ParseUint32(val, out_cfg.device_sync.rotate_message_limit);
+      } else if (key == "ratchet_enable") {
+        ParseBool(val, out_cfg.device_sync.ratchet_enable);
+      } else if (key == "ratchet_max_skip") {
+        ParseUint32(val, out_cfg.device_sync.ratchet_max_skip);
       }
     } else if (section == "identity") {
       if (key == "rotation_days") {
@@ -346,6 +382,13 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     error = "client section missing";
     return false;
   }
+  if (!tls_verify_mode_set) {
+    out_cfg.tls_verify_mode =
+        out_cfg.require_pinned_fingerprint ? TlsVerifyMode::kPin
+                                            : TlsVerifyMode::kCa;
+  }
+  out_cfg.require_pinned_fingerprint =
+      (out_cfg.tls_verify_mode == TlsVerifyMode::kPin);
   if (out_cfg.server_port == 0) {
     error = "server_port missing";
     return false;
@@ -366,12 +409,6 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     return false;
   }
 #endif
-  if (!out_cfg.require_pinned_fingerprint) {
-    if (!out_cfg.kcp.enable) {
-      error = "require_pinned_fingerprint must be enabled";
-      return false;
-    }
-  }
   if (out_cfg.identity.tpm_require && !out_cfg.identity.tpm_enable) {
     error = "tpm_require=1 but tpm_enable=0";
     return false;
@@ -428,6 +465,11 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     if (out_cfg.kcp.session_idle_sec == 0) {
       out_cfg.kcp.session_idle_sec = 60;
     }
+  }
+  if (out_cfg.device_sync.ratchet_max_skip == 0) {
+    out_cfg.device_sync.ratchet_max_skip = 2048;
+  } else if (out_cfg.device_sync.ratchet_max_skip > 65535) {
+    out_cfg.device_sync.ratchet_max_skip = 65535;
   }
   if (out_cfg.media.audio_delay_ms == 0) {
     out_cfg.media.audio_delay_ms = 60;

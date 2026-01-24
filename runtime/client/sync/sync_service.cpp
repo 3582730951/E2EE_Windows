@@ -2,6 +2,7 @@
 
 #include "client_core.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -24,6 +25,7 @@
 #include "path_security.h"
 #include "platform_fs.h"
 #include "platform_random.h"
+#include "platform_time.h"
 #include "protocol.h"
 #include "trust_store.h"
 
@@ -36,6 +38,19 @@ namespace pfs = mi::platform::fs;
 namespace {
 
 constexpr std::size_t kMaxDeviceSyncKeyFileBytes = 64u * 1024u;
+constexpr std::uint64_t kDeviceSyncPrevKeyGraceMs = 10ull * 60ull * 1000ull;
+constexpr std::array<std::uint8_t, 8> kDeviceSyncKeyMagic = {
+    'M', 'I', 'D', 'S', 'K', '0', '0', '2'};
+constexpr std::uint8_t kDeviceSyncKeyVersion = 2;
+constexpr std::size_t kDeviceSyncKeyHeaderBytes =
+    kDeviceSyncKeyMagic.size() + 1 + 3 + 8 + 8;
+constexpr std::size_t kDeviceSyncKeyBlobBytes =
+    kDeviceSyncKeyHeaderBytes + 32;
+constexpr std::uint8_t kDeviceSyncWireVersionLegacy = 1;
+constexpr std::uint8_t kDeviceSyncWireVersionRatchet = 2;
+constexpr std::uint32_t kDeviceSyncMaxSkipHardLimit = 65535;
+constexpr char kDeviceSyncStoreMagic[] = "MI_E2EE_DEVICE_SYNC_KEY_DPAPI1";
+constexpr char kDeviceSyncStoreEntropy[] = "MI_E2EE_DEVICE_SYNC_KEY_ENTROPY_V1";
 
 
 std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
@@ -91,6 +106,20 @@ bool ReadFixed16(const std::vector<std::uint8_t>& data, std::size_t& offset,
   std::memcpy(out.data(), data.data() + offset, out.size());
   offset += out.size();
   return true;
+}
+
+void WriteUint64Le(std::uint64_t v, std::uint8_t* out) {
+  for (int i = 0; i < 8; ++i) {
+    out[i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFFu);
+  }
+}
+
+std::uint64_t ReadUint64Le(const std::uint8_t* in) {
+  std::uint64_t v = 0;
+  for (int i = 0; i < 8; ++i) {
+    v |= static_cast<std::uint64_t>(in[i]) << (i * 8);
+  }
+  return v;
 }
 
 bool ParsePairingCodeSecret16(const std::string& pairing_code,
@@ -289,6 +318,18 @@ bool DecodePairingResponsePlain(const std::vector<std::uint8_t>& plain,
 bool SyncService::LoadDeviceSyncKey(ClientCore& core) const {
   core.device_sync_key_loaded_ = false;
   core.device_sync_key_.fill(0);
+  core.device_sync_last_rotate_ms_ = 0;
+  core.device_sync_send_count_ = 0;
+  core.device_sync_send_counter_ = 0;
+  core.device_sync_recv_counter_ = 0;
+  if (!IsAllZero(core.device_sync_prev_key_.data(),
+                 core.device_sync_prev_key_.size())) {
+    crypto_wipe(core.device_sync_prev_key_.data(),
+                core.device_sync_prev_key_.size());
+  }
+  core.device_sync_prev_key_.fill(0);
+  core.device_sync_prev_key_until_ms_ = 0;
+  core.device_sync_prev_recv_counter_ = 0;
   if (!core.device_sync_enabled_) {
     return true;
   }
@@ -349,29 +390,30 @@ bool SyncService::LoadDeviceSyncKey(ClientCore& core) const {
   if (!bytes.empty()) {
     std::vector<std::uint8_t> plain;
     bool was_dpapi = false;
-    static constexpr char kMagic[] = "MI_E2EE_DEVICE_SYNC_KEY_DPAPI1";
-    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_SYNC_KEY_ENTROPY_V1";
     std::string dpapi_err;
-    if (!MaybeUnprotectSecureStore(bytes, kMagic, kEntropy, plain, was_dpapi,
-                             dpapi_err)) {
+    if (!MaybeUnprotectSecureStore(bytes, kDeviceSyncStoreMagic,
+                                   kDeviceSyncStoreEntropy, plain, was_dpapi,
+                                   dpapi_err)) {
       core.last_error_ =
           dpapi_err.empty() ? "device sync key unprotect failed" : dpapi_err;
       return false;
     }
-    if (plain.size() != core.device_sync_key_.size()) {
+    DeviceSyncKeyState state;
+    if (!DecodeDeviceSyncKeyBlob(plain, state)) {
       core.last_error_ = "device sync key size invalid";
       return false;
     }
-    std::array<std::uint8_t, 32> key{};
-    std::memcpy(key.data(), plain.data(), key.size());
-    if (!was_dpapi) {
-      if (!core.StoreDeviceSyncKey(key)) {
+    if (!was_dpapi || state.legacy) {
+      std::string wrap_err;
+      if (!WriteDeviceSyncKeyFile(core.device_sync_key_path_, state, wrap_err)) {
+        core.last_error_ =
+            wrap_err.empty() ? "device sync key write failed" : wrap_err;
         return false;
       }
-      return true;
     }
-    core.device_sync_key_ = key;
-    core.device_sync_key_loaded_ = true;
+    ApplyDeviceSyncState(core, state);
+    core.device_sync_last_rotate_ms_ = mi::platform::NowSteadyMs();
+    core.device_sync_send_count_ = 0;
     return true;
   }
 
@@ -403,56 +445,180 @@ bool SyncService::StoreDeviceSyncKey(ClientCore& core, const std::array<std::uin
     return false;
   }
 
+  const bool have_current =
+      !IsAllZero(core.device_sync_key_.data(), core.device_sync_key_.size());
+  const bool key_changed = have_current && core.device_sync_key_ != key;
+  if (key_changed) {
+    if (!IsAllZero(core.device_sync_prev_key_.data(),
+                   core.device_sync_prev_key_.size())) {
+      crypto_wipe(core.device_sync_prev_key_.data(),
+                  core.device_sync_prev_key_.size());
+    }
+    core.device_sync_prev_key_ = core.device_sync_key_;
+    core.device_sync_prev_recv_counter_ = core.device_sync_recv_counter_;
+    core.device_sync_prev_key_until_ms_ =
+        mi::platform::NowSteadyMs() + kDeviceSyncPrevKeyGraceMs;
+  }
+
+  DeviceSyncKeyState state;
+  state.key = key;
+  state.send_counter = 0;
+  state.recv_counter = 0;
+  std::string write_err;
+  if (!WriteDeviceSyncKeyFile(core.device_sync_key_path_, state, write_err)) {
+    core.last_error_ =
+        write_err.empty() ? "device sync key write failed" : write_err;
+    return false;
+  }
+
+  ApplyDeviceSyncState(core, state);
+  core.device_sync_last_rotate_ms_ = mi::platform::NowSteadyMs();
+  core.device_sync_send_count_ = 0;
+  return true;
+}
+
+struct DeviceSyncKeyState {
+  std::array<std::uint8_t, 32> key{};
+  std::uint64_t send_counter{0};
+  std::uint64_t recv_counter{0};
+  bool legacy{false};
+};
+
+bool DecodeDeviceSyncKeyBlob(const std::vector<std::uint8_t>& plain,
+                             DeviceSyncKeyState& out) {
+  out = DeviceSyncKeyState{};
+  if (plain.size() == out.key.size()) {
+    std::memcpy(out.key.data(), plain.data(), out.key.size());
+    out.legacy = true;
+    return true;
+  }
+  if (plain.size() != kDeviceSyncKeyBlobBytes) {
+    return false;
+  }
+  if (!std::equal(kDeviceSyncKeyMagic.begin(), kDeviceSyncKeyMagic.end(),
+                  plain.begin())) {
+    return false;
+  }
+  std::size_t off = kDeviceSyncKeyMagic.size();
+  const std::uint8_t version = plain[off++];
+  if (version != kDeviceSyncKeyVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 16 + out.key.size() != plain.size()) {
+    return false;
+  }
+  out.send_counter = ReadUint64Le(plain.data() + off);
+  off += 8;
+  out.recv_counter = ReadUint64Le(plain.data() + off);
+  off += 8;
+  std::memcpy(out.key.data(), plain.data() + off, out.key.size());
+  return true;
+}
+
+bool EncodeDeviceSyncKeyBlob(const DeviceSyncKeyState& state,
+                             std::vector<std::uint8_t>& out) {
+  out.clear();
+  out.reserve(kDeviceSyncKeyBlobBytes);
+  out.insert(out.end(), kDeviceSyncKeyMagic.begin(), kDeviceSyncKeyMagic.end());
+  out.push_back(kDeviceSyncKeyVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  std::uint8_t buf[8] = {};
+  WriteUint64Le(state.send_counter, buf);
+  out.insert(out.end(), buf, buf + 8);
+  WriteUint64Le(state.recv_counter, buf);
+  out.insert(out.end(), buf, buf + 8);
+  out.insert(out.end(), state.key.begin(), state.key.end());
+  return out.size() == kDeviceSyncKeyBlobBytes;
+}
+
+bool DeriveDeviceSyncRatchetKeys(
+    const std::array<std::uint8_t, 32>& chain_key,
+    std::array<std::uint8_t, 32>& msg_key,
+    std::array<std::uint8_t, 32>& next_chain) {
+  static constexpr char kMsgLabel[] = "mi_e2ee_device_sync_msg_v2";
+  static constexpr char kChainLabel[] = "mi_e2ee_device_sync_chain_v2";
+  mi::server::crypto::Sha256Digest digest{};
+  mi::server::crypto::HmacSha256(chain_key.data(), chain_key.size(),
+                                 reinterpret_cast<const std::uint8_t*>(kMsgLabel),
+                                 sizeof(kMsgLabel) - 1, digest);
+  msg_key = digest.bytes;
+  mi::server::crypto::HmacSha256(chain_key.data(), chain_key.size(),
+                                 reinterpret_cast<const std::uint8_t*>(kChainLabel),
+                                 sizeof(kChainLabel) - 1, digest);
+  next_chain = digest.bytes;
+  return true;
+}
+
+bool WriteDeviceSyncKeyFile(const std::filesystem::path& path,
+                            const DeviceSyncKeyState& state,
+                            std::string& error) {
+  error.clear();
+  if (path.empty()) {
+    error = "device sync key path empty";
+    return false;
+  }
   std::error_code ec;
-  const auto dir = core.device_sync_key_path_.has_parent_path()
-                       ? core.device_sync_key_path_.parent_path()
-                       : std::filesystem::path{};
+  const auto dir = path.has_parent_path() ? path.parent_path()
+                                          : std::filesystem::path{};
   if (!dir.empty()) {
     pfs::CreateDirectories(dir, ec);
   }
   std::string perm_err;
-  if (!mi::shard::security::CheckPathNotWorldWritable(core.device_sync_key_path_,
-                                                      perm_err)) {
-    core.last_error_ = perm_err.empty() ? "device sync key permissions insecure"
-                                   : perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    error = perm_err.empty() ? "device sync key permissions insecure"
+                             : perm_err;
     return false;
   }
 
-  std::vector<std::uint8_t> plain(key.begin(), key.end());
-  mi::common::ScopedWipe plain_wipe(plain);
-  static constexpr char kMagic[] = "MI_E2EE_DEVICE_SYNC_KEY_DPAPI1";
-  static constexpr char kEntropy[] = "MI_E2EE_DEVICE_SYNC_KEY_ENTROPY_V1";
-  std::string wrap_err;
+  std::vector<std::uint8_t> plain;
+  if (!EncodeDeviceSyncKeyBlob(state, plain)) {
+    error = "device sync key encode failed";
+    return false;
+  }
   std::vector<std::uint8_t> wrapped;
-  if (!ProtectSecureStore(plain, kMagic, kEntropy, wrapped, wrap_err)) {
-    core.last_error_ = wrap_err.empty() ? "device sync key protect failed" : wrap_err;
+  if (!ProtectSecureStore(plain, kDeviceSyncStoreMagic, kDeviceSyncStoreEntropy,
+                          wrapped, error)) {
     return false;
   }
-  std::vector<std::uint8_t> out_bytes = std::move(wrapped);
 
-  std::error_code write_ec;
-  if (!pfs::AtomicWrite(core.device_sync_key_path_, out_bytes.data(),
-                        out_bytes.size(), write_ec)) {
-    core.last_error_ = "device sync key write failed";
+  if (!pfs::AtomicWrite(path, wrapped.data(), wrapped.size(), ec) || ec) {
+    error = "device sync key write failed";
     return false;
   }
 #ifndef _WIN32
   {
     std::error_code perm_ec;
     std::filesystem::permissions(
-        core.device_sync_key_path_,
+        path,
         std::filesystem::perms::owner_read |
             std::filesystem::perms::owner_write,
         std::filesystem::perm_options::replace, perm_ec);
   }
+#else
+  {
+    std::string acl_err;
+    if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+      error = acl_err.empty() ? "device sync key acl harden failed" : acl_err;
+      return false;
+    }
+  }
 #endif
+  return true;
+}
 
-  if (!IsAllZero(core.device_sync_key_.data(), core.device_sync_key_.size())) {
+void ApplyDeviceSyncState(ClientCore& core, const DeviceSyncKeyState& state) {
+  const bool have_current =
+      !IsAllZero(core.device_sync_key_.data(), core.device_sync_key_.size());
+  if (have_current) {
     crypto_wipe(core.device_sync_key_.data(), core.device_sync_key_.size());
   }
-  core.device_sync_key_ = key;
+  core.device_sync_key_ = state.key;
   core.device_sync_key_loaded_ = true;
-  return true;
+  core.device_sync_send_counter_ = state.send_counter;
+  core.device_sync_recv_counter_ = state.recv_counter;
 }
 
 bool SyncService::EncryptDeviceSync(ClientCore& core, const std::vector<std::uint8_t>& plaintext,
@@ -471,11 +637,46 @@ bool SyncService::EncryptDeviceSync(ClientCore& core, const std::vector<std::uin
     return false;
   }
 
+  const auto encrypt_legacy = [&]() {
+    static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'S', 'Y'};
+    std::uint8_t ad[5];
+    std::memcpy(ad + 0, kMagic, sizeof(kMagic));
+    ad[4] = kDeviceSyncWireVersionLegacy;
+
+    std::array<std::uint8_t, 24> nonce{};
+    if (!RandomBytes(nonce.data(), nonce.size())) {
+      core.last_error_ = "rng failed";
+      return false;
+    }
+
+    out_cipher.resize(sizeof(ad) + nonce.size() + 16 + plaintext.size());
+    std::memcpy(out_cipher.data(), ad, sizeof(ad));
+    std::memcpy(out_cipher.data() + sizeof(ad), nonce.data(), nonce.size());
+    std::uint8_t* mac = out_cipher.data() + sizeof(ad) + nonce.size();
+    std::uint8_t* cipher = mac + 16;
+
+    crypto_aead_lock(cipher, mac, core.device_sync_key_.data(), nonce.data(), ad,
+                     sizeof(ad), plaintext.data(), plaintext.size());
+    return true;
+  };
+
+  if (!core.device_sync_ratchet_enable_) {
+    return encrypt_legacy();
+  }
+
   static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'S', 'Y'};
-  static constexpr std::uint8_t kVer = 1;
-  std::uint8_t ad[5];
-  std::memcpy(ad + 0, kMagic, sizeof(kMagic));
-  ad[4] = kVer;
+  const std::uint64_t next_step = core.device_sync_send_counter_ + 1;
+  std::array<std::uint8_t, 32> msg_key{};
+  std::array<std::uint8_t, 32> next_chain{};
+  if (!DeriveDeviceSyncRatchetKeys(core.device_sync_key_, msg_key, next_chain)) {
+    core.last_error_ = "device sync ratchet failed";
+    return false;
+  }
+
+  std::array<std::uint8_t, 13> ad{};
+  std::memcpy(ad.data(), kMagic, sizeof(kMagic));
+  ad[4] = kDeviceSyncWireVersionRatchet;
+  WriteUint64Le(next_step, ad.data() + 5);
 
   std::array<std::uint8_t, 24> nonce{};
   if (!RandomBytes(nonce.data(), nonce.size())) {
@@ -483,14 +684,26 @@ bool SyncService::EncryptDeviceSync(ClientCore& core, const std::vector<std::uin
     return false;
   }
 
-  out_cipher.resize(sizeof(ad) + nonce.size() + 16 + plaintext.size());
-  std::memcpy(out_cipher.data(), ad, sizeof(ad));
-  std::memcpy(out_cipher.data() + sizeof(ad), nonce.data(), nonce.size());
-  std::uint8_t* mac = out_cipher.data() + sizeof(ad) + nonce.size();
+  out_cipher.resize(ad.size() + nonce.size() + 16 + plaintext.size());
+  std::memcpy(out_cipher.data(), ad.data(), ad.size());
+  std::memcpy(out_cipher.data() + ad.size(), nonce.data(), nonce.size());
+  std::uint8_t* mac = out_cipher.data() + ad.size() + nonce.size();
   std::uint8_t* cipher = mac + 16;
 
-  crypto_aead_lock(cipher, mac, core.device_sync_key_.data(), nonce.data(), ad,
-                   sizeof(ad), plaintext.data(), plaintext.size());
+  crypto_aead_lock(cipher, mac, msg_key.data(), nonce.data(), ad.data(),
+                   ad.size(), plaintext.data(), plaintext.size());
+
+  DeviceSyncKeyState state;
+  state.key = next_chain;
+  state.send_counter = next_step;
+  state.recv_counter = core.device_sync_recv_counter_;
+  std::string write_err;
+  if (!WriteDeviceSyncKeyFile(core.device_sync_key_path_, state, write_err)) {
+    core.last_error_ =
+        write_err.empty() ? "device sync key write failed" : write_err;
+    return false;
+  }
+  ApplyDeviceSyncState(core, state);
   return true;
 }
 
@@ -514,28 +727,180 @@ bool SyncService::DecryptDeviceSync(ClientCore& core, const std::vector<std::uin
     core.last_error_ = "device sync magic mismatch";
     return false;
   }
-  if (cipher[4] != 1) {
+  const std::uint8_t version = cipher[4];
+  if (version != kDeviceSyncWireVersionLegacy &&
+      version != kDeviceSyncWireVersionRatchet) {
     core.last_error_ = "device sync version mismatch";
     return false;
   }
 
-  const std::uint8_t* ad = cipher.data();
-  static constexpr std::size_t kAdSize = 5;
-  const std::uint8_t* nonce = cipher.data() + kAdSize;
-  const std::uint8_t* mac = nonce + 24;
-  const std::uint8_t* ctext = mac + 16;
-  const std::size_t ctext_len = cipher.size() - kAdSize - 24 - 16;
+  const auto prune_prev_key = [&]() {
+    if (core.device_sync_prev_key_until_ms_ == 0) {
+      return;
+    }
+    const std::uint64_t now_ms = mi::platform::NowSteadyMs();
+    if (now_ms <= core.device_sync_prev_key_until_ms_) {
+      return;
+    }
+    if (!IsAllZero(core.device_sync_prev_key_.data(),
+                   core.device_sync_prev_key_.size())) {
+      crypto_wipe(core.device_sync_prev_key_.data(),
+                  core.device_sync_prev_key_.size());
+    }
+    core.device_sync_prev_key_.fill(0);
+    core.device_sync_prev_key_until_ms_ = 0;
+    core.device_sync_prev_recv_counter_ = 0;
+  };
 
-  out_plaintext.resize(ctext_len);
-  const int rc = crypto_aead_unlock(out_plaintext.data(), mac,
-                                    core.device_sync_key_.data(), nonce, ad, kAdSize,
-                                    ctext, ctext_len);
-  if (rc != 0) {
+  if (version == kDeviceSyncWireVersionLegacy) {
+    const std::uint8_t* ad = cipher.data();
+    static constexpr std::size_t kAdSize = 5;
+    const std::uint8_t* nonce = cipher.data() + kAdSize;
+    const std::uint8_t* mac = nonce + 24;
+    const std::uint8_t* ctext = mac + 16;
+    const std::size_t ctext_len = cipher.size() - kAdSize - 24 - 16;
+
+    out_plaintext.resize(ctext_len);
+    int rc = crypto_aead_unlock(out_plaintext.data(), mac,
+                                core.device_sync_key_.data(), nonce, ad, kAdSize,
+                                ctext, ctext_len);
+    if (rc == 0) {
+      return true;
+    }
+
+    prune_prev_key();
+    if (core.device_sync_prev_key_until_ms_ != 0 &&
+        !IsAllZero(core.device_sync_prev_key_.data(),
+                   core.device_sync_prev_key_.size())) {
+      rc = crypto_aead_unlock(out_plaintext.data(), mac,
+                              core.device_sync_prev_key_.data(), nonce, ad,
+                              kAdSize, ctext, ctext_len);
+      if (rc == 0) {
+        return true;
+      }
+    }
     out_plaintext.clear();
     core.last_error_ = "device sync auth failed";
     return false;
   }
-  return true;
+
+  if (!core.device_sync_ratchet_enable_) {
+    core.last_error_ = "device sync ratchet disabled";
+    return false;
+  }
+  static constexpr std::size_t kRatchetAdSize = 13;
+  if (cipher.size() < (kRatchetAdSize + 24 + 16 + 1)) {
+    core.last_error_ = "device sync cipher invalid";
+    return false;
+  }
+  const std::uint64_t step = ReadUint64Le(cipher.data() + 5);
+  if (step == 0) {
+    core.last_error_ = "device sync step invalid";
+    return false;
+  }
+
+  const std::uint8_t* ad = cipher.data();
+  const std::uint8_t* nonce = cipher.data() + kRatchetAdSize;
+  const std::uint8_t* mac = nonce + 24;
+  const std::uint8_t* ctext = mac + 16;
+  const std::size_t ctext_len = cipher.size() - kRatchetAdSize - 24 - 16;
+
+  std::uint64_t max_skip = core.device_sync_ratchet_max_skip_;
+  if (max_skip == 0) {
+    max_skip = 1;
+  }
+  if (max_skip > kDeviceSyncMaxSkipHardLimit) {
+    max_skip = kDeviceSyncMaxSkipHardLimit;
+  }
+
+  const auto try_ratchet =
+      [&](const std::array<std::uint8_t, 32>& chain_key,
+          std::uint64_t recv_counter, std::array<std::uint8_t, 32>& out_next_chain,
+          std::uint64_t& out_recv_counter, std::string& out_err) -> bool {
+    out_err.clear();
+    if (step <= recv_counter) {
+      out_err = "device sync replay";
+      return false;
+    }
+    const std::uint64_t delta = step - recv_counter;
+    if (delta > max_skip) {
+      out_err = "device sync step too far";
+      return false;
+    }
+
+    std::array<std::uint8_t, 32> chain = chain_key;
+    std::array<std::uint8_t, 32> msg_key{};
+    std::array<std::uint8_t, 32> next_chain{};
+    for (std::uint64_t i = 0; i < delta; ++i) {
+      if (!DeriveDeviceSyncRatchetKeys(chain, msg_key, next_chain)) {
+        out_err = "device sync ratchet failed";
+        return false;
+      }
+      chain = next_chain;
+    }
+
+    out_plaintext.resize(ctext_len);
+    const int rc = crypto_aead_unlock(out_plaintext.data(), mac, msg_key.data(),
+                                      nonce, ad, kRatchetAdSize, ctext,
+                                      ctext_len);
+    if (rc != 0) {
+      out_plaintext.clear();
+      out_err = "device sync auth failed";
+      return false;
+    }
+
+    out_next_chain = next_chain;
+    out_recv_counter = step;
+    return true;
+  };
+
+  std::string err;
+  std::array<std::uint8_t, 32> next_chain{};
+  std::uint64_t next_recv_counter = 0;
+  if (try_ratchet(core.device_sync_key_, core.device_sync_recv_counter_,
+                  next_chain, next_recv_counter, err)) {
+    DeviceSyncKeyState state;
+    state.key = next_chain;
+    state.send_counter = core.device_sync_send_counter_;
+    state.recv_counter = next_recv_counter;
+    std::string write_err;
+    if (!WriteDeviceSyncKeyFile(core.device_sync_key_path_, state, write_err)) {
+      core.last_error_ =
+          write_err.empty() ? "device sync key write failed" : write_err;
+      out_plaintext.clear();
+      return false;
+    }
+    ApplyDeviceSyncState(core, state);
+    return true;
+  }
+
+  prune_prev_key();
+  if (core.device_sync_prev_key_until_ms_ != 0 &&
+      !IsAllZero(core.device_sync_prev_key_.data(),
+                 core.device_sync_prev_key_.size())) {
+    std::array<std::uint8_t, 32> prev_next_chain{};
+    std::uint64_t prev_next_recv = 0;
+    std::string prev_err;
+    if (try_ratchet(core.device_sync_prev_key_,
+                    core.device_sync_prev_recv_counter_, prev_next_chain,
+                    prev_next_recv, prev_err)) {
+      if (!IsAllZero(core.device_sync_prev_key_.data(),
+                     core.device_sync_prev_key_.size())) {
+        crypto_wipe(core.device_sync_prev_key_.data(),
+                    core.device_sync_prev_key_.size());
+      }
+      core.device_sync_prev_key_ = prev_next_chain;
+      core.device_sync_prev_recv_counter_ = prev_next_recv;
+      return true;
+    }
+    if (err.empty()) {
+      err = prev_err;
+    }
+  }
+
+  out_plaintext.clear();
+  core.last_error_ = err.empty() ? "device sync auth failed" : err;
+  return false;
 }
 
 bool SyncService::PushDeviceSyncCiphertext(ClientCore& core, const std::vector<std::uint8_t>& cipher) const {

@@ -2,6 +2,7 @@
 #define MI_E2EE_SERVER_GROUP_DIRECTORY_H
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -20,6 +21,8 @@ struct GroupMemberInfo {
 
 class GroupDirectory {
  public:
+  explicit GroupDirectory(std::filesystem::path persist_dir = {});
+
   bool AddGroup(const std::string& group_id, const std::string& owner);
   bool AddMember(const std::string& group_id, const std::string& user);
   bool RemoveMember(const std::string& group_id, const std::string& user);
@@ -30,6 +33,7 @@ class GroupDirectory {
                                   const std::string& user) const;
   bool SetRole(const std::string& group_id, const std::string& user,
                GroupRole role);
+  bool persistence_enabled() const { return persistence_enabled_; }
 
  private:
   struct GroupInfo {
@@ -38,9 +42,13 @@ class GroupDirectory {
   };
 
   static std::string PickNewOwner(const GroupInfo& group);
+  bool LoadFromDisk();
+  bool SaveLocked();
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, GroupInfo> groups_;
+  std::filesystem::path persist_path_;
+  bool persistence_enabled_{false};
 };
 
 }  // namespace mi::server

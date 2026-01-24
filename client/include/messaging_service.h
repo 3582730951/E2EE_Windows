@@ -77,6 +77,9 @@ class MessagingService {
   bool SendChatFile(ClientCore& core, const std::string& peer_username, const std::filesystem::path& file_path, std::string& out_message_id_hex) const;
   bool ResendChatFile(ClientCore& core, const std::string& peer_username, const std::string& message_id_hex, const std::filesystem::path& file_path) const;
   ClientCore::ChatPollResult PollChat(ClientCore& core) const;
+
+ private:
+  bool MaybeRotateDeviceSyncKey(ClientCore& core) const;
 };
 
 }  // namespace mi::client

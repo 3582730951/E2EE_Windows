@@ -14,6 +14,8 @@ enum class ProxyType : std::uint8_t { kNone = 0, kSocks5 = 1 };
 // - kOpaque: OPAQUE (PAKE) register/login (server stores opaque password file; derive keys from session key)
 enum class AuthMode : std::uint8_t { kLegacy = 0, kOpaque = 1 };
 
+enum class TlsVerifyMode : std::uint8_t { kPin = 0, kCa = 1, kHybrid = 2 };
+
 enum class DeviceSyncRole : std::uint8_t { kPrimary = 0, kLinked = 1 };
 
 enum class CoverTrafficMode : std::uint8_t { kAuto = 0, kOn = 1, kOff = 2 };
@@ -34,6 +36,10 @@ struct DeviceSyncConfig {
   bool enabled{false};
   DeviceSyncRole role{DeviceSyncRole::kPrimary};
   std::string key_path;
+  std::uint32_t rotate_interval_sec{86400};
+  std::uint32_t rotate_message_limit{2048};
+  bool ratchet_enable{true};
+  std::uint32_t ratchet_max_skip{2048};
 };
 
 struct IdentityConfig {
@@ -93,6 +99,9 @@ struct ClientConfig {
   std::string trust_store{"server_trust.ini"};
   bool require_pinned_fingerprint{true};
   std::string pinned_fingerprint;
+  TlsVerifyMode tls_verify_mode{TlsVerifyMode::kPin};
+  std::string tls_ca_bundle_path;
+  bool tls_verify_hostname{true};
   AuthMode auth_mode{AuthMode::kOpaque};
   bool allow_legacy_login{false};
   ProxyConfig proxy;

@@ -16,6 +16,7 @@
 
 #include <cstring>
 #include <mutex>
+#include <vector>
 
 namespace mi::platform::media {
 
@@ -181,6 +182,165 @@ class OpusCodecWin final : public OpusCodec {
   OpusEncoderCtl encoder_ctl_{nullptr};
 };
 
+namespace {
+
+constexpr std::uint8_t kAnnexBPrefix[4] = {0, 0, 0, 1};
+
+bool HasAnnexBStartCode(const std::uint8_t* data, std::size_t len) {
+  if (!data || len < 3) {
+    return false;
+  }
+  for (std::size_t i = 0; i + 3 < len; ++i) {
+    if (data[i] == 0 && data[i + 1] == 0) {
+      if (data[i + 2] == 1) {
+        return true;
+      }
+      if (i + 3 < len && data[i + 2] == 0 && data[i + 3] == 1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool AnnexBHasParameterSets(const std::vector<std::uint8_t>& data) {
+  if (data.size() < 4) {
+    return false;
+  }
+  for (std::size_t i = 0; i + 3 < data.size(); ++i) {
+    if (data[i] == 0 && data[i + 1] == 0 &&
+        ((data[i + 2] == 1) ||
+         (i + 3 < data.size() && data[i + 2] == 0 && data[i + 3] == 1))) {
+      const std::size_t start = (data[i + 2] == 1) ? (i + 3) : (i + 4);
+      if (start < data.size()) {
+        const std::uint8_t type = data[start] & 0x1F;
+        if (type == 7 || type == 8) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool ConvertAvccToAnnexB(const std::uint8_t* data,
+                         std::size_t len,
+                         std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (!data || len < 4) {
+    return false;
+  }
+  std::size_t off = 0;
+  while (off + 4 <= len) {
+    const std::uint32_t nalu_len =
+        (static_cast<std::uint32_t>(data[off]) << 24) |
+        (static_cast<std::uint32_t>(data[off + 1]) << 16) |
+        (static_cast<std::uint32_t>(data[off + 2]) << 8) |
+        (static_cast<std::uint32_t>(data[off + 3]));
+    off += 4;
+    if (nalu_len == 0 || off + nalu_len > len) {
+      out.clear();
+      return false;
+    }
+    out.insert(out.end(), kAnnexBPrefix, kAnnexBPrefix + sizeof(kAnnexBPrefix));
+    out.insert(out.end(), data + off, data + off + nalu_len);
+    off += nalu_len;
+  }
+  return off == len && !out.empty();
+}
+
+bool AvccExtradataToAnnexB(const std::uint8_t* data,
+                           std::size_t len,
+                           std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (!data || len < 7) {
+    return false;
+  }
+  std::size_t off = 5;
+  const std::uint8_t num_sps = data[off] & 0x1F;
+  off += 1;
+  for (std::uint8_t i = 0; i < num_sps; ++i) {
+    if (off + 2 > len) {
+      out.clear();
+      return false;
+    }
+    const std::uint16_t sps_len =
+        static_cast<std::uint16_t>(data[off] << 8 | data[off + 1]);
+    off += 2;
+    if (sps_len == 0 || off + sps_len > len) {
+      out.clear();
+      return false;
+    }
+    out.insert(out.end(), kAnnexBPrefix, kAnnexBPrefix + sizeof(kAnnexBPrefix));
+    out.insert(out.end(), data + off, data + off + sps_len);
+    off += sps_len;
+  }
+  if (off >= len) {
+    return !out.empty();
+  }
+  const std::uint8_t num_pps = data[off++];
+  for (std::uint8_t i = 0; i < num_pps; ++i) {
+    if (off + 2 > len) {
+      out.clear();
+      return false;
+    }
+    const std::uint16_t pps_len =
+        static_cast<std::uint16_t>(data[off] << 8 | data[off + 1]);
+    off += 2;
+    if (pps_len == 0 || off + pps_len > len) {
+      out.clear();
+      return false;
+    }
+    out.insert(out.end(), kAnnexBPrefix, kAnnexBPrefix + sizeof(kAnnexBPrefix));
+    out.insert(out.end(), data + off, data + off + pps_len);
+    off += pps_len;
+  }
+  return !out.empty();
+}
+
+bool AppendSampleBytes(IMFSample* sample, std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (!sample) {
+    return false;
+  }
+  DWORD count = 0;
+  if (FAILED(sample->GetBufferCount(&count)) || count == 0) {
+    return false;
+  }
+  for (DWORD i = 0; i < count; ++i) {
+    Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
+    if (FAILED(sample->GetBufferByIndex(i, &buffer))) {
+      out.clear();
+      return false;
+    }
+    BYTE* data = nullptr;
+    DWORD max_len = 0;
+    DWORD cur_len = 0;
+    if (FAILED(buffer->Lock(&data, &max_len, &cur_len))) {
+      out.clear();
+      return false;
+    }
+    if (cur_len > 0) {
+      out.insert(out.end(), data, data + cur_len);
+    }
+    buffer->Unlock();
+  }
+  return !out.empty();
+}
+
+bool SampleIsKeyframe(IMFSample* sample) {
+  if (!sample) {
+    return false;
+  }
+  UINT32 clean = 0;
+  if (SUCCEEDED(sample->GetUINT32(MFSampleExtension_CleanPoint, &clean))) {
+    return clean != 0;
+  }
+  return false;
+}
+
+}  // namespace
+
 class H264CodecWin final : public H264Codec {
  public:
   bool Init(std::uint32_t width,
@@ -215,6 +375,9 @@ class H264CodecWin final : public H264Codec {
     if (!encoder_ || !nv12) {
       return false;
     }
+    if (stride < width_) {
+      return false;
+    }
     if (keyframe) {
       ForceKeyframe();
     }
@@ -245,52 +408,19 @@ class H264CodecWin final : public H264Codec {
     const LONGLONG ts = static_cast<LONGLONG>(timestamp_ms) * 10000;
     enc_in_sample_->SetSampleTime(ts);
     enc_in_sample_->SetSampleDuration(frame_duration_100ns_);
-    if (FAILED(encoder_->ProcessInput(0, enc_in_sample_.Get(), 0))) {
+    HRESULT input_hr = encoder_->ProcessInput(0, enc_in_sample_.Get(), 0);
+    if (input_hr == MF_E_NOTACCEPTING) {
+      if (!DrainEncoder(out)) {
+        return false;
+      }
+      input_hr = encoder_->ProcessInput(0, enc_in_sample_.Get(), 0);
+    }
+    if (FAILED(input_hr)) {
       return false;
     }
     const std::size_t start = out.size();
-    for (;;) {
-      MFT_OUTPUT_STREAM_INFO info{};
-      if (FAILED(encoder_->GetOutputStreamInfo(0, &info))) {
-        return false;
-      }
-      if (!enc_out_buf_ || enc_out_capacity_ < info.cbSize) {
-        enc_out_sample_.Reset();
-        enc_out_buf_.Reset();
-        if (FAILED(MFCreateSample(&enc_out_sample_)) ||
-            FAILED(MFCreateMemoryBuffer(info.cbSize, &enc_out_buf_))) {
-          return false;
-        }
-        enc_out_capacity_ = info.cbSize;
-        enc_out_sample_->AddBuffer(enc_out_buf_.Get());
-      }
-      enc_out_buf_->SetCurrentLength(0);
-      MFT_OUTPUT_DATA_BUFFER output{};
-      output.pSample = enc_out_sample_.Get();
-      DWORD status = 0;
-      const HRESULT hr = encoder_->ProcessOutput(0, 1, &output, &status);
-      if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
-        break;
-      }
-      if (FAILED(hr)) {
-        return false;
-      }
-      std::uint8_t* data = nullptr;
-      DWORD max_len2 = 0;
-      DWORD cur_len2 = 0;
-      if (FAILED(enc_out_buf_->Lock(reinterpret_cast<BYTE**>(&data), &max_len2,
-                                    &cur_len2))) {
-        return false;
-      }
-      const std::size_t add = static_cast<std::size_t>(cur_len2);
-      if (add != 0) {
-        out.reserve(out.size() + add);
-        out.insert(out.end(), data, data + cur_len2);
-      }
-      enc_out_buf_->Unlock();
-      if (output.pEvents) {
-        output.pEvents->Release();
-      }
+    if (!DrainEncoder(out)) {
+      return false;
     }
     return out.size() > start;
   }
@@ -302,14 +432,25 @@ class H264CodecWin final : public H264Codec {
     if (!decoder_ || (!data && len != 0)) {
       return false;
     }
-    if (!dec_in_buf_ || dec_in_capacity_ < len) {
+    const std::uint8_t* input_data = data;
+    std::size_t input_len = len;
+    std::vector<std::uint8_t> annexb;
+    if (data && len > 0 && !HasAnnexBStartCode(data, len)) {
+      if (!ConvertAvccToAnnexB(data, len, annexb)) {
+        return false;
+      }
+      input_data = annexb.data();
+      input_len = annexb.size();
+    }
+    if (!dec_in_buf_ || dec_in_capacity_ < input_len) {
       dec_in_sample_.Reset();
       dec_in_buf_.Reset();
       if (FAILED(MFCreateSample(&dec_in_sample_)) ||
-          FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(len), &dec_in_buf_))) {
+          FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(input_len),
+                                      &dec_in_buf_))) {
         return false;
       }
-      dec_in_capacity_ = static_cast<DWORD>(len);
+      dec_in_capacity_ = static_cast<DWORD>(input_len);
       dec_in_sample_->AddBuffer(dec_in_buf_.Get());
     }
     std::uint8_t* dst = nullptr;
@@ -319,60 +460,27 @@ class H264CodecWin final : public H264Codec {
                                  &cur_len))) {
       return false;
     }
-    if (len > 0) {
-      std::memcpy(dst, data, len);
+    if (input_len > 0) {
+      std::memcpy(dst, input_data, input_len);
     }
     dec_in_buf_->Unlock();
-    dec_in_buf_->SetCurrentLength(static_cast<DWORD>(len));
+    dec_in_buf_->SetCurrentLength(static_cast<DWORD>(input_len));
     const LONGLONG ts = static_cast<LONGLONG>(timestamp_ms) * 10000;
     dec_in_sample_->SetSampleTime(ts);
     dec_in_sample_->SetSampleDuration(frame_duration_100ns_);
-    if (FAILED(decoder_->ProcessInput(0, dec_in_sample_.Get(), 0))) {
+    HRESULT dec_hr = decoder_->ProcessInput(0, dec_in_sample_.Get(), 0);
+    if (dec_hr == MF_E_NOTACCEPTING) {
+      if (!DrainDecoder(out)) {
+        return false;
+      }
+      dec_hr = decoder_->ProcessInput(0, dec_in_sample_.Get(), 0);
+    }
+    if (FAILED(dec_hr)) {
       return false;
     }
     out.clear();
-    for (;;) {
-      MFT_OUTPUT_STREAM_INFO info{};
-      if (FAILED(decoder_->GetOutputStreamInfo(0, &info))) {
-        return false;
-      }
-      if (!dec_out_buf_ || dec_out_capacity_ < info.cbSize) {
-        dec_out_sample_.Reset();
-        dec_out_buf_.Reset();
-        if (FAILED(MFCreateSample(&dec_out_sample_)) ||
-            FAILED(MFCreateMemoryBuffer(info.cbSize, &dec_out_buf_))) {
-          return false;
-        }
-        dec_out_capacity_ = info.cbSize;
-        dec_out_sample_->AddBuffer(dec_out_buf_.Get());
-      }
-      dec_out_buf_->SetCurrentLength(0);
-      MFT_OUTPUT_DATA_BUFFER output{};
-      output.pSample = dec_out_sample_.Get();
-      DWORD status = 0;
-      const HRESULT hr = decoder_->ProcessOutput(0, 1, &output, &status);
-      if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
-        break;
-      }
-      if (FAILED(hr)) {
-        return false;
-      }
-      std::uint8_t* data_ptr = nullptr;
-      DWORD max_len2 = 0;
-      DWORD cur_len2 = 0;
-      if (FAILED(dec_out_buf_->Lock(reinterpret_cast<BYTE**>(&data_ptr),
-                                    &max_len2, &cur_len2))) {
-        return false;
-      }
-      const std::size_t add = static_cast<std::size_t>(cur_len2);
-      if (add != 0) {
-        out.reserve(out.size() + add);
-        out.insert(out.end(), data_ptr, data_ptr + cur_len2);
-      }
-      dec_out_buf_->Unlock();
-      if (output.pEvents) {
-        output.pEvents->Release();
-      }
+    if (!DrainDecoder(out)) {
+      return false;
     }
     return !out.empty();
   }
@@ -408,6 +516,214 @@ class H264CodecWin final : public H264Codec {
     if (FAILED(hr)) {
       error = "MFStartup failed";
       return false;
+    }
+    return true;
+  }
+
+  void RefreshAnnexBHeader() {
+    annexb_header_.clear();
+    if (!encoder_) {
+      return;
+    }
+    Microsoft::WRL::ComPtr<IMFMediaType> type;
+    if (FAILED(encoder_->GetOutputCurrentType(0, &type)) || !type) {
+      return;
+    }
+    UINT32 blob_size = 0;
+    if (FAILED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &blob_size)) ||
+        blob_size == 0) {
+      return;
+    }
+    std::vector<std::uint8_t> blob(blob_size);
+    if (FAILED(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, blob.data(),
+                             blob_size, nullptr))) {
+      return;
+    }
+    std::vector<std::uint8_t> header;
+    if (AvccExtradataToAnnexB(blob.data(), blob.size(), header)) {
+      annexb_header_.swap(header);
+    }
+  }
+
+  bool EnsureEncoderOutputType() {
+    if (!encoder_) {
+      return false;
+    }
+    Microsoft::WRL::ComPtr<IMFMediaType> type;
+    if (FAILED(encoder_->GetOutputAvailableType(0, 0, &type)) || !type) {
+      return false;
+    }
+    if (FAILED(encoder_->SetOutputType(0, type.Get(), 0))) {
+      return false;
+    }
+    RefreshAnnexBHeader();
+    return true;
+  }
+
+  bool EnsureDecoderOutputType() {
+    if (!decoder_) {
+      return false;
+    }
+    Microsoft::WRL::ComPtr<IMFMediaType> type;
+    if (FAILED(decoder_->GetOutputAvailableType(0, 0, &type)) || !type) {
+      return false;
+    }
+    if (FAILED(decoder_->SetOutputType(0, type.Get(), 0))) {
+      return false;
+    }
+    return true;
+  }
+
+  bool DrainEncoder(std::vector<std::uint8_t>& out) {
+    if (!encoder_) {
+      return false;
+    }
+    for (;;) {
+      MFT_OUTPUT_STREAM_INFO info{};
+      if (FAILED(encoder_->GetOutputStreamInfo(0, &info))) {
+        return false;
+      }
+      Microsoft::WRL::ComPtr<IMFSample> sample;
+      if ((info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) == 0) {
+        if (!enc_out_buf_ || enc_out_capacity_ < info.cbSize) {
+          enc_out_sample_.Reset();
+          enc_out_buf_.Reset();
+          if (FAILED(MFCreateSample(&enc_out_sample_)) ||
+              FAILED(MFCreateMemoryBuffer(info.cbSize, &enc_out_buf_))) {
+            return false;
+          }
+          enc_out_capacity_ = info.cbSize;
+          enc_out_sample_->AddBuffer(enc_out_buf_.Get());
+        }
+        enc_out_buf_->SetCurrentLength(0);
+        sample = enc_out_sample_;
+      }
+      MFT_OUTPUT_DATA_BUFFER output{};
+      output.pSample = sample.Get();
+      DWORD status = 0;
+      const HRESULT hr = encoder_->ProcessOutput(0, 1, &output, &status);
+      if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+        break;
+      }
+      if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+        if (!EnsureEncoderOutputType()) {
+          return false;
+        }
+        continue;
+      }
+      if (FAILED(hr)) {
+        return false;
+      }
+      IMFSample* out_sample = output.pSample ? output.pSample : sample.Get();
+      if (!out_sample) {
+        if (output.pEvents) {
+          output.pEvents->Release();
+        }
+        return false;
+      }
+      std::vector<std::uint8_t> packet;
+      if (!AppendSampleBytes(out_sample, packet)) {
+        if (output.pEvents) {
+          output.pEvents->Release();
+        }
+        if (output.pSample && output.pSample != sample.Get()) {
+          output.pSample->Release();
+        }
+        return false;
+      }
+      if (!HasAnnexBStartCode(packet.data(), packet.size())) {
+        std::vector<std::uint8_t> annexb;
+        if (!ConvertAvccToAnnexB(packet.data(), packet.size(), annexb)) {
+          if (output.pEvents) {
+            output.pEvents->Release();
+          }
+          if (output.pSample && output.pSample != sample.Get()) {
+            output.pSample->Release();
+          }
+          return false;
+        }
+        packet.swap(annexb);
+      }
+      const bool keyframe = SampleIsKeyframe(out_sample);
+      if (keyframe && !annexb_header_.empty() &&
+          !AnnexBHasParameterSets(packet)) {
+        out.insert(out.end(), annexb_header_.begin(), annexb_header_.end());
+      }
+      out.insert(out.end(), packet.begin(), packet.end());
+      if (output.pEvents) {
+        output.pEvents->Release();
+      }
+      if (output.pSample && output.pSample != sample.Get()) {
+        output.pSample->Release();
+      }
+    }
+    return true;
+  }
+
+  bool DrainDecoder(std::vector<std::uint8_t>& out) {
+    if (!decoder_) {
+      return false;
+    }
+    for (;;) {
+      MFT_OUTPUT_STREAM_INFO info{};
+      if (FAILED(decoder_->GetOutputStreamInfo(0, &info))) {
+        return false;
+      }
+      Microsoft::WRL::ComPtr<IMFSample> sample;
+      if ((info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) == 0) {
+        if (!dec_out_buf_ || dec_out_capacity_ < info.cbSize) {
+          dec_out_sample_.Reset();
+          dec_out_buf_.Reset();
+          if (FAILED(MFCreateSample(&dec_out_sample_)) ||
+              FAILED(MFCreateMemoryBuffer(info.cbSize, &dec_out_buf_))) {
+            return false;
+          }
+          dec_out_capacity_ = info.cbSize;
+          dec_out_sample_->AddBuffer(dec_out_buf_.Get());
+        }
+        dec_out_buf_->SetCurrentLength(0);
+        sample = dec_out_sample_;
+      }
+      MFT_OUTPUT_DATA_BUFFER output{};
+      output.pSample = sample.Get();
+      DWORD status = 0;
+      const HRESULT hr = decoder_->ProcessOutput(0, 1, &output, &status);
+      if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+        break;
+      }
+      if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+        if (!EnsureDecoderOutputType()) {
+          return false;
+        }
+        continue;
+      }
+      if (FAILED(hr)) {
+        return false;
+      }
+      IMFSample* out_sample = output.pSample ? output.pSample : sample.Get();
+      if (!out_sample) {
+        if (output.pEvents) {
+          output.pEvents->Release();
+        }
+        return false;
+      }
+      std::vector<std::uint8_t> packet;
+      if (!AppendSampleBytes(out_sample, packet)) {
+        if (output.pEvents) {
+          output.pEvents->Release();
+        }
+        if (output.pSample && output.pSample != sample.Get()) {
+          output.pSample->Release();
+        }
+        return false;
+      }
+      out.insert(out.end(), packet.begin(), packet.end());
+      if (output.pEvents) {
+        output.pEvents->Release();
+      }
+      if (output.pSample && output.pSample != sample.Get()) {
+        output.pSample->Release();
+      }
     }
     return true;
   }
@@ -469,6 +785,18 @@ class H264CodecWin final : public H264Codec {
       error = "encoder output type failed";
       return false;
     }
+#if defined(__ICodecAPI_INTERFACE_DEFINED__)
+    {
+      Microsoft::WRL::ComPtr<ICodecAPI> api;
+      if (SUCCEEDED(encoder_.As(&api))) {
+        VARIANT v{};
+        v.vt = VT_BOOL;
+        v.boolVal = VARIANT_TRUE;
+        api->SetValue(&CODECAPI_AVLowLatencyMode, &v);
+      }
+    }
+#endif
+    RefreshAnnexBHeader();
     encoder_->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
     encoder_->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
     encoder_->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
@@ -562,6 +890,7 @@ class H264CodecWin final : public H264Codec {
   Microsoft::WRL::ComPtr<IMFSample> dec_out_sample_;
   Microsoft::WRL::ComPtr<IMFMediaBuffer> dec_out_buf_;
   DWORD dec_out_capacity_{0};
+  std::vector<std::uint8_t> annexb_header_;
   std::uint32_t width_{0};
   std::uint32_t height_{0};
   std::uint32_t fps_{0};

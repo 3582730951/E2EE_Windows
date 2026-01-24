@@ -1,38 +1,181 @@
 #include "platform_secure_store.h"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include "monocypher.h"
+#include "path_security.h"
+#include "platform_fs.h"
 #include "platform_random.h"
 
 #if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
 #elif defined(__linux__)
-#include <libsecret/secret.h>
 #include <unistd.h>
+#if defined(MI_E2EE_WITH_LIBSECRET)
+#include <libsecret/secret.h>
+#endif
 #endif
 
 namespace mi::platform {
 
 namespace {
+namespace pfs = mi::platform::fs;
 
 constexpr char kStoreLabel[] = "mi_e2ee secure store key";
 constexpr char kStoreService[] = "mi_e2ee_secure_store";
 constexpr char kStoreAccount[] = "default";
 constexpr char kBlobMagic[] = "MI_E2EE_SECURE_STORE_V1";
+constexpr char kFallbackKeyFileName[] = "mi_e2ee_secure_store.key";
 constexpr std::size_t kKeyBytes = 32;
 constexpr std::size_t kNonceBytes = 24;
 constexpr std::size_t kTagBytes = 16;
 
 bool RandomKey(std::array<std::uint8_t, kKeyBytes>& key) {
   return RandomBytes(key.data(), key.size());
+}
+
+std::filesystem::path ResolveFallbackKeyPath() {
+  if (const char* env = std::getenv("MI_E2EE_DATA_DIR")) {
+    if (*env != '\0') {
+      return std::filesystem::path(env) / kFallbackKeyFileName;
+    }
+  }
+#if defined(__APPLE__)
+  if (const char* env = std::getenv("HOME")) {
+    if (*env != '\0') {
+      return std::filesystem::path(env) / "Library" / "Application Support" /
+             "mi_e2ee" / kFallbackKeyFileName;
+    }
+  }
+#else
+  if (const char* env = std::getenv("XDG_DATA_HOME")) {
+    if (*env != '\0') {
+      return std::filesystem::path(env) / "mi_e2ee" / kFallbackKeyFileName;
+    }
+  }
+  if (const char* env = std::getenv("HOME")) {
+    if (*env != '\0') {
+      return std::filesystem::path(env) / ".local" / "share" / "mi_e2ee" /
+             kFallbackKeyFileName;
+    }
+  }
+#endif
+  std::error_code ec;
+  auto cwd = pfs::CurrentPath(ec);
+  if (!cwd.empty()) {
+    return cwd / kFallbackKeyFileName;
+  }
+  return std::filesystem::path{kFallbackKeyFileName};
+}
+
+bool EnsureSecureDir(const std::filesystem::path& dir, std::string& error) {
+  error.clear();
+  if (dir.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  if (!pfs::Exists(dir, ec)) {
+    if (ec) {
+      error = "secure store dir check failed";
+      return false;
+    }
+    if (!pfs::CreateDirectories(dir, ec) || ec) {
+      error = "secure store dir create failed";
+      return false;
+    }
+  }
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(dir, perm_err)) {
+    error = perm_err.empty() ? "secure store dir permissions insecure" : perm_err;
+    return false;
+  }
+  std::filesystem::permissions(
+      dir,
+      std::filesystem::perms::owner_all,
+      std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "secure store dir chmod failed";
+    return false;
+  }
+  return true;
+}
+
+bool ReadFallbackKeyFile(std::array<std::uint8_t, kKeyBytes>& key,
+                         bool& found,
+                         std::string& error) {
+  found = false;
+  error.clear();
+  const auto path = ResolveFallbackKeyPath();
+  std::error_code ec;
+  if (!pfs::Exists(path, ec)) {
+    if (ec) {
+      error = "secure store key stat failed";
+      return false;
+    }
+    return true;
+  }
+  if (pfs::IsDirectory(path, ec) || ec) {
+    error = "secure store key path invalid";
+    return false;
+  }
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    error = perm_err.empty() ? "secure store key permissions insecure" : perm_err;
+    return false;
+  }
+  std::ifstream f(path, std::ios::binary);
+  if (!f.is_open()) {
+    error = "secure store key read failed";
+    return false;
+  }
+  f.read(reinterpret_cast<char*>(key.data()), key.size());
+  if (!f || f.gcount() != static_cast<std::streamsize>(key.size())) {
+    error = "secure store key read failed";
+    return false;
+  }
+  found = true;
+  return true;
+}
+
+bool WriteFallbackKeyFile(const std::array<std::uint8_t, kKeyBytes>& key,
+                          std::string& error) {
+  error.clear();
+  const auto path = ResolveFallbackKeyPath();
+  if (path.has_parent_path()) {
+    if (!EnsureSecureDir(path.parent_path(), error)) {
+      return false;
+    }
+  }
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    error = perm_err.empty() ? "secure store key permissions insecure" : perm_err;
+    return false;
+  }
+  std::error_code ec;
+  if (!pfs::AtomicWrite(path, key.data(), key.size(), ec) || ec) {
+    error = "secure store key write failed";
+    return false;
+  }
+  std::filesystem::permissions(
+      path,
+      std::filesystem::perms::owner_read |
+          std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "secure store key chmod failed";
+    return false;
+  }
+  return true;
 }
 
 std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
@@ -216,7 +359,7 @@ bool StoreKeychainKey(const std::array<std::uint8_t, kKeyBytes>& key,
   return true;
 }
 
-#elif defined(__linux__)
+#elif defined(__linux__) && defined(MI_E2EE_WITH_LIBSECRET)
 
 const SecretSchema& SecureStoreSchema() {
   static const SecretSchema kSchema = {
@@ -280,6 +423,22 @@ bool StoreSecretServiceKey(const std::array<std::uint8_t, kKeyBytes>& key,
   return true;
 }
 
+#elif defined(__linux__)
+
+bool LoadSecretServiceKey(std::array<std::uint8_t, kKeyBytes>& /*key*/,
+                          bool& found,
+                          std::string& error) {
+  found = false;
+  error.clear();
+  return false;
+}
+
+bool StoreSecretServiceKey(const std::array<std::uint8_t, kKeyBytes>& /*key*/,
+                           std::string& error) {
+  error.clear();
+  return false;
+}
+
 #endif
 
 bool GetOrCreateMasterKey(std::array<std::uint8_t, kKeyBytes>& key,
@@ -299,13 +458,45 @@ bool GetOrCreateMasterKey(std::array<std::uint8_t, kKeyBytes>& key,
 
   bool found = false;
 #if defined(__APPLE__)
-  if (!LoadKeychainKey(key, found, error)) {
-    return false;
+  bool keychain_found = false;
+  std::string keychain_err;
+  const bool keychain_ok = LoadKeychainKey(key, keychain_found, keychain_err);
+  bool fallback_found = false;
+  if (!keychain_found) {
+    std::string fallback_err;
+    if (!ReadFallbackKeyFile(key, fallback_found, fallback_err)) {
+      if (!keychain_ok && !keychain_err.empty()) {
+        error = keychain_err;
+      } else {
+        error = fallback_err;
+      }
+      if (error.empty()) {
+        error = "secure store key load failed";
+      }
+      return false;
+    }
   }
+  found = keychain_found || fallback_found;
 #elif defined(__linux__)
-  if (!LoadSecretServiceKey(key, found, error)) {
-    return false;
+  bool secret_found = false;
+  std::string secret_err;
+  const bool secret_ok = LoadSecretServiceKey(key, secret_found, secret_err);
+  bool fallback_found = false;
+  if (!secret_found) {
+    std::string fallback_err;
+    if (!ReadFallbackKeyFile(key, fallback_found, fallback_err)) {
+      if (!secret_ok && !secret_err.empty()) {
+        error = secret_err;
+      } else {
+        error = fallback_err;
+      }
+      if (error.empty()) {
+        error = "secure store key load failed";
+      }
+      return false;
+    }
   }
+  found = secret_found || fallback_found;
 #else
   error = "secure store unsupported";
   return false;
@@ -317,12 +508,48 @@ bool GetOrCreateMasterKey(std::array<std::uint8_t, kKeyBytes>& key,
       return false;
     }
 #if defined(__APPLE__)
-    if (!StoreKeychainKey(key, error)) {
-      return false;
+    bool stored = false;
+    std::string store_err;
+    if (keychain_ok && StoreKeychainKey(key, store_err)) {
+      stored = true;
+    }
+    if (!stored) {
+      std::string fallback_err;
+      if (!WriteFallbackKeyFile(key, fallback_err)) {
+        error = !fallback_err.empty() ? fallback_err : store_err;
+        if (error.empty()) {
+          error = "secure store key write failed";
+        }
+        return false;
+      }
     }
 #elif defined(__linux__)
-    if (!StoreSecretServiceKey(key, error)) {
-      return false;
+    bool stored = false;
+    std::string store_err;
+    if (secret_ok && StoreSecretServiceKey(key, store_err)) {
+      stored = true;
+    }
+    if (!stored) {
+      std::string fallback_err;
+      if (!WriteFallbackKeyFile(key, fallback_err)) {
+        error = !fallback_err.empty() ? fallback_err : store_err;
+        if (error.empty()) {
+          error = "secure store key write failed";
+        }
+        return false;
+      }
+    }
+#endif
+  } else {
+#if defined(__APPLE__)
+    if (!keychain_found && keychain_ok) {
+      std::string store_err;
+      (void)StoreKeychainKey(key, store_err);
+    }
+#elif defined(__linux__)
+    if (!secret_found && secret_ok) {
+      std::string store_err;
+      (void)StoreSecretServiceKey(key, store_err);
     }
 #endif
   }

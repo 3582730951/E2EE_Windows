@@ -4,7 +4,10 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <limits>
+#include <sstream>
+#include <unordered_set>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -17,10 +20,15 @@
 
 #include "buffer_pool.h"
 #include "crypto.h"
+#include "hex_utils.h"
 #include "monocypher.h"
+#include "path_security.h"
+#include "platform_fs.h"
 #include "secure_buffer.h"
 
 namespace mi::server {
+
+namespace pfs = mi::platform::fs;
 
 namespace {
 
@@ -46,6 +54,16 @@ constexpr std::size_t kOfflineFileV3PrefixBytes =
 constexpr std::size_t kOfflineFileV3HeaderBytes =
     kOfflineFileV3PrefixBytes + kOfflineFileAeadNonceBytes;
 constexpr std::size_t kOfflineFileV3AdBytes = kOfflineFileV3PrefixBytes + 8;
+constexpr std::array<std::uint8_t, 8> kOfflineQueueMagic = {
+    'M', 'I', 'O', 'Q', 'M', 'S', 'G', '1'};
+constexpr std::uint8_t kOfflineQueueVersion = 1;
+constexpr std::size_t kOfflineQueueHeaderBytes =
+    kOfflineQueueMagic.size() + 1 + 1 + 2 + 8 + 8 + 4 + 4 + 4 + 4 + 4;
+constexpr std::array<std::uint8_t, 8> kOfflineMetaMagic = {
+    'M', 'I', 'O', 'F', 'M', 'E', 'T', 'A'};
+constexpr std::uint8_t kOfflineMetaVersion = 1;
+constexpr std::size_t kOfflineMetaHeaderBytes =
+    kOfflineMetaMagic.size() + 1 + 3 + 8 + 8 + 4;
 
 mi::common::ByteBufferPool& OfflineStorageBufferPool() {
   static mi::common::ByteBufferPool pool(32, 16u * 1024u * 1024u);
@@ -115,6 +133,137 @@ std::uint64_t ReadUint64Le(const std::uint8_t* in) {
          (static_cast<std::uint64_t>(in[7]) << 56);
 }
 
+std::uint64_t UnixMsFrom(const std::chrono::system_clock::time_point& tp) {
+  const auto ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          tp.time_since_epoch())
+          .count();
+  return ms < 0 ? 0u : static_cast<std::uint64_t>(ms);
+}
+
+std::chrono::system_clock::time_point UnixMsToTimepoint(std::uint64_t ms) {
+  return std::chrono::system_clock::time_point(
+      std::chrono::milliseconds(ms));
+}
+
+std::chrono::system_clock::time_point FileTimeToSystem(
+    const std::filesystem::file_time_type& ft) {
+  using namespace std::chrono;
+  const auto now_file = std::filesystem::file_time_type::clock::now();
+  const auto now_sys = system_clock::now();
+  const auto delta = ft - now_file;
+  return now_sys + duration_cast<system_clock::duration>(delta);
+}
+
+std::chrono::steady_clock::time_point SteadyFromSystem(
+    const std::chrono::system_clock::time_point& tp,
+    const std::chrono::system_clock::time_point& now_sys,
+    const std::chrono::steady_clock::time_point& now_steady) {
+  auto sys = tp;
+  if (sys > now_sys) {
+    sys = now_sys;
+  }
+  const auto age = now_sys - sys;
+  return now_steady -
+         std::chrono::duration_cast<std::chrono::steady_clock::duration>(age);
+}
+
+std::chrono::system_clock::time_point SystemFromSteady(
+    const std::chrono::steady_clock::time_point& tp,
+    const std::chrono::system_clock::time_point& now_sys,
+    const std::chrono::steady_clock::time_point& now_steady) {
+  const auto age =
+      now_steady > tp ? (now_steady - tp) : std::chrono::steady_clock::duration{};
+  return now_sys -
+         std::chrono::duration_cast<std::chrono::system_clock::duration>(age);
+}
+
+bool EncodeOfflineMeta(const StoredFileMeta& meta,
+                       const std::chrono::system_clock::time_point& now_sys,
+                       const std::chrono::steady_clock::time_point& now_steady,
+                       std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (meta.owner.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+  out.reserve(kOfflineMetaHeaderBytes + meta.owner.size());
+  out.insert(out.end(), kOfflineMetaMagic.begin(), kOfflineMetaMagic.end());
+  out.push_back(kOfflineMetaVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  const auto created_sys = SystemFromSteady(meta.created_at, now_sys, now_steady);
+  std::uint8_t buf[8] = {};
+  WriteUint64Le(UnixMsFrom(created_sys), buf);
+  out.insert(out.end(), buf, buf + 8);
+  WriteUint64Le(meta.size, buf);
+  out.insert(out.end(), buf, buf + 8);
+  std::uint8_t buf32[4] = {};
+  WriteUint32Le(static_cast<std::uint32_t>(meta.owner.size()), buf32);
+  out.insert(out.end(), buf32, buf32 + 4);
+  out.insert(out.end(), meta.owner.begin(), meta.owner.end());
+  return true;
+}
+
+bool DecodeOfflineMeta(const std::vector<std::uint8_t>& data,
+                       const std::chrono::system_clock::time_point& now_sys,
+                       const std::chrono::steady_clock::time_point& now_steady,
+                       StoredFileMeta& out) {
+  out = StoredFileMeta{};
+  if (data.size() < kOfflineMetaHeaderBytes) {
+    return false;
+  }
+  if (!std::equal(kOfflineMetaMagic.begin(), kOfflineMetaMagic.end(),
+                  data.begin())) {
+    return false;
+  }
+  std::size_t off = kOfflineMetaMagic.size();
+  const std::uint8_t version = data[off++];
+  if (version != kOfflineMetaVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 8 + 8 + 4 > data.size()) {
+    return false;
+  }
+  const std::uint64_t created_ms = ReadUint64Le(data.data() + off);
+  off += 8;
+  out.size = ReadUint64Le(data.data() + off);
+  off += 8;
+  const std::uint32_t owner_len = ReadUint32Le(data.data() + off);
+  off += 4;
+  if (off + owner_len != data.size()) {
+    return false;
+  }
+  if (owner_len > 0) {
+    out.owner.assign(reinterpret_cast<const char*>(data.data() + off),
+                     reinterpret_cast<const char*>(data.data() + off + owner_len));
+  }
+  const auto created_sys = UnixMsToTimepoint(created_ms);
+  out.created_at = SteadyFromSystem(created_sys, now_sys, now_steady);
+  return true;
+}
+
+std::string FormatMessageId(std::uint64_t id) {
+  std::ostringstream oss;
+  oss << std::setw(20) << std::setfill('0') << id;
+  return oss.str();
+}
+
+void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
+#ifdef _WIN32
+  std::string acl_err;
+  (void)mi::shard::security::HardenPathAcl(path, acl_err);
+#else
+  std::error_code ec;
+  std::filesystem::permissions(
+      path, std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+#endif
+}
+
 std::array<std::uint8_t, kOfflineFileAeadNonceBytes> DeriveChunkNonce(
     const std::array<std::uint8_t, kOfflineFileAeadNonceBytes>& base_nonce,
     std::uint64_t index) {
@@ -166,6 +315,7 @@ OfflineStorage::OfflineStorage(std::filesystem::path base_dir,
       secure_delete_(std::move(secure_delete)) {
   std::error_code ec;
   std::filesystem::create_directories(base_dir_, ec);
+  LoadMetadataFromDisk();
   if (secure_delete_.enabled) {
     std::string err;
     if (!LoadSecureDeletePlugin(secure_delete_.plugin_path, err)) {
@@ -188,6 +338,141 @@ OfflineStorage::~OfflineStorage() {
     secure_delete_handle_ = nullptr;
   }
   secure_delete_fn_ = nullptr;
+}
+
+bool OfflineStorage::PersistMetadata(const StoredFileMeta& meta,
+                                     std::string& error) const {
+  error.clear();
+  if (meta.id.empty()) {
+    error = "file id empty";
+    return false;
+  }
+  std::vector<std::uint8_t> bytes;
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  if (!EncodeOfflineMeta(meta, now_sys, now_steady, bytes)) {
+    error = "metadata encode failed";
+    return false;
+  }
+  const auto path = ResolveMetaPath(meta.id);
+  if (path.empty()) {
+    error = "metadata path invalid";
+    return false;
+  }
+  std::error_code ec;
+  if (!pfs::AtomicWrite(path, bytes.data(), bytes.size(), ec) || ec) {
+    error = "metadata write failed";
+    return false;
+  }
+  SetOwnerOnlyPermissions(path);
+  return true;
+}
+
+void OfflineStorage::LoadMetadataFromDisk() {
+  if (base_dir_.empty()) {
+    return;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(base_dir_, ec) || ec) {
+    return;
+  }
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  std::unordered_map<std::string, StoredFileMeta> loaded;
+  std::unordered_set<std::string> meta_ids;
+  std::unordered_set<std::string> data_ids;
+
+  const auto drop_file = [](const std::filesystem::path& path) {
+    std::error_code rm_ec;
+    std::filesystem::remove(path, rm_ec);
+  };
+
+  std::filesystem::directory_iterator it(base_dir_, ec);
+  const std::filesystem::directory_iterator end;
+  for (; it != end; it.increment(ec)) {
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (!it->is_regular_file(ec) || ec) {
+      continue;
+    }
+    const auto path = it->path();
+    const auto ext = path.extension().string();
+    const std::string stem = path.stem().string();
+    if (stem.empty() || !IsValidFileId(stem)) {
+      continue;
+    }
+    if (ext == ".meta") {
+      const auto data_path = ResolvePath(stem);
+      if (!std::filesystem::exists(data_path, ec) || ec) {
+        drop_file(path);
+        ec.clear();
+        continue;
+      }
+      std::ifstream ifs(path, std::ios::binary);
+      if (!ifs) {
+        continue;
+      }
+      ifs.seekg(0, std::ios::end);
+      const std::streamsize size = ifs.tellg();
+      ifs.seekg(0, std::ios::beg);
+      if (size <= 0) {
+        drop_file(path);
+        continue;
+      }
+      std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+      if (!ifs.read(reinterpret_cast<char*>(bytes.data()), size)) {
+        drop_file(path);
+        continue;
+      }
+      StoredFileMeta meta;
+      if (!DecodeOfflineMeta(bytes, now_sys, now_steady, meta)) {
+        drop_file(path);
+        continue;
+      }
+      meta.id = stem;
+      loaded.emplace(stem, std::move(meta));
+      meta_ids.insert(stem);
+      continue;
+    }
+    if (ext == ".bin") {
+      data_ids.insert(stem);
+    }
+  }
+
+  for (const auto& id : data_ids) {
+    if (meta_ids.find(id) != meta_ids.end()) {
+      continue;
+    }
+    const auto path = ResolvePath(id);
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    std::chrono::system_clock::time_point created_sys = now_sys;
+    const auto ft = std::filesystem::last_write_time(path, ec);
+    if (!ec) {
+      created_sys = FileTimeToSystem(ft);
+    } else {
+      ec.clear();
+    }
+    StoredFileMeta meta;
+    meta.id = id;
+    meta.owner.clear();
+    meta.size = static_cast<std::uint64_t>(size);
+    meta.created_at = SteadyFromSystem(created_sys, now_sys, now_steady);
+    loaded.emplace(id, meta);
+    std::string write_err;
+    (void)PersistMetadata(meta, write_err);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    metadata_.swap(loaded);
+  }
 }
 
 PutResult OfflineStorage::Put(const std::string& owner,
@@ -299,6 +584,13 @@ PutResult OfflineStorage::Put(const std::string& owner,
   meta.size = static_cast<std::uint64_t>(plaintext.size());
   meta.created_at = std::chrono::steady_clock::now();
 
+  std::string meta_err;
+  if (!PersistMetadata(meta, meta_err)) {
+    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+    crypto_wipe(file_key.data(), file_key.size());
+    WipeFile(path);
+    return result;
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     metadata_[id] = meta;
@@ -337,6 +629,12 @@ PutBlobResult OfflineStorage::PutBlob(const std::string& owner,
   meta.size = static_cast<std::uint64_t>(blob.size());
   meta.created_at = std::chrono::steady_clock::now();
 
+  std::string meta_err;
+  if (!PersistMetadata(meta, meta_err)) {
+    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+    WipeFile(path);
+    return result;
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     metadata_[id] = meta;
@@ -537,6 +835,12 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
   meta.size = total_size;
   meta.created_at = sess.created_at;
 
+  std::string meta_err;
+  if (!PersistMetadata(meta, meta_err)) {
+    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+    WipeFile(final_path);
+    return result;
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     metadata_[file_id] = meta;
@@ -1145,6 +1449,11 @@ std::filesystem::path OfflineStorage::ResolveKeyPath(
   return base_dir_ / (file_id + ".key");
 }
 
+std::filesystem::path OfflineStorage::ResolveMetaPath(
+    const std::string& file_id) const {
+  return base_dir_ / (file_id + ".meta");
+}
+
 std::optional<std::filesystem::path> OfflineStorage::ResolveKeyPathForData(
     const std::filesystem::path& data_path) const {
   if (data_path.extension() != ".bin") {
@@ -1155,6 +1464,18 @@ std::optional<std::filesystem::path> OfflineStorage::ResolveKeyPathForData(
     return std::nullopt;
   }
   return data_path.parent_path() / (stem + ".key");
+}
+
+std::optional<std::filesystem::path> OfflineStorage::ResolveMetaPathForData(
+    const std::filesystem::path& data_path) const {
+  if (data_path.extension() != ".bin") {
+    return std::nullopt;
+  }
+  const auto stem = data_path.stem().string();
+  if (stem.empty()) {
+    return std::nullopt;
+  }
+  return data_path.parent_path() / (stem + ".meta");
 }
 
 std::string OfflineStorage::GenerateId() const {
@@ -1462,6 +1783,10 @@ void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
       std::filesystem::remove(*key_path, ec);
     }
   }
+  const auto meta_path = ResolveMetaPathForData(path);
+  if (meta_path.has_value() && std::filesystem::exists(*meta_path, ec) && !ec) {
+    std::filesystem::remove(*meta_path, ec);
+  }
   if (!CallSecureDeletePlugin(path)) {
     BestEffortWipe(path);
   } else {
@@ -1469,10 +1794,399 @@ void OfflineStorage::WipeFile(const std::filesystem::path& path) const {
   }
 }
 
-OfflineQueue::OfflineQueue(std::chrono::seconds default_ttl)
+std::filesystem::path OfflineQueue::RecipientDir(
+    const std::string& recipient) const {
+  if (persist_dir_.empty() || recipient.empty()) {
+    return {};
+  }
+  const std::string hash = mi::common::Sha256Hex(
+      reinterpret_cast<const std::uint8_t*>(recipient.data()),
+      recipient.size());
+  if (hash.empty()) {
+    return {};
+  }
+  return persist_dir_ / hash;
+}
+
+std::filesystem::path OfflineQueue::MessagePath(
+    const std::string& recipient, std::uint64_t message_id) const {
+  const auto dir = RecipientDir(recipient);
+  if (dir.empty()) {
+    return {};
+  }
+  return dir / (FormatMessageId(message_id) + ".msg");
+}
+
+void OfflineQueue::DeleteMessageFile(const std::string& recipient,
+                                     std::uint64_t message_id) const {
+  if (!persistence_enabled_) {
+    return;
+  }
+  const auto path = MessagePath(recipient, message_id);
+  if (path.empty()) {
+    return;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) || ec) {
+    return;
+  }
+  const std::filesystem::path tomb = path.string() + ".del";
+  std::filesystem::rename(path, tomb, ec);
+  if (ec) {
+    std::filesystem::remove(path, ec);
+    return;
+  }
+  std::filesystem::remove(tomb, ec);
+}
+
+bool OfflineQueue::PersistMessage(
+    const StoredMessage& stored,
+    std::chrono::system_clock::time_point created_at_sys) {
+  if (!persistence_enabled_) {
+    return true;
+  }
+  if (stored.msg.recipient.empty()) {
+    return false;
+  }
+
+  const auto path = MessagePath(stored.msg.recipient, stored.message_id);
+  if (path.empty()) {
+    return false;
+  }
+  const auto dir = path.parent_path();
+  std::error_code ec;
+  if (!dir.empty()) {
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+      return false;
+    }
+  }
+
+  if (stored.msg.recipient.size() >
+          static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)()) ||
+      stored.msg.sender.size() >
+          static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)()) ||
+      stored.msg.group_id.size() >
+          static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)()) ||
+      stored.msg.payload.size() >
+          static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  const std::uint32_t recipient_len =
+      static_cast<std::uint32_t>(stored.msg.recipient.size());
+  const std::uint32_t sender_len =
+      static_cast<std::uint32_t>(stored.msg.sender.size());
+  const std::uint32_t group_len =
+      static_cast<std::uint32_t>(stored.msg.group_id.size());
+  const std::uint32_t payload_len =
+      static_cast<std::uint32_t>(stored.msg.payload.size());
+
+  const std::int64_t ttl_in = stored.msg.ttl.count();
+  std::uint64_t ttl_val =
+      ttl_in > 0 ? static_cast<std::uint64_t>(ttl_in)
+                 : static_cast<std::uint64_t>(default_ttl_.count());
+  if (ttl_val >
+      static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    ttl_val =
+        static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)());
+  }
+  const std::uint32_t ttl_sec = static_cast<std::uint32_t>(ttl_val);
+
+  std::array<std::uint8_t, kOfflineQueueHeaderBytes> header{};
+  std::size_t off = 0;
+  std::memcpy(header.data(), kOfflineQueueMagic.data(),
+              kOfflineQueueMagic.size());
+  off += kOfflineQueueMagic.size();
+  header[off++] = kOfflineQueueVersion;
+  header[off++] = static_cast<std::uint8_t>(stored.msg.kind);
+  header[off++] = 0;
+  header[off++] = 0;
+  WriteUint64Le(stored.message_id, header.data() + off);
+  off += 8;
+  WriteUint64Le(UnixMsFrom(created_at_sys), header.data() + off);
+  off += 8;
+  WriteUint32Le(ttl_sec, header.data() + off);
+  off += 4;
+  WriteUint32Le(recipient_len, header.data() + off);
+  off += 4;
+  WriteUint32Le(sender_len, header.data() + off);
+  off += 4;
+  WriteUint32Le(group_len, header.data() + off);
+  off += 4;
+  WriteUint32Le(payload_len, header.data() + off);
+  off += 4;
+
+  const std::filesystem::path tmp = path.string() + ".tmp";
+  std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    return false;
+  }
+  ofs.write(reinterpret_cast<const char*>(header.data()),
+            static_cast<std::streamsize>(header.size()));
+  if (recipient_len != 0) {
+    ofs.write(stored.msg.recipient.data(),
+              static_cast<std::streamsize>(recipient_len));
+  }
+  if (sender_len != 0) {
+    ofs.write(stored.msg.sender.data(),
+              static_cast<std::streamsize>(sender_len));
+  }
+  if (group_len != 0) {
+    ofs.write(stored.msg.group_id.data(),
+              static_cast<std::streamsize>(group_len));
+  }
+  if (payload_len != 0) {
+    ofs.write(reinterpret_cast<const char*>(stored.msg.payload.data()),
+              static_cast<std::streamsize>(payload_len));
+  }
+  ofs.close();
+  if (!ofs.good()) {
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+
+  std::filesystem::remove(path, ec);
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+  SetOwnerOnlyPermissions(path);
+  return true;
+}
+
+bool OfflineQueue::LoadFromDisk() {
+  if (!persistence_enabled_ || persist_dir_.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(persist_dir_, ec)) {
+    std::filesystem::create_directories(persist_dir_, ec);
+    return !ec;
+  }
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  std::unordered_map<std::string, std::vector<StoredMessage>> loaded;
+  std::array<std::uint64_t, kShardCount> max_ids{};
+
+  const auto purge = [&](const std::filesystem::path& path) {
+    std::error_code rm_ec;
+    std::filesystem::remove(path, rm_ec);
+  };
+
+  std::filesystem::recursive_directory_iterator it(persist_dir_, ec);
+  const std::filesystem::recursive_directory_iterator end;
+  for (; it != end; it.increment(ec)) {
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (!it->is_regular_file(ec)) {
+      continue;
+    }
+    const auto path = it->path();
+    const auto ext = path.extension().string();
+    if (ext == ".tmp" || ext == ".del") {
+      purge(path);
+      continue;
+    }
+    if (ext != ".msg") {
+      continue;
+    }
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size < kOfflineQueueHeaderBytes ||
+        size > static_cast<std::uint64_t>(
+                   (std::numeric_limits<std::size_t>::max)())) {
+      purge(path);
+      continue;
+    }
+    std::vector<std::uint8_t> bytes;
+    bytes.resize(static_cast<std::size_t>(size));
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) {
+      continue;
+    }
+    ifs.read(reinterpret_cast<char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+    if (!ifs ||
+        ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
+      purge(path);
+      continue;
+    }
+
+    if (bytes.size() < kOfflineQueueHeaderBytes ||
+        !std::equal(kOfflineQueueMagic.begin(), kOfflineQueueMagic.end(),
+                    bytes.begin())) {
+      purge(path);
+      continue;
+    }
+    std::size_t off = kOfflineQueueMagic.size();
+    const std::uint8_t version = bytes[off++];
+    if (version != kOfflineQueueVersion) {
+      purge(path);
+      continue;
+    }
+    const std::uint8_t kind = bytes[off++];
+    off += 2;
+    const std::uint64_t message_id = ReadUint64Le(bytes.data() + off);
+    off += 8;
+    const std::uint64_t created_ms = ReadUint64Le(bytes.data() + off);
+    off += 8;
+    const std::uint32_t ttl_sec_raw = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t recipient_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t sender_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t group_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t payload_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+
+    const std::uint64_t expected =
+        kOfflineQueueHeaderBytes +
+        static_cast<std::uint64_t>(recipient_len) +
+        static_cast<std::uint64_t>(sender_len) +
+        static_cast<std::uint64_t>(group_len) +
+        static_cast<std::uint64_t>(payload_len);
+    if (recipient_len == 0 ||
+        expected != static_cast<std::uint64_t>(bytes.size())) {
+      purge(path);
+      continue;
+    }
+    if (kind >
+        static_cast<std::uint8_t>(QueueMessageKind::kGroupNotice)) {
+      purge(path);
+      continue;
+    }
+
+    const auto read_str = [&](std::string& out, std::uint32_t len) -> bool {
+      if (len == 0) {
+        out.clear();
+        return true;
+      }
+      if (off + len > bytes.size()) {
+        return false;
+      }
+      out.assign(reinterpret_cast<const char*>(bytes.data() + off),
+                 reinterpret_cast<const char*>(bytes.data() + off + len));
+      off += len;
+      return true;
+    };
+    std::string recipient;
+    std::string sender;
+    std::string group_id;
+    if (!read_str(recipient, recipient_len) ||
+        !read_str(sender, sender_len) ||
+        !read_str(group_id, group_len)) {
+      purge(path);
+      continue;
+    }
+    if (off + payload_len > bytes.size()) {
+      purge(path);
+      continue;
+    }
+    std::vector<std::uint8_t> payload;
+    if (payload_len != 0) {
+      payload.assign(bytes.begin() + static_cast<std::ptrdiff_t>(off),
+                     bytes.begin() + static_cast<std::ptrdiff_t>(off + payload_len));
+      off += payload_len;
+    }
+
+    std::uint64_t ttl_val =
+        ttl_sec_raw == 0
+            ? static_cast<std::uint64_t>(default_ttl_.count())
+            : static_cast<std::uint64_t>(ttl_sec_raw);
+    if (ttl_val >
+        static_cast<std::uint64_t>(
+            (std::numeric_limits<std::uint32_t>::max)())) {
+      ttl_val =
+          static_cast<std::uint64_t>(
+              (std::numeric_limits<std::uint32_t>::max)());
+    }
+    const std::uint32_t ttl_sec = static_cast<std::uint32_t>(ttl_val);
+    if (ttl_sec == 0) {
+      purge(path);
+      continue;
+    }
+
+    StoredMessage stored;
+    stored.message_id = message_id;
+    stored.msg.kind = static_cast<QueueMessageKind>(kind);
+    stored.msg.recipient = recipient;
+    stored.msg.sender = sender;
+    stored.msg.group_id = group_id;
+    stored.msg.payload = std::move(payload);
+    stored.msg.ttl = std::chrono::seconds(ttl_sec);
+
+    const auto created_sys = UnixMsToTimepoint(created_ms);
+    const auto age = created_sys > now_sys
+                         ? std::chrono::system_clock::duration::zero()
+                         : now_sys - created_sys;
+    if (age >= stored.msg.ttl) {
+      purge(path);
+      continue;
+    }
+    const auto age_steady =
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(age);
+    stored.msg.created_at = now_steady - age_steady;
+    stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+    loaded[recipient].push_back(std::move(stored));
+    const auto shard_index = ShardIndexFor(recipient);
+    if (message_id > max_ids[shard_index]) {
+      max_ids[shard_index] = message_id;
+    }
+  }
+
+  for (auto& kv : loaded) {
+    const std::string& recipient = kv.first;
+    auto& items = kv.second;
+    if (items.empty()) {
+      continue;
+    }
+    std::sort(items.begin(), items.end(),
+              [](const StoredMessage& a, const StoredMessage& b) {
+                return a.message_id < b.message_id;
+              });
+    auto& shard = shards_[ShardIndexFor(recipient)];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    for (auto& stored : items) {
+      queue.messages.push_back(std::move(stored));
+      const auto it = std::prev(queue.messages.end());
+      queue.by_id.emplace(it->message_id, it);
+      shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+    }
+  }
+
+  for (std::size_t i = 0; i < kShardCount; ++i) {
+    auto& shard = shards_[i];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    if (max_ids[i] >= shard.next_id) {
+      shard.next_id = max_ids[i] + 1;
+    }
+  }
+  return true;
+}
+
+OfflineQueue::OfflineQueue(std::chrono::seconds default_ttl,
+                           std::filesystem::path persist_dir)
     : default_ttl_(default_ttl == std::chrono::seconds::zero()
                        ? std::chrono::hours(24)
-                       : default_ttl) {}
+                       : default_ttl),
+      persist_dir_(std::move(persist_dir)) {
+  if (!persist_dir_.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(persist_dir_, ec);
+    if (!ec) {
+      persistence_enabled_ = true;
+      LoadFromDisk();
+    }
+  }
+}
 
 std::size_t OfflineQueue::ShardIndexFor(const std::string& recipient) const {
   if (recipient.empty()) {
@@ -1508,6 +2222,7 @@ void OfflineQueue::CleanupExpiredLocked(Shard& shard,
 
     queue.messages.erase(list_it);
     queue.by_id.erase(mit);
+    DeleteMessageFile(recipient, message_id);
     if (queue.messages.empty()) {
       shard.recipients.erase(rit);
     }
@@ -1518,6 +2233,7 @@ void OfflineQueue::Enqueue(const std::string& recipient,
                            std::vector<std::uint8_t> payload,
                            std::chrono::seconds ttl) {
   const auto now = std::chrono::steady_clock::now();
+  const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
   stored.msg.kind = QueueMessageKind::kGeneric;
   stored.msg.recipient = recipient;
@@ -1527,14 +2243,20 @@ void OfflineQueue::Enqueue(const std::string& recipient,
   stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
-  stored.message_id = shard.next_id++;
-  auto& queue = shard.recipients[recipient];
-  queue.messages.push_back(std::move(stored));
-  const auto it = std::prev(queue.messages.end());
-  queue.by_id.emplace(it->message_id, it);
-  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
+    stored.message_id = shard.next_id++;
+  }
+  PersistMessage(stored, now_sys);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    queue.messages.push_back(std::move(stored));
+    const auto it = std::prev(queue.messages.end());
+    queue.by_id.emplace(it->message_id, it);
+    shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  }
 }
 
 void OfflineQueue::EnqueuePrivate(const std::string& recipient,
@@ -1542,6 +2264,7 @@ void OfflineQueue::EnqueuePrivate(const std::string& recipient,
                                   std::vector<std::uint8_t> payload,
                                   std::chrono::seconds ttl) {
   const auto now = std::chrono::steady_clock::now();
+  const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
   stored.msg.kind = QueueMessageKind::kPrivate;
   stored.msg.sender = sender;
@@ -1552,14 +2275,20 @@ void OfflineQueue::EnqueuePrivate(const std::string& recipient,
   stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
-  stored.message_id = shard.next_id++;
-  auto& queue = shard.recipients[recipient];
-  queue.messages.push_back(std::move(stored));
-  const auto it = std::prev(queue.messages.end());
-  queue.by_id.emplace(it->message_id, it);
-  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
+    stored.message_id = shard.next_id++;
+  }
+  PersistMessage(stored, now_sys);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    queue.messages.push_back(std::move(stored));
+    const auto it = std::prev(queue.messages.end());
+    queue.by_id.emplace(it->message_id, it);
+    shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  }
 }
 
 void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
@@ -1568,6 +2297,7 @@ void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
                                       std::vector<std::uint8_t> payload,
                                       std::chrono::seconds ttl) {
   const auto now = std::chrono::steady_clock::now();
+  const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
   stored.msg.kind = QueueMessageKind::kGroupCipher;
   stored.msg.sender = sender;
@@ -1579,14 +2309,20 @@ void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
   stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
-  stored.message_id = shard.next_id++;
-  auto& queue = shard.recipients[recipient];
-  queue.messages.push_back(std::move(stored));
-  const auto it = std::prev(queue.messages.end());
-  queue.by_id.emplace(it->message_id, it);
-  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
+    stored.message_id = shard.next_id++;
+  }
+  PersistMessage(stored, now_sys);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    queue.messages.push_back(std::move(stored));
+    const auto it = std::prev(queue.messages.end());
+    queue.by_id.emplace(it->message_id, it);
+    shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  }
 }
 
 void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
@@ -1595,6 +2331,7 @@ void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
                                       std::vector<std::uint8_t> payload,
                                       std::chrono::seconds ttl) {
   const auto now = std::chrono::steady_clock::now();
+  const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
   stored.msg.kind = QueueMessageKind::kGroupNotice;
   stored.msg.sender = sender;
@@ -1606,20 +2343,27 @@ void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
   stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
-  stored.message_id = shard.next_id++;
-  auto& queue = shard.recipients[recipient];
-  queue.messages.push_back(std::move(stored));
-  const auto it = std::prev(queue.messages.end());
-  queue.by_id.emplace(it->message_id, it);
-  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
+    stored.message_id = shard.next_id++;
+  }
+  PersistMessage(stored, now_sys);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    queue.messages.push_back(std::move(stored));
+    const auto it = std::prev(queue.messages.end());
+    queue.by_id.emplace(it->message_id, it);
+    shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  }
 }
 
 void OfflineQueue::EnqueueDeviceSync(const std::string& recipient,
                                      std::vector<std::uint8_t> payload,
                                      std::chrono::seconds ttl) {
   const auto now = std::chrono::steady_clock::now();
+  const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
   stored.msg.kind = QueueMessageKind::kDeviceSync;
   stored.msg.recipient = recipient;
@@ -1629,46 +2373,61 @@ void OfflineQueue::EnqueueDeviceSync(const std::string& recipient,
   stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
-  stored.message_id = shard.next_id++;
-  auto& queue = shard.recipients[recipient];
-  queue.messages.push_back(std::move(stored));
-  const auto it = std::prev(queue.messages.end());
-  queue.by_id.emplace(it->message_id, it);
-  shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
+    stored.message_id = shard.next_id++;
+  }
+  PersistMessage(stored, now_sys);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto& queue = shard.recipients[recipient];
+    queue.messages.push_back(std::move(stored));
+    const auto it = std::prev(queue.messages.end());
+    queue.by_id.emplace(it->message_id, it);
+    shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+  }
 }
 
 std::vector<std::vector<std::uint8_t>> OfflineQueue::Drain(
     const std::string& recipient) {
   std::vector<std::vector<std::uint8_t>> out;
   const auto now = std::chrono::steady_clock::now();
+  std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
 
-  auto it = shard.recipients.find(recipient);
-  if (it == shard.recipients.end()) {
-    return out;
-  }
-  auto& queue = it->second;
-  out.reserve(queue.messages.size());
-  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
-    if (msg_it->expires_at <= now) {
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto it = shard.recipients.find(recipient);
+    if (it == shard.recipients.end()) {
+      return out;
     }
-    if (msg_it->msg.kind == QueueMessageKind::kGeneric) {
-      out.push_back(std::move(msg_it->msg.payload));
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto& queue = it->second;
+    out.reserve(queue.messages.size());
+    for (auto msg_it = queue.messages.begin();
+         msg_it != queue.messages.end();) {
+      if (msg_it->expires_at <= now) {
+        remove_ids.push_back(msg_it->message_id);
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      if (msg_it->msg.kind == QueueMessageKind::kGeneric) {
+        remove_ids.push_back(msg_it->message_id);
+        out.push_back(std::move(msg_it->msg.payload));
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      ++msg_it;
     }
-    ++msg_it;
+    if (queue.messages.empty()) {
+      shard.recipients.erase(it);
+    }
   }
-  if (queue.messages.empty()) {
-    shard.recipients.erase(it);
+  for (const auto id : remove_ids) {
+    DeleteMessageFile(recipient, id);
   }
   return out;
 }
@@ -1677,32 +2436,41 @@ std::vector<OfflineMessage> OfflineQueue::DrainPrivate(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
   const auto now = std::chrono::steady_clock::now();
+  std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
 
-  auto it = shard.recipients.find(recipient);
-  if (it == shard.recipients.end()) {
-    return out;
-  }
-  auto& queue = it->second;
-  out.reserve(queue.messages.size());
-  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
-    if (msg_it->expires_at <= now) {
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto it = shard.recipients.find(recipient);
+    if (it == shard.recipients.end()) {
+      return out;
     }
-    if (msg_it->msg.kind == QueueMessageKind::kPrivate) {
-      out.push_back(std::move(msg_it->msg));
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto& queue = it->second;
+    out.reserve(queue.messages.size());
+    for (auto msg_it = queue.messages.begin();
+         msg_it != queue.messages.end();) {
+      if (msg_it->expires_at <= now) {
+        remove_ids.push_back(msg_it->message_id);
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      if (msg_it->msg.kind == QueueMessageKind::kPrivate) {
+        remove_ids.push_back(msg_it->message_id);
+        out.push_back(std::move(msg_it->msg));
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      ++msg_it;
     }
-    ++msg_it;
+    if (queue.messages.empty()) {
+      shard.recipients.erase(it);
+    }
   }
-  if (queue.messages.empty()) {
-    shard.recipients.erase(it);
+  for (const auto id : remove_ids) {
+    DeleteMessageFile(recipient, id);
   }
   return out;
 }
@@ -1711,32 +2479,41 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupCipher(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
   const auto now = std::chrono::steady_clock::now();
+  std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
 
-  auto it = shard.recipients.find(recipient);
-  if (it == shard.recipients.end()) {
-    return out;
-  }
-  auto& queue = it->second;
-  out.reserve(queue.messages.size());
-  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
-    if (msg_it->expires_at <= now) {
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto it = shard.recipients.find(recipient);
+    if (it == shard.recipients.end()) {
+      return out;
     }
-    if (msg_it->msg.kind == QueueMessageKind::kGroupCipher) {
-      out.push_back(std::move(msg_it->msg));
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto& queue = it->second;
+    out.reserve(queue.messages.size());
+    for (auto msg_it = queue.messages.begin();
+         msg_it != queue.messages.end();) {
+      if (msg_it->expires_at <= now) {
+        remove_ids.push_back(msg_it->message_id);
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      if (msg_it->msg.kind == QueueMessageKind::kGroupCipher) {
+        remove_ids.push_back(msg_it->message_id);
+        out.push_back(std::move(msg_it->msg));
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      ++msg_it;
     }
-    ++msg_it;
+    if (queue.messages.empty()) {
+      shard.recipients.erase(it);
+    }
   }
-  if (queue.messages.empty()) {
-    shard.recipients.erase(it);
+  for (const auto id : remove_ids) {
+    DeleteMessageFile(recipient, id);
   }
   return out;
 }
@@ -1745,32 +2522,41 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupNotice(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
   const auto now = std::chrono::steady_clock::now();
+  std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
 
-  auto it = shard.recipients.find(recipient);
-  if (it == shard.recipients.end()) {
-    return out;
-  }
-  auto& queue = it->second;
-  out.reserve(queue.messages.size());
-  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
-    if (msg_it->expires_at <= now) {
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto it = shard.recipients.find(recipient);
+    if (it == shard.recipients.end()) {
+      return out;
     }
-    if (msg_it->msg.kind == QueueMessageKind::kGroupNotice) {
-      out.push_back(std::move(msg_it->msg));
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto& queue = it->second;
+    out.reserve(queue.messages.size());
+    for (auto msg_it = queue.messages.begin();
+         msg_it != queue.messages.end();) {
+      if (msg_it->expires_at <= now) {
+        remove_ids.push_back(msg_it->message_id);
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      if (msg_it->msg.kind == QueueMessageKind::kGroupNotice) {
+        remove_ids.push_back(msg_it->message_id);
+        out.push_back(std::move(msg_it->msg));
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      ++msg_it;
     }
-    ++msg_it;
+    if (queue.messages.empty()) {
+      shard.recipients.erase(it);
+    }
   }
-  if (queue.messages.empty()) {
-    shard.recipients.erase(it);
+  for (const auto id : remove_ids) {
+    DeleteMessageFile(recipient, id);
   }
   return out;
 }
@@ -1779,32 +2565,41 @@ std::vector<std::vector<std::uint8_t>> OfflineQueue::DrainDeviceSync(
     const std::string& recipient) {
   std::vector<std::vector<std::uint8_t>> out;
   const auto now = std::chrono::steady_clock::now();
+  std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
-  std::lock_guard<std::mutex> lock(shard.mutex);
-  CleanupExpiredLocked(shard, now);
+  {
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    CleanupExpiredLocked(shard, now);
 
-  auto it = shard.recipients.find(recipient);
-  if (it == shard.recipients.end()) {
-    return out;
-  }
-  auto& queue = it->second;
-  out.reserve(queue.messages.size());
-  for (auto msg_it = queue.messages.begin(); msg_it != queue.messages.end();) {
-    if (msg_it->expires_at <= now) {
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto it = shard.recipients.find(recipient);
+    if (it == shard.recipients.end()) {
+      return out;
     }
-    if (msg_it->msg.kind == QueueMessageKind::kDeviceSync) {
-      out.push_back(std::move(msg_it->msg.payload));
-      queue.by_id.erase(msg_it->message_id);
-      msg_it = queue.messages.erase(msg_it);
-      continue;
+    auto& queue = it->second;
+    out.reserve(queue.messages.size());
+    for (auto msg_it = queue.messages.begin();
+         msg_it != queue.messages.end();) {
+      if (msg_it->expires_at <= now) {
+        remove_ids.push_back(msg_it->message_id);
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      if (msg_it->msg.kind == QueueMessageKind::kDeviceSync) {
+        remove_ids.push_back(msg_it->message_id);
+        out.push_back(std::move(msg_it->msg.payload));
+        queue.by_id.erase(msg_it->message_id);
+        msg_it = queue.messages.erase(msg_it);
+        continue;
+      }
+      ++msg_it;
     }
-    ++msg_it;
+    if (queue.messages.empty()) {
+      shard.recipients.erase(it);
+    }
   }
-  if (queue.messages.empty()) {
-    shard.recipients.erase(it);
+  for (const auto id : remove_ids) {
+    DeleteMessageFile(recipient, id);
   }
   return out;
 }

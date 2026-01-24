@@ -111,6 +111,85 @@ int main() {
   }
 
   {
+    const auto dir = TempDir("mi_e2ee_offline_meta_persist");
+    std::string file_id;
+    std::uint64_t size = 0;
+    {
+      mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+      std::vector<std::uint8_t> payload = {1, 3, 5, 7, 9};
+      auto put = storage.Put("alice", payload);
+      if (!put.success) {
+        FAIL();
+      }
+      file_id = put.file_id;
+      size = put.meta.size;
+      std::error_code ec;
+      if (!std::filesystem::exists(dir / (file_id + ".meta"), ec) || ec) {
+        FAIL();
+      }
+    }
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    auto meta = storage.Meta(file_id);
+    if (!meta.has_value()) {
+      FAIL();
+    }
+    if (meta->owner != "alice" || meta->size != size) {
+      FAIL();
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_meta_recover");
+    std::string file_id;
+    std::uint64_t size = 0;
+    {
+      mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+      std::vector<std::uint8_t> payload = {2, 4, 6, 8, 10};
+      auto put = storage.Put("bob", payload);
+      if (!put.success) {
+        FAIL();
+      }
+      file_id = put.file_id;
+      size = put.meta.size;
+      std::error_code ec;
+      std::filesystem::remove(dir / (file_id + ".meta"), ec);
+    }
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    auto meta = storage.Meta(file_id);
+    if (!meta.has_value()) {
+      FAIL();
+    }
+    if (!meta->owner.empty() || meta->size != size) {
+      FAIL();
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(dir / (file_id + ".meta"), ec) || ec) {
+      FAIL();
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_meta_drop");
+    std::string file_id;
+    {
+      mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+      std::vector<std::uint8_t> payload = {11, 12, 13};
+      auto put = storage.Put("carol", payload);
+      if (!put.success) {
+        FAIL();
+      }
+      file_id = put.file_id;
+      std::error_code ec;
+      std::filesystem::remove(dir / (file_id + ".bin"), ec);
+    }
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    std::error_code ec;
+    if (std::filesystem::exists(dir / (file_id + ".meta"), ec) && !ec) {
+      FAIL();
+    }
+  }
+
+  {
     const auto dir = TempDir("mi_e2ee_offline_key_delete");
     mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
 

@@ -13,6 +13,7 @@ bool SecurityService::LoadTrustFromConfig(
     const std::string& server_ip,
     std::uint16_t server_port,
     bool require_tls,
+    bool allow_pinned_fingerprint,
     std::string& out_trust_store_path,
     std::string& out_pinned_fingerprint,
     bool& out_trust_store_tls_required,
@@ -32,12 +33,14 @@ bool SecurityService::LoadTrustFromConfig(
     if (security::LoadTrustEntry(
             out_trust_store_path,
             security::EndpointKey(server_ip, server_port), entry)) {
-      out_pinned_fingerprint = entry.fingerprint;
       out_trust_store_tls_required = entry.tls_required;
+      if (allow_pinned_fingerprint) {
+        out_pinned_fingerprint = entry.fingerprint;
+      }
     }
   }
 
-  if (!cfg.pinned_fingerprint.empty()) {
+  if (allow_pinned_fingerprint && !cfg.pinned_fingerprint.empty()) {
     const std::string pin =
         security::NormalizeFingerprint(cfg.pinned_fingerprint);
     if (!security::IsHex64(pin)) {

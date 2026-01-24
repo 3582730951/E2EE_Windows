@@ -184,6 +184,9 @@ require_tls=1
 trust_store=server_trust.ini
 require_pinned_fingerprint=1
 pinned_fingerprint=$fingerprint
+tls_verify_mode=pin
+tls_ca_bundle_path=
+tls_verify_hostname=1
 auth_mode=opaque
 
 [proxy]

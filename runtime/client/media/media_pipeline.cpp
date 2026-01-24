@@ -1,6 +1,8 @@
 #include "media_pipeline.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -20,6 +22,32 @@ constexpr std::size_t kOpusMaxPacketBytes = 4000;
 
 std::uint64_t NowMs() {
   return mi::platform::NowSteadyMs();
+}
+
+bool ParseEnvFlag(const char* name, bool default_value) {
+  const char* env = std::getenv(name);
+  if (!env || *env == '\0') {
+    return default_value;
+  }
+  std::string v(env);
+  for (auto& ch : v) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  if (v == "1" || v == "true" || v == "on" || v == "yes") {
+    return true;
+  }
+  if (v == "0" || v == "false" || v == "off" || v == "no") {
+    return false;
+  }
+  return default_value;
+}
+
+bool AllowPcmFallback() {
+  return ParseEnvFlag("MI_E2EE_MEDIA_ALLOW_PCM_FALLBACK", true);
+}
+
+bool AllowRawVideoFallback() {
+  return ParseEnvFlag("MI_E2EE_MEDIA_ALLOW_RAW_FALLBACK", true);
 }
 
 void WriteUint16Le(std::uint16_t v, std::uint8_t* out) {
@@ -147,6 +175,7 @@ bool AudioPipeline::Init(std::string& error) {
       ClampInt(config_.target_bitrate_bps, config_.min_bitrate_bps,
                config_.max_bitrate_bps);
   opus_ = mi::platform::media::CreateOpusCodec();
+  std::string opus_err;
   if (opus_ && opus_->Init(config_.sample_rate, config_.channels,
                            current_bitrate_bps_, config_.enable_fec,
                            config_.enable_dtx, config_.max_packet_loss, error)) {
@@ -154,12 +183,25 @@ bool AudioPipeline::Init(std::string& error) {
     ready_ = true;
     return true;
   }
+  opus_err = error;
   if (!config_.allow_pcm_fallback) {
+    if (error.empty()) {
+      error = "opus unavailable";
+    }
+    return false;
+  }
+  if (!AllowPcmFallback()) {
+    if (opus_err.empty()) {
+      error = "opus unavailable; pcm fallback disabled";
+    } else {
+      error = opus_err + "; pcm fallback disabled";
+    }
     return false;
   }
   opus_.reset();
   codec_ = AudioCodec::kPcm16;
   ready_ = true;
+  error.clear();
   return true;
 }
 
@@ -303,6 +345,7 @@ bool VideoPipeline::Init(std::string& error) {
                std::min(config_.target_bitrate_bps,
                         config_.max_bitrate_bps));
   mf_ = mi::platform::media::CreateH264Codec();
+  std::string h264_err;
   if (mf_ && mf_->Init(config_.width, config_.height, config_.fps,
                        current_bitrate_bps_, error)) {
     codec_ = VideoCodec::kH264;
@@ -310,12 +353,25 @@ bool VideoPipeline::Init(std::string& error) {
     ready_ = true;
     return true;
   }
+  h264_err = error;
   if (!config_.allow_raw_fallback) {
+    if (error.empty()) {
+      error = "h264 unavailable";
+    }
+    return false;
+  }
+  if (!AllowRawVideoFallback()) {
+    if (h264_err.empty()) {
+      error = "h264 unavailable; raw fallback disabled";
+    } else {
+      error = h264_err + "; raw fallback disabled";
+    }
     return false;
   }
   mf_.reset();
   codec_ = VideoCodec::kRawNv12;
   ready_ = true;
+  error.clear();
   return true;
 }
 

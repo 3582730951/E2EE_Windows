@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "c_api_client.h"
+#include "platform_android_jni.h"
 
 namespace {
 
@@ -2010,5 +2011,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     return JNI_ERR;
   }
   EnsureCache(env);
+  mi::platform::android::SetJavaVm(vm);
+  mi::platform::android::RegisterSecureStore(env);
   return JNI_VERSION_1_6;
 }

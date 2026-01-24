@@ -2,18 +2,31 @@
 
 namespace mi::platform::tls {
 
+namespace {
+constexpr char kStubError[] = "tls stub build";
+}  // namespace
+
 bool IsSupported() {
   return false;
 }
 
+bool IsStubbed() {
+  return true;
+}
+
+const char* ProviderName() {
+  return "stub";
+}
+
 bool ClientHandshake(net::Socket /*sock*/, const std::string& /*host*/,
+                     const ClientVerifyConfig& /*verify*/,
                      ClientContext& ctx,
                      std::vector<std::uint8_t>& out_server_cert_der,
                      std::vector<std::uint8_t>& out_enc_buf,
                      std::string& error) {
   out_server_cert_der.clear();
   out_enc_buf.clear();
-  error = "tls unsupported";
+  error = kStubError;
   ctx.impl = nullptr;
   return false;
 }
@@ -39,7 +52,7 @@ bool ServerInitCredentials(const std::string& /*pfx_path*/,
                            ServerCredentials& out,
                            std::string& error) {
   out.impl = nullptr;
-  error = "tls unsupported";
+  error = kStubError;
   return false;
 }
 
@@ -48,7 +61,7 @@ bool ServerHandshake(net::Socket /*sock*/, ServerCredentials& /*creds*/,
                      std::vector<std::uint8_t>& out_extra,
                      std::string& error) {
   out_extra.clear();
-  error = "tls unsupported";
+  error = kStubError;
   ctx.impl = nullptr;
   return false;
 }
@@ -61,7 +74,7 @@ bool ServerHandshakeStep(ServerCredentials& /*creds*/, ServerContext& /*ctx*/,
   in_buf.clear();
   out_tokens.clear();
   out_done = false;
-  error = "tls unsupported";
+  error = kStubError;
   return false;
 }
 

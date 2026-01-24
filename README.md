@@ -22,7 +22,7 @@
 - 会话：X25519 + ML-KEM（可混合）+ HKDF 派生
 - 消息：Double Ratchet + AEAD，Sender Key 群聊
 - Key Transparency：STH 签名与一致性校验、gossip 阈值告警
-- 传输：TLS（Windows Schannel）+ 证书指纹 pin + 降级检测
+- 传输：TLS（Schannel/OpenSSL）+ CA/指纹/hybrid 校验 + 降级检测
 - 元数据对抗：消息/心跳/文件分块桶化填充 + cover traffic
 - 离线文件：一次一密 + 密钥删除优先 + 可选 secure-delete 插件
 - 客户端：Qt 6 UI（默认开启），核心逻辑走 `mi_e2ee_client_core`
@@ -69,7 +69,9 @@ tools/           工具（third_party_audit 等）
 2. 必填项：
    - `server_ip` / `server_port`
    - `use_tls=1` + `require_tls=1`
-   - `require_pinned_fingerprint=1` + `pinned_fingerprint=...`
+   - `tls_verify_mode=pin|ca|hybrid`（pin 需 `pinned_fingerprint` 或信任库条目；hybrid 可选指纹，设置后强校验）
+   - `tls_ca_bundle_path=`（ca/hybrid 可选；为空使用系统/默认 CA）
+   - `require_pinned_fingerprint=1` + `pinned_fingerprint=...`（legacy / pin；hybrid 可选 pin）
    - `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
 3. 运行 `mi_e2ee.exe`，用 `test_user.txt` 中的账号登录。
 
@@ -103,11 +105,25 @@ cmake -S client -B build/client
 cmake --build build/client --config Release
 ctest --output-on-failure --test-dir build/client
 ```
+Linux 可选依赖：安装 `libavcodec` / `libavutil` / `libswscale` 可启用 H264 编解码，否则回退 RAW。
+macOS 使用 VideoToolbox/AVFoundation H264 编解码（系统自带，无需额外依赖）。
 
 ### 关闭 UI（仅核心库）
 ```powershell
 cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 ```
+
+### Android（JNI/Compose）
+1. 构建 OpenSSL（建议）：
+   - `tools/build_android_openssl.sh --ndk <NDK路径> --out <输出目录>`
+   - 默认输出可用 `build/openssl/android`（会被自动识别）
+2. 传入 OpenSSL 根目录：
+   - 环境变量：`MI_E2EE_ANDROID_OPENSSL_ROOT`
+   - 或 Gradle 属性：`-PmiE2eeAndroidOpenSslRoot=<路径>`
+3. 运行 JNI 冒烟测试（需设备/模拟器）：
+   - `cd android; .\gradlew.bat :app:connectedAndroidTest`
+4. 如需临时允许 TLS stub（仅调试/测试）：
+   - `MI_E2EE_ANDROID_ALLOW_TLS_STUB=1`
 
 ## 配置要点（摘要）
 服务端 `config.ini`：
@@ -119,9 +135,19 @@ cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 
 客户端 `client_config.ini`：
 - `use_tls=1` + `require_tls=1`
-- `require_pinned_fingerprint=1` + `pinned_fingerprint=...`
+- `tls_verify_mode=pin|ca|hybrid`（pin 需 `pinned_fingerprint` 或信任库条目；hybrid 可选指纹）
+- `tls_ca_bundle_path=`（ca/hybrid 可选；为空使用系统/默认 CA）
+- `require_pinned_fingerprint=1` + `pinned_fingerprint=...`（legacy / pin；hybrid 可选 pin）
 - `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
 - `[traffic] cover_traffic_enabled=1`
+- `[device_sync] ratchet_enable=1` + `ratchet_max_skip=2048`
+
+运行时环境变量：
+- `MI_E2EE_HARDENING=off|low|medium|high`（或 `MI_E2EE_HARDENING_LEVEL`，默认 high）
+- 硬化等级行为：low=仅基础进程缓解；medium=增加调试器检测；high=调试器+硬件断点检测+`.text`完整性扫描
+- `MI_E2EE_SECCOMP=1`（Linux + libseccomp 可选；启用基础 seccomp denylist）
+- `MI_E2EE_MAC_REQUIRE_SIGNATURE=1`（macOS：强制代码签名有效）
+- `MI_E2EE_MAC_REQUIRE_SANDBOX=1`（macOS：强制 app sandbox entitlement）
 
 ## CI
 GitHub Actions：`.github/workflows/ci.yml`

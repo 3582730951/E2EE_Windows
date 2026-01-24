@@ -197,6 +197,14 @@ bool StoreTrustStoreText(const std::string& path, const std::string& text,
             std::filesystem::perms::owner_write,
         std::filesystem::perm_options::replace, ec);
   }
+#else
+  {
+    std::string acl_err;
+    if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+      error = acl_err.empty() ? "trust store acl harden failed" : acl_err;
+      return false;
+    }
+  }
 #endif
   return true;
 }

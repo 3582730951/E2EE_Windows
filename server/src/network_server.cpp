@@ -1077,6 +1077,10 @@ bool NetworkServer::Start(std::string& error) {
 #endif
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
   if (tls_enable_) {
+    if (mi::platform::tls::IsStubbed()) {
+      error = "tls stub build";
+      return false;
+    }
     if (!mi::platform::tls::IsSupported()) {
       error = "tls not supported on this platform";
       return false;

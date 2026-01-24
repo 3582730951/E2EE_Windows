@@ -107,9 +107,8 @@ void DefaultLog(Level level,
 }  // namespace
 
 void SetLogCallback(LogCallback cb, void* user_data) {
-  std::lock_guard<std::mutex> lock(g_log_mutex);
-  g_log_cb = cb;
-  g_log_user = user_data;
+  (void)cb;
+  (void)user_data;
 }
 
 void Log(Level level, std::string_view tag, std::string_view message) {
@@ -120,41 +119,10 @@ void Log(Level level,
          std::string_view tag,
          std::string_view message,
          std::initializer_list<Field> fields) {
-  LogCallback cb = nullptr;
-  void* user = nullptr;
-  {
-    std::lock_guard<std::mutex> lock(g_log_mutex);
-    cb = g_log_cb;
-    user = g_log_user;
-  }
-
-  std::string tag_copy(tag);
-  std::string msg_copy = RedactMessage(message);
-  std::vector<std::string> redacted_values;
-  std::vector<Field> safe_fields;
-  if (!fields.size()) {
-    if (cb) {
-      cb(level, tag_copy.c_str(), msg_copy.c_str(), nullptr, 0, user);
-    } else {
-      DefaultLog(level, tag_copy, msg_copy, nullptr, 0);
-    }
-    return;
-  }
-
-  redacted_values.reserve(fields.size());
-  safe_fields.reserve(fields.size());
-  for (const auto& field : fields) {
-    const std::string value = RedactValue(field.key, field.value);
-    redacted_values.push_back(value);
-    safe_fields.push_back(Field{field.key, redacted_values.back()});
-  }
-
-  if (cb) {
-    cb(level, tag_copy.c_str(), msg_copy.c_str(), safe_fields.data(),
-       safe_fields.size(), user);
-    return;
-  }
-  DefaultLog(level, tag_copy, msg_copy, safe_fields.data(), safe_fields.size());
+  (void)level;
+  (void)tag;
+  (void)message;
+  (void)fields;
 }
 
 bool IsSensitiveKey(std::string_view key) {

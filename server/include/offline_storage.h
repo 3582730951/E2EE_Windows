@@ -149,12 +149,17 @@ class OfflineStorage {
   const std::string& SecureDeleteError() const { return secure_delete_error_; }
 
  private:
-  using SecureDeleteFn = int (*)(const char*);
+ using SecureDeleteFn = int (*)(const char*);
 
+  bool PersistMetadata(const StoredFileMeta& meta, std::string& error) const;
+  void LoadMetadataFromDisk();
   std::filesystem::path ResolvePath(const std::string& file_id) const;
   std::filesystem::path ResolveUploadTempPath(const std::string& file_id) const;
   std::filesystem::path ResolveKeyPath(const std::string& file_id) const;
+  std::filesystem::path ResolveMetaPath(const std::string& file_id) const;
   std::optional<std::filesystem::path> ResolveKeyPathForData(
+      const std::filesystem::path& data_path) const;
+  std::optional<std::filesystem::path> ResolveMetaPathForData(
       const std::filesystem::path& data_path) const;
   std::string GenerateId() const;
   std::array<std::uint8_t, 32> GenerateKey() const;
@@ -253,7 +258,8 @@ struct OfflineQueueStats {
 class OfflineQueue {
  public:
   explicit OfflineQueue(std::chrono::seconds default_ttl =
-                            std::chrono::hours(24));
+                            std::chrono::hours(24),
+                        std::filesystem::path persist_dir = {});
 
   void Enqueue(const std::string& recipient,
                std::vector<std::uint8_t> payload,
@@ -291,6 +297,7 @@ class OfflineQueue {
   OfflineQueueStats GetStats() const;
 
   void CleanupExpired();
+  bool persistence_enabled() const { return persistence_enabled_; }
 
  private:
   struct StoredMessage {
@@ -330,7 +337,18 @@ class OfflineQueue {
   void CleanupExpiredLocked(Shard& shard,
                             std::chrono::steady_clock::time_point now);
 
+  bool LoadFromDisk();
+  bool PersistMessage(const StoredMessage& stored,
+                      std::chrono::system_clock::time_point created_at_sys);
+  void DeleteMessageFile(const std::string& recipient,
+                         std::uint64_t message_id) const;
+  std::filesystem::path RecipientDir(const std::string& recipient) const;
+  std::filesystem::path MessagePath(const std::string& recipient,
+                                    std::uint64_t message_id) const;
+
   std::chrono::seconds default_ttl_;
+  std::filesystem::path persist_dir_;
+  bool persistence_enabled_{false};
   std::array<Shard, kShardCount> shards_{};
 };
 

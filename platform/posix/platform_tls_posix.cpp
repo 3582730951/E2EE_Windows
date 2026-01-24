@@ -18,9 +18,154 @@
 #include <memory>
 #include <mutex>
 
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/Security.h>
+#endif
+
 namespace mi::platform::tls {
 
 namespace {
+
+#if defined(__APPLE__)
+bool LoadAppleKeychainCaBundle(SSL_CTX* ctx, std::string& error) {
+  error.clear();
+  if (!ctx) {
+    error = "tls ctx missing";
+    return false;
+  }
+  CFArrayRef anchors = nullptr;
+  const OSStatus status = SecTrustCopyAnchorCertificates(&anchors);
+  if (status != errSecSuccess || !anchors) {
+    error = "tls ca bundle missing";
+    return false;
+  }
+
+  X509_STORE* store = SSL_CTX_get_cert_store(ctx);
+  if (!store) {
+    CFRelease(anchors);
+    error = "tls ca bundle load failed";
+    return false;
+  }
+
+  bool added_any = false;
+  const CFIndex count = CFArrayGetCount(anchors);
+  for (CFIndex i = 0; i < count; ++i) {
+    auto* cert = static_cast<SecCertificateRef>(
+        const_cast<void*>(CFArrayGetValueAtIndex(anchors, i)));
+    if (!cert) {
+      continue;
+    }
+    CFDataRef data = SecCertificateCopyData(cert);
+    if (!data) {
+      continue;
+    }
+    const auto* bytes =
+        reinterpret_cast<const unsigned char*>(CFDataGetBytePtr(data));
+    const CFIndex len = CFDataGetLength(data);
+    if (!bytes || len <= 0) {
+      CFRelease(data);
+      continue;
+    }
+    const unsigned char* p = bytes;
+    X509* x509 = d2i_X509(nullptr, &p, static_cast<long>(len));
+    if (!x509) {
+      CFRelease(data);
+      continue;
+    }
+    ERR_clear_error();
+    if (X509_STORE_add_cert(store, x509) == 1) {
+      added_any = true;
+    } else {
+      const unsigned long err = ERR_peek_last_error();
+      if (ERR_GET_LIB(err) == ERR_LIB_X509 &&
+          ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+        added_any = true;
+      }
+      ERR_clear_error();
+    }
+    X509_free(x509);
+    CFRelease(data);
+  }
+  CFRelease(anchors);
+
+  if (!added_any) {
+    error = "tls ca bundle missing";
+    return false;
+  }
+  return true;
+}
+#endif
+
+bool LoadDefaultCaBundle(SSL_CTX* ctx, std::string& error) {
+  if (!ctx) {
+    error = "tls ctx missing";
+    return false;
+  }
+  const bool default_ok = SSL_CTX_set_default_verify_paths(ctx) == 1;
+#if defined(__APPLE__)
+  std::string keychain_err;
+  if (LoadAppleKeychainCaBundle(ctx, keychain_err)) {
+    return true;
+  }
+#endif
+#if defined(__ANDROID__)
+  const char* const candidates[] = {
+      "/apex/com.android.conscrypt/cacerts",
+      "/system/etc/security/cacerts",
+      "/system/etc/security/cacerts_google",
+  };
+  for (const char* path : candidates) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
+      continue;
+    }
+    if (std::filesystem::is_directory(path, ec) && !ec) {
+      if (SSL_CTX_load_verify_locations(ctx, nullptr, path) == 1) {
+        return true;
+      }
+    }
+  }
+#else
+  const char* const candidates[] = {
+#if defined(__APPLE__)
+      "/etc/ssl/cert.pem",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "/usr/local/etc/openssl@3/cert.pem",
+      "/opt/homebrew/etc/openssl@3/cert.pem",
+      "/usr/local/etc/openssl/cert.pem",
+      "/opt/homebrew/etc/openssl/cert.pem",
+#else
+      "/etc/ssl/certs/ca-certificates.crt",
+      "/etc/pki/tls/certs/ca-bundle.crt",
+      "/etc/ssl/ca-bundle.pem",
+      "/etc/ssl/cert.pem",
+      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+      "/usr/local/share/certs/ca-root-nss.crt",
+#endif
+  };
+  for (const char* path : candidates) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
+      continue;
+    }
+    const bool is_dir = std::filesystem::is_directory(path, ec);
+    if (ec) {
+      continue;
+    }
+    const char* ca_file = is_dir ? nullptr : path;
+    const char* ca_dir = is_dir ? path : nullptr;
+    if (SSL_CTX_load_verify_locations(ctx, ca_file, ca_dir) == 1) {
+      return true;
+    }
+  }
+#endif
+  if (default_ok) {
+    return true;
+  }
+  error = "tls ca bundle missing";
+  return false;
+}
 
 struct ClientContextImpl {
   SSL_CTX* ctx{nullptr};
@@ -429,7 +574,16 @@ bool IsSupported() {
   return EnsureOpenSsl();
 }
 
+bool IsStubbed() {
+  return false;
+}
+
+const char* ProviderName() {
+  return "openssl";
+}
+
 bool ClientHandshake(net::Socket sock, const std::string& host,
+                     const ClientVerifyConfig& verify,
                      ClientContext& ctx,
                      std::vector<std::uint8_t>& out_server_cert_der,
                      std::vector<std::uint8_t>& out_enc_buf,
@@ -453,7 +607,28 @@ bool ClientHandshake(net::Socket sock, const std::string& host,
   SSL_CTX_set_options(impl->ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
   SSL_CTX_set_options(impl->ctx, SSL_OP_NO_COMPRESSION);
   SSL_CTX_set_min_proto_version(impl->ctx, TLS1_2_VERSION);
-  SSL_CTX_set_verify(impl->ctx, SSL_VERIFY_NONE, nullptr);
+  if (verify.verify_peer) {
+    std::string ca_path_str;
+    if (!verify.ca_bundle_path.empty()) {
+      const std::filesystem::path ca_path(verify.ca_bundle_path);
+      ca_path_str = ca_path.string();
+      std::error_code ec;
+      const bool is_dir = std::filesystem::is_directory(ca_path, ec);
+      const char* ca_file = is_dir ? nullptr : ca_path_str.c_str();
+      const char* ca_dir = is_dir ? ca_path_str.c_str() : nullptr;
+      if (SSL_CTX_load_verify_locations(impl->ctx, ca_file, ca_dir) != 1) {
+        error = "tls ca bundle load failed";
+        return false;
+      }
+    } else {
+      if (!LoadDefaultCaBundle(impl->ctx, error)) {
+        return false;
+      }
+    }
+    SSL_CTX_set_verify(impl->ctx, SSL_VERIFY_PEER, nullptr);
+  } else {
+    SSL_CTX_set_verify(impl->ctx, SSL_VERIFY_NONE, nullptr);
+  }
 
   impl->ssl = SSL_new(impl->ctx);
   if (!impl->ssl) {
@@ -463,6 +638,12 @@ bool ClientHandshake(net::Socket sock, const std::string& host,
   SSL_set_mode(impl->ssl, SSL_MODE_AUTO_RETRY);
   if (!host.empty()) {
     SSL_set_tlsext_host_name(impl->ssl, host.c_str());
+  }
+  if (verify.verify_peer && verify.verify_hostname && !host.empty()) {
+    if (SSL_set1_host(impl->ssl, host.c_str()) != 1) {
+      error = "tls host verify setup failed";
+      return false;
+    }
   }
   if (SSL_set_fd(impl->ssl, sock) != 1) {
     error = "SSL_set_fd failed";
@@ -480,6 +661,13 @@ bool ClientHandshake(net::Socket sock, const std::string& host,
     }
     error = GetOpenSslError();
     return false;
+  }
+  if (verify.verify_peer) {
+    const long verify_result = SSL_get_verify_result(impl->ssl);
+    if (verify_result != X509_V_OK) {
+      error = X509_verify_cert_error_string(verify_result);
+      return false;
+    }
   }
 
   X509* cert = SSL_get_peer_certificate(impl->ssl);

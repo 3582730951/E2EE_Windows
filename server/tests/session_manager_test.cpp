@@ -1,4 +1,5 @@
 #include <chrono>
+#include <filesystem>
 #include <string>
 #include <thread>
 
@@ -12,6 +13,84 @@ using mi::server::Session;
 using mi::server::SessionManager;
 
 int main() {
+  const auto persist_dir =
+      std::filesystem::current_path() / "test_state_sessions";
+  std::error_code ec;
+  std::filesystem::remove_all(persist_dir, ec);
+  std::filesystem::create_directories(persist_dir, ec);
+  if (ec) {
+    return 1;
+  }
+
+  std::string persisted_token;
+  {
+    DemoUserTable table;
+    DemoUser user;
+    user.username.set("bob");
+    user.password.set("pwd123");
+    user.username_plain = "bob";
+    user.password_plain = "pwd123";
+    table.emplace("bob", user);
+
+    auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
+    SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
+                               persist_dir);
+
+    Session session;
+    std::string err;
+    bool ok = persist_mgr.Login("bob", "pwd123",
+                                mi::server::TransportKind::kLocal,
+                                session, err);
+    if (!ok || session.token.empty()) {
+      return 1;
+    }
+    persisted_token = session.token;
+  }
+  if (persisted_token.empty()) {
+    return 1;
+  }
+
+  {
+    DemoUserTable table;
+    DemoUser user;
+    user.username.set("bob");
+    user.password.set("pwd123");
+    user.username_plain = "bob";
+    user.password_plain = "pwd123";
+    table.emplace("bob", user);
+
+    auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
+    SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
+                               persist_dir);
+    auto fetched = persist_mgr.GetSession(persisted_token);
+    if (!fetched.has_value() || fetched->username != "bob") {
+      return 1;
+    }
+    auto keys = persist_mgr.GetKeys(persisted_token);
+    if (!keys.has_value() || keys->root_key.size() != 32) {
+      return 1;
+    }
+    persist_mgr.Logout(persisted_token);
+  }
+
+  {
+    DemoUserTable table;
+    DemoUser user;
+    user.username.set("bob");
+    user.password.set("pwd123");
+    user.username_plain = "bob";
+    user.password_plain = "pwd123";
+    table.emplace("bob", user);
+
+    auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
+    SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
+                               persist_dir);
+    auto fetched = persist_mgr.GetSession(persisted_token);
+    if (fetched.has_value()) {
+      return 1;
+    }
+  }
+
   DemoUserTable table;
   DemoUser user;
   user.username.set("bob");

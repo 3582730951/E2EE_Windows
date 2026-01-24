@@ -2608,6 +2608,25 @@ bool ClientCore::Init(const std::string& config_path) {
     server_ip_ = cfg.server_ip;
     use_tls_ = cfg.use_tls;
     require_tls_ = cfg.require_tls;
+    tls_verify_mode_ = cfg.tls_verify_mode;
+    tls_verify_hostname_ = cfg.tls_verify_hostname;
+    tls_ca_bundle_path_.clear();
+    if (!cfg.tls_ca_bundle_path.empty()) {
+      std::filesystem::path ca_path = cfg.tls_ca_bundle_path;
+      if (!ca_path.is_absolute()) {
+        ca_path = config_dir / ca_path;
+      }
+      tls_ca_bundle_path_ = ca_path.string();
+    }
+    if (tls_verify_mode_ != TlsVerifyMode::kPin &&
+        !tls_ca_bundle_path_.empty()) {
+      std::error_code ec;
+      const std::filesystem::path ca_path(tls_ca_bundle_path_);
+      if (!std::filesystem::exists(ca_path, ec) || ec) {
+        last_error_ = "tls ca bundle missing";
+        return false;
+      }
+    }
     use_kcp_ = cfg.kcp.enable;
     kcp_cfg_ = cfg.kcp;
     media_config_ = cfg.media;
@@ -2615,9 +2634,15 @@ bool ClientCore::Init(const std::string& config_path) {
       use_tls_ = false;
       require_tls_ = false;
     }
-    if (use_tls_ && !mi::platform::tls::IsSupported()) {
-      last_error_ = "tls unsupported";
-      return false;
+    if (use_tls_) {
+      if (mi::platform::tls::IsStubbed()) {
+        last_error_ = "tls stub build";
+        return false;
+      }
+      if (!mi::platform::tls::IsSupported()) {
+        last_error_ = "tls unsupported";
+        return false;
+      }
     }
     server_port_ = use_kcp_ && cfg.kcp.server_port != 0 ? cfg.kcp.server_port
                                                         : cfg.server_port;
@@ -2630,6 +2655,17 @@ bool ClientCore::Init(const std::string& config_path) {
     device_sync_enabled_ = cfg.device_sync.enabled;
     device_sync_is_primary_ =
         (cfg.device_sync.role == mi::client::DeviceSyncRole::kPrimary);
+    device_sync_rotate_interval_sec_ = cfg.device_sync.rotate_interval_sec;
+    device_sync_rotate_message_limit_ = cfg.device_sync.rotate_message_limit;
+    device_sync_ratchet_enable_ = cfg.device_sync.ratchet_enable;
+    device_sync_ratchet_max_skip_ = cfg.device_sync.ratchet_max_skip;
+    device_sync_last_rotate_ms_ = 0;
+    device_sync_send_count_ = 0;
+    device_sync_send_counter_ = 0;
+    device_sync_recv_counter_ = 0;
+    device_sync_prev_key_.fill(0);
+    device_sync_prev_key_until_ms_ = 0;
+    device_sync_prev_recv_counter_ = 0;
     identity_policy_.rotation_days = cfg.identity.rotation_days;
     identity_policy_.legacy_retention_days = cfg.identity.legacy_retention_days;
     identity_policy_.tpm_enable = cfg.identity.tpm_enable;
@@ -2640,7 +2676,10 @@ bool ClientCore::Init(const std::string& config_path) {
     cover_traffic_last_sent_ms_ = 0;
     trust_store_path_.clear();
     trust_store_tls_required_ = false;
-    require_pinned_fingerprint_ = cfg.require_pinned_fingerprint;
+    const bool allow_pinned_fingerprint =
+        (tls_verify_mode_ != TlsVerifyMode::kCa);
+    require_pinned_fingerprint_ =
+        (tls_verify_mode_ == TlsVerifyMode::kPin);
     pinned_server_fingerprint_.clear();
     pending_server_fingerprint_.clear();
     pending_server_pin_.clear();
@@ -2648,11 +2687,15 @@ bool ClientCore::Init(const std::string& config_path) {
       std::string security_err;
       if (!security_service.LoadTrustFromConfig(
               cfg, data_dir, server_ip_, server_port_, require_tls_,
-              trust_store_path_, pinned_server_fingerprint_,
-              trust_store_tls_required_, security_err)) {
+              allow_pinned_fingerprint, trust_store_path_,
+              pinned_server_fingerprint_, trust_store_tls_required_,
+              security_err)) {
         last_error_ =
             security_err.empty() ? "trust store init failed" : security_err;
         return false;
+      }
+      if (!allow_pinned_fingerprint) {
+        pinned_server_fingerprint_.clear();
       }
     } else {
       require_pinned_fingerprint_ = false;
@@ -2760,6 +2803,9 @@ bool ClientCore::Init(const std::string& config_path) {
   server_port_ = 0;
   use_tls_ = false;
   require_tls_ = true;
+  tls_verify_mode_ = TlsVerifyMode::kPin;
+  tls_verify_hostname_ = true;
+  tls_ca_bundle_path_.clear();
   use_kcp_ = false;
   kcp_cfg_ = KcpConfig{};
   media_config_ = ClientConfig{}.media;
@@ -2771,6 +2817,19 @@ bool ClientCore::Init(const std::string& config_path) {
   device_sync_key_loaded_ = false;
   device_sync_key_.fill(0);
   device_sync_key_path_.clear();
+  device_sync_rotate_interval_sec_ =
+      ClientConfig{}.device_sync.rotate_interval_sec;
+  device_sync_rotate_message_limit_ =
+      ClientConfig{}.device_sync.rotate_message_limit;
+  device_sync_ratchet_enable_ = ClientConfig{}.device_sync.ratchet_enable;
+  device_sync_ratchet_max_skip_ = ClientConfig{}.device_sync.ratchet_max_skip;
+  device_sync_last_rotate_ms_ = 0;
+  device_sync_send_count_ = 0;
+  device_sync_send_counter_ = 0;
+  device_sync_recv_counter_ = 0;
+  device_sync_prev_key_.fill(0);
+  device_sync_prev_key_until_ms_ = 0;
+  device_sync_prev_recv_counter_ = 0;
   device_id_.clear();
   trust_store_path_.clear();
   trust_store_tls_required_ = false;

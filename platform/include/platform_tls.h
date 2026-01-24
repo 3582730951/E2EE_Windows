@@ -13,6 +13,12 @@ struct ClientContext {
   void* impl{nullptr};
 };
 
+struct ClientVerifyConfig {
+  bool verify_peer{false};
+  bool verify_hostname{true};
+  std::string ca_bundle_path;
+};
+
 struct ServerCredentials {
   void* impl{nullptr};
 };
@@ -22,7 +28,10 @@ struct ServerContext {
 };
 
 bool IsSupported();
+bool IsStubbed();
+const char* ProviderName();
 bool ClientHandshake(net::Socket sock, const std::string& host,
+                     const ClientVerifyConfig& verify,
                      ClientContext& ctx,
                      std::vector<std::uint8_t>& out_server_cert_der,
                      std::vector<std::uint8_t>& out_enc_buf,

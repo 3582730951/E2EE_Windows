@@ -16,6 +16,7 @@
 #include <wincrypt.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <cstring>
@@ -123,6 +124,202 @@ struct ServerContextImpl {
   }
 };
 
+bool AddDerCertToStore(HCERTSTORE store,
+                       const std::uint8_t* data,
+                       std::size_t len,
+                       std::string& error) {
+  error.clear();
+  if (!store || !data || len == 0) {
+    error = "tls ca bundle invalid";
+    return false;
+  }
+  PCCERT_CONTEXT ctx = CertCreateCertificateContext(
+      X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+      reinterpret_cast<const BYTE*>(data),
+      static_cast<DWORD>(len));
+  if (!ctx) {
+    error = "tls ca bundle invalid";
+    return false;
+  }
+  const BOOL ok =
+      CertAddCertificateContextToStore(store, ctx,
+                                       CERT_STORE_ADD_REPLACE_EXISTING, nullptr);
+  CertFreeCertificateContext(ctx);
+  if (!ok) {
+    error = "tls ca bundle add failed";
+    return false;
+  }
+  return true;
+}
+
+bool DecodeBase64(const std::string& input, std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (input.empty()) {
+    return false;
+  }
+  DWORD len = 0;
+  if (!CryptStringToBinaryA(input.c_str(),
+                            static_cast<DWORD>(input.size()),
+                            CRYPT_STRING_BASE64, nullptr, &len, nullptr,
+                            nullptr)) {
+    return false;
+  }
+  out.resize(len);
+  if (!CryptStringToBinaryA(input.c_str(),
+                            static_cast<DWORD>(input.size()),
+                            CRYPT_STRING_BASE64,
+                            reinterpret_cast<BYTE*>(out.data()), &len, nullptr,
+                            nullptr)) {
+    out.clear();
+    return false;
+  }
+  out.resize(len);
+  return !out.empty();
+}
+
+bool AddPemCertsToStore(HCERTSTORE store,
+                        const std::string& text,
+                        std::size_t& out_added,
+                        std::string& error) {
+  error.clear();
+  out_added = 0;
+  constexpr const char* kBegin = "-----BEGIN CERTIFICATE-----";
+  constexpr const char* kEnd = "-----END CERTIFICATE-----";
+  std::size_t pos = 0;
+  while (true) {
+    const std::size_t begin = text.find(kBegin, pos);
+    if (begin == std::string::npos) {
+      break;
+    }
+    const std::size_t content_start = begin + std::strlen(kBegin);
+    const std::size_t end = text.find(kEnd, content_start);
+    if (end == std::string::npos) {
+      error = "tls ca bundle invalid";
+      return false;
+    }
+    std::string b64;
+    b64.reserve(end - content_start);
+    for (std::size_t i = content_start; i < end; ++i) {
+      const unsigned char ch = static_cast<unsigned char>(text[i]);
+      if (std::isspace(ch) != 0) {
+        continue;
+      }
+      b64.push_back(static_cast<char>(ch));
+    }
+    std::vector<std::uint8_t> der;
+    if (!DecodeBase64(b64, der)) {
+      error = "tls ca bundle invalid";
+      return false;
+    }
+    std::string add_err;
+    if (!AddDerCertToStore(store, der.data(), der.size(), add_err)) {
+      error = add_err;
+      return false;
+    }
+    ++out_added;
+    pos = end + std::strlen(kEnd);
+  }
+  return true;
+}
+
+bool LoadCaBundleFromFile(const std::filesystem::path& path,
+                          HCERTSTORE store,
+                          std::size_t& out_added,
+                          std::string& error) {
+  error.clear();
+  out_added = 0;
+  std::ifstream f(path, std::ios::binary);
+  if (!f.is_open()) {
+    error = "tls ca bundle read failed";
+    return false;
+  }
+  f.seekg(0, std::ios::end);
+  const std::streamsize size = f.tellg();
+  f.seekg(0, std::ios::beg);
+  if (size <= 0) {
+    error = "tls ca bundle invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+  if (!f.read(reinterpret_cast<char*>(bytes.data()), size)) {
+    error = "tls ca bundle read failed";
+    return false;
+  }
+  const std::string text(reinterpret_cast<const char*>(bytes.data()),
+                         bytes.size());
+  if (text.find("BEGIN CERTIFICATE") != std::string::npos) {
+    std::size_t added = 0;
+    if (!AddPemCertsToStore(store, text, added, error)) {
+      return false;
+    }
+    out_added += added;
+    return true;
+  }
+  std::string add_err;
+  if (!AddDerCertToStore(store, bytes.data(), bytes.size(), add_err)) {
+    error = add_err;
+    return false;
+  }
+  out_added += 1;
+  return true;
+}
+
+bool LoadCaBundleStore(const std::string& path,
+                       ScopedCertStore& out_store,
+                       std::string& error) {
+  error.clear();
+  out_store.store = nullptr;
+  if (path.empty()) {
+    error = "tls ca bundle empty";
+    return false;
+  }
+  const std::filesystem::path p(path);
+  std::error_code ec;
+  if (!std::filesystem::exists(p, ec) || ec) {
+    error = "tls ca bundle missing";
+    return false;
+  }
+  out_store.store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0,
+                                  CERT_STORE_CREATE_NEW_FLAG, nullptr);
+  if (!out_store.store) {
+    error = "tls ca bundle load failed";
+    return false;
+  }
+  std::size_t added = 0;
+  if (std::filesystem::is_directory(p, ec) && !ec) {
+    for (const auto& entry : std::filesystem::directory_iterator(p, ec)) {
+      if (ec) {
+        error = "tls ca bundle read failed";
+        return false;
+      }
+      if (!entry.is_regular_file(ec) || ec) {
+        continue;
+      }
+      std::string file_err;
+      std::size_t file_added = 0;
+      if (!LoadCaBundleFromFile(entry.path(), out_store.store, file_added,
+                                file_err)) {
+        error = file_err;
+        return false;
+      }
+      added += file_added;
+    }
+  } else {
+    std::string file_err;
+    std::size_t file_added = 0;
+    if (!LoadCaBundleFromFile(p, out_store.store, file_added, file_err)) {
+      error = file_err;
+      return false;
+    }
+    added += file_added;
+  }
+  if (added == 0) {
+    error = "tls ca bundle invalid";
+    return false;
+  }
+  return true;
+}
+
 std::wstring ToWide(const std::string& s) {
   if (s.empty()) {
     return {};
@@ -158,6 +355,79 @@ std::string Win32ErrorMessage(DWORD code) {
     out.pop_back();
   }
   return out;
+}
+
+bool VerifyPeerCertificate(PCCERT_CONTEXT cert, const std::wstring& host,
+                           bool verify_hostname, HCERTSTORE ca_store,
+                           std::string& error) {
+  error.clear();
+  if (!cert) {
+    error = "remote cert unavailable";
+    return false;
+  }
+
+  ScopedCertStore collection;
+  HCERTSTORE extra_store = cert->hCertStore;
+  if (ca_store) {
+    collection.store = CertOpenStore(CERT_STORE_PROV_COLLECTION, 0, 0, 0,
+                                     nullptr);
+    if (collection.store) {
+      CertAddStoreToCollection(collection.store, cert->hCertStore, 0, 0);
+      CertAddStoreToCollection(collection.store, ca_store, 0, 0);
+      extra_store = collection.store;
+    } else {
+      extra_store = ca_store;
+    }
+  }
+
+  CERT_CHAIN_PARA chain_para{};
+  chain_para.cbSize = sizeof(chain_para);
+  LPSTR usage = const_cast<LPSTR>(szOID_PKIX_KP_SERVER_AUTH);
+  chain_para.RequestedUsage.dwType = USAGE_MATCH_TYPE_OR;
+  chain_para.RequestedUsage.Usage.cUsageIdentifier = 1;
+  chain_para.RequestedUsage.Usage.rgpszUsageIdentifier = &usage;
+
+  PCCERT_CHAIN_CONTEXT chain_ctx = nullptr;
+  if (!CertGetCertificateChain(nullptr, cert, nullptr,
+                               extra_store,
+                               &chain_para, 0, nullptr, &chain_ctx)) {
+    const DWORD last = GetLastError();
+    error = "CertGetCertificateChain failed: " + std::to_string(last) + " " +
+            Win32ErrorMessage(last);
+    return false;
+  }
+
+  SSL_EXTRA_CERT_CHAIN_POLICY_PARA ssl_policy{};
+  ssl_policy.cbSize = sizeof(ssl_policy);
+  ssl_policy.dwAuthType = AUTHTYPE_SERVER;
+  if (!verify_hostname) {
+    ssl_policy.fdwChecks = CERT_CHAIN_POLICY_IGNORE_INVALID_NAME_FLAG;
+  }
+  if (!host.empty()) {
+    ssl_policy.pwszServerName = const_cast<wchar_t*>(host.c_str());
+  }
+
+  CERT_CHAIN_POLICY_PARA policy_para{};
+  policy_para.cbSize = sizeof(policy_para);
+  policy_para.pvExtraPolicyPara = &ssl_policy;
+
+  CERT_CHAIN_POLICY_STATUS status{};
+  status.cbSize = sizeof(status);
+
+  bool ok = true;
+  if (!CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_SSL, chain_ctx,
+                                        &policy_para, &status)) {
+    const DWORD last = GetLastError();
+    error = "CertVerifyCertificateChainPolicy failed: " +
+            std::to_string(last) + " " + Win32ErrorMessage(last);
+    ok = false;
+  } else if (status.dwError != 0) {
+    error = "tls verify failed: " + std::to_string(status.dwError) + " " +
+            Win32ErrorMessage(status.dwError);
+    ok = false;
+  }
+  CertFreeCertificateChain(chain_ctx);
+  return ok;
 }
 
 bool GenerateSelfSignedPfx(const std::filesystem::path& out_path,
@@ -382,7 +652,16 @@ bool IsSupported() {
   return true;
 }
 
+bool IsStubbed() {
+  return false;
+}
+
+const char* ProviderName() {
+  return "schannel";
+}
+
 bool ClientHandshake(net::Socket sock, const std::string& host,
+                     const ClientVerifyConfig& verify,
                      ClientContext& ctx,
                      std::vector<std::uint8_t>& out_server_cert_der,
                      std::vector<std::uint8_t>& out_enc_buf,
@@ -532,6 +811,23 @@ bool ClientHandshake(net::Socket sock, const std::string& host,
   if (st != SEC_E_OK || !remote_cert.cert) {
     error = "remote cert unavailable";
     return false;
+  }
+  if (verify.verify_peer) {
+    ScopedCertStore ca_store;
+    std::string ca_err;
+    if (!verify.ca_bundle_path.empty()) {
+      if (!LoadCaBundleStore(verify.ca_bundle_path, ca_store, ca_err)) {
+        error = ca_err.empty() ? "tls ca bundle load failed" : ca_err;
+        return false;
+      }
+    }
+    std::string verify_err;
+    if (!VerifyPeerCertificate(remote_cert.cert, target,
+                               verify.verify_hostname, ca_store.store,
+                               verify_err)) {
+      error = verify_err.empty() ? "tls verify failed" : verify_err;
+      return false;
+    }
   }
 
   out_server_cert_der.assign(remote_cert.cert->pbCertEncoded,

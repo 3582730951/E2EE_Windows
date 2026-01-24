@@ -278,6 +278,14 @@ bool WriteAll(const std::filesystem::path& path,
             std::filesystem::perms::owner_write,
         std::filesystem::perm_options::replace, perm_ec);
   }
+#else
+  {
+    std::string acl_err;
+    if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+      error = acl_err.empty() ? "identity acl harden failed" : acl_err;
+      return false;
+    }
+  }
 #endif
   return true;
 }

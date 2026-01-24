@@ -13,6 +13,7 @@
 #include "frame_router.h"
 #include "media_relay.h"
 #include "offline_storage.h"
+#include "platform_fs.h"
 #include "secure_channel.h"
 #include "session_manager.h"
 
@@ -62,6 +63,8 @@ class ServerApp {
   std::unique_ptr<ApiService> api_;
   std::unique_ptr<FrameRouter> router_;
   std::chrono::steady_clock::time_point last_cleanup_{};
+  mi::platform::fs::FileLock state_lock_{};
+  bool state_lock_held_{false};
 };
 
 }  // namespace mi::server

@@ -2279,6 +2279,74 @@ bool MessagingService::SetUserBlocked(ClientCore& core, const std::string& block
   return true;
 }
 
+bool MessagingService::MaybeRotateDeviceSyncKey(ClientCore& core) const {
+  if (!core.device_sync_enabled_ || !core.device_sync_is_primary_) {
+    return false;
+  }
+
+  const std::string saved_err = core.last_error_;
+  if (!core.device_sync_key_loaded_ && !core.LoadDeviceSyncKey()) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  if (!core.device_sync_key_loaded_) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  if (core.device_sync_rotate_interval_sec_ == 0 &&
+      core.device_sync_rotate_message_limit_ == 0) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+
+  const std::uint64_t now_ms = mi::platform::NowSteadyMs();
+  bool due = false;
+  if (core.device_sync_rotate_interval_sec_ != 0 &&
+      core.device_sync_last_rotate_ms_ != 0) {
+    const std::uint64_t interval_ms =
+        static_cast<std::uint64_t>(core.device_sync_rotate_interval_sec_) *
+        1000ull;
+    if (interval_ms != 0 &&
+        now_ms - core.device_sync_last_rotate_ms_ >= interval_ms) {
+      due = true;
+    }
+  }
+  if (!due && core.device_sync_rotate_message_limit_ != 0 &&
+      core.device_sync_send_count_ >= core.device_sync_rotate_message_limit_) {
+    due = true;
+  }
+  if (!due) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+
+  std::array<std::uint8_t, 32> next_key{};
+  if (!RandomBytes(next_key.data(), next_key.size())) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  std::vector<std::uint8_t> event_plain;
+  if (!EncodeDeviceSyncRotateKey(next_key, event_plain)) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  std::vector<std::uint8_t> event_cipher;
+  if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  if (!core.PushDeviceSyncCiphertext(event_cipher)) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  if (!core.StoreDeviceSyncKey(next_key)) {
+    core.last_error_ = saved_err;
+    return false;
+  }
+  core.last_error_ = saved_err;
+  return true;
+}
+
 void MessagingService::BestEffortBroadcastDeviceSyncMessage(ClientCore& core, 
     bool is_group, bool outgoing, const std::string& conv_id,
     const std::string& sender, const std::vector<std::uint8_t>& envelope) const {
@@ -2292,6 +2360,7 @@ void MessagingService::BestEffortBroadcastDeviceSyncMessage(ClientCore& core,
     return;
   }
 
+  MaybeRotateDeviceSyncKey(core);
   std::vector<std::uint8_t> event_plain;
   if (!EncodeDeviceSyncMessage(is_group, outgoing, conv_id, sender, envelope,
                                event_plain)) {
@@ -2304,7 +2373,9 @@ void MessagingService::BestEffortBroadcastDeviceSyncMessage(ClientCore& core,
     core.last_error_ = saved_err;
     return;
   }
-  core.PushDeviceSyncCiphertext(event_cipher);
+  if (core.PushDeviceSyncCiphertext(event_cipher)) {
+    core.device_sync_send_count_++;
+  }
   core.last_error_ = saved_err;
 }
 
@@ -2321,6 +2392,7 @@ void MessagingService::BestEffortBroadcastDeviceSyncDelivery(ClientCore& core,
     return;
   }
 
+  MaybeRotateDeviceSyncKey(core);
   std::vector<std::uint8_t> event_plain;
   if (!EncodeDeviceSyncDelivery(is_group, is_read, conv_id, msg_id, event_plain)) {
     core.last_error_ = saved_err;
@@ -2332,7 +2404,9 @@ void MessagingService::BestEffortBroadcastDeviceSyncDelivery(ClientCore& core,
     core.last_error_ = saved_err;
     return;
   }
-  core.PushDeviceSyncCiphertext(event_cipher);
+  if (core.PushDeviceSyncCiphertext(event_cipher)) {
+    core.device_sync_send_count_++;
+  }
   core.last_error_ = saved_err;
 }
 
@@ -2354,6 +2428,7 @@ void MessagingService::BestEffortBroadcastDeviceSyncHistorySnapshot(ClientCore& 
     return;
   }
 
+  MaybeRotateDeviceSyncKey(core);
   std::vector<ChatHistoryMessage> msgs;
   std::string hist_err;
   if (!core.history_store_->ExportRecentSnapshot(20, 50, msgs, hist_err) ||
@@ -2365,6 +2440,7 @@ void MessagingService::BestEffortBroadcastDeviceSyncHistorySnapshot(ClientCore& 
   static constexpr std::size_t kMaxPlain = 200u * 1024u;
   std::size_t idx = 0;
   while (idx < msgs.size()) {
+    MaybeRotateDeviceSyncKey(core);
     std::vector<std::uint8_t> event_plain;
     event_plain.push_back(kDeviceSyncEventHistorySnapshot);
     mi::server::proto::WriteString(target_device_id, event_plain);
@@ -2406,6 +2482,7 @@ void MessagingService::BestEffortBroadcastDeviceSyncHistorySnapshot(ClientCore& 
     if (!core.PushDeviceSyncCiphertext(event_cipher)) {
       break;
     }
+    core.device_sync_send_count_++;
   }
 
   core.last_error_ = saved_err;
@@ -5573,6 +5650,11 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
     core.ResendPendingSenderKeyDistributions();
     core.last_error_ = saved_err;
   }
+  {
+    const std::string saved_err = core.last_error_;
+    MaybeRotateDeviceSyncKey(core);
+    core.last_error_ = saved_err;
+  }
 
   if (core.device_sync_enabled_ && !core.device_sync_is_primary_) {
     if (!core.device_sync_key_loaded_ && !core.LoadDeviceSyncKey()) {
@@ -6267,6 +6349,7 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
         core.last_error_ = saved_err;
         return;
       }
+      MaybeRotateDeviceSyncKey(core);
       std::vector<std::uint8_t> event_plain;
       if (!EncodeDeviceSyncGroupNotice(group_id, actor_username, payload,
                                        event_plain)) {
@@ -6278,7 +6361,9 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
         core.last_error_ = saved_err;
         return;
       }
-      core.PushDeviceSyncCiphertext(event_cipher);
+      if (core.PushDeviceSyncCiphertext(event_cipher)) {
+        core.device_sync_send_count_++;
+      }
       core.last_error_ = saved_err;
     };
 

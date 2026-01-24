@@ -240,6 +240,17 @@ if(MSVC)
 endif()
 add_test(NAME offline_storage_test COMMAND offline_storage_test)
 
+add_executable(offline_queue_test
+    offline_queue_test.cpp
+)
+target_link_libraries(offline_queue_test PRIVATE mi_e2ee_core)
+target_include_directories(offline_queue_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(offline_queue_test)
+if(MSVC)
+  target_compile_options(offline_queue_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME offline_queue_test COMMAND offline_queue_test)
+
 add_executable(private_chat_test
     private_chat_test.cpp
 )

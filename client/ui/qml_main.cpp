@@ -1,18 +1,15 @@
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QGuiApplication>
 #include <QEvent>
 #include <QFile>
-#include <QDir>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QQmlError>
 #include <QPointer>
 #include <QQuickStyle>
 #include <QQuickWindow>
-#include <QTextStream>
+#include <QTimer>
 
 #include <cmath>
 
@@ -29,46 +26,18 @@
 
 namespace {
 
-QFile *gLogFile = nullptr;
-
-void LogMessageHandler(QtMsgType type, const QMessageLogContext &, const QString &message) {
-    if (!gLogFile) {
-        return;
-    }
-    QTextStream out(gLogFile);
-    out << QDateTime::currentDateTimeUtc().toString("yyyy-MM-dd HH:mm:ss.zzz") << " ";
-    switch (type) {
-        case QtDebugMsg:
-            out << "[DEBUG] ";
-            break;
-        case QtInfoMsg:
-            out << "[INFO] ";
-            break;
-        case QtWarningMsg:
-            out << "[WARN] ";
-            break;
-        case QtCriticalMsg:
-            out << "[CRIT] ";
-            break;
-        case QtFatalMsg:
-            out << "[FATAL] ";
-            break;
-    }
-    out << message << "\n";
-    out.flush();
+bool EnvFlagEnabled(const char *name) {
+    const QByteArray value = qgetenv(name).trimmed().toLower();
+    return value == "1" || value == "true" || value == "yes" || value == "on";
 }
 
-void InitStartupLog(const QString &dir) {
-    if (dir.isEmpty()) {
-        return;
+int SmokeDurationMs() {
+    bool ok = false;
+    const int value = qEnvironmentVariableIntValue("MI_E2EE_UI_SMOKE_MS", &ok);
+    if (ok && value > 0) {
+        return value;
     }
-    auto *file = new QFile(QDir(dir).filePath(QStringLiteral("ui_startup.log")));
-    if (!file->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        delete file;
-        return;
-    }
-    gLogFile = file;
-    qInstallMessageHandler(LogMessageHandler);
+    return 2000;
 }
 
 class AuthWindowDragFilter : public QObject {
@@ -336,37 +305,30 @@ int main(int argc, char* argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
     UiRuntimePaths::Prepare(argv[0]);
     QGuiApplication app(argc, argv);
-    InitStartupLog(QCoreApplication::applicationDirPath());
     QCoreApplication::setOrganizationName(QStringLiteral("MI"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("mi-e2ee.local"));
     QCoreApplication::setApplicationName(QStringLiteral("MI E2EE Client"));
 
+    const bool smokeMode = EnvFlagEnabled("MI_E2EE_UI_SMOKE");
+    const QString smokeUser = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_USER"));
+    const QString smokePass = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_PASS"));
+    const QString smokeConfig = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CONFIG"));
+    QTimer smokeTimer;
+
     QQmlApplicationEngine engine;
     mi::client::ui::QuickClient client;
     engine.rootContext()->setContextProperty("clientBridge", &client);
-    qInfo() << "App dir:" << QCoreApplication::applicationDirPath();
-    qInfo() << "QML2_IMPORT_PATH:" << qgetenv("QML2_IMPORT_PATH");
-    qInfo() << "QML_IMPORT_PATH:" << qgetenv("QML_IMPORT_PATH");
-    qInfo() << "QT_PLUGIN_PATH:" << qgetenv("QT_PLUGIN_PATH");
-    qInfo() << "QT_QPA_PLATFORM_PLUGIN_PATH:" << qgetenv("QT_QPA_PLATFORM_PLUGIN_PATH");
     if (!QFile::exists(QStringLiteral(":/mi/e2ee/ui/qml/Main.qml"))) {
-        qWarning() << "Main.qml not found in resources.";
+        return -1;
     }
 
     const QUrl url(QStringLiteral("qrc:/mi/e2ee/ui/qml/Main.qml"));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
                      &app, [url](QObject* obj, const QUrl& objUrl) {
                          if (!obj && url == objUrl) {
-                             qCritical() << "Failed to load root QML:" << url;
                              QCoreApplication::exit(-1);
                          }
                      }, Qt::QueuedConnection);
-    QObject::connect(&engine, &QQmlApplicationEngine::warnings,
-                     &app, [](const QList<QQmlError> &warnings) {
-                         for (const auto &warning : warnings) {
-                             qWarning().noquote() << warning.toString();
-                         }
-                     });
     engine.load(url);
 
     if (engine.rootObjects().isEmpty()) {
@@ -382,5 +344,24 @@ int main(int argc, char* argv[]) {
     auto* imeBlocker = new InputMethodBlocker(&client, &app);
     app.installEventFilter(imeBlocker);
     imeBlocker->refresh();
+    if (smokeMode) {
+        smokeTimer.setSingleShot(true);
+        smokeTimer.start(SmokeDurationMs());
+        QObject::connect(&smokeTimer, &QTimer::timeout, &app, &QCoreApplication::quit);
+        if (!smokeUser.isEmpty() && !smokePass.isEmpty()) {
+            QTimer::singleShot(0, &app, [&client, &smokeTimer, smokeUser, smokePass, smokeConfig]() {
+                if (!client.init(smokeConfig)) {
+                    smokeTimer.stop();
+                    QCoreApplication::exit(2);
+                    return;
+                }
+                if (!client.login(smokeUser, smokePass)) {
+                    smokeTimer.stop();
+                    QCoreApplication::exit(3);
+                    return;
+                }
+            });
+        }
+    }
     return app.exec();
 }

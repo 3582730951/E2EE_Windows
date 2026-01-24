@@ -124,6 +124,8 @@ struct ClientCore::RemoteStream {
   std::uint16_t port{0};
   bool use_tls{false};
   bool use_kcp{false};
+  bool require_pin{true};
+  mi::platform::tls::ClientVerifyConfig tls_verify_cfg;
   KcpConfig kcp_cfg;
   ProxyConfig proxy;
   std::string pinned_fingerprint;
@@ -140,12 +142,16 @@ struct ClientCore::RemoteStream {
   std::size_t plain_off{0};
 
   RemoteStream(std::string host_in, std::uint16_t port_in, bool use_tls_in,
-               bool use_kcp_in, KcpConfig kcp_cfg_in, ProxyConfig proxy_in,
+               bool use_kcp_in, bool require_pin_in,
+               mi::platform::tls::ClientVerifyConfig tls_verify_cfg_in,
+               KcpConfig kcp_cfg_in, ProxyConfig proxy_in,
                std::string pinned_fingerprint_in)
       : host(std::move(host_in)),
         port(port_in),
         use_tls(use_tls_in),
         use_kcp(use_kcp_in),
+        require_pin(require_pin_in),
+        tls_verify_cfg(std::move(tls_verify_cfg_in)),
         kcp_cfg(std::move(kcp_cfg_in)),
         proxy(std::move(proxy_in)),
         pinned_fingerprint(std::move(pinned_fingerprint_in)) {}
@@ -153,12 +159,23 @@ struct ClientCore::RemoteStream {
   ~RemoteStream() { Close(); }
 
   bool Matches(const std::string& host_in, std::uint16_t port_in,
-               bool use_tls_in, bool use_kcp_in, const KcpConfig& kcp_cfg_in,
-               const ProxyConfig& proxy_in,
+               bool use_tls_in, bool use_kcp_in, bool require_pin_in,
+               const mi::platform::tls::ClientVerifyConfig& tls_verify_cfg_in,
+               const KcpConfig& kcp_cfg_in, const ProxyConfig& proxy_in,
                const std::string& pinned_fingerprint_in) const {
     if (host != host_in || port != port_in || use_tls != use_tls_in ||
         use_kcp != use_kcp_in || pinned_fingerprint != pinned_fingerprint_in) {
       return false;
+    }
+    if (use_tls) {
+      if (require_pin != require_pin_in) {
+        return false;
+      }
+      if (tls_verify_cfg.verify_peer != tls_verify_cfg_in.verify_peer ||
+          tls_verify_cfg.verify_hostname != tls_verify_cfg_in.verify_hostname ||
+          tls_verify_cfg.ca_bundle_path != tls_verify_cfg_in.ca_bundle_path) {
+        return false;
+      }
     }
     if (use_kcp) {
       if (kcp_cfg.enable != kcp_cfg_in.enable ||
@@ -495,6 +512,10 @@ struct ClientCore::RemoteStream {
 
   bool ConnectTls(std::string& out_server_fingerprint, std::string& error) {
     out_server_fingerprint.clear();
+    if (mi::platform::tls::IsStubbed()) {
+      error = "tls stub build";
+      return false;
+    }
     if (!mi::platform::tls::IsSupported()) {
       error = "tls unsupported";
       return false;
@@ -504,8 +525,8 @@ struct ClientCore::RemoteStream {
     }
     std::vector<std::uint8_t> cert_der;
     std::vector<std::uint8_t> extra;
-    if (!mi::platform::tls::ClientHandshake(sock, host, tls_ctx, cert_der,
-                                            extra, error)) {
+    if (!mi::platform::tls::ClientHandshake(sock, host, tls_verify_cfg, tls_ctx,
+                                            cert_der, extra, error)) {
       Close();
       return false;
     }
@@ -517,14 +538,15 @@ struct ClientCore::RemoteStream {
       Close();
       return false;
     }
-    if (pinned_fingerprint.empty()) {
+    if (!pinned_fingerprint.empty()) {
+      if (!mi::common::ConstantTimeEqual(pinned_fingerprint,
+                                         out_server_fingerprint)) {
+        error = "server fingerprint changed";
+        Close();
+        return false;
+      }
+    } else if (require_pin) {
       error = "server not trusted";
-      Close();
-      return false;
-    }
-    if (!mi::common::ConstantTimeEqual(pinned_fingerprint,
-                                       out_server_fingerprint)) {
-      error = "server fingerprint changed";
       Close();
       return false;
     }
@@ -732,15 +754,28 @@ bool TransportService::ProcessRaw(ClientCore& core,
       }
     };
 
+    mi::platform::tls::ClientVerifyConfig tls_verify_cfg;
+    const bool require_pin = (core.tls_verify_mode_ == TlsVerifyMode::kPin);
+    if (core.use_tls_) {
+      const bool verify_peer = (core.tls_verify_mode_ != TlsVerifyMode::kPin);
+      tls_verify_cfg.verify_peer = verify_peer;
+      tls_verify_cfg.verify_hostname = verify_peer && core.tls_verify_hostname_;
+      if (verify_peer) {
+        tls_verify_cfg.ca_bundle_path = core.tls_ca_bundle_path_;
+      }
+    }
+
     std::lock_guard<std::mutex> lock(core.remote_stream_mutex_);
     if (!core.remote_stream_ ||
         !core.remote_stream_->Matches(core.server_ip_, core.server_port_,
                                       core.use_tls_, core.use_kcp_,
+                                      require_pin, tls_verify_cfg,
                                       core.kcp_cfg_, core.proxy_,
                                       core.pinned_server_fingerprint_)) {
       core.remote_stream_.reset();
       core.remote_stream_ = std::make_unique<ClientCore::RemoteStream>(
           core.server_ip_, core.server_port_, core.use_tls_, core.use_kcp_,
+          require_pin, tls_verify_cfg,
           core.kcp_cfg_, core.proxy_, core.pinned_server_fingerprint_);
       std::string fingerprint;
       std::string err;
@@ -770,8 +805,15 @@ bool TransportService::ProcessRaw(ClientCore& core,
         set_remote_ok(false, core.last_error_);
         return false;
       }
-      core.pending_server_fingerprint_.clear();
-      core.pending_server_pin_.clear();
+      if (core.tls_verify_mode_ == TlsVerifyMode::kHybrid &&
+          core.pinned_server_fingerprint_.empty() &&
+          !fingerprint.empty()) {
+        core.pending_server_fingerprint_ = fingerprint;
+        core.pending_server_pin_ = FingerprintSas80Hex(fingerprint);
+      } else {
+        core.pending_server_fingerprint_.clear();
+        core.pending_server_pin_.clear();
+      }
     }
 
     std::string err;

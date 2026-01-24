@@ -19,8 +19,10 @@ get_filename_component(MI_E2EE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." A
 include("${MI_E2EE_ROOT}/cmake/mi_e2ee_build_options.cmake")
 
 option(MI_E2EE_ANDROID_USE_RUST_OPAQUE "Build Rust OPAQUE PAKE library" ON)
-option(MI_E2EE_ANDROID_USE_OPENSSL "Use OpenSSL TLS implementation" OFF)
+option(MI_E2EE_ANDROID_USE_OPENSSL "Use OpenSSL TLS implementation" ON)
+option(MI_E2EE_ANDROID_ALLOW_TLS_STUB "Allow TLS stub (debug/testing only)" OFF)
 option(MI_E2EE_ANDROID_OLLVM "Use OLLVM for backend library" OFF)
+set(MI_E2EE_ANDROID_OPENSSL_ROOT "" CACHE PATH "OpenSSL root with ABI subdirs")
 set(MI_E2EE_OLLVM_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub" CACHE STRING "OLLVM flags")
 separate_arguments(MI_E2EE_OLLVM_FLAGS)
 
@@ -31,10 +33,32 @@ if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND NOT MI_E2EE_CARGO_EXECUTABLE)
 endif()
 
 if(MI_E2EE_ANDROID_USE_OPENSSL)
+  if(MI_E2EE_ANDROID_OPENSSL_ROOT)
+    set(_MI_E2EE_OPENSSL_ROOT "")
+    if(ANDROID_ABI)
+      set(_MI_E2EE_OPENSSL_ROOT "${MI_E2EE_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
+    else()
+      set(_MI_E2EE_OPENSSL_ROOT "${MI_E2EE_ANDROID_OPENSSL_ROOT}")
+    endif()
+    if(EXISTS "${_MI_E2EE_OPENSSL_ROOT}")
+      list(APPEND CMAKE_PREFIX_PATH "${_MI_E2EE_OPENSSL_ROOT}")
+      set(OPENSSL_ROOT_DIR "${_MI_E2EE_OPENSSL_ROOT}")
+      set(OPENSSL_INCLUDE_DIR "${_MI_E2EE_OPENSSL_ROOT}/include")
+      set(OPENSSL_USE_STATIC_LIBS ON)
+    endif()
+  endif()
   find_package(OpenSSL)
   if(NOT OpenSSL_FOUND)
-    message(WARNING "OpenSSL not found; using TLS stub")
-    set(MI_E2EE_ANDROID_USE_OPENSSL OFF)
+    if(MI_E2EE_ANDROID_ALLOW_TLS_STUB)
+      message(WARNING "OpenSSL not found; using TLS stub (MI_E2EE_ANDROID_ALLOW_TLS_STUB=ON)")
+      set(MI_E2EE_ANDROID_USE_OPENSSL OFF)
+    else()
+      message(FATAL_ERROR "OpenSSL not found; TLS stub disallowed. Provide OpenSSL or set MI_E2EE_ANDROID_ALLOW_TLS_STUB=ON.")
+    endif()
+  endif()
+else()
+  if(NOT MI_E2EE_ANDROID_ALLOW_TLS_STUB)
+    message(FATAL_ERROR "TLS stub disallowed. Set MI_E2EE_ANDROID_USE_OPENSSL=ON or MI_E2EE_ANDROID_ALLOW_TLS_STUB=ON.")
   endif()
 endif()
 
@@ -98,11 +122,11 @@ set(MI_E2EE_PLATFORM_SOURCES
   "${MI_E2EE_ROOT}/platform/posix/platform_random_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_fs_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_identity_posix.cpp"
-  "${MI_E2EE_ROOT}/platform/posix/platform_media_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_net_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_security_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_sys_posix.cpp"
   "${MI_E2EE_ROOT}/platform/posix/platform_log_posix.cpp"
+  "${MI_E2EE_ROOT}/platform/android/platform_media_android.cpp"
   "${MI_E2EE_ROOT}/platform/android/platform_secure_store_android.cpp"
 )
 if(MI_E2EE_ANDROID_USE_OPENSSL)
@@ -245,6 +269,7 @@ target_link_libraries(mi_e2ee_backend PRIVATE
   pqclean_mlkem768_clean
   pqclean_mldsa65_clean
   mi_e2ee_build_flags
+  mediandk
   log
 )
 

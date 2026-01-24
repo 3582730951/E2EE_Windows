@@ -20,6 +20,7 @@ class SecurityService {
                            const std::string& server_ip,
                            std::uint16_t server_port,
                            bool require_tls,
+                           bool allow_pinned_fingerprint,
                            std::string& out_trust_store_path,
                            std::string& out_pinned_fingerprint,
                            bool& out_trust_store_tls_required,

@@ -220,6 +220,14 @@ jobs:
       - name: Build client
         run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
 
+      - name: Build client e2e test
+        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
+
+      - name: Run client e2e test
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/client -C Release -R sdk_c_api_e2e_test --output-on-failure
+
       - name: Build Rust bindings
         run: |
           $env:MI_E2EE_CLIENT_LIB_DIR = Join-Path $env:GITHUB_WORKSPACE "build\\client\\Release"
@@ -228,7 +236,14 @@ jobs:
       - name: Python binding smoke
         run: |
           $env:MI_E2EE_CLIENT_DLL = Join-Path $env:GITHUB_WORKSPACE "build\\client\\Release\\mi_e2ee_client_sdk.dll"
-          python bindings\\python\\example_basic.py
+          python bindings\\python\\smoke_quiet.py
+
+      - name: Rust binding smoke
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}\build\client\Release
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE\\build\\client\\Release;$env:PATH"
+          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Configure server
         run: >
@@ -236,11 +251,82 @@ jobs:
           -DMI_E2EE_ENABLE_MYSQL=ON
           -DMYSQL_INCLUDE_DIR="${{ env.MYSQL_INCLUDE_DIR }}"
           -DMYSQL_CLIENT_LIB="${{ env.MYSQL_CLIENT_LIB }}"
+          -DBUILD_TESTING=ON
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
         run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+
+      - name: Build ops health test
+        run: cmake --build build/server --config Release --target ops_health_test
+
+      - name: Run ops health test
+        run: ctest --test-dir build/server -C Release -R ops_health_test --output-on-failure
+
+      - name: Ops health end-to-end
+        run: |
+          $ErrorActionPreference = "Stop"
+          $work = Join-Path $env:GITHUB_WORKSPACE "build\\ops_health_runtime"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $offline = Join-Path $work "offline"
+          New-Item -ItemType Directory -Force -Path $offline | Out-Null
+          $testUsers = Join-Path $work "test_user.txt"
+          "u:p" | Out-File -FilePath $testUsers -Encoding ascii
+          $ktKey = Join-Path $work "kt_signing_key.bin"
+          $bytes = New-Object byte[] 4032
+          [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+          [System.IO.File]::WriteAllBytes($ktKey, $bytes)
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+          $token = "abcdefghijklmnop"
+          $config = @"
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$offline
+ops_enable=1
+ops_allow_remote=0
+ops_token=$token
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$ktKey
+allow_legacy_login=0
+"@
+          $configPath = Join-Path $work "config.ini"
+          $config | Out-File -FilePath $configPath -Encoding ascii
+          $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
+          if (-not $serverExe) {
+            throw "mi_e2ee_server.exe not found"
+          }
+          $toolExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_ops_health_view.exe" | Select-Object -First 1
+          if (-not $toolExe) {
+            throw "mi_e2ee_ops_health_view.exe not found"
+          }
+          $env:MI_E2EE_HARDENING = "off"
+          $proc = Start-Process -FilePath $serverExe.FullName -ArgumentList @("config.ini") -WorkingDirectory $work -PassThru -WindowStyle Hidden
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              & $toolExe.FullName --host 127.0.0.1 --port $port --token $token 2>$null | Out-Null
+              if ($LASTEXITCODE -eq 0) {
+                $ok = $true
+                break
+              }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ok) {
+              throw "ops health e2e failed"
+            }
+          } finally {
+            if ($proc -and !$proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+            }
+          }
 
       - name: Perf baseline
         run: .\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe --quick
@@ -267,6 +353,106 @@ jobs:
           if ((Test-Path $qtQmlCoreModule) -and (-not (Test-Path $dstQmlCoreModule))) {
             New-Item -ItemType Directory -Force -Path $qmlRoot | Out-Null
             Copy-Item $qtQmlCoreModule $dstQmlCoreModule -Recurse -Force
+          }
+
+      - name: UI smoke regression
+        env:
+          MI_E2EE_UI_SMOKE: "1"
+          MI_E2EE_UI_SMOKE_MS: "4000"
+          MI_E2EE_UI_SMOKE_USER: "ui_smoke"
+          MI_E2EE_UI_SMOKE_PASS: "ui_smoke_pass"
+          MI_E2EE_HARDENING: off
+          QT_LOGGING_RULES: "*.debug=false;*.info=false;*.warning=false"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $work = Join-Path $env:GITHUB_WORKSPACE "build\\ui_smoke_runtime"
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $offline = Join-Path $work "offline"
+          New-Item -ItemType Directory -Force -Path $offline | Out-Null
+          $testUsers = Join-Path $work "test_user.txt"
+          "ui_smoke:ui_smoke_pass" | Out-File -FilePath $testUsers -Encoding ascii
+          $ktKey = Join-Path $work "kt_signing_key.bin"
+          $bytes = New-Object byte[] 4032
+          [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+          [System.IO.File]::WriteAllBytes($ktKey, $bytes)
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+          $serverConfig = @"
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$offline
+debug_log=0
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$ktKey
+allow_legacy_login=0
+"@
+          $serverConfigPath = Join-Path $work "config.ini"
+          $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
+          $clientConfig = @"
+[client]
+server_ip=127.0.0.1
+server_port=$port
+use_tls=0
+require_tls=0
+tls_verify_mode=ca
+auth_mode=opaque
+allow_legacy_login=0
+[traffic]
+cover_traffic_enabled=0
+[kt]
+require_signature=0
+[device_sync]
+enabled=0
+role=primary
+ratchet_enable=1
+"@
+          $clientConfigPath = Join-Path $work "client_config.ini"
+          $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
+          $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
+          if (-not $serverExe) {
+            throw "mi_e2ee_server.exe not found"
+          }
+          $exe = Get-ChildItem -Path $env:GITHUB_WORKSPACE\\build\\client\\ui\\Release -Filter "mi_e2ee_client_ui_app.exe" | Select-Object -First 1
+          if (-not $exe) {
+            throw "mi_e2ee_client_ui_app.exe not found"
+          }
+          $proc = Start-Process -FilePath $serverExe.FullName -ArgumentList @("config.ini") -WorkingDirectory $work -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 25; $i++) {
+              try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $tcp.Connect("127.0.0.1", $port)
+                $tcp.Close()
+                $ready = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 200
+              }
+            }
+            if (-not $ready) {
+              throw "server not ready"
+            }
+            Push-Location $exe.Directory.FullName
+            try {
+              & $exe.FullName | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw "UI smoke failed with exit code $LASTEXITCODE"
+              }
+            } finally {
+              Pop-Location
+            }
+          } finally {
+            if ($proc -and !$proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+            }
           }
 
       - name: Package artifacts
@@ -306,16 +492,163 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libssl-dev libsecret-1-dev pkg-config openssl
 
       - name: Configure server
-        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+        run: cmake --build build/server --config Release
+
+      - name: Run server tests
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/server -C Release --output-on-failure
+
+      - name: Ops health end-to-end
+        env:
+          MI_E2EE_HARDENING: off
+        run: |
+          set -euo pipefail
+          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
+          rm -rf "$work"
+          mkdir -p "$work/offline"
+          printf "u:p\n" > "$work/test_user.txt"
+          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
+          py="python3"
+          if ! command -v "$py" >/dev/null 2>&1; then
+            py="python"
+          fi
+          port=$("$py" - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)
+          token="abcdefghijklmnop"
+          cat > "$work/config.ini" <<EOF
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$work/offline
+ops_enable=1
+ops_allow_remote=0
+ops_token=$token
+debug_log=0
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$work/kt_signing_key.bin
+allow_legacy_login=0
+EOF
+          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
+          if [ -z "$server" ]; then
+            echo "mi_e2ee_server not found" >&2
+            exit 1
+          fi
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_ops_health_view not found" >&2
+            exit 1
+          fi
+          cd "$work"
+          "$server" config.ini >/dev/null 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 20); do
+            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          kill "$pid" >/dev/null 2>&1 || true
+          wait "$pid" >/dev/null 2>&1 || true
+          if [ "$ok" -ne 1 ]; then
+            echo "ops health e2e failed" >&2
+            exit 1
+          fi
+
+      - name: Ops health end-to-end
+        env:
+          MI_E2EE_HARDENING: off
+        run: |
+          set -euo pipefail
+          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
+          rm -rf "$work"
+          mkdir -p "$work/offline"
+          printf "u:p\n" > "$work/test_user.txt"
+          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
+          py="python3"
+          if ! command -v "$py" >/dev/null 2>&1; then
+            py="python"
+          fi
+          port=$("$py" - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)
+          token="abcdefghijklmnop"
+          cat > "$work/config.ini" <<EOF
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$work/offline
+ops_enable=1
+ops_allow_remote=0
+ops_token=$token
+debug_log=0
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$work/kt_signing_key.bin
+allow_legacy_login=0
+EOF
+          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
+          if [ -z "$server" ]; then
+            echo "mi_e2ee_server not found" >&2
+            exit 1
+          fi
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_ops_health_view not found" >&2
+            exit 1
+          fi
+          cd "$work"
+          "$server" config.ini >/dev/null 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 20); do
+            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          kill "$pid" >/dev/null 2>&1 || true
+          wait "$pid" >/dev/null 2>&1 || true
+          if [ "$ok" -ne 1 ]; then
+            echo "ops health e2e failed" >&2
+            exit 1
+          fi
 
       - name: Configure client
         run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
 
       - name: Build client core
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
+
+      - name: Build client e2e test
+        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
+
+      - name: Run client e2e test
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -328,7 +661,14 @@ jobs:
       - name: Python binding smoke
         env:
           MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.so
-        run: python bindings/python/example_basic.py
+        run: python bindings/python/smoke_quiet.py
+
+      - name: Rust binding smoke
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: |
+          export LD_LIBRARY_PATH="${{ github.workspace }}/build/client:${LD_LIBRARY_PATH:-}"
+          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Package artifacts
         run: bash tools/package_posix.sh --platform linux
@@ -348,6 +688,151 @@ jobs:
           name: mi_e2ee_server_linux
           path: dist/mi_e2ee_server_linux.tar.gz
 
+  build-linux-debian:
+    runs-on: ubuntu-latest
+    container:
+      image: buildpack-deps:bookworm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            libsecret-1-dev \
+            openssl \
+            python3 \
+            python3-pip
+
+      - name: Configure server
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON
+
+      - name: Build server
+        run: cmake --build build/server --config Release
+
+      - name: Run server tests
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/server -C Release --output-on-failure
+
+      - name: Ops health end-to-end
+        env:
+          MI_E2EE_HARDENING: off
+        run: |
+          set -euo pipefail
+          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
+          rm -rf "$work"
+          mkdir -p "$work/offline"
+          printf "u:p\n" > "$work/test_user.txt"
+          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
+          py="python3"
+          if ! command -v "$py" >/dev/null 2>&1; then
+            py="python"
+          fi
+          port=$("$py" - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)
+          token="abcdefghijklmnop"
+          cat > "$work/config.ini" <<EOF
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$work/offline
+ops_enable=1
+ops_allow_remote=0
+ops_token=$token
+debug_log=0
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$work/kt_signing_key.bin
+allow_legacy_login=0
+EOF
+          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
+          if [ -z "$server" ]; then
+            echo "mi_e2ee_server not found" >&2
+            exit 1
+          fi
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_ops_health_view not found" >&2
+            exit 1
+          fi
+          cd "$work"
+          "$server" config.ini >/dev/null 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 20); do
+            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          kill "$pid" >/dev/null 2>&1 || true
+          wait "$pid" >/dev/null 2>&1 || true
+          if [ "$ok" -ne 1 ]; then
+            echo "ops health e2e failed" >&2
+            exit 1
+          fi
+
+      - name: Configure client
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
+
+      - name: Build client core
+        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
+
+      - name: Build client e2e test
+        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
+
+      - name: Run client e2e test
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust bindings
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
+
+      - name: Python binding smoke
+        env:
+          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.so
+        run: python3 bindings/python/smoke_quiet.py
+
+      - name: Rust binding smoke
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: |
+          export LD_LIBRARY_PATH="${{ github.workspace }}/build/client:${LD_LIBRARY_PATH:-}"
+          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
+
+      - name: Package artifacts
+        run: bash tools/package_posix.sh --platform linux
+
+      - name: Verify package
+        run: bash tools/verify_package_posix.sh --platform linux
+
   build-macos:
     runs-on: macos-latest
     defaults:
@@ -364,16 +849,96 @@ jobs:
         run: brew install openssl@3 pkg-config
 
       - name: Configure server
-        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+        run: cmake --build build/server --config Release
+
+      - name: Run server tests
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/server -C Release --output-on-failure
+
+      - name: Ops health end-to-end
+        env:
+          MI_E2EE_HARDENING: off
+        run: |
+          set -euo pipefail
+          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
+          rm -rf "$work"
+          mkdir -p "$work/offline"
+          printf "u:p\n" > "$work/test_user.txt"
+          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
+          py="python3"
+          if ! command -v "$py" >/dev/null 2>&1; then
+            py="python"
+          fi
+          port=$("$py" - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)
+          token="abcdefghijklmnop"
+          cat > "$work/config.ini" <<EOF
+[mode]
+mode=1
+[server]
+list_port=$port
+offline_dir=$work/offline
+ops_enable=1
+ops_allow_remote=0
+ops_token=$token
+debug_log=0
+tls_enable=0
+require_tls=0
+key_protection=none
+kt_signing_key=$work/kt_signing_key.bin
+allow_legacy_login=0
+EOF
+          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
+          if [ -z "$server" ]; then
+            echo "mi_e2ee_server not found" >&2
+            exit 1
+          fi
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_ops_health_view not found" >&2
+            exit 1
+          fi
+          cd "$work"
+          "$server" config.ini >/dev/null 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 20); do
+            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 0.5
+          done
+          kill "$pid" >/dev/null 2>&1 || true
+          wait "$pid" >/dev/null 2>&1 || true
+          if [ "$ok" -ne 1 ]; then
+            echo "ops health e2e failed" >&2
+            exit 1
+          fi
 
       - name: Configure client
         run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
 
       - name: Build client core
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
+
+      - name: Build client e2e test
+        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
+
+      - name: Run client e2e test
+        env:
+          MI_E2EE_HARDENING: off
+        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -386,7 +951,14 @@ jobs:
       - name: Python binding smoke
         env:
           MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.dylib
-        run: python bindings/python/example_basic.py
+        run: python bindings/python/smoke_quiet.py
+
+      - name: Rust binding smoke
+        env:
+          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
+        run: |
+          export DYLD_LIBRARY_PATH="${{ github.workspace }}/build/client:${DYLD_LIBRARY_PATH:-}"
+          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Package artifacts
         run: bash tools/package_posix.sh --platform macos --openssl "$(brew --prefix openssl@3)/bin/openssl"
@@ -416,6 +988,9 @@ jobs:
       MI_E2EE_OLLVM_URL_TEMPLATE: ${{ vars.MI_E2EE_OLLVM_URL_TEMPLATE || '' }}
       MI_E2EE_ANDROID_NDK_VERSION: ${{ vars.MI_E2EE_ANDROID_NDK_VERSION || '25.2.9519653' }}
       MI_E2EE_OLLVM_FALLBACK_URL: ${{ vars.MI_E2EE_OLLVM_FALLBACK_URL || 'https://github.com/codetronik/ollvm-ndk/releases/download/r23c-release/clang' }}
+      MI_E2EE_ANDROID_USE_OPENSSL: "1"
+      MI_E2EE_ANDROID_ALLOW_TLS_STUB: "0"
+      MI_E2EE_ANDROID_OPENSSL_VERSION: ${{ vars.MI_E2EE_ANDROID_OPENSSL_VERSION || '3.3.2' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -441,7 +1016,32 @@ jobs:
 
       - name: Install Android components
         run: |
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;${MI_E2EE_ANDROID_NDK_VERSION}"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;${MI_E2EE_ANDROID_NDK_VERSION}" "emulator" "system-images;android-34;google_apis;x86_64" "system-images;android-34;google_apis;x86"
+
+      - name: Resolve Android NDK root
+        run: |
+          set -euo pipefail
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$MI_E2EE_ANDROID_NDK_VERSION"
+          if [ ! -d "$NDK_ROOT" ]; then
+            NDK_ROOT=$(ls -d "$ANDROID_SDK_ROOT/ndk/"* 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$NDK_ROOT" ] || [ ! -d "$NDK_ROOT" ]; then
+            echo "NDK not found under $ANDROID_SDK_ROOT/ndk" >&2
+            exit 1
+          fi
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> $GITHUB_ENV
+
+      - name: Build OpenSSL for Android
+        run: |
+          set -euo pipefail
+          chmod +x tools/build_android_openssl.sh
+          tools/build_android_openssl.sh \
+            --ndk "$ANDROID_NDK_ROOT" \
+            --out "$GITHUB_WORKSPACE/build/openssl/android" \
+            --version "$MI_E2EE_ANDROID_OPENSSL_VERSION" \
+            --api 24
+          echo "MI_E2EE_ANDROID_OPENSSL_ROOT=$GITHUB_WORKSPACE/build/openssl/android" >> $GITHUB_ENV
 
       - name: Prepare OLLVM URL
         if: env.MI_E2EE_ANDROID_OLLVM == '1' || env.MI_E2EE_ANDROID_OLLVM == 'true'
@@ -582,6 +1182,95 @@ jobs:
           chmod +x android/gradlew
           cd android
           ./gradlew :app:assembleDebug -PmiE2eeOpaque=false --no-daemon
+
+      - name: Verify Android ABI artifacts
+        run: |
+          set -euo pipefail
+          apk="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$apk" ]; then
+            echo "debug apk missing: $apk" >&2
+            exit 1
+          fi
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            for lib in libmi_e2ee_backend.so libmi_e2ee_jni.so; do
+              if ! unzip -l "$apk" | grep -q "lib/${abi}/${lib}$"; then
+                echo "missing ${lib} for ${abi}" >&2
+                exit 1
+              fi
+            done
+          done
+
+      - name: Run Android instrumentation tests (x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim
+          script: |
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+
+      - name: Run Android instrumentation tests (x86)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86
+          profile: Nexus 6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim
+          script: |
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+
+      - name: Auth to Google Cloud
+        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
+      - name: Setup gcloud
+        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: 'firebase'
+
+      - name: Firebase Test Lab (arm64)
+        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        env:
+          FTL_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          FTL_RESULTS_BUCKET: ${{ secrets.GCP_RESULTS_BUCKET }}
+          FTL_DEVICE_MATRIX: ${{ vars.MI_E2EE_FTL_DEVICE_MATRIX }}
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew :app:assembleDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+          app_apk="app/build/outputs/apk/debug/app-debug.apk"
+          test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+          if [ ! -f "$app_apk" ] || [ ! -f "$test_apk" ]; then
+            echo "Firebase Test Lab artifacts missing" >&2
+            exit 1
+          fi
+          args=(firebase test android run --type instrumentation --app "$app_apk" --test "$test_apk" --timeout 15m --project "$FTL_PROJECT_ID")
+          if [ -n "${FTL_RESULTS_BUCKET:-}" ]; then
+            args+=(--results-bucket "$FTL_RESULTS_BUCKET")
+          fi
+          if [ -n "${FTL_DEVICE_MATRIX:-}" ]; then
+            IFS=';' read -r -a devices <<< "$FTL_DEVICE_MATRIX"
+            for device in "${devices[@]}"; do
+              if [ -n "$device" ]; then
+                args+=(--device "$device")
+              fi
+            done
+          else
+            args+=(--device "model=Pixel2,version=30,locale=en,orientation=portrait")
+            args+=(--device "model=Pixel3,version=33,locale=en,orientation=portrait")
+          fi
+          gcloud "${args[@]}"
 
       - name: Build Android release
         run: |

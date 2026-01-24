@@ -1,6 +1,72 @@
 #include "group_directory.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <utility>
+#include <vector>
+
+#include "path_security.h"
+
 namespace mi::server {
+
+namespace {
+
+constexpr std::array<std::uint8_t, 8> kGroupDirMagic = {
+    'M', 'I', 'G', 'D', 'I', 'R', '0', '1'};
+constexpr std::uint8_t kGroupDirVersion = 1;
+constexpr std::size_t kGroupDirHeaderBytes =
+    kGroupDirMagic.size() + 1 + 3 + 4;
+
+void WriteUint32Le(std::uint32_t v, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(v & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFFu));
+  out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFFu));
+}
+
+std::uint32_t ReadUint32Le(const std::uint8_t* in) {
+  return static_cast<std::uint32_t>(in[0]) |
+         (static_cast<std::uint32_t>(in[1]) << 8) |
+         (static_cast<std::uint32_t>(in[2]) << 16) |
+         (static_cast<std::uint32_t>(in[3]) << 24);
+}
+
+void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
+#ifdef _WIN32
+  std::string acl_err;
+  (void)mi::shard::security::HardenPathAcl(path, acl_err);
+#else
+  std::error_code ec;
+  std::filesystem::permissions(
+      path, std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+#endif
+}
+
+}  // namespace
+
+GroupDirectory::GroupDirectory(std::filesystem::path persist_dir) {
+  if (persist_dir.empty()) {
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(persist_dir, ec);
+  if (ec) {
+    return;
+  }
+  persist_path_ = persist_dir / "group_directory.bin";
+  persistence_enabled_ = true;
+  if (!LoadFromDisk()) {
+    std::error_code ignore_ec;
+    const auto bad_path = persist_path_.string() + ".bad";
+    std::filesystem::rename(persist_path_, bad_path, ignore_ec);
+  }
+}
 
 std::string GroupDirectory::PickNewOwner(const GroupInfo& group) {
   std::string best;
@@ -10,6 +76,232 @@ std::string GroupDirectory::PickNewOwner(const GroupInfo& group) {
     }
   }
   return best;
+}
+
+bool GroupDirectory::LoadFromDisk() {
+  if (!persistence_enabled_ || persist_path_.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(persist_path_, ec) || ec) {
+    return true;
+  }
+
+  const auto size = std::filesystem::file_size(persist_path_, ec);
+  if (ec || size < kGroupDirHeaderBytes ||
+      size > static_cast<std::uint64_t>(
+                 (std::numeric_limits<std::size_t>::max)())) {
+    return false;
+  }
+  std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+  std::ifstream ifs(persist_path_, std::ios::binary);
+  if (!ifs) {
+    return false;
+  }
+  ifs.read(reinterpret_cast<char*>(bytes.data()),
+           static_cast<std::streamsize>(bytes.size()));
+  if (!ifs ||
+      ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
+    return false;
+  }
+
+  std::size_t off = 0;
+  if (!std::equal(kGroupDirMagic.begin(), kGroupDirMagic.end(),
+                  bytes.begin())) {
+    return false;
+  }
+  off += kGroupDirMagic.size();
+  const std::uint8_t version = bytes[off++];
+  if (version != kGroupDirVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 4 > bytes.size()) {
+    return false;
+  }
+  const std::uint32_t group_count = ReadUint32Le(bytes.data() + off);
+  off += 4;
+
+  std::unordered_map<std::string, GroupInfo> loaded;
+  loaded.reserve(group_count);
+  for (std::uint32_t i = 0; i < group_count; ++i) {
+    if (off + 12 > bytes.size()) {
+      return false;
+    }
+    const std::uint32_t group_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t owner_len = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    const std::uint32_t member_count = ReadUint32Le(bytes.data() + off);
+    off += 4;
+    if (group_len == 0 || off + group_len + owner_len > bytes.size()) {
+      return false;
+    }
+    std::string group_id(
+        reinterpret_cast<const char*>(bytes.data() + off),
+        reinterpret_cast<const char*>(bytes.data() + off + group_len));
+    off += group_len;
+    std::string owner;
+    if (owner_len != 0) {
+      if (off + owner_len > bytes.size()) {
+        return false;
+      }
+      owner.assign(reinterpret_cast<const char*>(bytes.data() + off),
+                   reinterpret_cast<const char*>(bytes.data() + off + owner_len));
+      off += owner_len;
+    }
+
+    GroupInfo info;
+    info.owner = owner;
+    for (std::uint32_t m = 0; m < member_count; ++m) {
+      if (off + 4 > bytes.size()) {
+        return false;
+      }
+      const std::uint32_t user_len = ReadUint32Le(bytes.data() + off);
+      off += 4;
+      if (user_len == 0 || off + user_len + 1 > bytes.size()) {
+        return false;
+      }
+      std::string user(
+          reinterpret_cast<const char*>(bytes.data() + off),
+          reinterpret_cast<const char*>(bytes.data() + off + user_len));
+      off += user_len;
+      const std::uint8_t role_val = bytes[off++];
+      if (role_val > static_cast<std::uint8_t>(GroupRole::kMember)) {
+        return false;
+      }
+      info.members.emplace(std::move(user),
+                           static_cast<GroupRole>(role_val));
+    }
+
+    if (!info.owner.empty()) {
+      info.members[info.owner] = GroupRole::kOwner;
+    } else {
+      for (const auto& kv : info.members) {
+        if (kv.second == GroupRole::kOwner) {
+          info.owner = kv.first;
+          break;
+        }
+      }
+      if (info.owner.empty()) {
+        const std::string new_owner = PickNewOwner(info);
+        if (!new_owner.empty()) {
+          info.owner = new_owner;
+          info.members[new_owner] = GroupRole::kOwner;
+        }
+      }
+    }
+    if (info.members.empty()) {
+      continue;
+    }
+    loaded.emplace(std::move(group_id), std::move(info));
+  }
+  if (off != bytes.size()) {
+    return false;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    groups_.swap(loaded);
+  }
+  return true;
+}
+
+bool GroupDirectory::SaveLocked() {
+  if (!persistence_enabled_ || persist_path_.empty()) {
+    return true;
+  }
+  if (groups_.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  std::vector<std::string> keys;
+  keys.reserve(groups_.size());
+  for (const auto& kv : groups_) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kGroupDirHeaderBytes + keys.size() * 32);
+  out.insert(out.end(), kGroupDirMagic.begin(), kGroupDirMagic.end());
+  out.push_back(kGroupDirVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), out);
+
+  for (const auto& group_id : keys) {
+    const auto it = groups_.find(group_id);
+    if (it == groups_.end()) {
+      continue;
+    }
+    if (group_id.empty()) {
+      return false;
+    }
+    const GroupInfo& info = it->second;
+    if (group_id.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        info.owner.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        info.members.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+    WriteUint32Le(static_cast<std::uint32_t>(group_id.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(info.owner.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(info.members.size()), out);
+    out.insert(out.end(), group_id.begin(), group_id.end());
+    out.insert(out.end(), info.owner.begin(), info.owner.end());
+
+    std::vector<std::string> members;
+    members.reserve(info.members.size());
+    for (const auto& kv : info.members) {
+      members.push_back(kv.first);
+    }
+    std::sort(members.begin(), members.end());
+    for (const auto& member : members) {
+      const auto mit = info.members.find(member);
+      if (mit == info.members.end()) {
+        continue;
+      }
+      if (member.size() >
+          static_cast<std::size_t>(
+              (std::numeric_limits<std::uint32_t>::max)())) {
+        return false;
+      }
+      WriteUint32Le(static_cast<std::uint32_t>(member.size()), out);
+      out.insert(out.end(), member.begin(), member.end());
+      out.push_back(static_cast<std::uint8_t>(mit->second));
+    }
+  }
+
+  const std::filesystem::path tmp = persist_path_.string() + ".tmp";
+  std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+  if (!ofs) {
+    return false;
+  }
+  ofs.write(reinterpret_cast<const char*>(out.data()),
+            static_cast<std::streamsize>(out.size()));
+  ofs.close();
+  if (!ofs.good()) {
+    std::error_code rm_ec;
+    std::filesystem::remove(tmp, rm_ec);
+    return false;
+  }
+  std::error_code ec;
+  std::filesystem::remove(persist_path_, ec);
+  std::filesystem::rename(tmp, persist_path_, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+  SetOwnerOnlyPermissions(persist_path_);
+  return true;
 }
 
 bool GroupDirectory::AddGroup(const std::string& group_id,
@@ -25,6 +317,7 @@ bool GroupDirectory::AddGroup(const std::string& group_id,
   g.owner = owner;
   g.members.emplace(owner, GroupRole::kOwner);
   groups_[group_id] = std::move(g);
+  SaveLocked();
   return true;
 }
 
@@ -38,9 +331,13 @@ bool GroupDirectory::AddMember(const std::string& group_id,
   if (g.members.empty()) {
     g.owner = user;
     g.members.emplace(user, GroupRole::kOwner);
+    SaveLocked();
     return true;
   }
   const auto [_, inserted] = g.members.emplace(user, GroupRole::kMember);
+  if (inserted) {
+    SaveLocked();
+  }
   return inserted;
 }
 
@@ -61,6 +358,7 @@ bool GroupDirectory::RemoveMember(const std::string& group_id,
 
   if (g.members.empty()) {
     groups_.erase(it);
+    SaveLocked();
     return true;
   }
 
@@ -75,6 +373,7 @@ bool GroupDirectory::RemoveMember(const std::string& group_id,
     }
   }
 
+  SaveLocked();
   return true;
 }
 
@@ -154,6 +453,7 @@ bool GroupDirectory::SetRole(const std::string& group_id,
     return false;
   }
   m_it->second = role;
+  SaveLocked();
   return true;
 }
 

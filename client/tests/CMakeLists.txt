@@ -97,6 +97,39 @@ endif()
 
 add_test(NAME client_config_media_test COMMAND client_config_media_test)
 
+add_executable(client_config_tls_test
+    client_config_tls_test.cpp
+)
+
+target_link_libraries(client_config_tls_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(client_config_tls_test)
+endif()
+
+add_test(NAME client_config_tls_test COMMAND client_config_tls_test)
+
+add_executable(client_trust_store_test
+    client_trust_store_test.cpp
+)
+
+target_link_libraries(client_trust_store_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(client_trust_store_test)
+endif()
+
+add_test(NAME client_trust_store_test COMMAND client_trust_store_test)
+
+add_executable(device_sync_ratchet_test
+    device_sync_ratchet_test.cpp
+)
+
+target_link_libraries(device_sync_ratchet_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(device_sync_ratchet_test)
+endif()
+
+add_test(NAME device_sync_ratchet_test COMMAND device_sync_ratchet_test)
+
 add_executable(platform_fs_lock_test
     platform_fs_lock_test.cpp
 )
@@ -107,3 +140,22 @@ if (COMMAND mi_copy_msvc_runtime)
 endif()
 
 add_test(NAME platform_fs_lock_test COMMAND platform_fs_lock_test)
+
+add_executable(sdk_c_api_e2e_test
+    sdk_c_api_e2e_test.cpp
+)
+
+target_link_libraries(sdk_c_api_e2e_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(sdk_c_api_e2e_test)
+endif()
+
+add_test(NAME sdk_c_api_e2e_test COMMAND sdk_c_api_e2e_test)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  set(MI_E2EE_PY_SMOKE
+      "${CMAKE_CURRENT_LIST_DIR}/../../bindings/python/test_smoke.py")
+  add_test(NAME bindings_python_smoke
+           COMMAND "${Python3_EXECUTABLE}" "${MI_E2EE_PY_SMOKE}")
+endif()
