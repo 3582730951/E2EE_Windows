@@ -964,6 +964,9 @@ jobs:
       MI_E2EE_ANDROID_USE_OPENSSL: "1"
       MI_E2EE_ANDROID_ALLOW_TLS_STUB: "0"
       MI_E2EE_ANDROID_OPENSSL_VERSION: ${{ vars.MI_E2EE_ANDROID_OPENSSL_VERSION || '3.3.2' }}
+      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_RESULTS_BUCKET: ${{ secrets.GCP_RESULTS_BUCKET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1200,23 +1203,23 @@ jobs:
             ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
 
       - name: Auth to Google Cloud
-        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          credentials_json: ${{ env.GCP_SERVICE_ACCOUNT_JSON }}
 
       - name: Setup gcloud
-        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
           install_components: 'firebase'
 
       - name: Firebase Test Lab (arm64)
-        if: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON != '' && secrets.GCP_PROJECT_ID != '' }}
+        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         env:
-          FTL_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          FTL_RESULTS_BUCKET: ${{ secrets.GCP_RESULTS_BUCKET }}
+          FTL_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
+          FTL_RESULTS_BUCKET: ${{ env.GCP_RESULTS_BUCKET }}
           FTL_DEVICE_MATRIX: ${{ vars.MI_E2EE_FTL_DEVICE_MATRIX }}
         run: |
           set -euo pipefail
