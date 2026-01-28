@@ -314,6 +314,9 @@ add_library(mi_e2ee_core STATIC
     src/frame.cpp
     src/offline_storage.cpp
     src/media_relay.cpp
+    src/protected_store.cpp
+    src/metadata_protector.cpp
+    src/state_store_mysql.cpp
     src/api_service.cpp
     src/protocol.cpp
     src/frame_router.cpp

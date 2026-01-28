@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "path_security.h"
+#include "protected_store.h"
 
 namespace mi::server {
 
@@ -50,7 +52,11 @@ void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
 
 }  // namespace
 
-GroupDirectory::GroupDirectory(std::filesystem::path persist_dir) {
+GroupDirectory::GroupDirectory(std::filesystem::path persist_dir,
+                               KeyProtectionMode state_protection,
+                               StateStore* state_store)
+    : state_protection_(state_protection),
+      state_store_(state_store) {
   if (persist_dir.empty()) {
     return;
   }
@@ -62,9 +68,11 @@ GroupDirectory::GroupDirectory(std::filesystem::path persist_dir) {
   persist_path_ = persist_dir / "group_directory.bin";
   persistence_enabled_ = true;
   if (!LoadFromDisk()) {
-    std::error_code ignore_ec;
-    const auto bad_path = persist_path_.string() + ".bad";
-    std::filesystem::rename(persist_path_, bad_path, ignore_ec);
+    if (!state_store_) {
+      std::error_code ignore_ec;
+      const auto bad_path = persist_path_.string() + ".bad";
+      std::filesystem::rename(persist_path_, bad_path, ignore_ec);
+    }
   }
 }
 
@@ -79,6 +87,53 @@ std::string GroupDirectory::PickNewOwner(const GroupInfo& group) {
 }
 
 bool GroupDirectory::LoadFromDisk() {
+  if (state_store_) {
+    return LoadFromStore();
+  }
+  return LoadFromFile();
+}
+
+bool GroupDirectory::LoadFromStore() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("group_directory", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    if (!persist_path_.empty()) {
+      std::error_code ec;
+      if (std::filesystem::exists(persist_path_, ec) && !ec) {
+        if (!LoadFromFile()) {
+          return false;
+        }
+        return SaveToStoreLocked();
+      }
+    }
+    return true;
+  }
+  return LoadFromBytes(blob.data);
+}
+
+bool GroupDirectory::LoadFromStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("group_directory", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    groups_.clear();
+    return true;
+  }
+  return LoadFromBytes(blob.data);
+}
+
+bool GroupDirectory::LoadFromFile() {
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -105,6 +160,30 @@ bool GroupDirectory::LoadFromDisk() {
     return false;
   }
 
+  bool need_rewrap = false;
+  {
+    std::vector<std::uint8_t> plain;
+    bool was_protected = false;
+    std::string protect_err;
+    if (!DecodeProtectedFileBytes(bytes, state_protection_, plain, was_protected,
+                                  protect_err)) {
+      return false;
+    }
+    need_rewrap =
+        !was_protected && state_protection_ != KeyProtectionMode::kNone;
+    bytes.swap(plain);
+  }
+
+  if (!LoadFromBytes(bytes)) {
+    return false;
+  }
+  if (need_rewrap && !state_store_) {
+    SaveLocked();
+  }
+  return true;
+}
+
+bool GroupDirectory::LoadFromBytes(const std::vector<std::uint8_t>& bytes) {
   std::size_t off = 0;
   if (!std::equal(kGroupDirMagic.begin(), kGroupDirMagic.end(),
                   bytes.begin())) {
@@ -200,14 +279,14 @@ bool GroupDirectory::LoadFromDisk() {
     return false;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    groups_.swap(loaded);
-  }
+  groups_.swap(loaded);
   return true;
 }
 
 bool GroupDirectory::SaveLocked() {
+  if (state_store_) {
+    return SaveToStoreLocked();
+  }
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -280,13 +359,20 @@ bool GroupDirectory::SaveLocked() {
     }
   }
 
+  std::vector<std::uint8_t> protected_bytes;
+  std::string protect_err;
+  if (!EncodeProtectedFileBytes(out, state_protection_, protected_bytes,
+                                protect_err)) {
+    return false;
+  }
+
   const std::filesystem::path tmp = persist_path_.string() + ".tmp";
   std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     return false;
   }
-  ofs.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size()));
+  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
+            static_cast<std::streamsize>(protected_bytes.size()));
   ofs.close();
   if (!ofs.good()) {
     std::error_code rm_ec;
@@ -304,9 +390,113 @@ bool GroupDirectory::SaveLocked() {
   return true;
 }
 
+bool GroupDirectory::SaveToStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::string lock_err;
+  StateStoreLock lock(state_store_, "group_directory",
+                      std::chrono::milliseconds(5000), lock_err);
+  if (!lock.locked()) {
+    return false;
+  }
+  return SaveToStoreLockedUnlocked();
+}
+
+bool GroupDirectory::SaveToStoreLockedUnlocked() {
+  if (!state_store_) {
+    return true;
+  }
+  if (groups_.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  std::vector<std::string> keys;
+  keys.reserve(groups_.size());
+  for (const auto& kv : groups_) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kGroupDirHeaderBytes + keys.size() * 32);
+  out.insert(out.end(), kGroupDirMagic.begin(), kGroupDirMagic.end());
+  out.push_back(kGroupDirVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), out);
+
+  for (const auto& group_id : keys) {
+    const auto it = groups_.find(group_id);
+    if (it == groups_.end()) {
+      continue;
+    }
+    if (group_id.empty()) {
+      return false;
+    }
+    const GroupInfo& info = it->second;
+    if (group_id.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        info.owner.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        info.members.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+    WriteUint32Le(static_cast<std::uint32_t>(group_id.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(info.owner.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(info.members.size()), out);
+    out.insert(out.end(), group_id.begin(), group_id.end());
+    out.insert(out.end(), info.owner.begin(), info.owner.end());
+
+    std::vector<std::string> members;
+    members.reserve(info.members.size());
+    for (const auto& kv : info.members) {
+      members.push_back(kv.first);
+    }
+    std::sort(members.begin(), members.end());
+    for (const auto& member : members) {
+      const auto mit = info.members.find(member);
+      if (mit == info.members.end()) {
+        continue;
+      }
+      if (member.size() >
+          static_cast<std::size_t>(
+              (std::numeric_limits<std::uint32_t>::max)())) {
+        return false;
+      }
+      WriteUint32Le(static_cast<std::uint32_t>(member.size()), out);
+      out.insert(out.end(), member.begin(), member.end());
+      out.push_back(static_cast<std::uint8_t>(mit->second));
+    }
+  }
+
+  std::string store_err;
+  if (!state_store_->SaveBlob("group_directory", out, store_err)) {
+    return false;
+  }
+  return true;
+}
+
 bool GroupDirectory::AddGroup(const std::string& group_id,
                               const std::string& owner) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_directory",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && !store_lock.locked()) {
+    return false;
+  }
+  if (state_store_ && store_lock.locked()) {
+    if (!LoadFromStoreLocked()) {
+      return false;
+    }
+  }
   if (group_id.empty() || owner.empty()) {
     return false;
   }
@@ -317,13 +507,30 @@ bool GroupDirectory::AddGroup(const std::string& group_id,
   g.owner = owner;
   g.members.emplace(owner, GroupRole::kOwner);
   groups_[group_id] = std::move(g);
-  SaveLocked();
+  if (state_store_ && store_lock.locked()) {
+    if (!SaveToStoreLockedUnlocked()) {
+      return false;
+    }
+  } else {
+    SaveLocked();
+  }
   return true;
 }
 
 bool GroupDirectory::AddMember(const std::string& group_id,
                                const std::string& user) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_directory",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && !store_lock.locked()) {
+    return false;
+  }
+  if (state_store_ && store_lock.locked()) {
+    if (!LoadFromStoreLocked()) {
+      return false;
+    }
+  }
   if (group_id.empty() || user.empty()) {
     return false;
   }
@@ -331,12 +538,24 @@ bool GroupDirectory::AddMember(const std::string& group_id,
   if (g.members.empty()) {
     g.owner = user;
     g.members.emplace(user, GroupRole::kOwner);
-    SaveLocked();
+    if (state_store_ && store_lock.locked()) {
+      if (!SaveToStoreLockedUnlocked()) {
+        return false;
+      }
+    } else {
+      SaveLocked();
+    }
     return true;
   }
   const auto [_, inserted] = g.members.emplace(user, GroupRole::kMember);
   if (inserted) {
-    SaveLocked();
+    if (state_store_ && store_lock.locked()) {
+      if (!SaveToStoreLockedUnlocked()) {
+        return false;
+      }
+    } else {
+      SaveLocked();
+    }
   }
   return inserted;
 }
@@ -344,6 +563,17 @@ bool GroupDirectory::AddMember(const std::string& group_id,
 bool GroupDirectory::RemoveMember(const std::string& group_id,
                                   const std::string& user) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_directory",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && !store_lock.locked()) {
+    return false;
+  }
+  if (state_store_ && store_lock.locked()) {
+    if (!LoadFromStoreLocked()) {
+      return false;
+    }
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return false;
@@ -358,7 +588,13 @@ bool GroupDirectory::RemoveMember(const std::string& group_id,
 
   if (g.members.empty()) {
     groups_.erase(it);
-    SaveLocked();
+    if (state_store_ && store_lock.locked()) {
+      if (!SaveToStoreLockedUnlocked()) {
+        return false;
+      }
+    } else {
+      SaveLocked();
+    }
     return true;
   }
 
@@ -373,13 +609,22 @@ bool GroupDirectory::RemoveMember(const std::string& group_id,
     }
   }
 
-  SaveLocked();
+  if (state_store_ && store_lock.locked()) {
+    if (!SaveToStoreLockedUnlocked()) {
+      return false;
+    }
+  } else {
+    SaveLocked();
+  }
   return true;
 }
 
 bool GroupDirectory::HasMember(const std::string& group_id,
-                               const std::string& user) const {
+                               const std::string& user) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    (void)LoadFromStoreLocked();
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return false;
@@ -388,9 +633,12 @@ bool GroupDirectory::HasMember(const std::string& group_id,
 }
 
 std::vector<std::string> GroupDirectory::Members(
-    const std::string& group_id) const {
+    const std::string& group_id) {
   std::vector<std::string> out;
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    (void)LoadFromStoreLocked();
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return out;
@@ -403,9 +651,12 @@ std::vector<std::string> GroupDirectory::Members(
 }
 
 std::vector<GroupMemberInfo> GroupDirectory::MembersWithRoles(
-    const std::string& group_id) const {
+    const std::string& group_id) {
   std::vector<GroupMemberInfo> out;
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    (void)LoadFromStoreLocked();
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return out;
@@ -421,8 +672,11 @@ std::vector<GroupMemberInfo> GroupDirectory::MembersWithRoles(
 }
 
 std::optional<GroupRole> GroupDirectory::RoleOf(const std::string& group_id,
-                                                const std::string& user) const {
+                                                const std::string& user) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    (void)LoadFromStoreLocked();
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return std::nullopt;
@@ -437,6 +691,17 @@ std::optional<GroupRole> GroupDirectory::RoleOf(const std::string& group_id,
 bool GroupDirectory::SetRole(const std::string& group_id,
                              const std::string& user, GroupRole role) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_directory",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && !store_lock.locked()) {
+    return false;
+  }
+  if (state_store_ && store_lock.locked()) {
+    if (!LoadFromStoreLocked()) {
+      return false;
+    }
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return false;
@@ -453,7 +718,13 @@ bool GroupDirectory::SetRole(const std::string& group_id,
     return false;
   }
   m_it->second = role;
-  SaveLocked();
+  if (state_store_ && store_lock.locked()) {
+    if (!SaveToStoreLockedUnlocked()) {
+      return false;
+    }
+  } else {
+    SaveLocked();
+  }
   return true;
 }
 

@@ -16,6 +16,8 @@
 #include "platform_fs.h"
 #include "secure_channel.h"
 #include "session_manager.h"
+#include "state_store.h"
+#include "metadata_protector.h"
 
 namespace mi::server {
 
@@ -62,6 +64,8 @@ class ServerApp {
   std::unique_ptr<MediaRelay> media_relay_;
   std::unique_ptr<ApiService> api_;
   std::unique_ptr<FrameRouter> router_;
+  std::unique_ptr<StateStore> state_store_;
+  std::unique_ptr<MetadataProtector> metadata_protector_;
   std::chrono::steady_clock::time_point last_cleanup_{};
   mi::platform::fs::FileLock state_lock_{};
   bool state_lock_held_{false};

@@ -3,12 +3,23 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: verify_package_posix.sh [--platform linux|macos] [--dist PATH]
+Usage: verify_package_posix.sh [--platform linux|macos] [--dist PATH] [--require-signature]
 EOF
+}
+
+parse_bool() {
+  local v="${1:-}"
+  v="$(echo "$v" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    1|true|on|yes) echo 1 ;;
+    0|false|off|no) echo 0 ;;
+    *) echo 0 ;;
+  esac
 }
 
 platform=""
 dist_root=""
+require_signature=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,6 +30,10 @@ while [[ $# -gt 0 ]]; do
     --dist)
       dist_root="${2:-}"
       shift 2
+      ;;
+    --require-signature)
+      require_signature=1
+      shift
       ;;
     -h|--help)
       usage
@@ -44,6 +59,11 @@ if [[ -z "$platform" ]]; then
     darwin*) platform="macos" ;;
     *) echo "unsupported platform: $uname_s" >&2; exit 1 ;;
   esac
+fi
+
+if [[ "$platform" == "macos" && "$require_signature" -eq 0 &&
+      -n "${MI_E2EE_MAC_REQUIRE_SIGNATURE:-}" ]]; then
+  require_signature="$(parse_bool "$MI_E2EE_MAC_REQUIRE_SIGNATURE")"
 fi
 
 case "$platform" in
@@ -239,3 +259,33 @@ fi
 
 verify_manifest "$client_root"
 verify_manifest "$server_root"
+
+verify_codesign() {
+  local bin="$1"
+  if [[ ! -e "$bin" ]]; then
+    return
+  fi
+  if ! codesign --verify --strict --deep "$bin" >/dev/null 2>&1; then
+    echo "codesign verification failed: $bin" >&2
+    exit 1
+  fi
+}
+
+if [[ "$platform" == "macos" && "$require_signature" -eq 1 ]]; then
+  if ! command -v codesign >/dev/null 2>&1; then
+    echo "codesign not found; cannot verify signatures" >&2
+    exit 1
+  fi
+  verify_codesign "$client_root/lib/libmi_e2ee_client_sdk.${sdk_ext}"
+  shopt -s nullglob
+  for lib in "$client_root/lib"/*.dylib "$server_root/lib"/*.dylib; do
+    verify_codesign "$lib"
+  done
+  shopt -u nullglob
+  verify_codesign "$server_root/mi_e2ee_server"
+  for tool in "$server_root/tools/"*; do
+    if [[ -x "$tool" ]]; then
+      verify_codesign "$tool"
+    fi
+  done
+fi

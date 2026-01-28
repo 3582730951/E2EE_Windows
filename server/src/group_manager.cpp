@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "path_security.h"
+#include "protected_store.h"
 
 namespace mi::server {
 
@@ -72,7 +74,11 @@ void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
 
 }  // namespace
 
-GroupManager::GroupManager(std::filesystem::path persist_dir) {
+GroupManager::GroupManager(std::filesystem::path persist_dir,
+                           KeyProtectionMode state_protection,
+                           StateStore* state_store)
+    : state_protection_(state_protection),
+      state_store_(state_store) {
   if (persist_dir.empty()) {
     return;
   }
@@ -84,8 +90,10 @@ GroupManager::GroupManager(std::filesystem::path persist_dir) {
   persist_path_ = persist_dir / "group_manager.bin";
   persistence_enabled_ = true;
   if (!LoadFromDisk()) {
-    const auto bad_path = persist_path_.string() + ".bad";
-    std::filesystem::rename(persist_path_, bad_path, ec);
+    if (!state_store_) {
+      const auto bad_path = persist_path_.string() + ".bad";
+      std::filesystem::rename(persist_path_, bad_path, ec);
+    }
   }
 }
 
@@ -98,6 +106,13 @@ GroupKey GroupManager::MakeKey(std::uint32_t next_version,
 }
 
 bool GroupManager::LoadFromDisk() {
+  if (state_store_) {
+    return LoadFromStore();
+  }
+  return LoadFromFile();
+}
+
+bool GroupManager::LoadFromFile() {
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -124,8 +139,72 @@ bool GroupManager::LoadFromDisk() {
     return false;
   }
 
+  bool need_rewrap = false;
+  {
+    std::vector<std::uint8_t> plain;
+    bool was_protected = false;
+    std::string protect_err;
+    if (!DecodeProtectedFileBytes(bytes, state_protection_, plain, was_protected,
+                                  protect_err)) {
+      return false;
+    }
+    need_rewrap =
+        !was_protected && state_protection_ != KeyProtectionMode::kNone;
+    bytes.swap(plain);
+  }
+  if (!LoadFromBytes(bytes)) {
+    return false;
+  }
+  if (need_rewrap && !state_store_) {
+    SaveLocked();
+  }
+  return true;
+}
+
+bool GroupManager::LoadFromStore() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("group_manager", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    if (!persist_path_.empty()) {
+      std::error_code ec;
+      if (std::filesystem::exists(persist_path_, ec) && !ec) {
+        if (!LoadFromFile()) {
+          return false;
+        }
+        return SaveToStoreLocked();
+      }
+    }
+    return true;
+  }
+  return LoadFromBytes(blob.data);
+}
+
+bool GroupManager::LoadFromStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("group_manager", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    groups_.clear();
+    return true;
+  }
+  return LoadFromBytes(blob.data);
+}
+
+bool GroupManager::LoadFromBytes(const std::vector<std::uint8_t>& bytes) {
   std::size_t off = 0;
-  if (!std::equal(kGroupMgrMagic.begin(), kGroupMgrMagic.end(),
+  if (bytes.size() < kGroupMgrHeaderBytes ||
+      !std::equal(kGroupMgrMagic.begin(), kGroupMgrMagic.end(),
                   bytes.begin())) {
     return false;
   }
@@ -180,14 +259,14 @@ bool GroupManager::LoadFromDisk() {
     return false;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    groups_.swap(loaded);
-  }
+  groups_.swap(loaded);
   return true;
 }
 
 bool GroupManager::SaveLocked() {
+  if (state_store_) {
+    return SaveToStoreLocked();
+  }
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -232,13 +311,20 @@ bool GroupManager::SaveLocked() {
     WriteUint64Le(it->second.message_count, out);
   }
 
+  std::vector<std::uint8_t> protected_bytes;
+  std::string protect_err;
+  if (!EncodeProtectedFileBytes(out, state_protection_, protected_bytes,
+                                protect_err)) {
+    return false;
+  }
+
   const std::filesystem::path tmp = persist_path_.string() + ".tmp";
   std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     return false;
   }
-  ofs.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size()));
+  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
+            static_cast<std::streamsize>(protected_bytes.size()));
   ofs.close();
   if (!ofs.good()) {
     std::error_code rm_ec;
@@ -256,20 +342,95 @@ bool GroupManager::SaveLocked() {
   return true;
 }
 
+bool GroupManager::SaveToStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::string lock_err;
+  StateStoreLock lock(state_store_, "group_manager",
+                      std::chrono::milliseconds(5000), lock_err);
+  if (!lock.locked()) {
+    return false;
+  }
+  return SaveToStoreLockedUnlocked();
+}
+
+bool GroupManager::SaveToStoreLockedUnlocked() {
+  if (groups_.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  std::vector<std::string> keys;
+  keys.reserve(groups_.size());
+  for (const auto& kv : groups_) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kGroupMgrHeaderBytes + keys.size() * 24);
+  out.insert(out.end(), kGroupMgrMagic.begin(), kGroupMgrMagic.end());
+  out.push_back(kGroupMgrVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), out);
+
+  for (const auto& group_id : keys) {
+    const auto it = groups_.find(group_id);
+    if (it == groups_.end()) {
+      continue;
+    }
+    if (group_id.empty()) {
+      return false;
+    }
+    if (group_id.size() >
+        static_cast<std::size_t>(
+            (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+    WriteUint32Le(static_cast<std::uint32_t>(group_id.size()), out);
+    out.insert(out.end(), group_id.begin(), group_id.end());
+    WriteUint32Le(it->second.key.version, out);
+    out.push_back(static_cast<std::uint8_t>(it->second.key.reason));
+    WriteUint64Le(it->second.message_count, out);
+  }
+
+  std::string store_err;
+  if (!state_store_->SaveBlob("group_manager", out, store_err)) {
+    return false;
+  }
+  return true;
+}
+
 GroupKey GroupManager::Rotate(const std::string& group_id,
                               RotationReason reason) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_manager",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    (void)LoadFromStoreLocked();
+  }
   auto& state = groups_[group_id];
   state.group_id = group_id;
   const std::uint32_t next_version = state.key.version + 1;
   state.key = MakeKey(next_version, reason);
   state.message_count = 0;
-  SaveLocked();
+  if (state_store_ && store_lock.locked()) {
+    (void)SaveToStoreLockedUnlocked();
+  } else {
+    SaveLocked();
+  }
   return state.key;
 }
 
 std::optional<GroupKey> GroupManager::GetKey(const std::string& group_id) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    (void)LoadFromStoreLocked();
+  }
   const auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     return std::nullopt;
@@ -280,6 +441,12 @@ std::optional<GroupKey> GroupManager::GetKey(const std::string& group_id) {
 std::optional<GroupKey> GroupManager::OnMessage(const std::string& group_id,
                                                 std::uint64_t threshold) {
   std::lock_guard<std::mutex> lock(mutex_);
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "group_manager",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    (void)LoadFromStoreLocked();
+  }
   auto it = groups_.find(group_id);
   if (it == groups_.end()) {
     GroupState state;
@@ -287,7 +454,11 @@ std::optional<GroupKey> GroupManager::OnMessage(const std::string& group_id,
     state.key = MakeKey(1, RotationReason::kJoin);
     state.message_count = 1;
     groups_.emplace(group_id, std::move(state));
-    SaveLocked();
+    if (state_store_ && store_lock.locked()) {
+      (void)SaveToStoreLockedUnlocked();
+    } else {
+      SaveLocked();
+    }
     return std::nullopt;
   }
   it->second.message_count += 1;
@@ -295,7 +466,11 @@ std::optional<GroupKey> GroupManager::OnMessage(const std::string& group_id,
     const std::uint32_t next_version = it->second.key.version + 1;
     it->second.key = MakeKey(next_version, RotationReason::kMessageThreshold);
     it->second.message_count = 0;
-    SaveLocked();
+    if (state_store_ && store_lock.locked()) {
+      (void)SaveToStoreLockedUnlocked();
+    } else {
+      SaveLocked();
+    }
     return it->second.key;
   }
   return std::nullopt;

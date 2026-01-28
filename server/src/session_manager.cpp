@@ -17,6 +17,7 @@
 #include "hex_utils.h"
 #include "monocypher.h"
 #include "opaque_pake.h"
+#include "protected_store.h"
 
 extern "C" {
 int PQCLEAN_MLKEM768_CLEAN_crypto_kem_enc(std::uint8_t* ct,
@@ -101,10 +102,14 @@ void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
 SessionManager::SessionManager(std::unique_ptr<AuthProvider> auth,
                                std::chrono::seconds ttl,
                                std::vector<std::uint8_t> opaque_server_setup,
-                               std::filesystem::path persist_dir)
+                               std::filesystem::path persist_dir,
+                               KeyProtectionMode state_protection,
+                               StateStore* state_store)
     : auth_(std::move(auth)),
       ttl_(ttl),
-      opaque_server_setup_(std::move(opaque_server_setup)) {
+      opaque_server_setup_(std::move(opaque_server_setup)),
+      state_protection_(state_protection),
+      state_store_(state_store) {
   if (persist_dir.empty()) {
     return;
   }
@@ -117,8 +122,10 @@ SessionManager::SessionManager(std::unique_ptr<AuthProvider> auth,
   persistence_enabled_ = true;
   std::lock_guard<std::mutex> lock(mutex_);
   if (!LoadSessionsLocked()) {
-    const auto bad_path = persist_path_.string() + ".bad";
-    std::filesystem::rename(persist_path_, bad_path, ec);
+    if (!state_store_) {
+      const auto bad_path = persist_path_.string() + ".bad";
+      std::filesystem::rename(persist_path_, bad_path, ec);
+    }
   }
   dirty_ = false;
 }
@@ -139,6 +146,13 @@ std::string SessionManager::GenerateToken() {
 }
 
 bool SessionManager::LoadSessionsLocked() {
+  if (state_store_) {
+    return LoadSessionsFromStoreLocked();
+  }
+  return LoadSessionsFromFileLocked();
+}
+
+bool SessionManager::LoadSessionsFromFileLocked() {
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -164,8 +178,57 @@ bool SessionManager::LoadSessionsLocked() {
     return false;
   }
 
+  bool need_rewrap = false;
+  {
+    std::vector<std::uint8_t> plain;
+    bool was_protected = false;
+    std::string protect_err;
+    if (!DecodeProtectedFileBytes(bytes, state_protection_, plain, was_protected,
+                                  protect_err)) {
+      return false;
+    }
+    need_rewrap =
+        !was_protected && state_protection_ != KeyProtectionMode::kNone;
+    bytes.swap(plain);
+  }
+  if (!LoadSessionsFromBytesLocked(bytes)) {
+    return false;
+  }
+  if (need_rewrap && !state_store_) {
+    SaveSessionsLocked();
+  }
+  return true;
+}
+
+bool SessionManager::LoadSessionsFromStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("sessions", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    if (!persist_path_.empty()) {
+      std::error_code ec;
+      if (std::filesystem::exists(persist_path_, ec) && !ec) {
+        if (!LoadSessionsFromFileLocked()) {
+          return false;
+        }
+        return SaveSessionsToStoreLocked();
+      }
+    }
+    return true;
+  }
+  return LoadSessionsFromBytesLocked(blob.data);
+}
+
+bool SessionManager::LoadSessionsFromBytesLocked(
+    const std::vector<std::uint8_t>& bytes) {
   std::size_t off = 0;
-  if (!std::equal(kSessionMagic.begin(), kSessionMagic.end(),
+  if (bytes.size() < kSessionHeaderBytes ||
+      !std::equal(kSessionMagic.begin(), kSessionMagic.end(),
                   bytes.begin())) {
     return false;
   }
@@ -269,6 +332,9 @@ bool SessionManager::LoadSessionsLocked() {
 }
 
 bool SessionManager::SaveSessionsLocked() {
+  if (state_store_) {
+    return SaveSessionsToStoreLocked();
+  }
   if (!persistence_enabled_ || persist_path_.empty()) {
     return true;
   }
@@ -347,13 +413,20 @@ bool SessionManager::SaveSessionsLocked() {
     out.insert(out.end(), session.username.begin(), session.username.end());
   }
 
+  std::vector<std::uint8_t> protected_bytes;
+  std::string protect_err;
+  if (!EncodeProtectedFileBytes(out, state_protection_, protected_bytes,
+                                protect_err)) {
+    return false;
+  }
+
   const std::filesystem::path tmp = persist_path_.string() + ".tmp";
   std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     return false;
   }
-  ofs.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size()));
+  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
+            static_cast<std::streamsize>(protected_bytes.size()));
   ofs.close();
   if (!ofs.good()) {
     std::error_code rm_ec;
@@ -368,6 +441,103 @@ bool SessionManager::SaveSessionsLocked() {
     return false;
   }
   SetOwnerOnlyPermissions(persist_path_);
+  dirty_ = false;
+  return true;
+}
+
+bool SessionManager::SaveSessionsToStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::string lock_err;
+  StateStoreLock lock(state_store_, "sessions",
+                      std::chrono::milliseconds(5000), lock_err);
+  if (!lock.locked()) {
+    return false;
+  }
+  return SaveSessionsToStoreLockedUnlocked();
+}
+
+bool SessionManager::SaveSessionsToStoreLockedUnlocked() {
+  if (sessions_.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+
+  std::vector<std::string> keys;
+  keys.reserve(sessions_.size());
+  for (const auto& kv : sessions_) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kSessionHeaderBytes + keys.size() * 196);
+  out.insert(out.end(), kSessionMagic.begin(), kSessionMagic.end());
+  out.push_back(kSessionVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), out);
+
+  for (const auto& token : keys) {
+    const auto it = sessions_.find(token);
+    if (it == sessions_.end()) {
+      continue;
+    }
+    const auto& session = it->second;
+    if (token.empty() || session.username.empty()) {
+      return false;
+    }
+    if (token.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)()) ||
+        session.username.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+
+    const auto created_age =
+        now_steady > session.created_at
+            ? (now_steady - session.created_at)
+            : std::chrono::steady_clock::duration::zero();
+    const auto last_seen_age =
+        now_steady > session.last_seen
+            ? (now_steady - session.last_seen)
+            : std::chrono::steady_clock::duration::zero();
+    const auto created_sys =
+        now_sys -
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            created_age);
+    const auto last_seen_sys =
+        now_sys -
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            last_seen_age);
+
+    WriteUint32Le(static_cast<std::uint32_t>(token.size()), out);
+    WriteUint32Le(static_cast<std::uint32_t>(session.username.size()), out);
+    WriteUint64Le(UnixMsFrom(created_sys), out);
+    WriteUint64Le(UnixMsFrom(last_seen_sys), out);
+    out.insert(out.end(), session.keys.root_key.begin(),
+               session.keys.root_key.end());
+    out.insert(out.end(), session.keys.header_key.begin(),
+               session.keys.header_key.end());
+    out.insert(out.end(), session.keys.kcp_key.begin(),
+               session.keys.kcp_key.end());
+    out.insert(out.end(), session.keys.ratchet_root.begin(),
+               session.keys.ratchet_root.end());
+    out.insert(out.end(), token.begin(), token.end());
+    out.insert(out.end(), session.username.begin(), session.username.end());
+  }
+
+  std::string store_err;
+  if (!state_store_->SaveBlob("sessions", out, store_err)) {
+    return false;
+  }
   dirty_ = false;
   return true;
 }
@@ -453,6 +623,12 @@ bool SessionManager::Login(const std::string& username,
   {
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mutex_);
+    if (state_store_) {
+      if (!LoadSessionsFromStoreLocked()) {
+        error = "session state load failed";
+        return false;
+      }
+    }
     if (IsLoginBannedLocked(username, now)) {
       error = "rate limited";
       return false;
@@ -488,7 +664,21 @@ bool SessionManager::Login(const std::string& username,
     ClearLoginFailuresLocked(username);
     sessions_[session.token] = session;
     dirty_ = true;
-    SaveSessionsLocked();
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "sessions",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (!store_lock.locked()) {
+        error = "session state lock failed";
+        return false;
+      }
+      if (!SaveSessionsToStoreLockedUnlocked()) {
+        error = "session state save failed";
+        return false;
+      }
+    } else {
+      SaveSessionsLocked();
+    }
   }
   out_session = session;
   error.clear();
@@ -694,6 +884,12 @@ bool SessionManager::LoginHybrid(
   {
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mutex_);
+    if (state_store_) {
+      if (!LoadSessionsFromStoreLocked()) {
+        error = "session state load failed";
+        return false;
+      }
+    }
     if (IsLoginBannedLocked(username, now)) {
       error = "rate limited";
       return false;
@@ -761,7 +957,21 @@ bool SessionManager::LoginHybrid(
     ClearLoginFailuresLocked(username);
     sessions_[session.token] = session;
     dirty_ = true;
-    SaveSessionsLocked();
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "sessions",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (!store_lock.locked()) {
+        error = "session state lock failed";
+        return false;
+      }
+      if (!SaveSessionsToStoreLockedUnlocked()) {
+        error = "session state save failed";
+        return false;
+      }
+    } else {
+      SaveSessionsLocked();
+    }
   }
   out_session = session;
   return true;
@@ -993,6 +1203,12 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
   {
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mutex_);
+    if (state_store_) {
+      if (!LoadSessionsFromStoreLocked()) {
+        error = "session state load failed";
+        return false;
+      }
+    }
     if (IsLoginBannedLocked(p.username, now)) {
       error = "rate limited";
       return false;
@@ -1042,7 +1258,21 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
     ClearLoginFailuresLocked(p.username);
     sessions_[session.token] = session;
     dirty_ = true;
-    SaveSessionsLocked();
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "sessions",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (!store_lock.locked()) {
+        error = "session state lock failed";
+        return false;
+      }
+      if (!SaveSessionsToStoreLockedUnlocked()) {
+        error = "session state save failed";
+        return false;
+      }
+    } else {
+      SaveSessionsLocked();
+    }
   }
   out_session = session;
   return true;
@@ -1059,6 +1289,11 @@ bool SessionManager::UserExists(const std::string& username,
 
 std::optional<Session> SessionManager::GetSession(const std::string& token) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    if (!LoadSessionsFromStoreLocked()) {
+      return std::nullopt;
+    }
+  }
   const auto it = sessions_.find(token);
   if (it == sessions_.end()) {
     return std::nullopt;
@@ -1077,6 +1312,11 @@ std::optional<Session> SessionManager::GetSession(const std::string& token) {
 
 bool SessionManager::TouchSession(const std::string& token) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    if (!LoadSessionsFromStoreLocked()) {
+      return false;
+    }
+  }
   const auto it = sessions_.find(token);
   if (it == sessions_.end()) {
     return false;
@@ -1103,6 +1343,11 @@ std::optional<DerivedKeys> SessionManager::GetKeys(const std::string& token) {
 
 void SessionManager::Logout(const std::string& token) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    if (!LoadSessionsFromStoreLocked()) {
+      return;
+    }
+  }
   sessions_.erase(token);
   dirty_ = true;
   SaveSessionsLocked();
@@ -1120,6 +1365,11 @@ SessionManagerStats SessionManager::GetStats() {
 
 void SessionManager::Cleanup() {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (state_store_) {
+    if (!LoadSessionsFromStoreLocked()) {
+      return;
+    }
+  }
   const auto now = std::chrono::steady_clock::now();
   bool removed = false;
   for (auto it = sessions_.begin(); it != sessions_.end();) {

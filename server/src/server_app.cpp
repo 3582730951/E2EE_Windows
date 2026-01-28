@@ -5,10 +5,12 @@
 #include "crypto.h"
 #include "hex_utils.h"
 #include "key_transparency.h"
+#include "metadata_protector.h"
 #include "opaque_pake.h"
 #include "path_security.h"
 #include "platform_log.h"
-#include "platform_secure_store.h"
+#include "protected_store.h"
+#include "state_store_mysql.h"
 
 #include <algorithm>
 #include <array>
@@ -36,9 +38,6 @@ struct RustBuf {
 constexpr std::uint8_t kOpaqueSetupMagic[8] = {'M', 'I', 'O', 'P',
                                                'A', 'Q', 'S', '1'};
 constexpr std::size_t kMaxOpaqueSetupBytes = 64u * 1024u;
-constexpr std::uint8_t kDpapiMagic[8] = {'M', 'I', 'D', 'P',
-                                         'A', 'P', 'I', '1'};
-constexpr std::size_t kDpapiHeaderBytes = 12;
 
 extern "C" {
 int PQCLEAN_MLDSA65_CLEAN_crypto_sign_keypair(std::uint8_t* pk,
@@ -103,80 +102,6 @@ bool SetOwnerOnlyPermissions(const std::filesystem::path& path,
   }
   return true;
 #endif
-}
-
-bool IsDpapiBlob(const std::vector<std::uint8_t>& data) {
-  return data.size() >= kDpapiHeaderBytes &&
-         std::equal(std::begin(kDpapiMagic), std::end(kDpapiMagic),
-                    data.begin());
-}
-
-mi::platform::SecureStoreScope ScopeForKeyProtection(
-    KeyProtectionMode mode) {
-  return mode == KeyProtectionMode::kDpapiMachine
-             ? mi::platform::SecureStoreScope::kMachine
-             : mi::platform::SecureStoreScope::kUser;
-}
-
-bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
-                              KeyProtectionMode mode,
-                              std::vector<std::uint8_t>& out,
-                              std::string& error) {
-  error.clear();
-  if (mode == KeyProtectionMode::kNone) {
-    out = plain;
-    return true;
-  }
-  std::vector<std::uint8_t> blob;
-  if (!mi::platform::ProtectSecureBlobScoped(
-          plain, nullptr, 0, ScopeForKeyProtection(mode), blob, error)) {
-    return false;
-  }
-  if (blob.size() > (std::numeric_limits<std::uint32_t>::max)()) {
-    error = "secure store blob too large";
-    return false;
-  }
-  const std::uint32_t len = static_cast<std::uint32_t>(blob.size());
-  out.clear();
-  out.reserve(kDpapiHeaderBytes + blob.size());
-  out.insert(out.end(), std::begin(kDpapiMagic), std::end(kDpapiMagic));
-  out.push_back(static_cast<std::uint8_t>(len & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len >> 16) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len >> 24) & 0xFF));
-  out.insert(out.end(), blob.begin(), blob.end());
-  return true;
-}
-
-bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
-                              std::vector<std::uint8_t>& out_plain,
-                              bool& was_protected,
-                              std::string& error) {
-  error.clear();
-  was_protected = false;
-  if (!IsDpapiBlob(file_bytes)) {
-    out_plain = file_bytes;
-    return true;
-  }
-  was_protected = true;
-  if (file_bytes.size() < kDpapiHeaderBytes) {
-    error = "secure store blob invalid";
-    return false;
-  }
-  const std::uint32_t len =
-      static_cast<std::uint32_t>(file_bytes[8]) |
-      (static_cast<std::uint32_t>(file_bytes[9]) << 8) |
-      (static_cast<std::uint32_t>(file_bytes[10]) << 16) |
-      (static_cast<std::uint32_t>(file_bytes[11]) << 24);
-  if (len == 0 || file_bytes.size() != kDpapiHeaderBytes + len) {
-    error = "secure store blob size invalid";
-    return false;
-  }
-  const std::vector<std::uint8_t> blob(file_bytes.begin() + kDpapiHeaderBytes,
-                                       file_bytes.end());
-  return mi::platform::UnprotectSecureBlobScoped(
-      blob, nullptr, 0, mi::platform::SecureStoreScope::kUser, out_plain,
-      error);
 }
 
 bool ParseSha256Hex(const std::string& hex,
@@ -251,7 +176,8 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     }
     std::vector<std::uint8_t> decoded;
     bool was_protected = false;
-    if (!DecodeProtectedFileBytes(file_bytes, decoded, was_protected, error)) {
+    if (!DecodeProtectedFileBytes(file_bytes, key_protection, decoded,
+                                  was_protected, error)) {
       return false;
     }
     if (was_protected) {
@@ -555,7 +481,8 @@ bool EnsureKtSigningKey(const std::filesystem::path& signing_key,
   }
   std::vector<std::uint8_t> plain;
   bool was_protected = false;
-  if (!DecodeProtectedFileBytes(file_bytes, plain, was_protected, error)) {
+  if (!DecodeProtectedFileBytes(file_bytes, key_protection, plain,
+                                was_protected, error)) {
     return false;
   }
   if (plain.size() != kKtSthSigSecretKeyBytes) {
@@ -640,17 +567,46 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     }
   }
   std::filesystem::remove(state_dir / ".probe", ec);
-  if (!state_lock_held_) {
-    const auto lock_path = state_dir / "server.lock";
-    const auto lock_status =
-        mi::platform::fs::AcquireExclusiveFileLock(lock_path, state_lock_);
-    if (lock_status != mi::platform::fs::FileLockStatus::kOk) {
-      error = (lock_status == mi::platform::fs::FileLockStatus::kBusy)
-                  ? "server state locked (another instance running)"
-                  : "server state lock failed";
+  if (config_.server.state_backend == StateBackend::kMySql) {
+    MetadataKeyConfig meta_cfg;
+    meta_cfg.protection = config_.server.metadata_protection;
+    meta_cfg.key_hex = config_.server.metadata_key_hex.get();
+    std::filesystem::path meta_key_path = config_.server.metadata_key_path;
+    if (meta_key_path.empty()) {
+      meta_key_path = state_dir / "metadata_key.bin";
+    } else if (meta_key_path.is_relative()) {
+      if (!config_dir.empty()) {
+        meta_key_path = config_dir / meta_key_path;
+      } else {
+        meta_key_path = state_dir / meta_key_path;
+      }
+    }
+    meta_cfg.key_path = std::move(meta_key_path);
+    std::array<std::uint8_t, 32> meta_key{};
+    if (!LoadOrCreateMetadataKey(meta_cfg, meta_key, error)) {
       return false;
     }
-    state_lock_held_ = true;
+    metadata_protector_ = std::make_unique<MetadataProtector>(meta_key);
+    state_store_ = CreateMysqlStateStore(config_.state_mysql,
+                                         metadata_protector_.get(),
+                                         error);
+    if (!state_store_) {
+      return false;
+    }
+  }
+  if (config_.server.state_backend == StateBackend::kFile) {
+    if (!state_lock_held_) {
+      const auto lock_path = state_dir / "server.lock";
+      const auto lock_status =
+          mi::platform::fs::AcquireExclusiveFileLock(lock_path, state_lock_);
+      if (lock_status != mi::platform::fs::FileLockStatus::kOk) {
+        error = (lock_status == mi::platform::fs::FileLockStatus::kBusy)
+                    ? "server state locked (another instance running)"
+                    : "server state lock failed";
+        return false;
+      }
+      state_lock_held_ = true;
+    }
   }
 
   std::filesystem::path kt_signing_key = config_.server.kt_signing_key;
@@ -717,8 +673,12 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
       std::move(auth_),
       std::chrono::seconds(config_.server.session_ttl_sec),
       std::move(opaque_setup),
-      state_dir);
-  groups_ = std::make_unique<GroupManager>(state_dir);
+      state_dir,
+      config_.server.state_protection,
+      state_store_.get());
+  groups_ = std::make_unique<GroupManager>(state_dir,
+                                           config_.server.state_protection,
+                                           state_store_.get());
   GroupCallConfig call_cfg;
   call_cfg.enable_group_call = config_.call.enable_group_call;
   call_cfg.max_room_size = config_.call.max_room_size;
@@ -726,9 +686,12 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
   call_cfg.call_timeout_sec = config_.call.call_timeout_sec;
   call_cfg.max_subscriptions = config_.call.max_subscriptions;
   group_calls_ = std::make_unique<GroupCallManager>(call_cfg);
-  directory_ = std::make_unique<GroupDirectory>(state_dir);
+  directory_ = std::make_unique<GroupDirectory>(state_dir,
+                                                config_.server.state_protection,
+                                                state_store_.get());
   offline_storage_ = std::make_unique<OfflineStorage>(
-      storage_dir, std::chrono::hours(12), secure_delete);
+      storage_dir, std::chrono::hours(12), secure_delete,
+      config_.server.state_protection, state_store_.get());
   if ((secure_delete.enabled || require_secure_delete) &&
       !offline_storage_->SecureDeleteReady()) {
     error = offline_storage_->SecureDeleteError().empty()
@@ -737,7 +700,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     return false;
   }
   offline_queue_ = std::make_unique<OfflineQueue>(
-      std::chrono::seconds::zero(), storage_dir / "offline_queue");
+      std::chrono::seconds::zero(), storage_dir / "offline_queue",
+      config_.server.state_protection, state_store_.get());
   media_relay_ = std::make_unique<MediaRelay>(
       2048, std::chrono::milliseconds(config_.call.media_ttl_ms));
   api_ = std::make_unique<ApiService>(sessions_.get(), groups_.get(),

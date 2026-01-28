@@ -4,6 +4,8 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: package_posix.sh [--platform linux|macos] [--workspace PATH] [--dist PATH] [--openssl PATH]
+                        [--codesign-id ID] [--codesign-entitlements PATH]
+                        [--notary-profile PROFILE] [--notary-bundle-id ID] [--notary-wait]
 
 Build prerequisites:
   - build/client contains libmi_e2ee_client_sdk.(so|dylib)
@@ -15,10 +17,25 @@ Examples:
 EOF
 }
 
+parse_bool() {
+  local v="${1:-}"
+  v="$(echo "$v" | tr '[:upper:]' '[:lower:]')"
+  case "$v" in
+    1|true|on|yes) echo 1 ;;
+    0|false|off|no) echo 0 ;;
+    *) echo 0 ;;
+  esac
+}
+
 platform=""
 workspace=""
 dist_root=""
 openssl_bin=""
+codesign_id=""
+codesign_entitlements=""
+notary_profile=""
+notary_bundle_id=""
+notary_wait=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +54,26 @@ while [[ $# -gt 0 ]]; do
     --openssl)
       openssl_bin="${2:-}"
       shift 2
+      ;;
+    --codesign-id)
+      codesign_id="${2:-}"
+      shift 2
+      ;;
+    --codesign-entitlements)
+      codesign_entitlements="${2:-}"
+      shift 2
+      ;;
+    --notary-profile)
+      notary_profile="${2:-}"
+      shift 2
+      ;;
+    --notary-bundle-id)
+      notary_bundle_id="${2:-}"
+      shift 2
+      ;;
+    --notary-wait)
+      notary_wait=1
+      shift
       ;;
     -h|--help)
       usage
@@ -71,6 +108,22 @@ fi
 if [[ -z "$openssl_bin" ]]; then
   echo "openssl not found; pass --openssl PATH" >&2
   exit 1
+fi
+
+if [[ -z "$codesign_id" ]]; then
+  codesign_id="${MI_E2EE_MAC_CODESIGN_IDENTITY:-}"
+fi
+if [[ -z "$codesign_entitlements" ]]; then
+  codesign_entitlements="${MI_E2EE_MAC_CODESIGN_ENTITLEMENTS:-}"
+fi
+if [[ -z "$notary_profile" ]]; then
+  notary_profile="${MI_E2EE_MAC_NOTARY_PROFILE:-}"
+fi
+if [[ -z "$notary_bundle_id" ]]; then
+  notary_bundle_id="${MI_E2EE_MAC_NOTARY_BUNDLE_ID:-}"
+fi
+if [[ "$notary_wait" -eq 0 && -n "${MI_E2EE_MAC_NOTARY_WAIT:-}" ]]; then
+  notary_wait="$(parse_bool "$MI_E2EE_MAC_NOTARY_WAIT")"
 fi
 
 case "$platform" in
@@ -173,6 +226,7 @@ tls_enable=1
 require_tls=1
 tls_cert=config/mi_e2ee_server.pem
 kt_signing_key=kt_signing_key.bin
+state_protection=none
 EOF
 
 cat > "$client_root/config/client_config.ini" <<EOF
@@ -352,6 +406,46 @@ if [[ "$platform" == "macos" ]]; then
   done
 fi
 
+if [[ "$platform" == "macos" && -n "$codesign_id" ]]; then
+  if ! command -v codesign >/dev/null 2>&1; then
+    echo "codesign not found; cannot sign macOS artifacts" >&2
+    exit 1
+  fi
+  if [[ -n "$codesign_entitlements" && ! -f "$codesign_entitlements" ]]; then
+    echo "codesign entitlements not found: $codesign_entitlements" >&2
+    exit 1
+  fi
+
+  sign_item() {
+    local target="$1"
+    local entitlements="$2"
+    local -a args=()
+    if [[ -n "$entitlements" ]]; then
+      args+=(--entitlements "$entitlements")
+    fi
+    codesign --force --options runtime --timestamp --sign "$codesign_id" \
+      "${args[@]}" "$target"
+  }
+
+  shopt -s nullglob
+  for lib in "$client_lib"/*.dylib "$server_lib"/*.dylib; do
+    sign_item "$lib" ""
+  done
+  shopt -u nullglob
+
+  if [[ -f "$client_lib/libmi_e2ee_client_sdk.dylib" ]]; then
+    sign_item "$client_lib/libmi_e2ee_client_sdk.dylib" ""
+  fi
+  if [[ -f "$server_root/mi_e2ee_server" ]]; then
+    sign_item "$server_root/mi_e2ee_server" "$codesign_entitlements"
+  fi
+  for tool in "$server_root/tools/"*; do
+    if [[ -x "$tool" ]]; then
+      sign_item "$tool" "$codesign_entitlements"
+    fi
+  done
+fi
+
 cat > "$client_root/env.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -416,3 +510,40 @@ write_manifest "$server_root"
 
 tar -C "$dist_root" -czf "$dist_root/mi_e2ee_client_${platform}.tar.gz" mi_e2ee_client
 tar -C "$dist_root" -czf "$dist_root/mi_e2ee_server_${platform}.tar.gz" mi_e2ee_server
+
+if [[ "$platform" == "macos" && -n "$notary_profile" ]]; then
+  if [[ -z "$codesign_id" ]]; then
+    echo "notary_profile set but codesign_id missing" >&2
+    exit 1
+  fi
+  if ! command -v xcrun >/dev/null 2>&1; then
+    echo "xcrun not found; cannot submit for notarization" >&2
+    exit 1
+  fi
+  if ! command -v ditto >/dev/null 2>&1; then
+    echo "ditto not found; cannot create notarization zips" >&2
+    exit 1
+  fi
+  client_zip="$dist_root/mi_e2ee_client_${platform}_notary.zip"
+  server_zip="$dist_root/mi_e2ee_server_${platform}_notary.zip"
+  rm -f "$client_zip" "$server_zip"
+  ditto -c -k --keepParent "$client_root" "$client_zip"
+  ditto -c -k --keepParent "$server_root" "$server_zip"
+
+  submit_notary() {
+    local zip="$1"
+    local -a args=(
+      xcrun notarytool submit "$zip" --keychain-profile "$notary_profile"
+    )
+    if [[ -n "$notary_bundle_id" ]]; then
+      args+=(--bundle-id "$notary_bundle_id")
+    fi
+    if [[ "$notary_wait" -eq 1 ]]; then
+      args+=(--wait)
+    fi
+    "${args[@]}"
+  }
+
+  submit_notary "$client_zip"
+  submit_notary "$server_zip"
+fi

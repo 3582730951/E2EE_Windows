@@ -102,6 +102,19 @@ bool ParseKeyProtection(const std::string& text, KeyProtectionMode& out) {
   return false;
 }
 
+bool ParseStateBackend(const std::string& text, StateBackend& out) {
+  const std::string t = ToLower(Trim(text));
+  if (t.empty() || t == "file" || t == "fs") {
+    out = StateBackend::kFile;
+    return true;
+  }
+  if (t == "mysql" || t == "sql" || t == "mariadb" || t == "tidb") {
+    out = StateBackend::kMySql;
+    return true;
+  }
+  return false;
+}
+
 struct IniState {
   std::string section;
   ServerConfig* cfg{nullptr};
@@ -164,6 +177,20 @@ void ApplyKV(IniState& state, const std::string& key,
     }
     return;
   }
+  if (state.section == "state_mysql") {
+    if (key == "mysql_ip") {
+      state.cfg->state_mysql.host = value;
+    } else if (key == "mysql_port") {
+      ParseUint16(value, state.cfg->state_mysql.port);
+    } else if (key == "mysql_database") {
+      state.cfg->state_mysql.database = value;
+    } else if (key == "mysql_username") {
+      state.cfg->state_mysql.username = value;
+    } else if (key == "mysql_password") {
+      state.cfg->state_mysql.password.set(value);
+    }
+    return;
+  }
   if (state.section == "server") {
     if (key == "list_port") {
       ParseUint16(value, state.cfg->server.listen_port);
@@ -203,6 +230,16 @@ void ApplyKV(IniState& state, const std::string& key,
       state.cfg->server.kt_signing_key = value;
     } else if (key == "key_protection") {
       ParseKeyProtection(value, state.cfg->server.key_protection);
+    } else if (key == "state_protection") {
+      ParseKeyProtection(value, state.cfg->server.state_protection);
+    } else if (key == "state_backend") {
+      ParseStateBackend(value, state.cfg->server.state_backend);
+    } else if (key == "metadata_protection") {
+      ParseKeyProtection(value, state.cfg->server.metadata_protection);
+    } else if (key == "metadata_key_path") {
+      state.cfg->server.metadata_key_path = value;
+    } else if (key == "metadata_key_hex") {
+      state.cfg->server.metadata_key_hex.set(value);
     } else if (key == "allow_legacy_login") {
       ParseBool(value, state.cfg->server.allow_legacy_login);
     } else if (key == "secure_delete_enabled") {
@@ -367,6 +404,19 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
       return false;
     }
   }
+  if (out_config.server.state_backend == StateBackend::kMySql) {
+    auto has_mysql = [](const MySqlConfig& cfg) {
+      return !cfg.host.empty() && cfg.port != 0 && !cfg.database.empty() &&
+             !cfg.username.empty() && cfg.password.size() > 0;
+    };
+    if (!has_mysql(out_config.state_mysql) && has_mysql(out_config.mysql)) {
+      out_config.state_mysql = out_config.mysql;
+    }
+    if (!has_mysql(out_config.state_mysql)) {
+      error = "state_mysql config incomplete";
+      return false;
+    }
+  }
   if (out_config.server.listen_port == 0) {
     error = "server listen port missing";
     return false;
@@ -387,6 +437,16 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   if (out_config.server.key_protection != KeyProtectionMode::kNone &&
       !mi::platform::SecureStoreSupported()) {
     error = "key_protection not supported on this platform";
+    return false;
+  }
+  if (out_config.server.state_protection != KeyProtectionMode::kNone &&
+      !mi::platform::SecureStoreSupported()) {
+    error = "state_protection not supported on this platform";
+    return false;
+  }
+  if (out_config.server.metadata_protection != KeyProtectionMode::kNone &&
+      !mi::platform::SecureStoreSupported()) {
+    error = "metadata_protection not supported on this platform";
     return false;
   }
   if (out_config.server.require_tls && !out_config.server.tls_enable) {

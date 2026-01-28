@@ -177,6 +177,7 @@ set(MI_E2EE_RUNTIME_SOURCES
 set(MI_E2EE_SERVER_SOURCES
   "${MI_E2EE_ROOT}/server/src/crypto.cpp"
   "${MI_E2EE_ROOT}/server/src/crypto_random.cpp"
+  "${MI_E2EE_ROOT}/server/src/protected_store.cpp"
   "${MI_E2EE_ROOT}/server/src/config.cpp"
   "${MI_E2EE_ROOT}/server/src/auth_provider.cpp"
   "${MI_E2EE_ROOT}/server/src/pake.cpp"

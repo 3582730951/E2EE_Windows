@@ -23,6 +23,7 @@
 #include "hex_utils.h"
 #include "monocypher.h"
 #include "path_security.h"
+#include "protected_store.h"
 #include "platform_fs.h"
 #include "secure_buffer.h"
 
@@ -64,6 +65,16 @@ constexpr std::array<std::uint8_t, 8> kOfflineMetaMagic = {
 constexpr std::uint8_t kOfflineMetaVersion = 1;
 constexpr std::size_t kOfflineMetaHeaderBytes =
     kOfflineMetaMagic.size() + 1 + 3 + 8 + 8 + 4;
+constexpr std::array<std::uint8_t, 8> kOfflineMetaMapMagic = {
+    'M', 'I', 'O', 'F', 'M', 'A', 'P', '1'};
+constexpr std::uint8_t kOfflineMetaMapVersion = 1;
+constexpr std::size_t kOfflineMetaMapHeaderBytes =
+    kOfflineMetaMapMagic.size() + 1 + 3 + 4;
+constexpr std::array<std::uint8_t, 8> kOfflineQueueStoreMagic = {
+    'M', 'I', 'O', 'Q', 'S', 'T', 'R', '1'};
+constexpr std::uint8_t kOfflineQueueStoreVersion = 1;
+constexpr std::size_t kOfflineQueueStoreHeaderBytes =
+    kOfflineQueueStoreMagic.size() + 1 + 3 + 4;
 
 mi::common::ByteBufferPool& OfflineStorageBufferPool() {
   static mi::common::ByteBufferPool pool(32, 16u * 1024u * 1024u);
@@ -245,6 +256,124 @@ bool DecodeOfflineMeta(const std::vector<std::uint8_t>& data,
   return true;
 }
 
+bool EncodeOfflineMetaMap(
+    const std::unordered_map<std::string, StoredFileMeta>& metadata,
+    const std::chrono::system_clock::time_point& now_sys,
+    const std::chrono::steady_clock::time_point& now_steady,
+    std::vector<std::uint8_t>& out) {
+  out.clear();
+  if (metadata.size() >
+      static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+    return false;
+  }
+  std::vector<std::string> keys;
+  keys.reserve(metadata.size());
+  for (const auto& kv : metadata) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+
+  out.reserve(kOfflineMetaMapHeaderBytes + keys.size() * 64);
+  out.insert(out.end(), kOfflineMetaMapMagic.begin(),
+             kOfflineMetaMapMagic.end());
+  out.push_back(kOfflineMetaMapVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  std::uint8_t buf32[4] = {};
+  WriteUint32Le(static_cast<std::uint32_t>(keys.size()), buf32);
+  out.insert(out.end(), buf32, buf32 + 4);
+
+  for (const auto& id : keys) {
+    const auto it = metadata.find(id);
+    if (it == metadata.end()) {
+      continue;
+    }
+    if (id.empty() ||
+        id.size() >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+    std::vector<std::uint8_t> meta_bytes;
+    StoredFileMeta meta = it->second;
+    if (!EncodeOfflineMeta(meta, now_sys, now_steady, meta_bytes)) {
+      return false;
+    }
+    if (meta_bytes.size() >
+        static_cast<std::size_t>(
+            (std::numeric_limits<std::uint32_t>::max)())) {
+      return false;
+    }
+    WriteUint32Le(static_cast<std::uint32_t>(id.size()), buf32);
+    out.insert(out.end(), buf32, buf32 + 4);
+    WriteUint32Le(static_cast<std::uint32_t>(meta_bytes.size()), buf32);
+    out.insert(out.end(), buf32, buf32 + 4);
+    out.insert(out.end(), id.begin(), id.end());
+    out.insert(out.end(), meta_bytes.begin(), meta_bytes.end());
+  }
+  return true;
+}
+
+bool DecodeOfflineMetaMap(
+    const std::vector<std::uint8_t>& data,
+    const std::chrono::system_clock::time_point& now_sys,
+    const std::chrono::steady_clock::time_point& now_steady,
+    std::unordered_map<std::string, StoredFileMeta>& out) {
+  out.clear();
+  if (data.size() < kOfflineMetaMapHeaderBytes) {
+    return false;
+  }
+  if (!std::equal(kOfflineMetaMapMagic.begin(), kOfflineMetaMapMagic.end(),
+                  data.begin())) {
+    return false;
+  }
+  std::size_t off = kOfflineMetaMapMagic.size();
+  const std::uint8_t version = data[off++];
+  if (version != kOfflineMetaMapVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 4 > data.size()) {
+    return false;
+  }
+  const std::uint32_t count = ReadUint32Le(data.data() + off);
+  off += 4;
+  out.reserve(count);
+
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (off + 8 > data.size()) {
+      return false;
+    }
+    const std::uint32_t id_len = ReadUint32Le(data.data() + off);
+    off += 4;
+    const std::uint32_t meta_len = ReadUint32Le(data.data() + off);
+    off += 4;
+    if (id_len == 0 || off + id_len + meta_len > data.size()) {
+      return false;
+    }
+    std::string id(
+        reinterpret_cast<const char*>(data.data() + off),
+        reinterpret_cast<const char*>(data.data() + off + id_len));
+    off += id_len;
+    std::vector<std::uint8_t> meta_bytes;
+    if (meta_len != 0) {
+      meta_bytes.assign(data.begin() + static_cast<std::ptrdiff_t>(off),
+                        data.begin() +
+                            static_cast<std::ptrdiff_t>(off + meta_len));
+      off += meta_len;
+    }
+    StoredFileMeta meta;
+    if (!DecodeOfflineMeta(meta_bytes, now_sys, now_steady, meta)) {
+      return false;
+    }
+    meta.id = id;
+    out.emplace(std::move(id), std::move(meta));
+  }
+
+  return off == data.size();
+}
+
 std::string FormatMessageId(std::uint64_t id) {
   std::ostringstream oss;
   oss << std::setw(20) << std::setfill('0') << id;
@@ -309,13 +438,21 @@ BlobDownloadChunkResult::~BlobDownloadChunkResult() {
 
 OfflineStorage::OfflineStorage(std::filesystem::path base_dir,
                                std::chrono::seconds ttl,
-                               SecureDeleteConfig secure_delete)
+                               SecureDeleteConfig secure_delete,
+                               KeyProtectionMode state_protection,
+                               StateStore* state_store)
     : base_dir_(std::move(base_dir)),
       ttl_(ttl),
-      secure_delete_(std::move(secure_delete)) {
+      secure_delete_(std::move(secure_delete)),
+      state_protection_(state_protection),
+      state_store_(state_store) {
   std::error_code ec;
   std::filesystem::create_directories(base_dir_, ec);
-  LoadMetadataFromDisk();
+  if (state_store_) {
+    (void)LoadMetadataFromStore();
+  } else {
+    LoadMetadataFromDisk();
+  }
   if (secure_delete_.enabled) {
     std::string err;
     if (!LoadSecureDeletePlugin(secure_delete_.plugin_path, err)) {
@@ -354,13 +491,22 @@ bool OfflineStorage::PersistMetadata(const StoredFileMeta& meta,
     error = "metadata encode failed";
     return false;
   }
+  std::vector<std::uint8_t> protected_bytes;
+  std::string protect_err;
+  if (!EncodeProtectedFileBytes(bytes, state_protection_, protected_bytes,
+                                protect_err)) {
+    error = protect_err.empty() ? "metadata protect failed" : protect_err;
+    return false;
+  }
   const auto path = ResolveMetaPath(meta.id);
   if (path.empty()) {
     error = "metadata path invalid";
     return false;
   }
   std::error_code ec;
-  if (!pfs::AtomicWrite(path, bytes.data(), bytes.size(), ec) || ec) {
+  if (!pfs::AtomicWrite(path, protected_bytes.data(), protected_bytes.size(),
+                        ec) ||
+      ec) {
     error = "metadata write failed";
     return false;
   }
@@ -427,14 +573,26 @@ void OfflineStorage::LoadMetadataFromDisk() {
         drop_file(path);
         continue;
       }
+      std::vector<std::uint8_t> plain;
+      bool was_protected = false;
+      std::string protect_err;
+      if (!DecodeProtectedFileBytes(bytes, state_protection_, plain,
+                                    was_protected, protect_err)) {
+        drop_file(path);
+        continue;
+      }
       StoredFileMeta meta;
-      if (!DecodeOfflineMeta(bytes, now_sys, now_steady, meta)) {
+      if (!DecodeOfflineMeta(plain, now_sys, now_steady, meta)) {
         drop_file(path);
         continue;
       }
       meta.id = stem;
       loaded.emplace(stem, std::move(meta));
       meta_ids.insert(stem);
+      if (!was_protected && state_protection_ != KeyProtectionMode::kNone) {
+        std::string write_err;
+        (void)PersistMetadata(meta, write_err);
+      }
       continue;
     }
     if (ext == ".bin") {
@@ -473,6 +631,102 @@ void OfflineStorage::LoadMetadataFromDisk() {
     std::lock_guard<std::mutex> lock(mutex_);
     metadata_.swap(loaded);
   }
+}
+
+bool OfflineStorage::LoadMetadataFromStore() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("offline_storage_meta", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    std::error_code ec;
+    if (!base_dir_.empty() && std::filesystem::exists(base_dir_, ec) && !ec) {
+      LoadMetadataFromDisk();
+      return SaveMetadataToStore();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      metadata_.clear();
+    }
+    return true;
+  }
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  std::unordered_map<std::string, StoredFileMeta> loaded;
+  if (!DecodeOfflineMetaMap(blob.data, now_sys, now_steady, loaded)) {
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    metadata_.swap(loaded);
+  }
+  return true;
+}
+
+bool OfflineStorage::LoadMetadataFromStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("offline_storage_meta", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    metadata_.clear();
+    return true;
+  }
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  std::unordered_map<std::string, StoredFileMeta> loaded;
+  if (!DecodeOfflineMetaMap(blob.data, now_sys, now_steady, loaded)) {
+    return false;
+  }
+  metadata_.swap(loaded);
+  return true;
+}
+
+bool OfflineStorage::SaveMetadataToStore() {
+  if (!state_store_) {
+    return true;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  return SaveMetadataToStoreLocked();
+}
+
+bool OfflineStorage::SaveMetadataToStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::string lock_err;
+  StateStoreLock lock(state_store_, "offline_storage_meta",
+                      std::chrono::milliseconds(5000), lock_err);
+  if (!lock.locked()) {
+    return false;
+  }
+  return SaveMetadataToStoreLockedUnlocked();
+}
+
+bool OfflineStorage::SaveMetadataToStoreLockedUnlocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::vector<std::uint8_t> out;
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  if (!EncodeOfflineMetaMap(metadata_, now_sys, now_steady, out)) {
+    return false;
+  }
+  std::string store_err;
+  if (!state_store_->SaveBlob("offline_storage_meta", out, store_err)) {
+    return false;
+  }
+  return true;
 }
 
 PutResult OfflineStorage::Put(const std::string& owner,
@@ -585,15 +839,39 @@ PutResult OfflineStorage::Put(const std::string& owner,
   meta.created_at = std::chrono::steady_clock::now();
 
   std::string meta_err;
-  if (!PersistMetadata(meta, meta_err)) {
-    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+  if (state_store_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lock_err;
+    StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                              std::chrono::milliseconds(5000), lock_err);
+    if (!store_lock.locked()) {
+      meta_err = "metadata store lock failed";
+    } else if (!LoadMetadataFromStoreLocked()) {
+      meta_err = "metadata store load failed";
+    } else {
+      metadata_[id] = meta;
+      if (!SaveMetadataToStoreLockedUnlocked()) {
+        metadata_.erase(id);
+        meta_err = "metadata store save failed";
+      }
+    }
+  } else {
+    if (!PersistMetadata(meta, meta_err)) {
+      result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+      crypto_wipe(file_key.data(), file_key.size());
+      WipeFile(path);
+      return result;
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      metadata_[id] = meta;
+    }
+  }
+  if (!meta_err.empty()) {
+    result.error = meta_err;
     crypto_wipe(file_key.data(), file_key.size());
     WipeFile(path);
     return result;
-  }
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    metadata_[id] = meta;
   }
 
   result.success = true;
@@ -630,14 +908,37 @@ PutBlobResult OfflineStorage::PutBlob(const std::string& owner,
   meta.created_at = std::chrono::steady_clock::now();
 
   std::string meta_err;
-  if (!PersistMetadata(meta, meta_err)) {
-    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+  if (state_store_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lock_err;
+    StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                              std::chrono::milliseconds(5000), lock_err);
+    if (!store_lock.locked()) {
+      meta_err = "metadata store lock failed";
+    } else if (!LoadMetadataFromStoreLocked()) {
+      meta_err = "metadata store load failed";
+    } else {
+      metadata_[id] = meta;
+      if (!SaveMetadataToStoreLockedUnlocked()) {
+        metadata_.erase(id);
+        meta_err = "metadata store save failed";
+      }
+    }
+  } else {
+    if (!PersistMetadata(meta, meta_err)) {
+      result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+      WipeFile(path);
+      return result;
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      metadata_[id] = meta;
+    }
+  }
+  if (!meta_err.empty()) {
+    result.error = meta_err;
     WipeFile(path);
     return result;
-  }
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    metadata_[id] = meta;
   }
 
   result.success = true;
@@ -800,6 +1101,12 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
     result.error = "payload too large";
     return result;
   }
+  if (state_store_) {
+    if (!LoadMetadataFromStore()) {
+      result.error = "metadata store load failed";
+      return result;
+    }
+  }
 
   BlobUploadSession sess;
   {
@@ -836,14 +1143,37 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
   meta.created_at = sess.created_at;
 
   std::string meta_err;
-  if (!PersistMetadata(meta, meta_err)) {
-    result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+  if (state_store_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lock_err;
+    StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                              std::chrono::milliseconds(5000), lock_err);
+    if (!store_lock.locked()) {
+      meta_err = "metadata store lock failed";
+    } else if (!LoadMetadataFromStoreLocked()) {
+      meta_err = "metadata store load failed";
+    } else {
+      metadata_[file_id] = meta;
+      if (!SaveMetadataToStoreLockedUnlocked()) {
+        metadata_.erase(file_id);
+        meta_err = "metadata store save failed";
+      }
+    }
+  } else {
+    if (!PersistMetadata(meta, meta_err)) {
+      result.error = meta_err.empty() ? "metadata write failed" : meta_err;
+      WipeFile(final_path);
+      return result;
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      metadata_[file_id] = meta;
+    }
+  }
+  if (!meta_err.empty()) {
+    result.error = meta_err;
     WipeFile(final_path);
     return result;
-  }
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    metadata_[file_id] = meta;
   }
 
   result.success = true;
@@ -876,6 +1206,12 @@ BlobDownloadStartResult OfflineStorage::BeginBlobDownload(
   if (ec || size == 0) {
     result.error = "file not found";
     return result;
+  }
+  if (state_store_) {
+    if (!LoadMetadataFromStore()) {
+      result.error = "metadata store load failed";
+      return result;
+    }
   }
 
   const std::string download_id = GenerateSessionId();
@@ -999,7 +1335,20 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
       wipe = it->second.wipe_after_read;
       blob_downloads_.erase(it);
       if (wipe) {
-        metadata_.erase(file_id);
+        if (state_store_) {
+          std::string lock_err;
+          StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                                    std::chrono::milliseconds(5000),
+                                    lock_err);
+          if (store_lock.locked()) {
+            if (LoadMetadataFromStoreLocked()) {
+              metadata_.erase(file_id);
+              (void)SaveMetadataToStoreLockedUnlocked();
+            }
+          }
+        } else {
+          metadata_.erase(file_id);
+        }
       }
     }
   }
@@ -1020,6 +1369,12 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
   if (!IsValidFileId(file_id)) {
     error = "invalid file id";
     return std::nullopt;
+  }
+  if (state_store_) {
+    if (!LoadMetadataFromStore()) {
+      error = "metadata store load failed";
+      return std::nullopt;
+    }
   }
   const auto path = ResolvePath(file_id);
   std::ifstream ifs(path, std::ios::binary);
@@ -1326,7 +1681,19 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::Fetch(
   if (wipe_after_read) {
     WipeFile(path);
     std::lock_guard<std::mutex> lock(mutex_);
-    metadata_.erase(file_id);
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (store_lock.locked()) {
+        if (LoadMetadataFromStoreLocked()) {
+          metadata_.erase(file_id);
+          (void)SaveMetadataToStoreLockedUnlocked();
+        }
+      }
+    } else {
+      metadata_.erase(file_id);
+    }
   }
 
   error.clear();
@@ -1338,6 +1705,12 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
   if (!IsValidFileId(file_id)) {
     error = "invalid file id";
     return std::nullopt;
+  }
+  if (state_store_) {
+    if (!LoadMetadataFromStore()) {
+      error = "metadata store load failed";
+      return std::nullopt;
+    }
   }
   const auto path = ResolvePath(file_id);
   std::ifstream ifs(path, std::ios::binary);
@@ -1373,7 +1746,19 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
   if (wipe_after_read) {
     WipeFile(path);
     std::lock_guard<std::mutex> lock(mutex_);
-    metadata_.erase(file_id);
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (store_lock.locked()) {
+        if (LoadMetadataFromStoreLocked()) {
+          metadata_.erase(file_id);
+          (void)SaveMetadataToStoreLockedUnlocked();
+        }
+      }
+    } else {
+      metadata_.erase(file_id);
+    }
   }
 
   error.clear();
@@ -1381,9 +1766,12 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
 }
 
 std::optional<StoredFileMeta> OfflineStorage::Meta(
-    const std::string& file_id) const {
+    const std::string& file_id) {
   if (!IsValidFileId(file_id)) {
     return std::nullopt;
+  }
+  if (state_store_) {
+    (void)LoadMetadataFromStore();
   }
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = metadata_.find(file_id);
@@ -1393,8 +1781,11 @@ std::optional<StoredFileMeta> OfflineStorage::Meta(
   return it->second;
 }
 
-OfflineStorageStats OfflineStorage::GetStats() const {
+OfflineStorageStats OfflineStorage::GetStats() {
   OfflineStorageStats stats;
+  if (state_store_) {
+    (void)LoadMetadataFromStore();
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   stats.files = static_cast<std::uint64_t>(metadata_.size());
   for (const auto& kv : metadata_) {
@@ -1406,13 +1797,35 @@ OfflineStorageStats OfflineStorage::GetStats() const {
 void OfflineStorage::CleanupExpired() {
   const auto now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(mutex_);
-  for (auto it = metadata_.begin(); it != metadata_.end();) {
-    if (now - it->second.created_at > ttl_) {
-      const auto path = ResolvePath(it->first);
-      WipeFile(path);
-      it = metadata_.erase(it);
-    } else {
-      ++it;
+  bool removed = false;
+  if (state_store_) {
+    std::string lock_err;
+    StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                              std::chrono::milliseconds(5000), lock_err);
+    if (store_lock.locked() && LoadMetadataFromStoreLocked()) {
+      for (auto it = metadata_.begin(); it != metadata_.end();) {
+        if (now - it->second.created_at > ttl_) {
+          const auto path = ResolvePath(it->first);
+          WipeFile(path);
+          it = metadata_.erase(it);
+          removed = true;
+        } else {
+          ++it;
+        }
+      }
+      if (removed) {
+        (void)SaveMetadataToStoreLockedUnlocked();
+      }
+    }
+  } else {
+    for (auto it = metadata_.begin(); it != metadata_.end();) {
+      if (now - it->second.created_at > ttl_) {
+        const auto path = ResolvePath(it->first);
+        WipeFile(path);
+        it = metadata_.erase(it);
+      } else {
+        ++it;
+      }
     }
   }
 
@@ -1819,7 +2232,7 @@ std::filesystem::path OfflineQueue::MessagePath(
 
 void OfflineQueue::DeleteMessageFile(const std::string& recipient,
                                      std::uint64_t message_id) const {
-  if (!persistence_enabled_) {
+  if (!persistence_enabled_ || state_store_) {
     return;
   }
   const auto path = MessagePath(recipient, message_id);
@@ -1842,7 +2255,7 @@ void OfflineQueue::DeleteMessageFile(const std::string& recipient,
 bool OfflineQueue::PersistMessage(
     const StoredMessage& stored,
     std::chrono::system_clock::time_point created_at_sys) {
-  if (!persistence_enabled_) {
+  if (!persistence_enabled_ || state_store_) {
     return true;
   }
   if (stored.msg.recipient.empty()) {
@@ -1917,29 +2330,44 @@ bool OfflineQueue::PersistMessage(
   WriteUint32Le(payload_len, header.data() + off);
   off += 4;
 
+  std::vector<std::uint8_t> plain;
+  plain.reserve(kOfflineQueueHeaderBytes +
+                static_cast<std::size_t>(recipient_len) +
+                static_cast<std::size_t>(sender_len) +
+                static_cast<std::size_t>(group_len) +
+                static_cast<std::size_t>(payload_len));
+  plain.insert(plain.end(), header.begin(), header.end());
+  if (recipient_len != 0) {
+    plain.insert(plain.end(), stored.msg.recipient.begin(),
+                 stored.msg.recipient.end());
+  }
+  if (sender_len != 0) {
+    plain.insert(plain.end(), stored.msg.sender.begin(),
+                 stored.msg.sender.end());
+  }
+  if (group_len != 0) {
+    plain.insert(plain.end(), stored.msg.group_id.begin(),
+                 stored.msg.group_id.end());
+  }
+  if (payload_len != 0) {
+    plain.insert(plain.end(), stored.msg.payload.begin(),
+                 stored.msg.payload.end());
+  }
+
+  std::vector<std::uint8_t> protected_bytes;
+  std::string protect_err;
+  if (!EncodeProtectedFileBytes(plain, state_protection_, protected_bytes,
+                                protect_err)) {
+    return false;
+  }
+
   const std::filesystem::path tmp = path.string() + ".tmp";
   std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     return false;
   }
-  ofs.write(reinterpret_cast<const char*>(header.data()),
-            static_cast<std::streamsize>(header.size()));
-  if (recipient_len != 0) {
-    ofs.write(stored.msg.recipient.data(),
-              static_cast<std::streamsize>(recipient_len));
-  }
-  if (sender_len != 0) {
-    ofs.write(stored.msg.sender.data(),
-              static_cast<std::streamsize>(sender_len));
-  }
-  if (group_len != 0) {
-    ofs.write(stored.msg.group_id.data(),
-              static_cast<std::streamsize>(group_len));
-  }
-  if (payload_len != 0) {
-    ofs.write(reinterpret_cast<const char*>(stored.msg.payload.data()),
-              static_cast<std::streamsize>(payload_len));
-  }
+  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
+            static_cast<std::streamsize>(protected_bytes.size()));
   ofs.close();
   if (!ofs.good()) {
     std::filesystem::remove(tmp, ec);
@@ -2014,6 +2442,21 @@ bool OfflineQueue::LoadFromDisk() {
         ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
       purge(path);
       continue;
+    }
+
+    bool need_rewrap = false;
+    {
+      std::vector<std::uint8_t> plain;
+      bool was_protected = false;
+      std::string protect_err;
+      if (!DecodeProtectedFileBytes(bytes, state_protection_, plain,
+                                    was_protected, protect_err)) {
+        purge(path);
+        continue;
+      }
+      need_rewrap =
+          !was_protected && state_protection_ != KeyProtectionMode::kNone;
+      bytes.swap(plain);
     }
 
     if (bytes.size() < kOfflineQueueHeaderBytes ||
@@ -2134,6 +2577,9 @@ bool OfflineQueue::LoadFromDisk() {
     stored.msg.created_at = now_steady - age_steady;
     stored.expires_at = stored.msg.created_at + stored.msg.ttl;
 
+    if (need_rewrap) {
+      PersistMessage(stored, created_sys);
+    }
     loaded[recipient].push_back(std::move(stored));
     const auto shard_index = ShardIndexFor(recipient);
     if (message_id > max_ids[shard_index]) {
@@ -2172,19 +2618,415 @@ bool OfflineQueue::LoadFromDisk() {
   return true;
 }
 
+bool OfflineQueue::LoadFromStore() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("offline_queue", blob, load_err)) {
+    return false;
+  }
+  if (!blob.found || blob.data.empty()) {
+    if (persistence_enabled_ && !persist_dir_.empty()) {
+      if (!LoadFromDisk()) {
+        return false;
+      }
+      return SaveToStore();
+    }
+    return true;
+  }
+  return LoadFromStoreLocked();
+}
+
+bool OfflineQueue::LoadFromStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  BlobLoadResult blob;
+  std::string load_err;
+  if (!state_store_->LoadBlob("offline_queue", blob, load_err)) {
+    return false;
+  }
+  auto locks = [&]() {
+    std::vector<std::unique_lock<std::mutex>> held;
+    held.reserve(kShardCount);
+    for (auto& shard : shards_) {
+      held.emplace_back(shard.mutex);
+    }
+    return held;
+  }();
+
+  if (!blob.found || blob.data.empty()) {
+    for (auto& shard : shards_) {
+      shard.recipients.clear();
+      shard.expiries = decltype(shard.expiries)();
+      shard.next_id = 1;
+    }
+    return true;
+  }
+  if (blob.data.size() < kOfflineQueueStoreHeaderBytes) {
+    return false;
+  }
+  if (!std::equal(kOfflineQueueStoreMagic.begin(),
+                  kOfflineQueueStoreMagic.end(),
+                  blob.data.begin())) {
+    return false;
+  }
+  std::size_t off = kOfflineQueueStoreMagic.size();
+  const std::uint8_t version = blob.data[off++];
+  if (version != kOfflineQueueStoreVersion) {
+    return false;
+  }
+  off += 3;
+  if (off + 4 > blob.data.size()) {
+    return false;
+  }
+  const std::uint32_t count = ReadUint32Le(blob.data.data() + off);
+  off += 4;
+
+  const auto now_sys = std::chrono::system_clock::now();
+  const auto now_steady = std::chrono::steady_clock::now();
+  std::unordered_map<std::string, std::vector<StoredMessage>> loaded;
+  std::array<std::uint64_t, kShardCount> max_ids{};
+  constexpr std::size_t kRecordHeaderBytes = 1 + 3 + 8 + 8 + 4 + 4 + 4 + 4 + 4;
+
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (off + 4 > blob.data.size()) {
+      return false;
+    }
+    const std::uint32_t record_len = ReadUint32Le(blob.data.data() + off);
+    off += 4;
+    if (record_len < kRecordHeaderBytes ||
+        off + record_len > blob.data.size()) {
+      return false;
+    }
+    std::size_t rec_off = off;
+    const std::uint8_t kind = blob.data[rec_off++];
+    rec_off += 3;
+    const std::uint64_t message_id =
+        ReadUint64Le(blob.data.data() + rec_off);
+    rec_off += 8;
+    const std::uint64_t created_ms =
+        ReadUint64Le(blob.data.data() + rec_off);
+    rec_off += 8;
+    const std::uint32_t ttl_sec_raw =
+        ReadUint32Le(blob.data.data() + rec_off);
+    rec_off += 4;
+    const std::uint32_t recipient_len =
+        ReadUint32Le(blob.data.data() + rec_off);
+    rec_off += 4;
+    const std::uint32_t sender_len =
+        ReadUint32Le(blob.data.data() + rec_off);
+    rec_off += 4;
+    const std::uint32_t group_len =
+        ReadUint32Le(blob.data.data() + rec_off);
+    rec_off += 4;
+    const std::uint32_t payload_len =
+        ReadUint32Le(blob.data.data() + rec_off);
+    rec_off += 4;
+
+    const std::uint64_t expected =
+        kRecordHeaderBytes +
+        static_cast<std::uint64_t>(recipient_len) +
+        static_cast<std::uint64_t>(sender_len) +
+        static_cast<std::uint64_t>(group_len) +
+        static_cast<std::uint64_t>(payload_len);
+    if (recipient_len == 0 ||
+        expected != static_cast<std::uint64_t>(record_len)) {
+      return false;
+    }
+    if (kind > static_cast<std::uint8_t>(QueueMessageKind::kGroupNotice)) {
+      return false;
+    }
+
+    const auto read_str = [&](std::string& out, std::uint32_t len) -> bool {
+      if (len == 0) {
+        out.clear();
+        return true;
+      }
+      if (rec_off + len > blob.data.size()) {
+        return false;
+      }
+      out.assign(reinterpret_cast<const char*>(blob.data.data() + rec_off),
+                 reinterpret_cast<const char*>(blob.data.data() + rec_off + len));
+      rec_off += len;
+      return true;
+    };
+    std::string recipient;
+    std::string sender;
+    std::string group_id;
+    if (!read_str(recipient, recipient_len) ||
+        !read_str(sender, sender_len) ||
+        !read_str(group_id, group_len)) {
+      return false;
+    }
+    if (rec_off + payload_len > blob.data.size()) {
+      return false;
+    }
+    std::vector<std::uint8_t> payload;
+    if (payload_len != 0) {
+      payload.assign(
+          blob.data.begin() + static_cast<std::ptrdiff_t>(rec_off),
+          blob.data.begin() +
+              static_cast<std::ptrdiff_t>(rec_off + payload_len));
+      rec_off += payload_len;
+    }
+    if (rec_off != off + record_len) {
+      return false;
+    }
+
+    std::uint64_t ttl_val =
+        ttl_sec_raw == 0
+            ? static_cast<std::uint64_t>(default_ttl_.count())
+            : static_cast<std::uint64_t>(ttl_sec_raw);
+    if (ttl_val >
+        static_cast<std::uint64_t>(
+            (std::numeric_limits<std::uint32_t>::max)())) {
+      ttl_val =
+          static_cast<std::uint64_t>(
+              (std::numeric_limits<std::uint32_t>::max)());
+    }
+    const std::uint32_t ttl_sec = static_cast<std::uint32_t>(ttl_val);
+    if (ttl_sec == 0) {
+      off += record_len;
+      continue;
+    }
+
+    StoredMessage stored;
+    stored.message_id = message_id;
+    stored.msg.kind = static_cast<QueueMessageKind>(kind);
+    stored.msg.recipient = recipient;
+    stored.msg.sender = sender;
+    stored.msg.group_id = group_id;
+    stored.msg.payload = std::move(payload);
+    stored.msg.ttl = std::chrono::seconds(ttl_sec);
+
+    const auto created_sys = UnixMsToTimepoint(created_ms);
+    const auto age = created_sys > now_sys
+                         ? std::chrono::system_clock::duration::zero()
+                         : now_sys - created_sys;
+    if (age >= stored.msg.ttl) {
+      off += record_len;
+      continue;
+    }
+    const auto age_steady =
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(age);
+    stored.msg.created_at = now_steady - age_steady;
+    stored.expires_at = stored.msg.created_at + stored.msg.ttl;
+
+    loaded[recipient].push_back(std::move(stored));
+    const auto shard_index = ShardIndexFor(recipient);
+    if (message_id > max_ids[shard_index]) {
+      max_ids[shard_index] = message_id;
+    }
+
+    off += record_len;
+  }
+  if (off != blob.data.size()) {
+    return false;
+  }
+
+  for (auto& shard : shards_) {
+    shard.recipients.clear();
+    shard.expiries = decltype(shard.expiries)();
+    shard.next_id = 1;
+  }
+
+  for (auto& kv : loaded) {
+    const std::string& recipient = kv.first;
+    auto& items = kv.second;
+    if (items.empty()) {
+      continue;
+    }
+    std::sort(items.begin(), items.end(),
+              [](const StoredMessage& a, const StoredMessage& b) {
+                return a.message_id < b.message_id;
+              });
+    auto& shard = shards_[ShardIndexFor(recipient)];
+    auto& queue = shard.recipients[recipient];
+    for (auto& stored : items) {
+      queue.messages.push_back(std::move(stored));
+      const auto it = std::prev(queue.messages.end());
+      queue.by_id.emplace(it->message_id, it);
+      shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
+    }
+  }
+
+  for (std::size_t i = 0; i < kShardCount; ++i) {
+    auto& shard = shards_[i];
+    if (max_ids[i] >= shard.next_id) {
+      shard.next_id = max_ids[i] + 1;
+    }
+  }
+  return true;
+}
+
+bool OfflineQueue::SaveToStore() {
+  return SaveToStoreLocked();
+}
+
+bool OfflineQueue::SaveToStoreLocked() {
+  if (!state_store_) {
+    return true;
+  }
+  std::string lock_err;
+  StateStoreLock lock(state_store_, "offline_queue",
+                      std::chrono::milliseconds(5000), lock_err);
+  if (!lock.locked()) {
+    return false;
+  }
+  return SaveToStoreLockedUnlocked();
+}
+
+bool OfflineQueue::SaveToStoreLockedUnlocked() {
+  if (!state_store_) {
+    return true;
+  }
+  auto locks = [&]() {
+    std::vector<std::unique_lock<std::mutex>> held;
+    held.reserve(kShardCount);
+    for (auto& shard : shards_) {
+      held.emplace_back(shard.mutex);
+    }
+    return held;
+  }();
+
+  const auto now_steady = std::chrono::steady_clock::now();
+  for (auto& shard : shards_) {
+    CleanupExpiredLocked(shard, now_steady);
+  }
+
+  std::vector<std::uint8_t> out;
+  out.reserve(kOfflineQueueStoreHeaderBytes + 128);
+  out.insert(out.end(), kOfflineQueueStoreMagic.begin(),
+             kOfflineQueueStoreMagic.end());
+  out.push_back(kOfflineQueueStoreVersion);
+  out.push_back(0);
+  out.push_back(0);
+  out.push_back(0);
+  const std::size_t count_offset = out.size();
+  std::uint8_t count_buf[4] = {};
+  out.insert(out.end(), count_buf, count_buf + 4);
+
+  std::uint32_t count = 0;
+  const auto now_sys = std::chrono::system_clock::now();
+  for (const auto& shard : shards_) {
+    for (const auto& entry : shard.recipients) {
+      for (const auto& stored : entry.second.messages) {
+        if (stored.msg.recipient.empty()) {
+          continue;
+        }
+        const std::size_t recipient_len = stored.msg.recipient.size();
+        const std::size_t sender_len = stored.msg.sender.size();
+        const std::size_t group_len = stored.msg.group_id.size();
+        const std::size_t payload_len = stored.msg.payload.size();
+        if (recipient_len >
+                static_cast<std::size_t>(
+                    (std::numeric_limits<std::uint32_t>::max)()) ||
+            sender_len >
+                static_cast<std::size_t>(
+                    (std::numeric_limits<std::uint32_t>::max)()) ||
+            group_len >
+                static_cast<std::size_t>(
+                    (std::numeric_limits<std::uint32_t>::max)()) ||
+            payload_len >
+                static_cast<std::size_t>(
+                    (std::numeric_limits<std::uint32_t>::max)())) {
+          return false;
+        }
+        const std::size_t record_len = (1 + 3 + 8 + 8 + 4 + 4 + 4 + 4 + 4) +
+                                       recipient_len + sender_len + group_len +
+                                       payload_len;
+        if (record_len >
+            static_cast<std::size_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+          return false;
+        }
+
+        std::uint8_t buf32[4] = {};
+        WriteUint32Le(static_cast<std::uint32_t>(record_len), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        out.push_back(static_cast<std::uint8_t>(stored.msg.kind));
+        out.push_back(0);
+        out.push_back(0);
+        out.push_back(0);
+        std::uint8_t buf64[8] = {};
+        WriteUint64Le(stored.message_id, buf64);
+        out.insert(out.end(), buf64, buf64 + 8);
+        const auto created_sys =
+            SystemFromSteady(stored.msg.created_at, now_sys, now_steady);
+        WriteUint64Le(UnixMsFrom(created_sys), buf64);
+        out.insert(out.end(), buf64, buf64 + 8);
+        std::uint64_t ttl_val =
+            stored.msg.ttl.count() > 0
+                ? static_cast<std::uint64_t>(stored.msg.ttl.count())
+                : static_cast<std::uint64_t>(default_ttl_.count());
+        if (ttl_val >
+            static_cast<std::uint64_t>(
+                (std::numeric_limits<std::uint32_t>::max)())) {
+          ttl_val =
+              static_cast<std::uint64_t>(
+                  (std::numeric_limits<std::uint32_t>::max)());
+        }
+        WriteUint32Le(static_cast<std::uint32_t>(ttl_val), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        WriteUint32Le(static_cast<std::uint32_t>(recipient_len), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        WriteUint32Le(static_cast<std::uint32_t>(sender_len), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        WriteUint32Le(static_cast<std::uint32_t>(group_len), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        WriteUint32Le(static_cast<std::uint32_t>(payload_len), buf32);
+        out.insert(out.end(), buf32, buf32 + 4);
+        out.insert(out.end(), stored.msg.recipient.begin(),
+                   stored.msg.recipient.end());
+        out.insert(out.end(), stored.msg.sender.begin(),
+                   stored.msg.sender.end());
+        out.insert(out.end(), stored.msg.group_id.begin(),
+                   stored.msg.group_id.end());
+        out.insert(out.end(), stored.msg.payload.begin(),
+                   stored.msg.payload.end());
+        if (count == (std::numeric_limits<std::uint32_t>::max)()) {
+          return false;
+        }
+        ++count;
+      }
+    }
+  }
+
+  std::uint8_t count_out[4] = {};
+  WriteUint32Le(count, count_out);
+  std::copy(count_out, count_out + 4, out.begin() + count_offset);
+
+  std::string store_err;
+  if (!state_store_->SaveBlob("offline_queue", out, store_err)) {
+    return false;
+  }
+  return true;
+}
+
 OfflineQueue::OfflineQueue(std::chrono::seconds default_ttl,
-                           std::filesystem::path persist_dir)
+                           std::filesystem::path persist_dir,
+                           KeyProtectionMode state_protection,
+                           StateStore* state_store)
     : default_ttl_(default_ttl == std::chrono::seconds::zero()
                        ? std::chrono::hours(24)
                        : default_ttl),
-      persist_dir_(std::move(persist_dir)) {
+      persist_dir_(std::move(persist_dir)),
+      state_protection_(state_protection),
+      state_store_(state_store) {
   if (!persist_dir_.empty()) {
     std::error_code ec;
     std::filesystem::create_directories(persist_dir_, ec);
     if (!ec) {
       persistence_enabled_ = true;
-      LoadFromDisk();
     }
+  }
+  if (state_store_) {
+    (void)LoadFromStore();
+  } else if (persistence_enabled_) {
+    LoadFromDisk();
   }
 }
 
@@ -2232,6 +3074,13 @@ void OfflineQueue::CleanupExpiredLocked(Shard& shard,
 void OfflineQueue::Enqueue(const std::string& recipient,
                            std::vector<std::uint8_t> payload,
                            std::chrono::seconds ttl) {
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
@@ -2257,12 +3106,22 @@ void OfflineQueue::Enqueue(const std::string& recipient,
     queue.by_id.emplace(it->message_id, it);
     shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
 }
 
 void OfflineQueue::EnqueuePrivate(const std::string& recipient,
                                   const std::string& sender,
                                   std::vector<std::uint8_t> payload,
                                   std::chrono::seconds ttl) {
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
@@ -2289,6 +3148,9 @@ void OfflineQueue::EnqueuePrivate(const std::string& recipient,
     queue.by_id.emplace(it->message_id, it);
     shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
 }
 
 void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
@@ -2296,6 +3158,13 @@ void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
                                       const std::string& sender,
                                       std::vector<std::uint8_t> payload,
                                       std::chrono::seconds ttl) {
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
@@ -2323,6 +3192,9 @@ void OfflineQueue::EnqueueGroupCipher(const std::string& recipient,
     queue.by_id.emplace(it->message_id, it);
     shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
 }
 
 void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
@@ -2330,6 +3202,13 @@ void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
                                       const std::string& sender,
                                       std::vector<std::uint8_t> payload,
                                       std::chrono::seconds ttl) {
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
@@ -2357,11 +3236,21 @@ void OfflineQueue::EnqueueGroupNotice(const std::string& recipient,
     queue.by_id.emplace(it->message_id, it);
     shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
 }
 
 void OfflineQueue::EnqueueDeviceSync(const std::string& recipient,
                                      std::vector<std::uint8_t> payload,
                                      std::chrono::seconds ttl) {
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   const auto now_sys = std::chrono::system_clock::now();
   StoredMessage stored;
@@ -2387,11 +3276,21 @@ void OfflineQueue::EnqueueDeviceSync(const std::string& recipient,
     queue.by_id.emplace(it->message_id, it);
     shard.expiries.push(ExpiryItem{it->expires_at, recipient, it->message_id});
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
 }
 
 std::vector<std::vector<std::uint8_t>> OfflineQueue::Drain(
     const std::string& recipient) {
   std::vector<std::vector<std::uint8_t>> out;
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
@@ -2429,12 +3328,22 @@ std::vector<std::vector<std::uint8_t>> OfflineQueue::Drain(
   for (const auto id : remove_ids) {
     DeleteMessageFile(recipient, id);
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
   return out;
 }
 
 std::vector<OfflineMessage> OfflineQueue::DrainPrivate(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
@@ -2472,12 +3381,22 @@ std::vector<OfflineMessage> OfflineQueue::DrainPrivate(
   for (const auto id : remove_ids) {
     DeleteMessageFile(recipient, id);
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
   return out;
 }
 
 std::vector<OfflineMessage> OfflineQueue::DrainGroupCipher(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
@@ -2515,12 +3434,22 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupCipher(
   for (const auto id : remove_ids) {
     DeleteMessageFile(recipient, id);
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
   return out;
 }
 
 std::vector<OfflineMessage> OfflineQueue::DrainGroupNotice(
     const std::string& recipient) {
   std::vector<OfflineMessage> out;
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
@@ -2558,12 +3487,22 @@ std::vector<OfflineMessage> OfflineQueue::DrainGroupNotice(
   for (const auto id : remove_ids) {
     DeleteMessageFile(recipient, id);
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
   return out;
 }
 
 std::vector<std::vector<std::uint8_t>> OfflineQueue::DrainDeviceSync(
     const std::string& recipient) {
   std::vector<std::vector<std::uint8_t>> out;
+  bool store_ready = false;
+  std::string lock_err;
+  StateStoreLock store_lock(state_store_, "offline_queue",
+                            std::chrono::milliseconds(5000), lock_err);
+  if (state_store_ && store_lock.locked()) {
+    store_ready = LoadFromStoreLocked();
+  }
   const auto now = std::chrono::steady_clock::now();
   std::vector<std::uint64_t> remove_ids;
   auto& shard = shards_[ShardIndexFor(recipient)];
@@ -2601,11 +3540,17 @@ std::vector<std::vector<std::uint8_t>> OfflineQueue::DrainDeviceSync(
   for (const auto id : remove_ids) {
     DeleteMessageFile(recipient, id);
   }
+  if (state_store_ && store_ready) {
+    (void)SaveToStoreLockedUnlocked();
+  }
   return out;
 }
 
-OfflineQueueStats OfflineQueue::GetStats() const {
+OfflineQueueStats OfflineQueue::GetStats() {
   OfflineQueueStats stats;
+  if (state_store_) {
+    (void)LoadFromStore();
+  }
   for (const auto& shard : shards_) {
     std::lock_guard<std::mutex> lock(shard.mutex);
     stats.recipients += static_cast<std::uint64_t>(shard.recipients.size());
@@ -2638,6 +3583,17 @@ OfflineQueueStats OfflineQueue::GetStats() const {
 }
 
 void OfflineQueue::CleanupExpired() {
+  if (state_store_) {
+    std::string lock_err;
+    StateStoreLock store_lock(state_store_, "offline_queue",
+                              std::chrono::milliseconds(5000), lock_err);
+    if (store_lock.locked()) {
+      if (LoadFromStoreLocked()) {
+        (void)SaveToStoreLockedUnlocked();
+      }
+    }
+    return;
+  }
   const auto now = std::chrono::steady_clock::now();
   for (auto& shard : shards_) {
     std::lock_guard<std::mutex> lock(shard.mutex);

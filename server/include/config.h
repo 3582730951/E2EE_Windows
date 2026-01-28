@@ -16,6 +16,7 @@ enum class KeyProtectionMode : std::uint8_t {
   kDpapiUser = 1,
   kDpapiMachine = 2
 };
+enum class StateBackend : std::uint8_t { kFile = 0, kMySql = 1 };
 
 struct MySqlConfig {
   std::string host;
@@ -56,6 +57,11 @@ struct ServerSection {
       KeyProtectionMode::kNone
 #endif
   };
+  KeyProtectionMode state_protection{KeyProtectionMode::kNone};
+  StateBackend state_backend{StateBackend::kFile};
+  KeyProtectionMode metadata_protection{KeyProtectionMode::kNone};
+  std::string metadata_key_path;
+  shard::ScrambledString metadata_key_hex;
   bool allow_legacy_login{false};
   bool secure_delete_enabled{false};
   bool secure_delete_required{false};
@@ -89,6 +95,7 @@ struct CallSection {
 struct ServerConfig {
   AuthMode mode{AuthMode::kMySQL};
   MySqlConfig mysql;
+  MySqlConfig state_mysql;
   ServerSection server;
   CallSection call;
 };

@@ -1,4 +1,5 @@
 #include "client_core.h"
+#include "client_core_helpers.h"
 #include "file_blob.h"
 #include "media_service.h"
 #include "transport_service.h"
@@ -53,6 +54,7 @@ int PQCLEAN_MLKEM768_CLEAN_crypto_kem_dec(std::uint8_t* ss,
 #include "config_service.h"
 #include "client_config.h"
 #include "hex_utils.h"
+#include "payload_padding.h"
 #include "secure_buffer.h"
 #include "security_service.h"
 #include "trust_store.h"
@@ -69,104 +71,7 @@ namespace pfs = mi::platform::fs;
 
 namespace {
 
-constexpr std::size_t kKtRootPubkeyBytes = mi::server::kKtSthSigPublicKeyBytes;
 constexpr std::size_t kMaxDeviceSyncKeyFileBytes = 64u * 1024u;
-
-std::string Trim(const std::string& input) {
-  const auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
-  auto begin = std::find_if_not(input.begin(), input.end(), is_space);
-  auto end = std::find_if_not(input.rbegin(), input.rend(), is_space).base();
-  if (begin >= end) {
-    return {};
-  }
-  return std::string(begin, end);
-}
-
-std::string ToLower(std::string s) {
-  for (auto& ch : s) {
-    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-  }
-  return s;
-}
-
-bool IsLoopbackHost(const std::string& host) {
-  const std::string h = ToLower(Trim(host));
-  return h == "127.0.0.1" || h == "localhost" || h == "::1";
-}
-
-bool ReadFileBytes(const std::filesystem::path& path,
-                   std::vector<std::uint8_t>& out,
-                   std::string& error) {
-  error.clear();
-  out.clear();
-  if (path.empty()) {
-    error = "kt root pubkey path empty";
-    return false;
-  }
-  std::error_code ec;
-  if (!pfs::Exists(path, ec)) {
-    error = ec ? "kt root pubkey path error" : "kt root pubkey not found";
-    return false;
-  }
-  const auto size = pfs::FileSize(path, ec);
-  if (ec) {
-    error = "kt root pubkey size stat failed";
-    return false;
-  }
-  if (size != kKtRootPubkeyBytes) {
-    error = "kt root pubkey size invalid";
-    return false;
-  }
-  std::ifstream ifs(path, std::ios::binary);
-  if (!ifs) {
-    error = "kt root pubkey not found";
-    return false;
-  }
-  out.resize(static_cast<std::size_t>(size));
-  ifs.read(reinterpret_cast<char*>(out.data()),
-           static_cast<std::streamsize>(out.size()));
-  if (!ifs) {
-    out.clear();
-    error = "kt root pubkey read failed";
-    return false;
-  }
-  return true;
-}
-
-bool TryLoadKtRootPubkeyFromLoopback(const std::filesystem::path& base_dir,
-                                     const std::string& host,
-                                     std::vector<std::uint8_t>& out,
-                                     std::string& error) {
-  out.clear();
-  error.clear();
-  if (!IsLoopbackHost(host)) {
-    return false;
-  }
-  std::vector<std::filesystem::path> candidates;
-  const std::filesystem::path base = base_dir.empty() ? std::filesystem::path{"."}
-                                                      : base_dir;
-  candidates.emplace_back(base / "kt_root_pub.bin");
-  candidates.emplace_back(base / "offline_store" / "kt_root_pub.bin");
-  const auto parent = base.parent_path();
-  if (!parent.empty()) {
-    candidates.emplace_back(parent / "s" / "kt_root_pub.bin");
-    candidates.emplace_back(parent / "s" / "offline_store" / "kt_root_pub.bin");
-    candidates.emplace_back(parent / "server" / "kt_root_pub.bin");
-    candidates.emplace_back(parent / "server" / "offline_store" / "kt_root_pub.bin");
-  }
-  std::string last_err;
-  for (const auto& path : candidates) {
-    std::string read_err;
-    if (ReadFileBytes(path, out, read_err)) {
-      return true;
-    }
-    if (!read_err.empty()) {
-      last_err = read_err;
-    }
-  }
-  error = last_err.empty() ? "kt root pubkey missing" : last_err;
-  return false;
-}
 
 bool RandomBytes(std::uint8_t* out, std::size_t len) {
   return mi::platform::RandomBytes(out, len);
@@ -174,120 +79,6 @@ bool RandomBytes(std::uint8_t* out, std::size_t len) {
 
 bool RandomUint32(std::uint32_t& out) {
   return mi::platform::RandomUint32(out);
-}
-
-std::uint32_t NowMs() {
-  return static_cast<std::uint32_t>(mi::platform::NowSteadyMs());
-}
-
-bool IsLowEndDevice() {
-  const unsigned int hc = std::thread::hardware_concurrency();
-  if (hc != 0 && hc <= 4) {
-    return true;
-  }
-  const std::uint64_t total = mi::platform::SystemMemoryTotalBytes();
-  constexpr std::uint64_t kLowEndMem = 4ull * 1024ull * 1024ull * 1024ull;
-  if (total != 0 && total <= kLowEndMem) {
-    return true;
-  }
-  return false;
-}
-
-bool ResolveCoverTrafficEnabled(const TrafficConfig& cfg) {
-  switch (cfg.cover_traffic_mode) {
-    case CoverTrafficMode::kOn:
-      return true;
-    case CoverTrafficMode::kOff:
-      return false;
-    case CoverTrafficMode::kAuto:
-    default:
-      return !IsLowEndDevice();
-  }
-}
-
-constexpr std::uint8_t kPadMagic[4] = {'M', 'I', 'P', 'D'};
-constexpr std::size_t kPadHeaderBytes = 8;
-constexpr std::size_t kPadBuckets[] = {256, 512, 1024, 2048, 4096, 8192, 16384};
-
-std::size_t SelectPadTarget(std::size_t min_len) {
-  for (const auto bucket : kPadBuckets) {
-    if (bucket >= min_len) {
-      if (bucket == min_len) {
-        return bucket;
-      }
-      std::uint32_t r = 0;
-      if (!RandomUint32(r)) {
-        return bucket;
-      }
-      const std::size_t span = bucket - min_len;
-      return min_len + (static_cast<std::size_t>(r) % (span + 1));
-    }
-  }
-  const std::size_t round = ((min_len + 4095) / 4096) * 4096;
-  if (round <= min_len) {
-    return min_len;
-  }
-  std::uint32_t r = 0;
-  if (!RandomUint32(r)) {
-    return round;
-  }
-  const std::size_t span = round - min_len;
-  return min_len + (static_cast<std::size_t>(r) % (span + 1));
-}
-
-bool PadPayload(const std::vector<std::uint8_t>& plain,
-                std::vector<std::uint8_t>& out,
-                std::string& error) {
-  error.clear();
-  out.clear();
-  if (plain.size() > (std::numeric_limits<std::uint32_t>::max)()) {
-    error = "pad size overflow";
-    return false;
-  }
-  const std::size_t min_len = kPadHeaderBytes + plain.size();
-  const std::size_t target_len = SelectPadTarget(min_len);
-  out.reserve(target_len);
-  out.insert(out.end(), kPadMagic, kPadMagic + sizeof(kPadMagic));
-  const std::uint32_t len32 = static_cast<std::uint32_t>(plain.size());
-  out.push_back(static_cast<std::uint8_t>(len32 & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len32 >> 8) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len32 >> 16) & 0xFF));
-  out.push_back(static_cast<std::uint8_t>((len32 >> 24) & 0xFF));
-  out.insert(out.end(), plain.begin(), plain.end());
-  if (out.size() < target_len) {
-    const std::size_t pad_len = target_len - out.size();
-    const std::size_t offset = out.size();
-    out.resize(target_len);
-    if (!RandomBytes(out.data() + offset, pad_len)) {
-      error = "pad rng failed";
-      return false;
-    }
-  }
-  return true;
-}
-
-bool UnpadPayload(const std::vector<std::uint8_t>& plain,
-                  std::vector<std::uint8_t>& out,
-                  std::string& error) {
-  error.clear();
-  out.clear();
-  if (plain.size() < kPadHeaderBytes ||
-      std::memcmp(plain.data(), kPadMagic, sizeof(kPadMagic)) != 0) {
-    out = plain;
-    return true;
-  }
-  const std::uint32_t len =
-      static_cast<std::uint32_t>(plain[4]) |
-      (static_cast<std::uint32_t>(plain[5]) << 8) |
-      (static_cast<std::uint32_t>(plain[6]) << 16) |
-      (static_cast<std::uint32_t>(plain[7]) << 24);
-  if (kPadHeaderBytes + len > plain.size()) {
-    error = "pad size invalid";
-    return false;
-  }
-  out.assign(plain.begin() + kPadHeaderBytes,
-             plain.begin() + kPadHeaderBytes + len);
-  return true;
 }
 
 bool IsAllZero(const std::uint8_t* data, std::size_t len) {
@@ -2671,7 +2462,7 @@ bool ClientCore::Init(const std::string& config_path) {
     identity_policy_.tpm_enable = cfg.identity.tpm_enable;
     identity_policy_.tpm_require = cfg.identity.tpm_require;
     pqc_precompute_pool_ = cfg.perf.pqc_precompute_pool;
-    cover_traffic_enabled_ = ResolveCoverTrafficEnabled(cfg.traffic);
+    cover_traffic_enabled_ = core_helpers::ResolveCoverTrafficEnabled(cfg.traffic);
     cover_traffic_interval_sec_ = cfg.traffic.cover_traffic_interval_sec;
     cover_traffic_last_sent_ms_ = 0;
     trust_store_path_.clear();
@@ -2737,7 +2528,7 @@ bool ClientCore::Init(const std::string& config_path) {
           key_path = config_dir / key_path;
         }
         std::string key_err;
-        if (!ReadFileBytes(key_path, key_bytes, key_err)) {
+        if (!core_helpers::ReadFileBytes(key_path, key_bytes, key_err)) {
           last_error_ = key_err.empty() ? "kt root pubkey load failed" : key_err;
           return false;
         }
@@ -2748,9 +2539,11 @@ bool ClientCore::Init(const std::string& config_path) {
         }
       } else {
         std::string key_err;
-        if (!TryLoadKtRootPubkeyFromLoopback(config_dir, server_ip_, key_bytes, key_err)) {
+        if (!core_helpers::TryLoadKtRootPubkeyFromLoopback(
+                config_dir, server_ip_, key_bytes, key_err)) {
           std::string data_err;
-          if (!TryLoadKtRootPubkeyFromLoopback(data_dir, server_ip_, key_bytes, data_err)) {
+          if (!core_helpers::TryLoadKtRootPubkeyFromLoopback(
+                  data_dir, server_ip_, key_bytes, data_err)) {
             if (data_err.empty()) {
               data_err = key_err;
             }
@@ -2839,7 +2632,8 @@ bool ClientCore::Init(const std::string& config_path) {
   pending_server_pin_.clear();
   identity_policy_ = mi::client::e2ee::IdentityPolicy{};
   pqc_precompute_pool_ = ClientConfig{}.perf.pqc_precompute_pool;
-  cover_traffic_enabled_ = ResolveCoverTrafficEnabled(ClientConfig{}.traffic);
+  cover_traffic_enabled_ =
+      core_helpers::ResolveCoverTrafficEnabled(ClientConfig{}.traffic);
   cover_traffic_interval_sec_ = ClientConfig{}.traffic.cover_traffic_interval_sec;
   cover_traffic_last_sent_ms_ = 0;
   last_error_.clear();
@@ -2930,7 +2724,7 @@ bool ClientCore::MaybeSendCoverTraffic() {
   }
   std::vector<std::uint8_t> payload;
   std::string pad_err;
-  if (!PadPayload({}, payload, pad_err)) {
+  if (!padding::PadPayload({}, payload, pad_err)) {
     return false;
   }
   const std::string saved_err = last_error_;

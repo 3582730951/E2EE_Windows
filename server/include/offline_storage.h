@@ -15,6 +15,9 @@
 #include <utility>
 #include <vector>
 
+#include "config.h"
+#include "state_store.h"
+
 namespace mi::server {
 
 enum class QueueMessageKind : std::uint8_t {
@@ -102,7 +105,9 @@ class OfflineStorage {
  public:
   OfflineStorage(std::filesystem::path base_dir,
                  std::chrono::seconds ttl = std::chrono::hours(12),
-                 SecureDeleteConfig secure_delete = {});
+                 SecureDeleteConfig secure_delete = {},
+                 KeyProtectionMode state_protection = KeyProtectionMode::kNone,
+                 StateStore* state_store = nullptr);
   ~OfflineStorage();
 
   PutResult Put(const std::string& owner,
@@ -140,9 +145,9 @@ class OfflineStorage {
   std::optional<std::vector<std::uint8_t>> FetchBlob(
       const std::string& file_id, bool wipe_after_read, std::string& error);
 
-  std::optional<StoredFileMeta> Meta(const std::string& file_id) const;
+  std::optional<StoredFileMeta> Meta(const std::string& file_id);
 
-  OfflineStorageStats GetStats() const;
+  OfflineStorageStats GetStats();
 
   void CleanupExpired();
   bool SecureDeleteReady() const { return secure_delete_ready_; }
@@ -153,6 +158,11 @@ class OfflineStorage {
 
   bool PersistMetadata(const StoredFileMeta& meta, std::string& error) const;
   void LoadMetadataFromDisk();
+  bool LoadMetadataFromStore();
+  bool LoadMetadataFromStoreLocked();
+  bool SaveMetadataToStore();
+  bool SaveMetadataToStoreLocked();
+  bool SaveMetadataToStoreLockedUnlocked();
   std::filesystem::path ResolvePath(const std::string& file_id) const;
   std::filesystem::path ResolveUploadTempPath(const std::string& file_id) const;
   std::filesystem::path ResolveKeyPath(const std::string& file_id) const;
@@ -210,6 +220,8 @@ class OfflineStorage {
   SecureDeleteFn secure_delete_fn_{nullptr};
   bool secure_delete_ready_{false};
   std::string secure_delete_error_;
+  KeyProtectionMode state_protection_{KeyProtectionMode::kNone};
+  StateStore* state_store_{nullptr};
   struct BlobUploadSession {
     std::string upload_id;
     std::string owner;
@@ -259,7 +271,9 @@ class OfflineQueue {
  public:
   explicit OfflineQueue(std::chrono::seconds default_ttl =
                             std::chrono::hours(24),
-                        std::filesystem::path persist_dir = {});
+                        std::filesystem::path persist_dir = {},
+                        KeyProtectionMode state_protection = KeyProtectionMode::kNone,
+                        StateStore* state_store = nullptr);
 
   void Enqueue(const std::string& recipient,
                std::vector<std::uint8_t> payload,
@@ -294,7 +308,7 @@ class OfflineQueue {
   std::vector<std::vector<std::uint8_t>> DrainDeviceSync(
       const std::string& recipient);
 
-  OfflineQueueStats GetStats() const;
+  OfflineQueueStats GetStats();
 
   void CleanupExpired();
   bool persistence_enabled() const { return persistence_enabled_; }
@@ -338,6 +352,11 @@ class OfflineQueue {
                             std::chrono::steady_clock::time_point now);
 
   bool LoadFromDisk();
+  bool LoadFromStore();
+  bool LoadFromStoreLocked();
+  bool SaveToStore();
+  bool SaveToStoreLocked();
+  bool SaveToStoreLockedUnlocked();
   bool PersistMessage(const StoredMessage& stored,
                       std::chrono::system_clock::time_point created_at_sys);
   void DeleteMessageFile(const std::string& recipient,
@@ -349,6 +368,8 @@ class OfflineQueue {
   std::chrono::seconds default_ttl_;
   std::filesystem::path persist_dir_;
   bool persistence_enabled_{false};
+  KeyProtectionMode state_protection_{KeyProtectionMode::kNone};
+  StateStore* state_store_{nullptr};
   std::array<Shard, kShardCount> shards_{};
 };
 

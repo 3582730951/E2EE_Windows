@@ -11,7 +11,9 @@
 #include <vector>
 
 #include "auth_provider.h"
+#include "config.h"
 #include "pake.h"
+#include "state_store.h"
 
 namespace mi::server {
 
@@ -68,7 +70,9 @@ class SessionManager {
   explicit SessionManager(std::unique_ptr<AuthProvider> auth,
                           std::chrono::seconds ttl = std::chrono::minutes(30),
                           std::vector<std::uint8_t> opaque_server_setup = {},
-                          std::filesystem::path persist_dir = {});
+                          std::filesystem::path persist_dir = {},
+                          KeyProtectionMode state_protection = KeyProtectionMode::kNone,
+                          StateStore* state_store = nullptr);
 
   bool Login(const std::string& username, const std::string& password,
              TransportKind transport, Session& out_session,
@@ -132,6 +136,11 @@ class SessionManager {
   void CleanupLoginFailuresLocked(std::chrono::steady_clock::time_point now);
   bool LoadSessionsLocked();
   bool SaveSessionsLocked();
+  bool LoadSessionsFromStoreLocked();
+  bool LoadSessionsFromFileLocked();
+  bool LoadSessionsFromBytesLocked(const std::vector<std::uint8_t>& bytes);
+  bool SaveSessionsToStoreLocked();
+  bool SaveSessionsToStoreLockedUnlocked();
 
   std::unique_ptr<AuthProvider> auth_;
   std::chrono::seconds ttl_;
@@ -145,6 +154,8 @@ class SessionManager {
   std::filesystem::path persist_path_;
   bool persistence_enabled_{false};
   bool dirty_{false};
+  KeyProtectionMode state_protection_{KeyProtectionMode::kNone};
+  StateStore* state_store_{nullptr};
 };
 
 }  // namespace mi::server

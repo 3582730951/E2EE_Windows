@@ -49,6 +49,11 @@ tools/           工具（third_party_audit 等）
 - 物理取证/系统级后门
 - 高级流量关联与侧信道（仅降低可识别性）
 
+元数据保护威胁模型（边界说明）：
+- E2EE 攻击模型：内容端到端加密，但服务端运行态仍可见路由/在线关系；落库状态使用独立元数据密钥加密，降低离线泄露。
+- 逆向/调试：IDA/OllyDbg 等动态调试与 Hook/注入会放大攻击面；端点硬化/反调试仅提高成本，无法对抗完全控制主机。
+- Root/提取：Android root/Linux root 可读取落地密钥或内存；SecureStore/密钥保护可缓解但不保证绝对安全。
+
 ## 快速开始（Demo）
 > Demo 模式用于本地测试；生产环境请启用 TLS + 预置 pin + KT 签名校验。
 
@@ -125,6 +130,10 @@ cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 4. 如需临时允许 TLS stub（仅调试/测试）：
    - `MI_E2EE_ANDROID_ALLOW_TLS_STUB=1`
 
+## 性能评估基准环境
+- PC：Intel i3 8 代 CPU，8GB 内存环境
+- Android：骁龙 888，4GB 内存环境
+
 ## 配置要点（摘要）
 服务端 `config.ini`：
 - `mode=0/1`（mysql/demo）
@@ -132,6 +141,8 @@ cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 - `tls_cert=mi_e2ee_server.pfx`
 - `kt_signing_key=kt_signing_key.bin`
 - `offline_dir=offline_store`
+- `state_backend=file|mysql|sql`（MySQL 兼容库，如 MariaDB/TiDB；状态表为单表 blob，便于迁移至兼容 SQL/半结构化 SQL 数据库）
+- `metadata_protection` / `metadata_key_path`（元数据密钥保护与落地路径）
 
 客户端 `client_config.ini`：
 - `use_tls=1` + `require_tls=1`
