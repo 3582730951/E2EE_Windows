@@ -283,21 +283,21 @@ jobs:
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
           $token = "abcdefghijklmnop"
-          $config = @"
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$offline
-ops_enable=1
-ops_allow_remote=0
-ops_token=$token
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$ktKey
-allow_legacy_login=0
-"@
+          $config = @(
+            "[mode]"
+            "mode=1"
+            "[server]"
+            "list_port=$port"
+            "offline_dir=$offline"
+            "ops_enable=1"
+            "ops_allow_remote=0"
+            "ops_token=$token"
+            "tls_enable=0"
+            "require_tls=0"
+            "key_protection=none"
+            "kt_signing_key=$ktKey"
+            "allow_legacy_login=0"
+          ) -join "`n"
           $configPath = Join-Path $work "config.ini"
           $config | Out-File -FilePath $configPath -Encoding ascii
           $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
@@ -380,39 +380,39 @@ allow_legacy_login=0
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
-          $serverConfig = @"
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$offline
-debug_log=0
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$ktKey
-allow_legacy_login=0
-"@
+          $serverConfig = @(
+            "[mode]"
+            "mode=1"
+            "[server]"
+            "list_port=$port"
+            "offline_dir=$offline"
+            "debug_log=0"
+            "tls_enable=0"
+            "require_tls=0"
+            "key_protection=none"
+            "kt_signing_key=$ktKey"
+            "allow_legacy_login=0"
+          ) -join "`n"
           $serverConfigPath = Join-Path $work "config.ini"
           $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
-          $clientConfig = @"
-[client]
-server_ip=127.0.0.1
-server_port=$port
-use_tls=0
-require_tls=0
-tls_verify_mode=ca
-auth_mode=opaque
-allow_legacy_login=0
-[traffic]
-cover_traffic_enabled=0
-[kt]
-require_signature=0
-[device_sync]
-enabled=0
-role=primary
-ratchet_enable=1
-"@
+          $clientConfig = @(
+            "[client]"
+            "server_ip=127.0.0.1"
+            "server_port=$port"
+            "use_tls=0"
+            "require_tls=0"
+            "tls_verify_mode=ca"
+            "auth_mode=opaque"
+            "allow_legacy_login=0"
+            "[traffic]"
+            "cover_traffic_enabled=0"
+            "[kt]"
+            "require_signature=0"
+            "[device_sync]"
+            "enabled=0"
+            "role=primary"
+            "ratchet_enable=1"
+          ) -join "`n"
           $clientConfigPath = Join-Path $work "client_config.ini"
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
@@ -517,31 +517,24 @@ ratchet_enable=1
           if ! command -v "$py" >/dev/null 2>&1; then
             py="python"
           fi
-          port=$("$py" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)
+          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
           token="abcdefghijklmnop"
-          cat > "$work/config.ini" <<EOF
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$work/offline
-ops_enable=1
-ops_allow_remote=0
-ops_token=$token
-debug_log=0
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$work/kt_signing_key.bin
-allow_legacy_login=0
-EOF
+          printf '%s\n' \
+            "[mode]" \
+            "mode=1" \
+            "[server]" \
+            "list_port=$port" \
+            "offline_dir=$work/offline" \
+            "ops_enable=1" \
+            "ops_allow_remote=0" \
+            "ops_token=$token" \
+            "debug_log=0" \
+            "tls_enable=0" \
+            "require_tls=0" \
+            "key_protection=none" \
+            "kt_signing_key=$work/kt_signing_key.bin" \
+            "allow_legacy_login=0" \
+            > "$work/config.ini"
           server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
           if [ -z "$server" ]; then
             echo "mi_e2ee_server not found" >&2
@@ -584,31 +577,24 @@ EOF
           if ! command -v "$py" >/dev/null 2>&1; then
             py="python"
           fi
-          port=$("$py" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)
+          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
           token="abcdefghijklmnop"
-          cat > "$work/config.ini" <<EOF
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$work/offline
-ops_enable=1
-ops_allow_remote=0
-ops_token=$token
-debug_log=0
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$work/kt_signing_key.bin
-allow_legacy_login=0
-EOF
+          printf '%s\n' \
+            "[mode]" \
+            "mode=1" \
+            "[server]" \
+            "list_port=$port" \
+            "offline_dir=$work/offline" \
+            "ops_enable=1" \
+            "ops_allow_remote=0" \
+            "ops_token=$token" \
+            "debug_log=0" \
+            "tls_enable=0" \
+            "require_tls=0" \
+            "key_protection=none" \
+            "kt_signing_key=$work/kt_signing_key.bin" \
+            "allow_legacy_login=0" \
+            > "$work/config.ini"
           server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
           if [ -z "$server" ]; then
             echo "mi_e2ee_server not found" >&2
@@ -741,31 +727,24 @@ EOF
           if ! command -v "$py" >/dev/null 2>&1; then
             py="python"
           fi
-          port=$("$py" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)
+          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
           token="abcdefghijklmnop"
-          cat > "$work/config.ini" <<EOF
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$work/offline
-ops_enable=1
-ops_allow_remote=0
-ops_token=$token
-debug_log=0
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$work/kt_signing_key.bin
-allow_legacy_login=0
-EOF
+          printf '%s\n' \
+            "[mode]" \
+            "mode=1" \
+            "[server]" \
+            "list_port=$port" \
+            "offline_dir=$work/offline" \
+            "ops_enable=1" \
+            "ops_allow_remote=0" \
+            "ops_token=$token" \
+            "debug_log=0" \
+            "tls_enable=0" \
+            "require_tls=0" \
+            "key_protection=none" \
+            "kt_signing_key=$work/kt_signing_key.bin" \
+            "allow_legacy_login=0" \
+            > "$work/config.ini"
           server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
           if [ -z "$server" ]; then
             echo "mi_e2ee_server not found" >&2
@@ -874,31 +853,24 @@ EOF
           if ! command -v "$py" >/dev/null 2>&1; then
             py="python"
           fi
-          port=$("$py" - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)
+          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
           token="abcdefghijklmnop"
-          cat > "$work/config.ini" <<EOF
-[mode]
-mode=1
-[server]
-list_port=$port
-offline_dir=$work/offline
-ops_enable=1
-ops_allow_remote=0
-ops_token=$token
-debug_log=0
-tls_enable=0
-require_tls=0
-key_protection=none
-kt_signing_key=$work/kt_signing_key.bin
-allow_legacy_login=0
-EOF
+          printf '%s\n' \
+            "[mode]" \
+            "mode=1" \
+            "[server]" \
+            "list_port=$port" \
+            "offline_dir=$work/offline" \
+            "ops_enable=1" \
+            "ops_allow_remote=0" \
+            "ops_token=$token" \
+            "debug_log=0" \
+            "tls_enable=0" \
+            "require_tls=0" \
+            "key_protection=none" \
+            "kt_signing_key=$work/kt_signing_key.bin" \
+            "allow_legacy_login=0" \
+            > "$work/config.ini"
           server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
           if [ -z "$server" ]; then
             echo "mi_e2ee_server not found" >&2
