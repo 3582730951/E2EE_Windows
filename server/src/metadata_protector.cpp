@@ -9,6 +9,7 @@
 #include "crypto.h"
 #include "hex_utils.h"
 #include "monocypher.h"
+#include "path_security.h"
 #include "platform_fs.h"
 #include "protected_store.h"
 
@@ -99,8 +100,10 @@ bool LoadOrCreateMetadataKey(const MetadataKeyConfig& cfg,
       return false;
     }
     std::vector<std::uint8_t> plain;
+    bool was_protected = false;
     std::string protect_err;
-    if (!DecodeProtectedFileBytes(bytes, cfg.protection, plain, protect_err)) {
+    if (!DecodeProtectedFileBytes(bytes, cfg.protection, plain, was_protected,
+                                  protect_err)) {
       error = protect_err.empty() ? "metadata_key decode failed" : protect_err;
       return false;
     }
