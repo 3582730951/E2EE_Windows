@@ -108,6 +108,81 @@ bool ReadExact(std::istream& is, std::uint8_t* out, std::size_t len) {
   return is && static_cast<std::size_t>(is.gcount()) == len;
 }
 
+std::optional<std::uint64_t> RecoverOfflinePlainSize(
+    const std::filesystem::path& path,
+    std::uint64_t file_size) {
+  if (file_size == 0) {
+    return std::nullopt;
+  }
+  std::ifstream ifs(path, std::ios::binary);
+  if (!ifs) {
+    return std::nullopt;
+  }
+  std::array<std::uint8_t, kOfflineFileMagic.size()> magic{};
+  if (!ReadExact(ifs, magic.data(), magic.size())) {
+    return std::nullopt;
+  }
+  if (!std::equal(kOfflineFileMagic.begin(), kOfflineFileMagic.end(),
+                  magic.begin())) {
+    return std::nullopt;
+  }
+  std::uint8_t version = 0;
+  if (!ReadExact(ifs, &version, 1)) {
+    return std::nullopt;
+  }
+  if (version == kOfflineFileMagicVersionV3) {
+    if (file_size < kOfflineFileV3HeaderBytes) {
+      return std::nullopt;
+    }
+    std::array<std::uint8_t, 4> chunk_buf{};
+    std::array<std::uint8_t, 8> size_buf{};
+    std::array<std::uint8_t, kOfflineFileAeadNonceBytes> nonce{};
+    if (!ReadExact(ifs, chunk_buf.data(), chunk_buf.size()) ||
+        !ReadExact(ifs, size_buf.data(), size_buf.size()) ||
+        !ReadExact(ifs, nonce.data(), nonce.size())) {
+      return std::nullopt;
+    }
+    const std::uint32_t chunk_bytes = ReadUint32Le(chunk_buf.data());
+    const std::uint64_t plain_size = ReadUint64Le(size_buf.data());
+    if (chunk_bytes == 0 || chunk_bytes > kOfflineFileStreamMaxChunkBytes ||
+        plain_size == 0) {
+      return std::nullopt;
+    }
+    const std::uint64_t chunk_count =
+        (plain_size + chunk_bytes - 1) / chunk_bytes;
+    if (chunk_count == 0 ||
+        chunk_count >
+            (std::numeric_limits<std::uint64_t>::max)() /
+                static_cast<std::uint64_t>(kOfflineFileAeadTagBytes)) {
+      return std::nullopt;
+    }
+    const std::uint64_t tag_overhead =
+        chunk_count * static_cast<std::uint64_t>(kOfflineFileAeadTagBytes);
+    if (tag_overhead >
+        (std::numeric_limits<std::uint64_t>::max)() -
+            kOfflineFileV3HeaderBytes - plain_size) {
+      return std::nullopt;
+    }
+    const std::uint64_t expected_size =
+        kOfflineFileV3HeaderBytes + plain_size + tag_overhead;
+    if (file_size != expected_size) {
+      return std::nullopt;
+    }
+    return plain_size;
+  }
+  if (version == kOfflineFileMagicVersionV1 ||
+      version == kOfflineFileMagicVersionV2) {
+    const std::uint64_t overhead =
+        kOfflineFileHeaderBytes + kOfflineFileAeadNonceBytes +
+        kOfflineFileAeadTagBytes;
+    if (file_size <= overhead) {
+      return std::nullopt;
+    }
+    return file_size - overhead;
+  }
+  return std::nullopt;
+}
+
 void WriteUint32Le(std::uint32_t v, std::uint8_t* out) {
   out[0] = static_cast<std::uint8_t>(v & 0xFFu);
   out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
@@ -610,6 +685,15 @@ void OfflineStorage::LoadMetadataFromDisk() {
       ec.clear();
       continue;
     }
+    if (size > (std::numeric_limits<std::uint64_t>::max)()) {
+      continue;
+    }
+    const std::uint64_t file_size = static_cast<std::uint64_t>(size);
+    std::uint64_t plain_size = file_size;
+    if (const auto recovered = RecoverOfflinePlainSize(path, file_size);
+        recovered.has_value()) {
+      plain_size = *recovered;
+    }
     std::chrono::system_clock::time_point created_sys = now_sys;
     const auto ft = std::filesystem::last_write_time(path, ec);
     if (!ec) {
@@ -620,7 +704,7 @@ void OfflineStorage::LoadMetadataFromDisk() {
     StoredFileMeta meta;
     meta.id = id;
     meta.owner.clear();
-    meta.size = static_cast<std::uint64_t>(size);
+    meta.size = plain_size;
     meta.created_at = SteadyFromSystem(created_sys, now_sys, now_steady);
     loaded.emplace(id, meta);
     std::string write_err;

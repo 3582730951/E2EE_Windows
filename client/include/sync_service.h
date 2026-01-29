@@ -19,6 +19,12 @@ class SyncService {
   bool BeginDevicePairingLinked(ClientCore& core, const std::string& pairing_code) const;
   bool PollDevicePairingLinked(ClientCore& core, bool& out_completed) const;
   void CancelDevicePairing(ClientCore& core) const;
+
+ private:
+  void ApplyDeviceSyncState(ClientCore& core,
+                            const std::array<std::uint8_t, 32>& key,
+                            std::uint64_t send_counter,
+                            std::uint64_t recv_counter) const;
 };
 
 }  // namespace mi::client

@@ -315,6 +315,19 @@ bool DecodePairingResponsePlain(const std::vector<std::uint8_t>& plain,
 
 }  // namespace
 
+struct DeviceSyncKeyState {
+  std::array<std::uint8_t, 32> key{};
+  std::uint64_t send_counter{0};
+  std::uint64_t recv_counter{0};
+  bool legacy{false};
+};
+
+bool DecodeDeviceSyncKeyBlob(const std::vector<std::uint8_t>& plain,
+                             DeviceSyncKeyState& out);
+bool WriteDeviceSyncKeyFile(const std::filesystem::path& path,
+                            const DeviceSyncKeyState& state,
+                            std::string& error);
+
 bool SyncService::LoadDeviceSyncKey(ClientCore& core) const {
   core.device_sync_key_loaded_ = false;
   core.device_sync_key_.fill(0);
@@ -411,7 +424,7 @@ bool SyncService::LoadDeviceSyncKey(ClientCore& core) const {
         return false;
       }
     }
-    ApplyDeviceSyncState(core, state);
+    ApplyDeviceSyncState(core, state.key, state.send_counter, state.recv_counter);
     core.device_sync_last_rotate_ms_ = mi::platform::NowSteadyMs();
     core.device_sync_send_count_ = 0;
     return true;
@@ -471,18 +484,11 @@ bool SyncService::StoreDeviceSyncKey(ClientCore& core, const std::array<std::uin
     return false;
   }
 
-  ApplyDeviceSyncState(core, state);
+  ApplyDeviceSyncState(core, state.key, state.send_counter, state.recv_counter);
   core.device_sync_last_rotate_ms_ = mi::platform::NowSteadyMs();
   core.device_sync_send_count_ = 0;
   return true;
 }
-
-struct DeviceSyncKeyState {
-  std::array<std::uint8_t, 32> key{};
-  std::uint64_t send_counter{0};
-  std::uint64_t recv_counter{0};
-  bool legacy{false};
-};
 
 bool DecodeDeviceSyncKeyBlob(const std::vector<std::uint8_t>& plain,
                              DeviceSyncKeyState& out) {
@@ -609,16 +615,18 @@ bool WriteDeviceSyncKeyFile(const std::filesystem::path& path,
   return true;
 }
 
-void ApplyDeviceSyncState(ClientCore& core, const DeviceSyncKeyState& state) {
+void SyncService::ApplyDeviceSyncState(
+    ClientCore& core, const std::array<std::uint8_t, 32>& key,
+    std::uint64_t send_counter, std::uint64_t recv_counter) const {
   const bool have_current =
       !IsAllZero(core.device_sync_key_.data(), core.device_sync_key_.size());
   if (have_current) {
     crypto_wipe(core.device_sync_key_.data(), core.device_sync_key_.size());
   }
-  core.device_sync_key_ = state.key;
+  core.device_sync_key_ = key;
   core.device_sync_key_loaded_ = true;
-  core.device_sync_send_counter_ = state.send_counter;
-  core.device_sync_recv_counter_ = state.recv_counter;
+  core.device_sync_send_counter_ = send_counter;
+  core.device_sync_recv_counter_ = recv_counter;
 }
 
 bool SyncService::EncryptDeviceSync(ClientCore& core, const std::vector<std::uint8_t>& plaintext,
@@ -703,7 +711,7 @@ bool SyncService::EncryptDeviceSync(ClientCore& core, const std::vector<std::uin
         write_err.empty() ? "device sync key write failed" : write_err;
     return false;
   }
-  ApplyDeviceSyncState(core, state);
+  ApplyDeviceSyncState(core, state.key, state.send_counter, state.recv_counter);
   return true;
 }
 
@@ -870,7 +878,7 @@ bool SyncService::DecryptDeviceSync(ClientCore& core, const std::vector<std::uin
       out_plaintext.clear();
       return false;
     }
-    ApplyDeviceSyncState(core, state);
+    ApplyDeviceSyncState(core, state.key, state.send_counter, state.recv_counter);
     return true;
   }
 
