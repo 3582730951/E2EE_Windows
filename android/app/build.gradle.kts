@@ -25,6 +25,14 @@ val miOllvmClangxx = project.findProperty("miE2eeOllvmClangxx") as? String
 val miNdkVersion = (project.findProperty("miE2eeNdkVersion") as? String)
     ?.takeIf { it.isNotBlank() }
     ?: System.getenv("MI_E2EE_ANDROID_NDK_VERSION")?.takeIf { it.isNotBlank() }
+val miAbiRaw = (project.findProperty("miE2eeAbis") as? String)
+    ?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MI_E2EE_ANDROID_ABIS")?.takeIf { it.isNotBlank() }
+fun parseAbis(value: String): List<String> =
+    value.split(',', ';', ' ')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+val miAbis = miAbiRaw?.let { parseAbis(it) }
 
 android {
     namespace = "mi.e2ee.android"
@@ -41,7 +49,8 @@ android {
         versionName = "0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            val abis = miAbis ?: listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += abis
         }
         externalNativeBuild {
             cmake {

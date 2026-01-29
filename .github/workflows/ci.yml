@@ -970,6 +970,7 @@ jobs:
       MI_E2EE_OLLVM_URL_TEMPLATE: ${{ vars.MI_E2EE_OLLVM_URL_TEMPLATE || '' }}
       MI_E2EE_ANDROID_NDK_VERSION: ${{ vars.MI_E2EE_ANDROID_NDK_VERSION || '25.2.9519653' }}
       MI_E2EE_OLLVM_FALLBACK_URL: ${{ vars.MI_E2EE_OLLVM_FALLBACK_URL || 'https://github.com/codetronik/ollvm-ndk/releases/download/r23c-release/clang' }}
+      MI_E2EE_ANDROID_ABIS: ${{ vars.MI_E2EE_ANDROID_ABIS || 'arm64-v8a x86_64' }}
       MI_E2EE_ANDROID_USE_OPENSSL: "1"
       MI_E2EE_ANDROID_ALLOW_TLS_STUB: "0"
       MI_E2EE_ANDROID_OPENSSL_VERSION: ${{ vars.MI_E2EE_ANDROID_OPENSSL_VERSION || '3.3.2' }}
@@ -1021,11 +1022,16 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tools/build_android_openssl.sh
+          ABI_ARGS=()
+          if [ -n "${MI_E2EE_ANDROID_ABIS:-}" ]; then
+            ABI_ARGS=(--abis "${MI_E2EE_ANDROID_ABIS}")
+          fi
           tools/build_android_openssl.sh \
             --ndk "$ANDROID_NDK_ROOT" \
             --out "$GITHUB_WORKSPACE/build/openssl/android" \
             --version "$MI_E2EE_ANDROID_OPENSSL_VERSION" \
-            --api 24
+            --api 24 \
+            "${ABI_ARGS[@]}"
           echo "MI_E2EE_ANDROID_OPENSSL_ROOT=$GITHUB_WORKSPACE/build/openssl/android" >> $GITHUB_ENV
 
       - name: Prepare OLLVM URL
@@ -1176,7 +1182,9 @@ jobs:
             echo "debug apk missing: $apk" >&2
             exit 1
           fi
-          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+          abis="${MI_E2EE_ANDROID_ABIS:-armeabi-v7a arm64-v8a x86 x86_64}"
+          abis=$(echo "$abis" | tr ',;' ' ')
+          for abi in $abis; do
             for lib in libmi_e2ee_backend.so libmi_e2ee_jni.so; do
               if ! unzip -l "$apk" | grep -q "lib/${abi}/${lib}$"; then
                 echo "missing ${lib} for ${abi}" >&2

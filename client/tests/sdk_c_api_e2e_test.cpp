@@ -105,6 +105,33 @@ void LogStep(const char* msg) {
   std::cerr.flush();
 }
 
+void LogClientError(const char* label, mi_client_handle* handle) {
+  if (!label || !handle) {
+    return;
+  }
+  const char* last = mi_client_last_error(handle);
+  if (last && *last) {
+    std::cerr << "[sdk_c_api_e2e_test] " << label
+              << " last_error=" << last << "\n";
+  }
+  const char* remote = mi_client_remote_error(handle);
+  if (remote && *remote) {
+    std::cerr << "[sdk_c_api_e2e_test] " << label
+              << " remote_error=" << remote << "\n";
+  }
+  std::cerr.flush();
+}
+
+[[noreturn]] void FailNow(const char* msg, mi_client_handle* handle) {
+  if (msg) {
+    std::cerr << "[sdk_c_api_e2e_test] " << msg << "\n";
+  }
+  LogClientError("client", handle);
+  std::cerr.flush();
+  std::fflush(nullptr);
+  std::_Exit(1);
+}
+
 std::filesystem::path MakeUniqueDir(const std::string& prefix) {
   const auto now = static_cast<unsigned long long>(
       mi::platform::NowSteadyMs());
@@ -467,9 +494,7 @@ int main() {
   }
   if (mi_client_send_private_text(alice, "bob", "hello", &msg_id) != 1 ||
       !msg_id) {
-    std::cerr << "send private text failed\n";
-    cleanup();
-    return 1;
+    FailNow("send private text failed", alice);
   }
   mi_client_free(msg_id);
   msg_id = nullptr;
