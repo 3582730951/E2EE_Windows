@@ -48,7 +48,45 @@ if(MI_E2EE_ANDROID_USE_OPENSSL)
     endif()
   endif()
   find_package(OpenSSL)
-  if(NOT OpenSSL_FOUND)
+  if((NOT OpenSSL_FOUND) AND (NOT OPENSSL_FOUND) AND MI_E2EE_ANDROID_OPENSSL_ROOT)
+    if(NOT _MI_E2EE_OPENSSL_ROOT)
+      if(ANDROID_ABI)
+        set(_MI_E2EE_OPENSSL_ROOT
+            "${MI_E2EE_ANDROID_OPENSSL_ROOT}/${ANDROID_ABI}")
+      else()
+        set(_MI_E2EE_OPENSSL_ROOT "${MI_E2EE_ANDROID_OPENSSL_ROOT}")
+      endif()
+    endif()
+    if(EXISTS "${_MI_E2EE_OPENSSL_ROOT}")
+      set(_MI_E2EE_OPENSSL_LIB_DIR "${_MI_E2EE_OPENSSL_ROOT}/lib")
+      find_library(OPENSSL_SSL_LIBRARY
+                   NAMES ssl libssl
+                   PATHS "${_MI_E2EE_OPENSSL_LIB_DIR}"
+                   NO_CMAKE_FIND_ROOT_PATH)
+      find_library(OPENSSL_CRYPTO_LIBRARY
+                   NAMES crypto libcrypto
+                   PATHS "${_MI_E2EE_OPENSSL_LIB_DIR}"
+                   NO_CMAKE_FIND_ROOT_PATH)
+      if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY AND
+         EXISTS "${_MI_E2EE_OPENSSL_ROOT}/include")
+        set(OPENSSL_INCLUDE_DIR "${_MI_E2EE_OPENSSL_ROOT}/include")
+        set(OPENSSL_FOUND TRUE)
+        set(OpenSSL_FOUND TRUE)
+      endif()
+    endif()
+  endif()
+  if((OpenSSL_FOUND OR OPENSSL_FOUND) AND NOT TARGET OpenSSL::SSL)
+    add_library(OpenSSL::Crypto STATIC IMPORTED)
+    set_target_properties(OpenSSL::Crypto PROPERTIES
+      IMPORTED_LOCATION "${OPENSSL_CRYPTO_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
+    add_library(OpenSSL::SSL STATIC IMPORTED)
+    set_target_properties(OpenSSL::SSL PROPERTIES
+      IMPORTED_LOCATION "${OPENSSL_SSL_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}"
+      INTERFACE_LINK_LIBRARIES OpenSSL::Crypto)
+  endif()
+  if(NOT (OpenSSL_FOUND OR OPENSSL_FOUND))
     if(MI_E2EE_ANDROID_ALLOW_TLS_STUB)
       message(WARNING "OpenSSL not found; using TLS stub (MI_E2EE_ANDROID_ALLOW_TLS_STUB=ON)")
       set(MI_E2EE_ANDROID_USE_OPENSSL OFF)

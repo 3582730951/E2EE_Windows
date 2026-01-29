@@ -108,6 +108,42 @@ bool ReadExact(std::istream& is, std::uint8_t* out, std::size_t len) {
   return is && static_cast<std::size_t>(is.gcount()) == len;
 }
 
+void WriteUint32Le(std::uint32_t v, std::uint8_t* out) {
+  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
+  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
+  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
+  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
+}
+
+void WriteUint64Le(std::uint64_t v, std::uint8_t* out) {
+  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
+  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
+  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
+  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
+  out[4] = static_cast<std::uint8_t>((v >> 32) & 0xFFu);
+  out[5] = static_cast<std::uint8_t>((v >> 40) & 0xFFu);
+  out[6] = static_cast<std::uint8_t>((v >> 48) & 0xFFu);
+  out[7] = static_cast<std::uint8_t>((v >> 56) & 0xFFu);
+}
+
+std::uint32_t ReadUint32Le(const std::uint8_t* in) {
+  return static_cast<std::uint32_t>(in[0]) |
+         (static_cast<std::uint32_t>(in[1]) << 8) |
+         (static_cast<std::uint32_t>(in[2]) << 16) |
+         (static_cast<std::uint32_t>(in[3]) << 24);
+}
+
+std::uint64_t ReadUint64Le(const std::uint8_t* in) {
+  return static_cast<std::uint64_t>(in[0]) |
+         (static_cast<std::uint64_t>(in[1]) << 8) |
+         (static_cast<std::uint64_t>(in[2]) << 16) |
+         (static_cast<std::uint64_t>(in[3]) << 24) |
+         (static_cast<std::uint64_t>(in[4]) << 32) |
+         (static_cast<std::uint64_t>(in[5]) << 40) |
+         (static_cast<std::uint64_t>(in[6]) << 48) |
+         (static_cast<std::uint64_t>(in[7]) << 56);
+}
+
 std::optional<std::uint64_t> RecoverOfflinePlainSize(
     const std::filesystem::path& path,
     std::uint64_t file_size) {
@@ -181,42 +217,6 @@ std::optional<std::uint64_t> RecoverOfflinePlainSize(
     return file_size - overhead;
   }
   return std::nullopt;
-}
-
-void WriteUint32Le(std::uint32_t v, std::uint8_t* out) {
-  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
-  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
-  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
-  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
-}
-
-void WriteUint64Le(std::uint64_t v, std::uint8_t* out) {
-  out[0] = static_cast<std::uint8_t>(v & 0xFFu);
-  out[1] = static_cast<std::uint8_t>((v >> 8) & 0xFFu);
-  out[2] = static_cast<std::uint8_t>((v >> 16) & 0xFFu);
-  out[3] = static_cast<std::uint8_t>((v >> 24) & 0xFFu);
-  out[4] = static_cast<std::uint8_t>((v >> 32) & 0xFFu);
-  out[5] = static_cast<std::uint8_t>((v >> 40) & 0xFFu);
-  out[6] = static_cast<std::uint8_t>((v >> 48) & 0xFFu);
-  out[7] = static_cast<std::uint8_t>((v >> 56) & 0xFFu);
-}
-
-std::uint32_t ReadUint32Le(const std::uint8_t* in) {
-  return static_cast<std::uint32_t>(in[0]) |
-         (static_cast<std::uint32_t>(in[1]) << 8) |
-         (static_cast<std::uint32_t>(in[2]) << 16) |
-         (static_cast<std::uint32_t>(in[3]) << 24);
-}
-
-std::uint64_t ReadUint64Le(const std::uint8_t* in) {
-  return static_cast<std::uint64_t>(in[0]) |
-         (static_cast<std::uint64_t>(in[1]) << 8) |
-         (static_cast<std::uint64_t>(in[2]) << 16) |
-         (static_cast<std::uint64_t>(in[3]) << 24) |
-         (static_cast<std::uint64_t>(in[4]) << 32) |
-         (static_cast<std::uint64_t>(in[5]) << 40) |
-         (static_cast<std::uint64_t>(in[6]) << 48) |
-         (static_cast<std::uint64_t>(in[7]) << 56);
 }
 
 std::uint64_t UnixMsFrom(const std::chrono::system_clock::time_point& tp) {
