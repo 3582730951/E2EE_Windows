@@ -17,7 +17,7 @@ rime-prelude-punctuation|snapshot|LGPL-3.0|../client/ui/data/rime/punctuation.ya
 rime-prelude-symbols|snapshot|LGPL-3.0|../client/ui/data/rime/symbols.yaml|f12ee3a61bb9739c29fe6ba12890c5c9c50ca38f63ce9c85e1a16e223ae0b04f
 rime-stroke-schema|snapshot|LGPL-3.0|../client/ui/data/rime/stroke.schema.yaml|06f680cf7c9d9a69948681ee25e9f6aeccfde4d8d590f93e179d4c4b3caee879
 rime-stroke-dict|snapshot|LGPL-3.0|../client/ui/data/rime/stroke.dict.yaml|e897ed2e3d1da8d6e6a347310165374bebf36b9710afd789f5e31abb4da0fe76
-rime-ice-dict|2024-11-27|GPL-3.0-only|../client/ui/data/rime/rime_ice.dict.yaml|80b521c94e98fb07da81c1a341eee5b9cbe72b484196b386ef93267641d2675d
+rime-ice-dict|2024-11-27|GPL-3.0-only|../client/ui/data/rime/rime_ice.dict.yaml|7ba566ebccf6e3c76b728a4e1448edbf8c5955d4289fb185d9dfd0efd2eb4d54
 rime-ice-schema|2025-11-02|GPL-3.0-only|../client/ui/data/rime/rime_ice.schema.yaml|801d59da3d786921f8b21951b9b9b99797ad63a444a66f3d9ca5cd46b949de85
 rime-ice-custom|local|GPL-3.0-only|../client/ui/data/rime/rime_ice.custom.yaml|11c69bc09ae753b18fbf4e8caaf765a60063c27741136e930af8401b405f6692
 rime-ice-symbols-v|2024-12-19|GPL-3.0-only|../client/ui/data/rime/symbols_v.yaml|6cf79d99403087150681e47817ec59f224c1a3cabc073feb919994089a27da7e

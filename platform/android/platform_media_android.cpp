@@ -3,6 +3,8 @@
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
 
+#include <dlfcn.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -19,10 +21,35 @@ namespace {
 #define AMEDIAFORMAT_KEY_REQUEST_SYNC_FRAME "request-sync"
 #endif
 
+constexpr const char* kMediaFormatKeyCsd0 = "csd-0";
+constexpr const char* kMediaFormatKeyCsd1 = "csd-1";
+constexpr const char* kMediaFormatKeySliceHeight = "slice-height";
+
 constexpr int kColorFormatYuv420Planar = 19;
 constexpr int kColorFormatYuv420SemiPlanar = 21;
 constexpr int kColorFormatYuv420Flexible = 0x7F420888;
 constexpr std::size_t kOpusHeadBytes = 19;
+
+using AMediaCodecSetParametersFn =
+    media_status_t (*)(AMediaCodec*, AMediaFormat*);
+
+AMediaCodecSetParametersFn ResolveMediaCodecSetParameters() {
+  static AMediaCodecSetParametersFn fn = nullptr;
+  static bool resolved = false;
+  if (!resolved) {
+    resolved = true;
+#if __ANDROID_API__ >= 26
+    fn = &AMediaCodec_setParameters;
+#else
+    void* handle = dlopen("libmediandk.so", RTLD_NOW);
+    if (handle) {
+      fn = reinterpret_cast<AMediaCodecSetParametersFn>(
+          dlsym(handle, "AMediaCodec_setParameters"));
+    }
+#endif
+  }
+  return fn;
+}
 
 std::array<std::uint8_t, kOpusHeadBytes> BuildOpusHead(int sample_rate,
                                                        int channels) {
@@ -236,7 +263,7 @@ class OpusCodecAndroid final : public OpusCodec {
     AMediaFormat_setInt32(dec_fmt, AMEDIAFORMAT_KEY_SAMPLE_RATE, sample_rate_);
     AMediaFormat_setInt32(dec_fmt, AMEDIAFORMAT_KEY_CHANNEL_COUNT, channels_);
     const auto head = BuildOpusHead(sample_rate_, channels_);
-    AMediaFormat_setBuffer(dec_fmt, AMEDIAFORMAT_KEY_CSD_0,
+    AMediaFormat_setBuffer(dec_fmt, kMediaFormatKeyCsd0,
                            const_cast<std::uint8_t*>(head.data()),
                            head.size());
     if (AMediaCodec_configure(decoder_, dec_fmt, nullptr, nullptr, 0) !=
@@ -404,7 +431,12 @@ class OpusCodecAndroid final : public OpusCodec {
     }
     AMediaFormat* fmt = AMediaFormat_new();
     AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_BIT_RATE, bitrate);
-    const media_status_t rc = AMediaCodec_setParameters(encoder_, fmt);
+    const auto set_params = ResolveMediaCodecSetParameters();
+    if (!set_params) {
+      AMediaFormat_delete(fmt);
+      return false;
+    }
+    const media_status_t rc = set_params(encoder_, fmt);
     AMediaFormat_delete(fmt);
     if (rc != AMEDIA_OK) {
       return false;
@@ -600,7 +632,12 @@ class H264CodecAndroid final : public H264Codec {
     AMediaFormat* fmt = AMediaFormat_new();
     AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_BIT_RATE,
                           static_cast<int32_t>(bitrate));
-    const media_status_t rc = AMediaCodec_setParameters(encoder_, fmt);
+    const auto set_params = ResolveMediaCodecSetParameters();
+    if (!set_params) {
+      AMediaFormat_delete(fmt);
+      return false;
+    }
+    const media_status_t rc = set_params(encoder_, fmt);
     AMediaFormat_delete(fmt);
     if (rc != AMEDIA_OK) {
       return false;
@@ -699,9 +736,9 @@ class H264CodecAndroid final : public H264Codec {
     std::size_t sps_len = 0;
     std::uint8_t* pps = nullptr;
     std::size_t pps_len = 0;
-    if (AMediaFormat_getBuffer(fmt, AMEDIAFORMAT_KEY_CSD_0,
+    if (AMediaFormat_getBuffer(fmt, kMediaFormatKeyCsd0,
                                reinterpret_cast<void**>(&sps), &sps_len) &&
-        AMediaFormat_getBuffer(fmt, AMEDIAFORMAT_KEY_CSD_1,
+        AMediaFormat_getBuffer(fmt, kMediaFormatKeyCsd1,
                                reinterpret_cast<void**>(&pps), &pps_len) &&
         sps && pps && sps_len > 0 && pps_len > 0) {
       csd_.clear();
@@ -733,7 +770,7 @@ class H264CodecAndroid final : public H264Codec {
     AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_WIDTH, &width);
     AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_HEIGHT, &height);
     AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_STRIDE, &stride);
-    AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_SLICE_HEIGHT, &slice);
+    AMediaFormat_getInt32(fmt, kMediaFormatKeySliceHeight, &slice);
     AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_COLOR_FORMAT, &color);
     out_width_ = width;
     out_height_ = height;
@@ -749,7 +786,10 @@ class H264CodecAndroid final : public H264Codec {
     }
     AMediaFormat* fmt = AMediaFormat_new();
     AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_REQUEST_SYNC_FRAME, 0);
-    AMediaCodec_setParameters(encoder_, fmt);
+    const auto set_params = ResolveMediaCodecSetParameters();
+    if (set_params) {
+      set_params(encoder_, fmt);
+    }
     AMediaFormat_delete(fmt);
   }
 

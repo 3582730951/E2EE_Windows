@@ -1,10 +1,10 @@
 #include "c_api_client.h"
 
-#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -265,33 +265,87 @@ int main() {
   SetEnv("MI_E2EE_HARDENING", "off");
 
   const UserFileBackup backup = BackupTestUsers();
-  if (!WriteTestUsers()) {
+  std::filesystem::path base_dir;
+  std::unique_ptr<mi::server::ServerApp> app;
+  std::unique_ptr<mi::server::Listener> listener;
+  std::unique_ptr<mi::server::NetworkServer> net;
+  mi_client_handle* alice = nullptr;
+  mi_client_handle* bob = nullptr;
+  mi_client_handle* alice_linked = nullptr;
+  char* pairing_code = nullptr;
+  char* msg_id = nullptr;
+  char* group_id = nullptr;
+  char* group_msg_id = nullptr;
+
+  auto cleanup = [&]() {
+    if (pairing_code) {
+      mi_client_free(pairing_code);
+      pairing_code = nullptr;
+    }
+    if (msg_id) {
+      mi_client_free(msg_id);
+      msg_id = nullptr;
+    }
+    if (group_msg_id) {
+      mi_client_free(group_msg_id);
+      group_msg_id = nullptr;
+    }
+    if (group_id) {
+      mi_client_free(group_id);
+      group_id = nullptr;
+    }
+    if (alice_linked) {
+      mi_client_destroy(alice_linked);
+      alice_linked = nullptr;
+    }
+    if (bob) {
+      mi_client_destroy(bob);
+      bob = nullptr;
+    }
+    if (alice) {
+      mi_client_destroy(alice);
+      alice = nullptr;
+    }
+    if (net) {
+      net->Stop();
+    }
+    net.reset();
+    listener.reset();
+    app.reset();
+    SetEnv("MI_E2EE_DATA_DIR", prev_data_dir);
+    SetEnv("MI_E2EE_HARDENING", prev_hardening);
     RestoreTestUsers(backup);
+    std::error_code ec;
+    if (!base_dir.empty()) {
+      std::filesystem::remove_all(base_dir, ec);
+    }
+  };
+
+  if (!WriteTestUsers()) {
+    std::cerr << "write test users failed\n";
+    cleanup();
     return 1;
   }
 
-  const auto base_dir = MakeUniqueDir("test_e2e");
+  base_dir = MakeUniqueDir("test_e2e");
   const auto server_dir = base_dir / "server";
   std::error_code ec;
   std::filesystem::create_directories(server_dir, ec);
   if (ec) {
-    RestoreTestUsers(backup);
+    std::cerr << "create server dir failed\n";
+    cleanup();
     return 1;
   }
 
-  std::unique_ptr<mi::server::ServerApp> app;
-  std::unique_ptr<mi::server::Listener> listener;
-  std::unique_ptr<mi::server::NetworkServer> net;
   std::uint16_t port = 0;
   std::string server_err;
   if (!StartServer(app, listener, net, server_dir, port, server_err)) {
     if (server_err.find("tcp server not built") != std::string::npos) {
-      RestoreTestUsers(backup);
-      SetEnv("MI_E2EE_DATA_DIR", prev_data_dir);
-      SetEnv("MI_E2EE_HARDENING", prev_hardening);
+      cleanup();
       return 0;
     }
-    RestoreTestUsers(backup);
+    std::cerr << "start server failed: " << server_err << "\n";
+    cleanup();
     return 1;
   }
 
@@ -301,6 +355,11 @@ int main() {
   std::filesystem::create_directories(alice_primary_dir, ec);
   std::filesystem::create_directories(alice_linked_dir, ec);
   std::filesystem::create_directories(bob_dir, ec);
+  if (ec) {
+    std::cerr << "create client dirs failed\n";
+    cleanup();
+    return 1;
+  }
 
   const std::string alice_primary_cfg =
       WriteClientConfig(alice_primary_dir, port, true, true);
@@ -310,67 +369,146 @@ int main() {
       WriteClientConfig(bob_dir, port, false, false);
 
   SetEnv("MI_E2EE_DATA_DIR", alice_primary_dir.string());
-  mi_client_handle* alice = mi_client_create(alice_primary_cfg.c_str());
-  assert(alice != nullptr);
-  assert(mi_client_login(alice, "alice", "alice123") == 1);
+  alice = mi_client_create(alice_primary_cfg.c_str());
+  if (!alice) {
+    std::cerr << "create alice failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_login(alice, "alice", "alice123") != 1) {
+    std::cerr << "alice login failed\n";
+    cleanup();
+    return 1;
+  }
 
   SetEnv("MI_E2EE_DATA_DIR", bob_dir.string());
-  mi_client_handle* bob = mi_client_create(bob_cfg.c_str());
-  assert(bob != nullptr);
-  assert(mi_client_login(bob, "bob", "bob123") == 1);
+  bob = mi_client_create(bob_cfg.c_str());
+  if (!bob) {
+    std::cerr << "create bob failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_login(bob, "bob", "bob123") != 1) {
+    std::cerr << "bob login failed\n";
+    cleanup();
+    return 1;
+  }
 
   SetEnv("MI_E2EE_DATA_DIR", alice_linked_dir.string());
-  mi_client_handle* alice_linked = mi_client_create(alice_linked_cfg.c_str());
-  assert(alice_linked != nullptr);
-  assert(mi_client_login(alice_linked, "alice", "alice123") == 1);
+  alice_linked = mi_client_create(alice_linked_cfg.c_str());
+  if (!alice_linked) {
+    std::cerr << "create linked alice failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_login(alice_linked, "alice", "alice123") != 1) {
+    std::cerr << "linked alice login failed\n";
+    cleanup();
+    return 1;
+  }
 
-  char* pairing_code = nullptr;
-  assert(mi_client_begin_device_pairing_primary(alice, &pairing_code) == 1);
-  assert(pairing_code != nullptr);
-  assert(mi_client_begin_device_pairing_linked(alice_linked, pairing_code) == 1);
+  if (mi_client_begin_device_pairing_primary(alice, &pairing_code) != 1 ||
+      !pairing_code) {
+    std::cerr << "begin pairing primary failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_begin_device_pairing_linked(alice_linked, pairing_code) != 1) {
+    std::cerr << "begin pairing linked failed\n";
+    cleanup();
+    return 1;
+  }
   mi_client_free(pairing_code);
+  pairing_code = nullptr;
 
   mi_device_pairing_request_t req{};
-  assert(WaitForPairingRequest(alice, &req, 5000));
-  assert(mi_client_approve_device_pairing_request(
-             alice, req.device_id, req.request_id_hex) == 1);
-  assert(WaitForPairingComplete(alice_linked, 5000));
-
-  assert(mi_client_logout(bob) == 1);
-  char* msg_id = nullptr;
-  assert(mi_client_send_private_text(alice, "bob", "hello", &msg_id) == 1);
-  mi_client_free(msg_id);
-
-  assert(mi_client_login(bob, "bob", "bob123") == 1);
-  assert(WaitForEvent(bob, MI_EVENT_CHAT_TEXT, "alice", "", 5000));
-
-  char* group_id = nullptr;
-  assert(mi_client_create_group(alice, &group_id) == 1);
-  assert(group_id != nullptr);
-  assert(mi_client_send_group_invite(alice, group_id, "bob", nullptr) == 1);
-  (void)WaitForEvent(bob, MI_EVENT_GROUP_INVITE, "alice", "", 3000);
-  assert(mi_client_join_group(bob, group_id) == 1);
-
-  char* group_msg_id = nullptr;
-  assert(mi_client_send_group_text(alice, group_id, "group hi", &group_msg_id) == 1);
-  mi_client_free(group_msg_id);
-  assert(WaitForEvent(bob, MI_EVENT_GROUP_TEXT, "alice", group_id, 5000));
-  mi_client_free(group_id);
-
-  mi_client_destroy(alice_linked);
-  mi_client_destroy(bob);
-  mi_client_destroy(alice);
-
-  if (net) {
-    net->Stop();
+  if (!WaitForPairingRequest(alice, &req, 5000)) {
+    std::cerr << "pairing request timeout\n";
+    cleanup();
+    return 1;
   }
-  net.reset();
-  listener.reset();
-  app.reset();
+  const std::string req_device = req.device_id ? req.device_id : "";
+  const std::string req_request = req.request_id_hex ? req.request_id_hex : "";
+  if (req_device.empty() || req_request.empty()) {
+    std::cerr << "pairing request data missing\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_approve_device_pairing_request(
+          alice, req_device.c_str(), req_request.c_str()) != 1) {
+    std::cerr << "approve pairing request failed\n";
+    cleanup();
+    return 1;
+  }
+  if (!WaitForPairingComplete(alice_linked, 5000)) {
+    std::cerr << "pairing completion timeout\n";
+    cleanup();
+    return 1;
+  }
 
-  SetEnv("MI_E2EE_DATA_DIR", prev_data_dir);
-  SetEnv("MI_E2EE_HARDENING", prev_hardening);
-  RestoreTestUsers(backup);
-  std::filesystem::remove_all(base_dir, ec);
+  if (mi_client_logout(bob) != 1) {
+    std::cerr << "bob logout failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_send_private_text(alice, "bob", "hello", &msg_id) != 1 ||
+      !msg_id) {
+    std::cerr << "send private text failed\n";
+    cleanup();
+    return 1;
+  }
+  mi_client_free(msg_id);
+  msg_id = nullptr;
+
+  if (mi_client_login(bob, "bob", "bob123") != 1) {
+    std::cerr << "bob relogin failed\n";
+    cleanup();
+    return 1;
+  }
+  if (!WaitForEvent(bob, MI_EVENT_CHAT_TEXT, "alice", "", 5000)) {
+    std::cerr << "private chat event timeout\n";
+    cleanup();
+    return 1;
+  }
+
+  if (mi_client_create_group(alice, &group_id) != 1 || !group_id) {
+    std::cerr << "create group failed\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_send_group_invite(alice, group_id, "bob", nullptr) != 1) {
+    std::cerr << "send group invite failed\n";
+    cleanup();
+    return 1;
+  }
+  if (!WaitForEvent(bob, MI_EVENT_GROUP_INVITE, "alice", "", 3000)) {
+    std::cerr << "group invite event timeout\n";
+    cleanup();
+    return 1;
+  }
+  if (mi_client_join_group(bob, group_id) != 1) {
+    std::cerr << "join group failed\n";
+    cleanup();
+    return 1;
+  }
+
+  if (mi_client_send_group_text(alice, group_id, "group hi", &group_msg_id) !=
+          1 ||
+      !group_msg_id) {
+    std::cerr << "send group text failed\n";
+    cleanup();
+    return 1;
+  }
+  mi_client_free(group_msg_id);
+  group_msg_id = nullptr;
+  if (!WaitForEvent(bob, MI_EVENT_GROUP_TEXT, "alice", group_id, 5000)) {
+    std::cerr << "group text event timeout\n";
+    cleanup();
+    return 1;
+  }
+  mi_client_free(group_id);
+  group_id = nullptr;
+
+  cleanup();
   return 0;
 }

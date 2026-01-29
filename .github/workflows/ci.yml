@@ -701,7 +701,9 @@ jobs:
           apt-get install -y --no-install-recommends \
             ca-certificates \
             cmake \
+            cargo \
             pkg-config \
+            rustc \
             libssl-dev \
             libsecret-1-dev \
             openssl \
