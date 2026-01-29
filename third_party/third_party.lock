@@ -30,7 +30,7 @@ rime-ice-cn-41448|2025-08-10|GPL-3.0-only|../client/ui/data/rime/cn_dicts/41448.
 rime-ice-cn-base|2025-12-13|GPL-3.0-only|../client/ui/data/rime/cn_dicts/base.dict.yaml|9e835d7b87449948e0008dd53a7b153cb7d1986fecab35cb394dd4f718e1468d
 rime-ice-cn-ext|2025-12-13|GPL-3.0-only|../client/ui/data/rime/cn_dicts/ext.dict.yaml|dbcd39d01092e4a9ecf6764bd8a9d9180406a99e8190b27cec8cc07cecf5b781
 rime-ice-cn-tencent|2025-12-13|GPL-3.0-only|../client/ui/data/rime/cn_dicts/tencent.dict.yaml|e3d119a4e067a31cc15d07ea3fcfc66ba8c19d10d15c882ad8292c7c34618e22
-rime-ice-cn-others|2025-12-13|GPL-3.0-only|../client/ui/data/rime/cn_dicts/others.dict.yaml|d3131342c963136c839e8751b11f3dfa536f652da99f40d8d85a0c5e0b961166
+rime-ice-cn-others|2025-12-13|GPL-3.0-only|../client/ui/data/rime/cn_dicts/others.dict.yaml|9f2bbdf54def7c530d5873e8f58f9f681d1f2afe97e1630cabb50ed9b6f674b1
 rime-ice-en|2025-12-15|GPL-3.0-only|../client/ui/data/rime/en_dicts/en.dict.yaml|ed2d3fe09c727e5c7c77971b52fd4f14c7ad3cc17781d4cc83f2cefcb6c2b0d1
 rime-ice-en-ext|2025-12-13|GPL-3.0-only|../client/ui/data/rime/en_dicts/en_ext.dict.yaml|ddeed62e1edc50b1e8b0a2b4660c6a65b8fd3280d0cb45fc187fe6eb4427cb93
 rime-ice-opencc-emoji|snapshot|GPL-3.0-only|../client/ui/data/rime/opencc/emoji.json|79fe3b878625d8f96d70aeb6c4d1929ab2a582f8b935d309125b6ccffd799602

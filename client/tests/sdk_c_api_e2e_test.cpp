@@ -97,6 +97,14 @@ bool WriteTestUsers() {
   return static_cast<bool>(out);
 }
 
+void LogStep(const char* msg) {
+  if (!msg) {
+    return;
+  }
+  std::cerr << "[sdk_c_api_e2e_test] " << msg << "\n";
+  std::cerr.flush();
+}
+
 std::filesystem::path MakeUniqueDir(const std::string& prefix) {
   const auto now = static_cast<unsigned long long>(
       mi::platform::NowSteadyMs());
@@ -327,6 +335,7 @@ int main() {
     return 1;
   }
 
+  LogStep("init");
   base_dir = MakeUniqueDir("test_e2e");
   const auto server_dir = base_dir / "server";
   std::error_code ec;
@@ -348,6 +357,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("server started");
 
   const auto alice_primary_dir = base_dir / "alice_primary";
   const auto alice_linked_dir = base_dir / "alice_linked";
@@ -380,6 +390,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("alice login ok");
 
   SetEnv("MI_E2EE_DATA_DIR", bob_dir.string());
   bob = mi_client_create(bob_cfg.c_str());
@@ -393,6 +404,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("bob login ok");
 
   SetEnv("MI_E2EE_DATA_DIR", alice_linked_dir.string());
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
@@ -406,6 +418,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("linked login ok");
 
   if (mi_client_begin_device_pairing_primary(alice, &pairing_code) != 1 ||
       !pairing_code) {
@@ -445,6 +458,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("pairing ok");
 
   if (mi_client_logout(bob) != 1) {
     std::cerr << "bob logout failed\n";
@@ -470,6 +484,7 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("private msg ok");
 
   if (mi_client_create_group(alice, &group_id) != 1 || !group_id) {
     std::cerr << "create group failed\n";
@@ -506,9 +521,11 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("group msg ok");
   mi_client_free(group_id);
   group_id = nullptr;
 
+  LogStep("cleanup");
   cleanup();
   return 0;
 }

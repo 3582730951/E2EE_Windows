@@ -156,10 +156,13 @@ build_one() {
   make -j"$jobs"
   make install_sw
   popd >/dev/null
+  rm -rf "$work_dir"
 }
 
 for abi in $abis; do
   build_one "$abi"
 done
+
+rm -rf "$src_parent"
 
 echo "OpenSSL install root: $out_root"
