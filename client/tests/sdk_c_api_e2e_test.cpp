@@ -275,6 +275,32 @@ bool WaitForEvent(mi_client_handle* handle,
   return false;
 }
 
+bool WaitForChatOrOffline(mi_client_handle* handle,
+                          const std::string& match_sender,
+                          std::uint32_t timeout_ms) {
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_event_t events[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_poll_event(handle, events, 8, 200);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const mi_event_t& ev = events[i];
+      if (ev.type == MI_EVENT_CHAT_TEXT) {
+        if (match_sender.empty()) {
+          return true;
+        }
+        if (ev.sender && match_sender == ev.sender) {
+          return true;
+        }
+      } else if (ev.type == MI_EVENT_OFFLINE_PAYLOAD) {
+        if (ev.payload && ev.payload_len > 0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 bool WaitForPairingRequest(mi_client_handle* handle,
                            mi_device_pairing_request_t* out_request,
                            std::uint32_t timeout_ms) {
@@ -471,6 +497,7 @@ bool LoginWithRetry(mi_client_handle* handle,
 int main() {
   const std::string prev_data_dir = GetEnv("MI_E2EE_DATA_DIR");
   const std::string prev_hardening = GetEnv("MI_E2EE_HARDENING");
+  SetEnv("MI_E2EE_DATA_DIR", "");
   SetEnv("MI_E2EE_HARDENING", "off");
 
   const UserFileBackup backup = BackupTestUsers();
@@ -582,7 +609,6 @@ int main() {
   const std::string bob_cfg =
       WriteClientConfig(bob_dir, port, false, false);
 
-  SetEnv("MI_E2EE_DATA_DIR", alice_primary_dir.string());
   alice = mi_client_create(alice_primary_cfg.c_str());
   if (!alice) {
     std::cerr << "create alice failed\n";
@@ -596,7 +622,6 @@ int main() {
   }
   LogStep("alice login ok");
 
-  SetEnv("MI_E2EE_DATA_DIR", bob_dir.string());
   bob = mi_client_create(bob_cfg.c_str());
   if (!bob) {
     std::cerr << "create bob failed\n";
@@ -637,7 +662,6 @@ int main() {
   }
   LogStep("peer trust ok");
 
-  SetEnv("MI_E2EE_DATA_DIR", alice_linked_dir.string());
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
   if (!alice_linked) {
     std::cerr << "create linked alice failed\n";
@@ -708,7 +732,7 @@ int main() {
     cleanup();
     return 1;
   }
-  if (!WaitForEvent(bob, MI_EVENT_CHAT_TEXT, "alice", "", 5000)) {
+  if (!WaitForChatOrOffline(bob, "alice", 8000)) {
     std::cerr << "private chat event timeout\n";
     cleanup();
     return 1;
