@@ -200,6 +200,10 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
   error.clear();
   for (std::uint16_t port = 31000; port < 31100; ++port) {
     const std::string cfg_path = WriteServerConfig(dir, port);
+    {
+      const std::string msg = "server init " + std::to_string(port);
+      LogStep(msg.c_str());
+    }
     auto app_try = std::make_unique<mi::server::ServerApp>();
     std::string init_err;
     if (!app_try->Init(cfg_path, init_err)) {
@@ -462,6 +466,7 @@ int main() {
   }
   if (mi_client_login(alice, "alice", "alice123") != 1) {
     std::cerr << "alice login failed\n";
+    LogClientError("alice", alice);
     cleanup();
     return 1;
   }
@@ -476,6 +481,7 @@ int main() {
   }
   if (mi_client_login(bob, "bob", "bob123") != 1) {
     std::cerr << "bob login failed\n";
+    LogClientError("bob", bob);
     cleanup();
     return 1;
   }
@@ -507,6 +513,7 @@ int main() {
   }
   if (mi_client_login(alice_linked, "alice", "alice123") != 1) {
     std::cerr << "linked alice login failed\n";
+    LogClientError("linked", alice_linked);
     cleanup();
     return 1;
   }
@@ -551,6 +558,17 @@ int main() {
     return 1;
   }
   LogStep("pairing ok");
+
+  if (mi_client_send_private_text(bob, "alice", "prekey ping", &msg_id) != 1 ||
+      !msg_id) {
+    FailNow("prekey warmup send failed", bob);
+  }
+  mi_client_free(msg_id);
+  msg_id = nullptr;
+  if (!WaitForEvent(alice, MI_EVENT_CHAT_TEXT, "bob", "", 5000)) {
+    FailNow("prekey warmup recv timeout", alice);
+  }
+  LogStep("prekey warmup ok");
 
   if (mi_client_logout(bob) != 1) {
     std::cerr << "bob logout failed\n";
