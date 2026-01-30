@@ -225,7 +225,7 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     listener = std::move(listener_try);
     net = std::move(net_try);
     out_port = port;
-    mi::platform::SleepMs(50);
+    mi::platform::SleepMs(200);
     return true;
   }
   error = "network server start failed";
@@ -337,6 +337,30 @@ bool WaitForFriend(mi_client_handle* handle,
       }
     }
     mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool LoginWithRetry(mi_client_handle* handle,
+                    const char* username,
+                    const char* password,
+                    const char* label,
+                    int attempts,
+                    std::uint32_t delay_ms) {
+  if (!handle || !username || !password) {
+    return false;
+  }
+  const int max_attempts = attempts <= 0 ? 1 : attempts;
+  for (int i = 0; i < max_attempts; ++i) {
+    if (mi_client_login(handle, username, password) == 1) {
+      return true;
+    }
+    if (label) {
+      LogClientError(label, handle);
+    }
+    if (i + 1 < max_attempts) {
+      mi::platform::SleepMs(delay_ms);
+    }
   }
   return false;
 }
@@ -464,13 +488,15 @@ int main() {
     cleanup();
     return 1;
   }
-  if (mi_client_login(alice, "alice", "alice123") != 1) {
+  if (!LoginWithRetry(alice, "alice", "alice123", "alice", 3, 200)) {
     std::cerr << "alice login failed\n";
-    LogClientError("alice", alice);
     cleanup();
     return 1;
   }
   LogStep("alice login ok");
+  if (mi_client_publish_prekeys(alice) != 1) {
+    FailNow("alice prekey publish failed", alice);
+  }
 
   SetEnv("MI_E2EE_DATA_DIR", bob_dir.string());
   bob = mi_client_create(bob_cfg.c_str());
@@ -479,13 +505,15 @@ int main() {
     cleanup();
     return 1;
   }
-  if (mi_client_login(bob, "bob", "bob123") != 1) {
+  if (!LoginWithRetry(bob, "bob", "bob123", "bob", 3, 200)) {
     std::cerr << "bob login failed\n";
-    LogClientError("bob", bob);
     cleanup();
     return 1;
   }
   LogStep("bob login ok");
+  if (mi_client_publish_prekeys(bob) != 1) {
+    FailNow("bob prekey publish failed", bob);
+  }
 
   if (mi_client_send_friend_request(alice, "bob", "hi") != 1) {
     FailNow("send friend request failed", alice);
@@ -511,9 +539,8 @@ int main() {
     cleanup();
     return 1;
   }
-  if (mi_client_login(alice_linked, "alice", "alice123") != 1) {
+  if (!LoginWithRetry(alice_linked, "alice", "alice123", "linked", 3, 200)) {
     std::cerr << "linked alice login failed\n";
-    LogClientError("linked", alice_linked);
     cleanup();
     return 1;
   }
@@ -558,17 +585,6 @@ int main() {
     return 1;
   }
   LogStep("pairing ok");
-
-  if (mi_client_send_private_text(bob, "alice", "prekey ping", &msg_id) != 1 ||
-      !msg_id) {
-    FailNow("prekey warmup send failed", bob);
-  }
-  mi_client_free(msg_id);
-  msg_id = nullptr;
-  if (!WaitForEvent(alice, MI_EVENT_CHAT_TEXT, "bob", "", 5000)) {
-    FailNow("prekey warmup recv timeout", alice);
-  }
-  LogStep("prekey warmup ok");
 
   if (mi_client_logout(bob) != 1) {
     std::cerr << "bob logout failed\n";

@@ -1211,7 +1211,8 @@ jobs:
           arch: x86_64
           profile: Nexus 6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
+          emulator-boot-timeout: 600
           script: |
             cd android
             ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
@@ -1229,7 +1230,8 @@ jobs:
           arch: x86_64
           profile: Nexus 6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
+          emulator-boot-timeout: 600
           script: |
             cd android
             ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon

@@ -212,6 +212,7 @@ MI_E2EE_SDK_API int mi_client_register(mi_client_handle* handle,
 MI_E2EE_SDK_API int mi_client_login(mi_client_handle* handle,
                     const char* username,
                     const char* password);
+MI_E2EE_SDK_API int mi_client_publish_prekeys(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_logout(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_heartbeat(mi_client_handle* handle);
 

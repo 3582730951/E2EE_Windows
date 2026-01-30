@@ -901,6 +901,17 @@ int mi_client_login(mi_client_handle* handle,
   }
 }
 
+int mi_client_publish_prekeys(mi_client_handle* handle) {
+  if (!handle || !handle->core) {
+    return 0;
+  }
+  try {
+    return handle->core->EnsurePreKeyPublished() ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
 int mi_client_logout(mi_client_handle* handle) {
   if (!handle) {
     return 0;
