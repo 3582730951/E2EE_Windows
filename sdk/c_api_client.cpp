@@ -906,7 +906,7 @@ int mi_client_publish_prekeys(mi_client_handle* handle) {
     return 0;
   }
   try {
-    return handle->core->EnsurePreKeyPublished() ? 1 : 0;
+    return handle->core->PublishPreKeys() ? 1 : 0;
   } catch (...) {
     return 0;
   }

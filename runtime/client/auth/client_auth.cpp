@@ -35,6 +35,10 @@ bool ClientCore::Logout() {
   return auth_service.Logout(*this);
 }
 
+bool ClientCore::PublishPreKeys() {
+  return EnsurePreKeyPublished();
+}
+
 bool ClientCore::LoadKtState() {
   AuthService auth_service;
   return auth_service.LoadKtState(*this);

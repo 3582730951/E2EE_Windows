@@ -243,6 +243,7 @@ class ClientCore {
   bool Login(const std::string& username, const std::string& password);
   bool Relogin();
   bool Logout();
+  bool PublishPreKeys();
 
   bool JoinGroup(const std::string& group_id);
   bool LeaveGroup(const std::string& group_id);
