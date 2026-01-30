@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "listener.h"
+#include "key_transparency.h"
 #include "network_server.h"
 #include "platform_time.h"
 #include "server_app.h"
@@ -162,6 +163,17 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "[kcp]\n";
   out << "enable=0\n";
   out.flush();
+  {
+    const auto key_path = dir / "kt_signing_key.bin";
+    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x42);
+    std::ofstream key_out(key_path, std::ios::binary | std::ios::trunc);
+    if (key_out) {
+      key_out.write(reinterpret_cast<const char*>(key.data()),
+                    static_cast<std::streamsize>(key.size()));
+    } else {
+      std::cerr << "write kt_signing_key failed\n";
+    }
+  }
   return path.string();
 }
 
@@ -225,7 +237,7 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     listener = std::move(listener_try);
     net = std::move(net_try);
     out_port = port;
-    mi::platform::SleepMs(200);
+    mi::platform::SleepMs(500);
     return true;
   }
   error = "network server start failed";
@@ -339,6 +351,95 @@ bool WaitForFriend(mi_client_handle* handle,
     mi::platform::SleepMs(100);
   }
   return false;
+}
+
+void DrainEvents(mi_client_handle* handle) {
+  if (!handle) {
+    return;
+  }
+  mi_event_t events[8]{};
+  while (mi_client_poll_event(handle, events, 8, 0) > 0) {
+  }
+}
+
+bool WaitForPendingPeerTrust(mi_client_handle* handle,
+                             const std::string& expected_peer,
+                             std::string& out_pin,
+                             std::uint32_t timeout_ms) {
+  out_pin.clear();
+  if (!handle) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  while (mi::platform::NowSteadyMs() < deadline) {
+    if (mi_client_has_pending_peer_trust(handle) == 1) {
+      const char* peer = mi_client_pending_peer_username(handle);
+      const char* pin = mi_client_pending_peer_pin(handle);
+      if (!peer || !pin || *pin == '\0') {
+        return false;
+      }
+      if (!expected_peer.empty() && expected_peer != peer) {
+        return false;
+      }
+      out_pin.assign(pin);
+      return true;
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool TrustPendingPeerIfReady(mi_client_handle* handle,
+                             const std::string& expected_peer,
+                             std::uint32_t timeout_ms) {
+  std::string pin;
+  if (!WaitForPendingPeerTrust(handle, expected_peer, pin, timeout_ms)) {
+    return mi_client_has_pending_peer_trust(handle) == 0;
+  }
+  if (mi_client_trust_pending_peer(handle, pin.c_str()) != 1) {
+    return false;
+  }
+  return true;
+}
+
+bool EnsurePeerTrusted(mi_client_handle* sender,
+                       mi_client_handle* receiver,
+                       const std::string& receiver_name,
+                       const std::string& sender_name) {
+  if (!sender || !receiver) {
+    return false;
+  }
+  char* msg_id = nullptr;
+  if (mi_client_send_private_text(sender, receiver_name.c_str(), "trust ping",
+                                  &msg_id) != 1 ||
+      !msg_id) {
+    const char* last_err = mi_client_last_error(sender);
+    const std::string err = last_err ? last_err : "";
+    if (err != "peer not trusted" && err != "peer fingerprint changed") {
+      LogClientError("sender", sender);
+      return false;
+    }
+    if (!TrustPendingPeerIfReady(sender, receiver_name, 5000)) {
+      LogClientError("sender", sender);
+      return false;
+    }
+    if (mi_client_send_private_text(sender, receiver_name.c_str(), "trust ping",
+                                    &msg_id) != 1 ||
+        !msg_id) {
+      LogClientError("sender", sender);
+      return false;
+    }
+  }
+  if (msg_id) {
+    mi_client_free(msg_id);
+    msg_id = nullptr;
+  }
+  if (!TrustPendingPeerIfReady(receiver, sender_name, 5000)) {
+    LogClientError("receiver", receiver);
+    return false;
+  }
+  DrainEvents(receiver);
+  return true;
 }
 
 bool LoginWithRetry(mi_client_handle* handle,
@@ -488,15 +589,12 @@ int main() {
     cleanup();
     return 1;
   }
-  if (!LoginWithRetry(alice, "alice", "alice123", "alice", 3, 200)) {
+  if (!LoginWithRetry(alice, "alice", "alice123", "alice", 5, 500)) {
     std::cerr << "alice login failed\n";
     cleanup();
     return 1;
   }
   LogStep("alice login ok");
-  if (mi_client_publish_prekeys(alice) != 1) {
-    FailNow("alice prekey publish failed", alice);
-  }
 
   SetEnv("MI_E2EE_DATA_DIR", bob_dir.string());
   bob = mi_client_create(bob_cfg.c_str());
@@ -505,12 +603,15 @@ int main() {
     cleanup();
     return 1;
   }
-  if (!LoginWithRetry(bob, "bob", "bob123", "bob", 3, 200)) {
+  if (!LoginWithRetry(bob, "bob", "bob123", "bob", 5, 500)) {
     std::cerr << "bob login failed\n";
     cleanup();
     return 1;
   }
   LogStep("bob login ok");
+  if (mi_client_publish_prekeys(alice) != 1) {
+    FailNow("alice prekey publish failed", alice);
+  }
   if (mi_client_publish_prekeys(bob) != 1) {
     FailNow("bob prekey publish failed", bob);
   }
@@ -531,6 +632,10 @@ int main() {
     FailNow("friend sync timeout", bob);
   }
   LogStep("friend ok");
+  if (!EnsurePeerTrusted(alice, bob, "bob", "alice")) {
+    FailNow("peer trust failed", alice);
+  }
+  LogStep("peer trust ok");
 
   SetEnv("MI_E2EE_DATA_DIR", alice_linked_dir.string());
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
@@ -539,7 +644,7 @@ int main() {
     cleanup();
     return 1;
   }
-  if (!LoginWithRetry(alice_linked, "alice", "alice123", "linked", 3, 200)) {
+  if (!LoginWithRetry(alice_linked, "alice", "alice123", "linked", 5, 500)) {
     std::cerr << "linked alice login failed\n";
     cleanup();
     return 1;
