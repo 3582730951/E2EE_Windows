@@ -70,7 +70,7 @@ class OpusCodecPosix final : public OpusCodec {
     return true;
   }
 
-  void Shutdown() override {
+  void Shutdown() {
     if (destroy_encoder_ && enc_) {
       destroy_encoder_(enc_);
     }
@@ -591,7 +591,7 @@ class H264CodecApple final : public H264Codec {
     return true;
   }
 
-  void Shutdown() override {
+  void Shutdown() {
     if (enc_session_) {
       VTCompressionSessionInvalidate(enc_session_);
       CFRelease(enc_session_);

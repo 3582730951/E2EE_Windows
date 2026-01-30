@@ -993,6 +993,16 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android/sdk/system-images \
+            /usr/local/lib/android/sdk/emulator \
+            /usr/local/lib/android/sdk/ndk \
+            /usr/local/lib/android/sdk/cmake \
+            /usr/local/lib/android/sdk/build-tools
+          df -h
+
       - name: Install OLLVM host deps
         run: |
           sudo apt-get update
@@ -1002,7 +1012,7 @@ jobs:
 
       - name: Install Android components
         run: |
-          sdkmanager "platform-tools" "platforms;android-34" "platforms;android-33" "build-tools;34.0.0" "cmake;3.22.1" "ndk;${MI_E2EE_ANDROID_NDK_VERSION}" "emulator" "system-images;android-34;google_apis;x86_64" "system-images;android-33;google_apis;x86_64"
+          sdkmanager "platform-tools" "platforms;android-34" "platforms;android-33" "build-tools;34.0.0" "cmake;3.22.1" "ndk;${MI_E2EE_ANDROID_NDK_VERSION}"
 
       - name: Resolve Android NDK root
         run: |
@@ -1206,6 +1216,11 @@ jobs:
             cd android
             ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
 
+      - name: Cleanup Android emulator image (api34)
+        if: always()
+        run: |
+          sdkmanager --uninstall "system-images;android-34;google_apis;x86_64" || true
+
       - name: Run Android instrumentation tests (x86_64 api33)
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -1218,6 +1233,11 @@ jobs:
           script: |
             cd android
             ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+
+      - name: Cleanup Android emulator image (api33)
+        if: always()
+        run: |
+          sdkmanager --uninstall "system-images;android-33;google_apis;x86_64" || true
 
       - name: Auth to Google Cloud
         if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}

@@ -292,6 +292,51 @@ bool WaitForPairingComplete(mi_client_handle* handle,
   return false;
 }
 
+bool WaitForFriendRequest(mi_client_handle* handle,
+                          const std::string& requester,
+                          std::uint32_t timeout_ms) {
+  if (!handle || requester.empty()) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_friend_request_entry_t entries[4]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count =
+        mi_client_list_friend_requests(handle, entries, 4);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const char* name = entries[i].requester_username;
+      if (name && requester == name) {
+        return true;
+      }
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool WaitForFriend(mi_client_handle* handle,
+                   const std::string& friend_username,
+                   std::uint32_t timeout_ms) {
+  if (!handle || friend_username.empty()) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_friend_entry_t entries[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    int changed = 0;
+    const std::uint32_t count =
+        mi_client_sync_friends(handle, entries, 8, &changed);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const char* name = entries[i].username;
+      if (name && friend_username == name) {
+        return true;
+      }
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
 }  // namespace
 
 int main() {
@@ -364,6 +409,7 @@ int main() {
 
   LogStep("init");
   base_dir = MakeUniqueDir("test_e2e");
+  LogStep("base dir ok");
   const auto server_dir = base_dir / "server";
   std::error_code ec;
   std::filesystem::create_directories(server_dir, ec);
@@ -372,9 +418,11 @@ int main() {
     cleanup();
     return 1;
   }
+  LogStep("server dir ok");
 
   std::uint16_t port = 0;
   std::string server_err;
+  LogStep("start server");
   if (!StartServer(app, listener, net, server_dir, port, server_err)) {
     if (server_err.find("tcp server not built") != std::string::npos) {
       cleanup();
@@ -432,6 +480,23 @@ int main() {
     return 1;
   }
   LogStep("bob login ok");
+
+  if (mi_client_send_friend_request(alice, "bob", "hi") != 1) {
+    FailNow("send friend request failed", alice);
+  }
+  if (!WaitForFriendRequest(bob, "alice", 5000)) {
+    FailNow("friend request timeout", bob);
+  }
+  if (mi_client_respond_friend_request(bob, "alice", 1) != 1) {
+    FailNow("accept friend request failed", bob);
+  }
+  if (!WaitForFriend(alice, "bob", 5000)) {
+    FailNow("friend sync timeout", alice);
+  }
+  if (!WaitForFriend(bob, "alice", 5000)) {
+    FailNow("friend sync timeout", bob);
+  }
+  LogStep("friend ok");
 
   SetEnv("MI_E2EE_DATA_DIR", alice_linked_dir.string());
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
