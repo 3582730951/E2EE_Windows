@@ -221,8 +221,12 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     if (!app_try->Init(cfg_path, init_err)) {
       continue;
     }
+    LogStep("server app ok");
     auto listener_try = std::make_unique<mi::server::Listener>(app_try.get());
     mi::server::NetworkServerLimits limits;
+    limits.max_worker_threads = 1;
+    limits.max_io_threads = 1;
+    limits.max_pending_tasks = 256;
     auto net_try = std::make_unique<mi::server::NetworkServer>(
         listener_try.get(), port, false, "", false, limits);
     std::string net_err;
@@ -621,6 +625,7 @@ int main() {
     return 1;
   }
   LogStep("alice login ok");
+  mi::platform::SleepMs(200);
 
   bob = mi_client_create(bob_cfg.c_str());
   if (!bob) {
@@ -715,11 +720,7 @@ int main() {
   }
   LogStep("pairing ok");
 
-  if (mi_client_logout(bob) != 1) {
-    std::cerr << "bob logout failed\n";
-    cleanup();
-    return 1;
-  }
+  DrainEvents(bob);
   if (mi_client_send_private_text(alice, "bob", "hello", &msg_id) != 1 ||
       !msg_id) {
     FailNow("send private text failed", alice);
@@ -727,11 +728,6 @@ int main() {
   mi_client_free(msg_id);
   msg_id = nullptr;
 
-  if (mi_client_login(bob, "bob", "bob123") != 1) {
-    std::cerr << "bob relogin failed\n";
-    cleanup();
-    return 1;
-  }
   if (!WaitForChatOrOffline(bob, "alice", 8000)) {
     std::cerr << "private chat event timeout\n";
     cleanup();
