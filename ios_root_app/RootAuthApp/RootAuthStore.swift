@@ -8,7 +8,9 @@ final class RootAuthStore: ObservableObject {
     @Published var secondsRemaining: Int = 0
 
     private let keychainService = "mi.e2ee.rootauth"
-    private let keychainAccount = "root_auth_secret"
+    private let keychainAccountPlain = "root_auth_secret"
+    private let keychainAccountCipher = "root_auth_secret_cipher"
+    private let keychainKeyTag = "mi.e2ee.rootauth.key"
     private var timer: Timer?
 
     init() {
@@ -99,42 +101,151 @@ final class RootAuthStore: ObservableObject {
     }
 
     private func saveSecret(_ secret: String) {
-        let data = Data(secret.utf8)
+        deleteSecret()
+        if let cipher = encryptSecret(secret) {
+            storeData(cipher, account: keychainAccountCipher)
+            return
+        }
+        storeData(Data(secret.utf8), account: keychainAccountPlain)
+    }
+
+    private func loadSecret() -> String? {
+        if let cipher = loadData(account: keychainAccountCipher) {
+            if let decoded = decryptSecret(cipher) {
+                return decoded
+            }
+        }
+        if let plain = loadData(account: keychainAccountPlain),
+           let text = String(data: plain, encoding: .utf8) {
+            if let cipher = encryptSecret(text) {
+                storeData(cipher, account: keychainAccountCipher)
+                deleteData(account: keychainAccountPlain)
+            }
+            return text
+        }
+        return nil
+    }
+
+    private func deleteSecret() {
+        deleteData(account: keychainAccountPlain)
+        deleteData(account: keychainAccountCipher)
+    }
+
+    private func storeData(_ data: Data, account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount
+            kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
         let add: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecValueData as String: data
         ]
         SecItemAdd(add as CFDictionary, nil)
     }
 
-    private func loadSecret() -> String? {
+    private func loadData(account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
+            kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        return data
     }
 
-    private func deleteSecret() {
+    private func deleteData(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount
+            kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    private func loadOrCreateKey() -> SecKey? {
+        guard let tag = keychainKeyTag.data(using: .utf8) else { return nil }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrApplicationTag as String: tag,
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecReturnRef as String: true
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let key = item as? SecKey {
+            return key
+        }
+        if status != errSecItemNotFound {
+            return nil
+        }
+        var privateAttrs: [String: Any] = [
+            kSecAttrIsPermanent as String: true,
+            kSecAttrApplicationTag as String: tag
+        ]
+        if let access = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            [.privateKeyUsage],
+            nil
+        ) {
+            privateAttrs[kSecAttrAccessControl as String] = access
+        } else {
+            privateAttrs[kSecAttrAccessible as String] =
+                kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
+        var attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecPrivateKeyAttrs as String: privateAttrs
+        ]
+        var error: Unmanaged<CFError>?
+        if #available(iOS 10.0, *) {
+            attributes[kSecAttrTokenID as String] = kSecAttrTokenIDSecureEnclave
+        }
+        if let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) {
+            return key
+        }
+        attributes.removeValue(forKey: kSecAttrTokenID as String)
+        error = nil
+        return SecKeyCreateRandomKey(attributes as CFDictionary, &error)
+    }
+
+    private func encryptSecret(_ secret: String) -> Data? {
+        guard let key = loadOrCreateKey(),
+              let publicKey = SecKeyCopyPublicKey(key) else { return nil }
+        let algorithm = SecKeyAlgorithm.eciesEncryptionCofactorX963SHA256AESGCM
+        guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
+            return nil
+        }
+        let plain = Data(secret.utf8)
+        var error: Unmanaged<CFError>?
+        guard let cipher = SecKeyCreateEncryptedData(publicKey, algorithm,
+                                                     plain as CFData, &error) else {
+            return nil
+        }
+        return cipher as Data
+    }
+
+    private func decryptSecret(_ data: Data) -> String? {
+        guard let key = loadOrCreateKey() else { return nil }
+        let algorithm = SecKeyAlgorithm.eciesEncryptionCofactorX963SHA256AESGCM
+        guard SecKeyIsAlgorithmSupported(key, .decrypt, algorithm) else {
+            return nil
+        }
+        var error: Unmanaged<CFError>?
+        guard let plain = SecKeyCreateDecryptedData(key, algorithm,
+                                                    data as CFData, &error) else {
+            return nil
+        }
+        return String(data: plain as Data, encoding: .utf8)
     }
 }

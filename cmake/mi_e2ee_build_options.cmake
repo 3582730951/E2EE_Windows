@@ -1,6 +1,8 @@
 include_guard(GLOBAL)
 
 option(MI_E2EE_ENABLE_LTO "Enable LTO (Release only)" ON)
+option(MI_E2EE_ENABLE_SYMBOL_HIDE "Hide symbols by default (Release only)" ON)
+option(MI_E2EE_ENABLE_STRIP "Strip symbols in Release (best-effort)" ON)
 option(MI_E2EE_PGO_INSTRUMENT "Enable PGO instrumentation build (Release only)" ON)
 option(MI_E2EE_PGO_USE "Enable PGO profile-use build (Release only)" OFF)
 set(MI_E2EE_PGO_PROFILE_DIR "" CACHE PATH "Optional PGO profile directory (gcc/clang)")
@@ -24,6 +26,23 @@ endif()
 
 if(NOT TARGET mi_e2ee_build_flags)
   add_library(mi_e2ee_build_flags INTERFACE)
+endif()
+
+if(MI_E2EE_ENABLE_SYMBOL_HIDE AND NOT MSVC)
+  target_compile_options(mi_e2ee_build_flags INTERFACE
+    $<$<CONFIG:Release>:-fvisibility=hidden>
+    $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:-fvisibility-inlines-hidden>
+  )
+endif()
+
+if(MI_E2EE_ENABLE_STRIP)
+  if(MSVC)
+    # MSVC uses PDBs; keep default unless explicitly overridden.
+  elseif(APPLE)
+    target_link_options(mi_e2ee_build_flags INTERFACE $<$<CONFIG:Release>:-Wl,-x>)
+  else()
+    target_link_options(mi_e2ee_build_flags INTERFACE $<$<CONFIG:Release>:-Wl,--strip-all>)
+  endif()
 endif()
 
 if(MI_E2EE_ENABLE_ASAN)

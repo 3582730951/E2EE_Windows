@@ -392,6 +392,7 @@ bool ClientCore::ResendChatFile(const std::string& peer_username,
 }
 
 ClientCore::ChatPollResult ClientCore::PollChat() {
+  CheckTamperState();
   return MessagingService().PollChat(*this);
 }
 

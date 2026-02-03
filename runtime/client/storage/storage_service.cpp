@@ -1424,6 +1424,11 @@ bool StorageService::AddHistorySystemMessage(ClientCore& core, const std::string
 }
 
 void StorageService::SetHistoryEnabled(ClientCore& core, bool enabled) const {
+  if (core.tamper_mode_) {
+    core.history_enabled_ = false;
+    core.history_store_.reset();
+    return;
+  }
   core.history_enabled_ = enabled;
   if (!core.history_enabled_) {
     core.history_store_.reset();

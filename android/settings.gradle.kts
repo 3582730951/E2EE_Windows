@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "mi_e2ee_android_ui"
 include(":app")
+include(":rootapp")

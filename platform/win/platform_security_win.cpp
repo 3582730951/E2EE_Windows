@@ -26,6 +26,9 @@ namespace {
 std::atomic<bool> gStarted{false};
 enum class HardeningLevel : std::uint8_t { kOff = 0, kLow = 1, kMedium = 2, kHigh = 3 };
 std::atomic<HardeningLevel> gLevel{HardeningLevel::kHigh};
+std::atomic<bool> gTamperDetected{false};
+std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
+std::atomic<TamperHandler> gTamperHandler{nullptr};
 
 using SetProcessMitigationPolicyFn = BOOL(WINAPI*)(int, PVOID, SIZE_T);
 using NtQueryInformationProcessFn =
@@ -66,6 +69,70 @@ struct TextRegion {
   const std::uint8_t* base{nullptr};
   std::size_t size{0};
 };
+
+bool ParseEnvFlag(const char* name, bool default_value) noexcept {
+  const char* env = std::getenv(name);
+  if (!env || *env == '\0') {
+    return default_value;
+  }
+  std::string v(env);
+  for (auto& ch : v) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  if (v == "1" || v == "true" || v == "on" || v == "yes") {
+    return true;
+  }
+  if (v == "0" || v == "false" || v == "off" || v == "no") {
+    return false;
+  }
+  return default_value;
+}
+
+bool FailCloseEnabled() noexcept {
+  return ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", false) ||
+         ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", false);
+}
+
+void FailClose(TamperSignal signal) noexcept {
+  if (!FailCloseEnabled()) {
+    return;
+  }
+  std::uint32_t code = 0xE2EE00FFu;
+  switch (signal) {
+    case TamperSignal::kDebugger:
+      code = 0xE2EE0002u;
+      break;
+    case TamperSignal::kCodeTamper:
+      code = 0xE2EE0001u;
+      break;
+    case TamperSignal::kHardwareBreakpoint:
+      code = 0xE2EE0003u;
+      break;
+    case TamperSignal::kSignatureInvalid:
+      code = 0xE2EE0004u;
+      break;
+    case TamperSignal::kSandboxMissing:
+      code = 0xE2EE0005u;
+      break;
+    default:
+      break;
+  }
+  TerminateProcess(GetCurrentProcess(), static_cast<UINT>(code));
+}
+
+void ReportTamper(TamperSignal signal) noexcept {
+  if (signal == TamperSignal::kNone) {
+    return;
+  }
+  const bool first = !gTamperDetected.exchange(true);
+  gLastTamper.store(signal);
+  if (first) {
+    if (auto handler = gTamperHandler.load()) {
+      handler(signal);
+    }
+  }
+  FailClose(signal);
+}
 
 void ApplyBestEffortMitigations(HardeningLevel level) noexcept {
   if (level == HardeningLevel::kOff) {
@@ -247,16 +314,13 @@ bool HasHardwareBreakpoints() noexcept {
   return hit;
 }
 
-void TerminateFailClosed(std::uint32_t code) noexcept {
-  TerminateProcess(GetCurrentProcess(), static_cast<UINT>(code));
-}
-
 void ScanThreadMain(TextRegion region,
                     std::array<std::uint8_t, 32> baseline) noexcept {
   for (;;) {
     const auto now = HashText(region);
     if (now != baseline) {
-      TerminateFailClosed(0xE2EE0001u);
+      ReportTamper(TamperSignal::kCodeTamper);
+      return;
     }
     Sleep(1000);
   }
@@ -268,19 +332,23 @@ void MonitorThreadMain() noexcept {
     return;
   }
   const bool check_hw_breakpoints = (level == HardeningLevel::kHigh);
-  if (IsDebuggerPresentFast() || IsDebuggerPresentNt() ||
-      (check_hw_breakpoints && HasHardwareBreakpoints())) {
-    TerminateFailClosed(0xE2EE0002u);
+  const bool hw_break = check_hw_breakpoints && HasHardwareBreakpoints();
+  if (IsDebuggerPresentFast() || IsDebuggerPresentNt() || hw_break) {
+    ReportTamper(hw_break ? TamperSignal::kHardwareBreakpoint
+                          : TamperSignal::kDebugger);
+    return;
   }
   std::uint32_t tick = 0;
   for (;;) {
     ApplyBestEffortMitigations(level);
     if (IsDebuggerPresentFast() || IsDebuggerPresentNt()) {
-      TerminateFailClosed(0xE2EE0002u);
+      ReportTamper(TamperSignal::kDebugger);
+      return;
     }
     if (check_hw_breakpoints && (++tick % 3u) == 0u) {
       if (HasHardwareBreakpoints()) {
-        TerminateFailClosed(0xE2EE0003u);
+        ReportTamper(TamperSignal::kHardwareBreakpoint);
+        return;
       }
     }
     Sleep(5000);
@@ -345,6 +413,18 @@ void StartEndpointHardening() noexcept {
   gLevel.store(level);
   ApplyBestEffortMitigations(level);
   StartThreadsBestEffort(level);
+}
+
+void SetTamperHandler(TamperHandler handler) noexcept {
+  gTamperHandler.store(handler);
+}
+
+bool IsTamperDetected() noexcept {
+  return gTamperDetected.load();
+}
+
+TamperSignal LastTamperSignal() noexcept {
+  return gLastTamper.load();
 }
 
 }  // namespace mi::platform

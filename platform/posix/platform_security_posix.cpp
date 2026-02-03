@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <unistd.h>
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <cstdio>
@@ -39,6 +40,10 @@ enum class HardeningLevel : std::uint8_t {
   kHigh = 3
 };
 
+std::atomic<bool> gTamperDetected{false};
+std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
+std::atomic<TamperHandler> gTamperHandler{nullptr};
+
 HardeningLevel ParseHardeningLevel() noexcept {
   const char* env = std::getenv("MI_E2EE_HARDENING");
   if (!env || *env == '\0') {
@@ -66,7 +71,6 @@ HardeningLevel ParseHardeningLevel() noexcept {
   return HardeningLevel::kHigh;
 }
 
-#if defined(__APPLE__)
 bool ParseEnvFlag(const char* name, bool default_value) noexcept {
   const char* env = std::getenv(name);
   if (!env || *env == '\0') {
@@ -85,6 +89,53 @@ bool ParseEnvFlag(const char* name, bool default_value) noexcept {
   return default_value;
 }
 
+bool FailCloseEnabled() noexcept {
+  return ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", false) ||
+         ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", false);
+}
+
+void FailClose(TamperSignal signal) noexcept {
+  if (!FailCloseEnabled()) {
+    return;
+  }
+  std::uint32_t code = 0xE2EE00FFu;
+  switch (signal) {
+    case TamperSignal::kDebugger:
+      code = 0xE2EE0002u;
+      break;
+    case TamperSignal::kCodeTamper:
+      code = 0xE2EE0001u;
+      break;
+    case TamperSignal::kHardwareBreakpoint:
+      code = 0xE2EE0003u;
+      break;
+    case TamperSignal::kSignatureInvalid:
+      code = 0xE2EE0004u;
+      break;
+    case TamperSignal::kSandboxMissing:
+      code = 0xE2EE0005u;
+      break;
+    default:
+      break;
+  }
+  _exit(static_cast<int>(code));
+}
+
+void ReportTamper(TamperSignal signal) noexcept {
+  if (signal == TamperSignal::kNone) {
+    return;
+  }
+  const bool first = !gTamperDetected.exchange(true);
+  gLastTamper.store(signal);
+  if (first) {
+    if (auto handler = gTamperHandler.load()) {
+      handler(signal);
+    }
+  }
+  FailClose(signal);
+}
+
+#if defined(__APPLE__)
 bool IsTracedMac() noexcept {
   int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
   struct kinfo_proc info {};
@@ -144,15 +195,15 @@ void ApplyAppleIntegrityBestEffort(HardeningLevel level) noexcept {
       ParseEnvFlag("MI_E2EE_MAC_REQUIRE_SANDBOX", false);
   if (level >= HardeningLevel::kHigh) {
     if (!CheckCodeSignature(require_signature)) {
-      _exit(0xE2EE0004u);
+      ReportTamper(TamperSignal::kSignatureInvalid);
     }
   } else if (require_signature) {
     if (!CheckCodeSignature(true)) {
-      _exit(0xE2EE0004u);
+      ReportTamper(TamperSignal::kSignatureInvalid);
     }
   }
   if (require_sandbox && !HasAppSandboxEntitlement()) {
-    _exit(0xE2EE0005u);
+    ReportTamper(TamperSignal::kSandboxMissing);
   }
 }
 #endif
@@ -272,14 +323,26 @@ void StartEndpointHardening() noexcept {
 #if defined(__APPLE__)
   ApplyAppleIntegrityBestEffort(level);
   if (level == HardeningLevel::kHigh && IsTracedMac()) {
-    _exit(0xE2EE0002u);
+    ReportTamper(TamperSignal::kDebugger);
   }
 #endif
 #if defined(__linux__) && !defined(__ANDROID__)
   if (level == HardeningLevel::kHigh && IsTracedLinux()) {
-    _exit(0xE2EE0002u);
+    ReportTamper(TamperSignal::kDebugger);
   }
 #endif
+}
+
+void SetTamperHandler(TamperHandler handler) noexcept {
+  gTamperHandler.store(handler);
+}
+
+bool IsTamperDetected() noexcept {
+  return gTamperDetected.load();
+}
+
+TamperSignal LastTamperSignal() noexcept {
+  return gLastTamper.load();
 }
 
 }  // namespace mi::platform

@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Root Auth</string>
+    <string name="title">Root Auth</string>
+    <string name="code_label">Auth code</string>
+    <string name="remaining_label">Refresh in %1$d s</string>
+    <string name="secret_hint">64-hex root secret</string>
+    <string name="save">Save</string>
+    <string name="clear">Clear</string>
+    <string name="copy_code">Copy code</string>
+    <string name="secret_invalid">Secret must be 64 hex characters.</string>
+    <string name="secret_saved">Secret saved.</string>
+    <string name="secret_cleared">Secret cleared.</string>
+    <string name="scan_title">Scan login QR</string>
+    <string name="scan_hint">Scan the login or root secret QR to verify device info.</string>
+    <string name="scan_button">Start scan</string>
+    <string name="scan_login_title">New device login request</string>
+    <string name="scan_device">Device: %1$s</string>
+    <string name="scan_invalid">QR code not recognized.</string>
+    <string name="scan_close">Close</string>
+</resources>

@@ -529,6 +529,9 @@ class ClientCore {
   friend class StorageService;
   friend class SyncService;
 
+  void CheckTamperState();
+  void EnterTamperMode(std::uint8_t signal);
+
   struct CachedPeerIdentity {
     std::vector<std::uint8_t> id_sig_pk;
     std::array<std::uint8_t, 32> id_dh_pk{};
@@ -760,6 +763,8 @@ class ClientCore {
   bool prekey_published_{false};
   std::filesystem::path e2ee_state_dir_;
   bool history_enabled_{true};
+  bool tamper_mode_{false};
+  std::uint8_t tamper_signal_{0};
   std::unique_ptr<ChatHistoryStore> history_store_;
   std::filesystem::path kt_state_path_;
   std::uint64_t kt_tree_size_{0};

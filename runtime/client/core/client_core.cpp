@@ -57,7 +57,9 @@ int PQCLEAN_MLKEM768_CLEAN_crypto_kem_dec(std::uint8_t* ss,
 #include "payload_padding.h"
 #include "secure_buffer.h"
 #include "security_service.h"
+#include "storage_service.h"
 #include "trust_store.h"
+#include "platform_security.h"
 #include "platform_net.h"
 #include "platform_random.h"
 #include "platform_fs.h"
@@ -2375,6 +2377,51 @@ bool ClientCore::DecodeGroupCallKeyReq(
                                    out_want_key_id);
 }
 
+void ClientCore::CheckTamperState() {
+  if (tamper_mode_) {
+    return;
+  }
+  if (!mi::platform::IsTamperDetected()) {
+    return;
+  }
+  const auto signal = mi::platform::LastTamperSignal();
+  EnterTamperMode(static_cast<std::uint8_t>(signal));
+}
+
+void ClientCore::EnterTamperMode(std::uint8_t signal) {
+  if (tamper_mode_) {
+    return;
+  }
+  tamper_mode_ = true;
+  tamper_signal_ = signal;
+
+  std::string wipe_err;
+  if (!username_.empty() && !e2ee_state_dir_.empty()) {
+    (void)StorageService().ClearAllHistory(*this, true, true, wipe_err);
+  } else if (!e2ee_state_dir_.empty()) {
+    std::error_code ec;
+    std::filesystem::remove_all(e2ee_state_dir_ / "history", ec);
+  }
+
+  history_enabled_ = false;
+  history_store_.reset();
+
+  peer_id_cache_.clear();
+  group_sender_keys_.clear();
+  group_call_keys_.clear();
+  pending_sender_key_dists_.clear();
+  sender_key_req_last_sent_.clear();
+  pending_group_cipher_.clear();
+  group_membership_dirty_.clear();
+  group_delivery_map_.clear();
+  group_delivery_order_.clear();
+  chat_seen_ids_.clear();
+  chat_seen_order_.clear();
+
+  ResetRemoteStream();
+  prekey_published_ = false;
+}
+
 bool ClientCore::Init(const std::string& config_path) {
   config_path_ = config_path;
   ClientConfig cfg;
@@ -2382,6 +2429,7 @@ bool ClientCore::Init(const std::string& config_path) {
   SecurityService security_service;
   std::string err;
   security_service.StartEndpointHardening();
+  CheckTamperState();
   const bool loaded = config_service.Load(config_path_, cfg, err);
   remote_mode_ = loaded;
   const std::filesystem::path config_dir = config_service.config_dir();
@@ -3025,6 +3073,7 @@ bool ClientCore::RootAuthInit(std::string& out_secret_hex) {
 bool ClientCore::ProcessEncrypted(mi::server::FrameType type,
                                   const std::vector<std::uint8_t>& plain,
                                   std::vector<std::uint8_t>& out_plain) {
+  CheckTamperState();
   return TransportService().ProcessEncrypted(*this, type, plain, out_plain);
 }
 

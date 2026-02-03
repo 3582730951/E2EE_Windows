@@ -8,6 +8,7 @@ Features
 - 6-digit auth code, refreshed every 5 seconds.
 - Scan login QR codes and prompt for approval.
 - Import root secret via QR (mi_e2ee://root-auth?secret=...) or manual 64-hex entry.
+- Secret is stored device-only and encrypted with Secure Enclave key when available.
 
 Build
 1) Install XcodeGen (optional)

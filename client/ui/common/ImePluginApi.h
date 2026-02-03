@@ -10,7 +10,7 @@
 #define MI_IME_EXPORT
 #endif
 #else
-#define MI_IME_EXPORT
+#define MI_IME_EXPORT __attribute__((visibility("default")))
 #endif
 
 constexpr int kMiImeApiVersion = 3;
