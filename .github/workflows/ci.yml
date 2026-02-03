@@ -829,20 +829,38 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build Rust bindings
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
-        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
+        run: |
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
+            exit 1
+          fi
+          export MI_E2EE_CLIENT_LIB_DIR="$(dirname "$lib_path")"
+          cargo build --manifest-path bindings/rust/Cargo.toml --examples
 
       - name: Python binding smoke
-        env:
-          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.so
-        run: python3 bindings/python/smoke_quiet.py
+        run: |
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
+            exit 1
+          fi
+          export MI_E2EE_CLIENT_DLL="$lib_path"
+          python3 bindings/python/smoke_quiet.py
 
       - name: Rust binding smoke
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
         run: |
-          export LD_LIBRARY_PATH="${{ github.workspace }}/build/client:${LD_LIBRARY_PATH:-}"
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
+            exit 1
+          fi
+          lib_dir=$(dirname "$lib_path")
+          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
+          export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
           cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Package artifacts

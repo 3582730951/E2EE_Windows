@@ -240,7 +240,7 @@ class MysqlStateStore final : public StateStore {
       mysql_stmt_close(stmt);
       return false;
     }
-    const int timeout_sec =
+    int timeout_sec =
         static_cast<int>(std::max<std::int64_t>(
             0, timeout.count() / 1000));
     MYSQL_BIND params[2]{};
