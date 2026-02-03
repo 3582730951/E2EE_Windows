@@ -14,6 +14,7 @@
 #include "crypto.h"
 #include "hex_utils.h"
 #include "monocypher.h"
+#include "platform_time.h"
 #include "protocol.h"
 
 namespace mi::client {
@@ -49,14 +50,22 @@ bool ClientCore::LoginWithRootCode(const std::string& username,
   if (!auth_service.Login(*this, username, password)) {
     return false;
   }
-  if (!RegisterDevice(root_code)) {
+  const int max_attempts = 3;
+  for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    if (RegisterDevice(root_code)) {
+      return true;
+    }
     if (last_error_ == "root auth required" ||
         last_error_ == "root auth invalid") {
       auth_service.Logout(*this);
+      return false;
     }
-    return false;
+    if (attempt + 1 < max_attempts) {
+      ResetRemoteStream();
+      mi::platform::SleepMs(200);
+    }
   }
-  return true;
+  return false;
 }
 
 bool ClientCore::BeginQrLogin(std::string& out_payload) {

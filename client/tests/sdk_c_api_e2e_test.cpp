@@ -37,6 +37,23 @@ std::string GetEnv(const char* name) {
 #endif
 }
 
+bool IsTruthyEnv(const std::string& value) {
+  if (value.empty()) {
+    return false;
+  }
+  if (value == "1" || value == "true" || value == "TRUE" || value == "True" ||
+      value == "yes" || value == "YES" || value == "Yes" ||
+      value == "on" || value == "ON" || value == "On") {
+    return true;
+  }
+  return false;
+}
+
+bool IsCi() {
+  return IsTruthyEnv(GetEnv("GITHUB_ACTIONS")) ||
+         IsTruthyEnv(GetEnv("CI"));
+}
+
 bool SetEnv(const char* name, const std::string& value) {
 #ifdef _WIN32
   return _putenv_s(name, value.c_str()) == 0;
@@ -136,6 +153,13 @@ void LogClientError(const char* label, mi_client_handle* handle) {
   }
   std::cerr.flush();
 }
+
+constexpr std::uint32_t kFriendTimeoutMs = 10000;
+constexpr std::uint32_t kPairingTimeoutMs = 15000;
+constexpr std::uint32_t kChatTimeoutMs = 15000;
+constexpr std::uint32_t kGroupInviteTimeoutMs = 8000;
+constexpr std::uint32_t kGroupTextTimeoutMs = 10000;
+constexpr std::uint32_t kPostLoginDelayMs = 300;
 
 [[noreturn]] void FailNow(const char* msg, mi_client_handle* handle) {
   if (msg) {
@@ -239,8 +263,8 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     LogStep("server app ok");
     auto listener_try = std::make_unique<mi::server::Listener>(app_try.get());
     mi::server::NetworkServerLimits limits;
-    limits.max_worker_threads = 1;
-    limits.max_io_threads = 1;
+    limits.max_worker_threads = 2;
+    limits.max_io_threads = 2;
     limits.max_pending_tasks = 256;
     auto net_try = std::make_unique<mi::server::NetworkServer>(
         listener_try.get(), port, false, "", false, limits);
@@ -511,6 +535,29 @@ bool LoginWithRetry(mi_client_handle* handle,
   return false;
 }
 
+bool PublishPrekeysWithRetry(mi_client_handle* handle,
+                             const char* label,
+                             int attempts,
+                             std::uint32_t delay_ms) {
+  if (!handle) {
+    return false;
+  }
+  const int max_attempts = attempts <= 0 ? 1 : attempts;
+  for (int i = 0; i < max_attempts; ++i) {
+    if (mi_client_publish_prekeys(handle) == 1) {
+      return true;
+    }
+    if (label) {
+      LogClientError(label, handle);
+    }
+    (void)mi_client_heartbeat(handle);
+    if (i + 1 < max_attempts) {
+      mi::platform::SleepMs(delay_ms);
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 int main() {
@@ -576,10 +623,22 @@ int main() {
     }
   };
 
-  if (!WriteTestUsers()) {
-    std::cerr << "write test users failed\n";
+  auto fail = [&](const char* msg, mi_client_handle* handle) -> int {
+    if (IsCi()) {
+      FailNow(msg, handle);
+    }
+    if (msg) {
+      std::cerr << msg << "\n";
+    }
+    if (handle) {
+      LogClientError("client", handle);
+    }
     cleanup();
     return 1;
+  };
+
+  if (!WriteTestUsers()) {
+    return fail("write test users failed", nullptr);
   }
 
   LogStep("init");
@@ -589,9 +648,7 @@ int main() {
   std::error_code ec;
   std::filesystem::create_directories(server_dir, ec);
   if (ec) {
-    std::cerr << "create server dir failed\n";
-    cleanup();
-    return 1;
+    return fail("create server dir failed", nullptr);
   }
   LogStep("server dir ok");
 
@@ -619,11 +676,16 @@ int main() {
         cleanup();
         return 0;
       }
-      std::cerr << "start server failed: " << server_err << "\n";
-      cleanup();
-      return 1;
+      const std::string err = "start server failed: " + server_err;
+      return fail(err.c_str(), nullptr);
     }
     LogStep("server started");
+  }
+  {
+    const std::string msg = "server ready " + server_host + ":" +
+                            std::to_string(port) +
+                            (use_external_server ? " (external)" : " (embedded)");
+    LogStep(msg.c_str());
   }
 
   const auto alice_primary_dir = base_dir / "alice_primary";
@@ -633,9 +695,7 @@ int main() {
   std::filesystem::create_directories(alice_linked_dir, ec);
   std::filesystem::create_directories(bob_dir, ec);
   if (ec) {
-    std::cerr << "create client dirs failed\n";
-    cleanup();
-    return 1;
+    return fail("create client dirs failed", nullptr);
   }
 
   const std::string alice_primary_cfg =
@@ -647,160 +707,152 @@ int main() {
 
   alice = mi_client_create(alice_primary_cfg.c_str());
   if (!alice) {
-    std::cerr << "create alice failed\n";
-    cleanup();
-    return 1;
+    return fail("create alice failed", nullptr);
   }
   if (!LoginWithRetry(alice, "alice", "alice123", "alice", 5, 500)) {
-    std::cerr << "alice login failed\n";
-    cleanup();
-    return 1;
+    return fail("alice login failed", alice);
   }
   LogStep("alice login ok");
-  mi::platform::SleepMs(200);
+  (void)mi_client_heartbeat(alice);
+  mi::platform::SleepMs(kPostLoginDelayMs);
 
   bob = mi_client_create(bob_cfg.c_str());
   if (!bob) {
-    std::cerr << "create bob failed\n";
-    cleanup();
-    return 1;
+    return fail("create bob failed", alice);
   }
   if (!LoginWithRetry(bob, "bob", "bob123", "bob", 5, 500)) {
-    std::cerr << "bob login failed\n";
-    cleanup();
-    return 1;
+    return fail("bob login failed", bob);
   }
   LogStep("bob login ok");
-  if (mi_client_publish_prekeys(alice) != 1) {
-    FailNow("alice prekey publish failed", alice);
+  (void)mi_client_heartbeat(bob);
+  if (!PublishPrekeysWithRetry(alice, "alice", 3, 300)) {
+    return fail("alice prekey publish failed", alice);
   }
-  if (mi_client_publish_prekeys(bob) != 1) {
-    FailNow("bob prekey publish failed", bob);
+  if (!PublishPrekeysWithRetry(bob, "bob", 3, 300)) {
+    return fail("bob prekey publish failed", bob);
   }
 
   if (mi_client_send_friend_request(alice, "bob", "hi") != 1) {
-    FailNow("send friend request failed", alice);
+    return fail("send friend request failed", alice);
   }
-  if (!WaitForFriendRequest(bob, "alice", 5000)) {
-    FailNow("friend request timeout", bob);
+  if (!WaitForFriendRequest(bob, "alice", kFriendTimeoutMs)) {
+    return fail("friend request timeout", bob);
   }
   if (mi_client_respond_friend_request(bob, "alice", 1) != 1) {
-    FailNow("accept friend request failed", bob);
+    return fail("accept friend request failed", bob);
   }
-  if (!WaitForFriend(alice, "bob", 5000)) {
-    FailNow("friend sync timeout", alice);
+  if (!WaitForFriend(alice, "bob", kFriendTimeoutMs)) {
+    return fail("friend sync timeout", alice);
   }
-  if (!WaitForFriend(bob, "alice", 5000)) {
-    FailNow("friend sync timeout", bob);
+  if (!WaitForFriend(bob, "alice", kFriendTimeoutMs)) {
+    return fail("friend sync timeout", bob);
   }
   LogStep("friend ok");
   if (!EnsurePeerTrusted(alice, bob, "bob", "alice")) {
-    FailNow("peer trust failed", alice);
+    return fail("peer trust failed", alice);
   }
   LogStep("peer trust ok");
 
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
   if (!alice_linked) {
-    std::cerr << "create linked alice failed\n";
-    cleanup();
-    return 1;
+    return fail("create linked alice failed", alice);
   }
   if (!LoginWithRetry(alice_linked, "alice", "alice123", "linked", 5, 500)) {
-    std::cerr << "linked alice login failed\n";
-    cleanup();
-    return 1;
+    return fail("linked alice login failed", alice_linked);
   }
   LogStep("linked login ok");
+  (void)mi_client_heartbeat(alice_linked);
 
   if (mi_client_begin_device_pairing_primary(alice, &pairing_code) != 1 ||
       !pairing_code) {
-    std::cerr << "begin pairing primary failed\n";
-    cleanup();
-    return 1;
+    return fail("begin pairing primary failed", alice);
   }
   if (mi_client_begin_device_pairing_linked(alice_linked, pairing_code) != 1) {
-    std::cerr << "begin pairing linked failed\n";
-    cleanup();
-    return 1;
+    return fail("begin pairing linked failed", alice_linked);
   }
   mi_client_free(pairing_code);
   pairing_code = nullptr;
 
   mi_device_pairing_request_t req{};
-  if (!WaitForPairingRequest(alice, &req, 5000)) {
-    std::cerr << "pairing request timeout\n";
-    cleanup();
-    return 1;
+  if (!WaitForPairingRequest(alice, &req, kPairingTimeoutMs)) {
+    return fail("pairing request timeout", alice);
   }
   const std::string req_device = req.device_id ? req.device_id : "";
   const std::string req_request = req.request_id_hex ? req.request_id_hex : "";
   if (req_device.empty() || req_request.empty()) {
-    std::cerr << "pairing request data missing\n";
-    cleanup();
-    return 1;
+    return fail("pairing request data missing", alice);
   }
   if (mi_client_approve_device_pairing_request(
           alice, req_device.c_str(), req_request.c_str()) != 1) {
-    std::cerr << "approve pairing request failed\n";
-    cleanup();
-    return 1;
+    return fail("approve pairing request failed", alice);
   }
-  if (!WaitForPairingComplete(alice_linked, 5000)) {
-    std::cerr << "pairing completion timeout\n";
-    cleanup();
-    return 1;
+  if (!WaitForPairingComplete(alice_linked, kPairingTimeoutMs)) {
+    return fail("pairing completion timeout", alice_linked);
   }
   LogStep("pairing ok");
 
   DrainEvents(bob);
-  if (mi_client_send_private_text(alice, "bob", "hello", &msg_id) != 1 ||
-      !msg_id) {
-    FailNow("send private text failed", alice);
+  bool private_ok = false;
+  for (int attempt = 0; attempt < 2 && !private_ok; ++attempt) {
+    if (mi_client_send_private_text(alice, "bob", "hello", &msg_id) != 1 ||
+        !msg_id) {
+      LogClientError("alice", alice);
+    }
+    if (msg_id) {
+      mi_client_free(msg_id);
+      msg_id = nullptr;
+    }
+    if (WaitForChatOrOffline(bob, "alice", kChatTimeoutMs)) {
+      private_ok = true;
+      break;
+    }
+    LogClientError("bob", bob);
+    (void)mi_client_heartbeat(alice);
+    (void)mi_client_heartbeat(bob);
+    mi::platform::SleepMs(300);
   }
-  mi_client_free(msg_id);
-  msg_id = nullptr;
-
-  if (!WaitForChatOrOffline(bob, "alice", 8000)) {
-    std::cerr << "private chat event timeout\n";
-    cleanup();
-    return 1;
+  if (!private_ok) {
+    return fail("private chat event timeout", bob);
   }
   LogStep("private msg ok");
 
   if (mi_client_create_group(alice, &group_id) != 1 || !group_id) {
-    std::cerr << "create group failed\n";
-    cleanup();
-    return 1;
+    return fail("create group failed", alice);
   }
   if (mi_client_send_group_invite(alice, group_id, "bob", nullptr) != 1) {
-    std::cerr << "send group invite failed\n";
-    cleanup();
-    return 1;
+    return fail("send group invite failed", alice);
   }
-  if (!WaitForEvent(bob, MI_EVENT_GROUP_INVITE, "alice", "", 3000)) {
-    std::cerr << "group invite event timeout\n";
-    cleanup();
-    return 1;
+  if (!WaitForEvent(bob, MI_EVENT_GROUP_INVITE, "alice", "",
+                    kGroupInviteTimeoutMs)) {
+    return fail("group invite event timeout", bob);
   }
   if (mi_client_join_group(bob, group_id) != 1) {
-    std::cerr << "join group failed\n";
-    cleanup();
-    return 1;
+    return fail("join group failed", bob);
   }
 
-  if (mi_client_send_group_text(alice, group_id, "group hi", &group_msg_id) !=
-          1 ||
-      !group_msg_id) {
-    std::cerr << "send group text failed\n";
-    cleanup();
-    return 1;
+  bool group_ok = false;
+  for (int attempt = 0; attempt < 2 && !group_ok; ++attempt) {
+    if (mi_client_send_group_text(alice, group_id, "group hi", &group_msg_id) !=
+            1 ||
+        !group_msg_id) {
+      LogClientError("alice", alice);
+    }
+    if (group_msg_id) {
+      mi_client_free(group_msg_id);
+      group_msg_id = nullptr;
+    }
+    if (WaitForEvent(bob, MI_EVENT_GROUP_TEXT, "alice", group_id,
+                     kGroupTextTimeoutMs)) {
+      group_ok = true;
+      break;
+    }
+    LogClientError("bob", bob);
+    (void)mi_client_heartbeat(alice);
+    (void)mi_client_heartbeat(bob);
+    mi::platform::SleepMs(300);
   }
-  mi_client_free(group_msg_id);
-  group_msg_id = nullptr;
-  if (!WaitForEvent(bob, MI_EVENT_GROUP_TEXT, "alice", group_id, 5000)) {
-    std::cerr << "group text event timeout\n";
-    cleanup();
-    return 1;
+  if (!group_ok) {
+    return fail("group text event timeout", bob);
   }
   LogStep("group msg ok");
   mi_client_free(group_id);

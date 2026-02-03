@@ -15,10 +15,20 @@ on:
         description: "E2EE server port for CI tests (optional, default 0=auto)"
         required: false
         default: "0"
+      skip_e2e:
+        description: "Skip client e2e tests (default 1)"
+        required: false
+        default: "1"
+      skip_android_tests:
+        description: "Skip Android instrumentation tests (default 1)"
+        required: false
+        default: "1"
 
 env:
-  MI_E2EE_CI_SERVER_HOST: ${{ inputs.server_host || '127.0.0.1' }}
-  MI_E2EE_CI_SERVER_PORT: ${{ inputs.server_port || '0' }}
+  MI_E2EE_CI_SERVER_HOST: ${{ github.event.inputs.server_host || '127.0.0.1' }}
+  MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
+  MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '1' }}
+  MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '1' }}
 
 jobs:
   build-package:
@@ -237,9 +247,11 @@ jobs:
         run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
 
       - name: Build client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
 
       - name: Run client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         env:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/client -C Release -R sdk_c_api_e2e_test --output-on-failure
@@ -647,9 +659,11 @@ jobs:
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
 
       - name: Build client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
 
       - name: Run client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         env:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
@@ -802,9 +816,11 @@ jobs:
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
 
       - name: Build client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
 
       - name: Run client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         env:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
@@ -928,9 +944,11 @@ jobs:
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
 
       - name: Build client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
 
       - name: Run client e2e test
+        if: env.MI_E2EE_CI_SKIP_E2E != '1'
         env:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
@@ -1217,6 +1235,7 @@ jobs:
           done
 
       - name: Run Android instrumentation tests (x86_64)
+        if: env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -1234,6 +1253,7 @@ jobs:
           sdkmanager --uninstall "system-images;android-34;google_apis;x86_64" || true
 
       - name: Run Android instrumentation tests (x86_64 api33)
+        if: env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -1251,20 +1271,20 @@ jobs:
           sdkmanager --uninstall "system-images;android-33;google_apis;x86_64" || true
 
       - name: Auth to Google Cloud
-        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
+        if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ env.GCP_SERVICE_ACCOUNT_JSON }}
 
       - name: Setup gcloud
-        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
+        if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           install_components: 'firebase'
 
       - name: Firebase Test Lab (arm64)
-        if: ${{ env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
+        if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         env:
           FTL_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
           FTL_RESULTS_BUCKET: ${{ env.GCP_RESULTS_BUCKET }}

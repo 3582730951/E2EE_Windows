@@ -2974,6 +2974,7 @@ bool ClientCore::RegisterDevice(const std::string& root_code) {
     last_error_ = "device register response invalid";
     return false;
   }
+  device_register_pending_ = false;
   return true;
 }
 

@@ -773,6 +773,7 @@ class ClientCore {
   bool device_sync_enabled_{false};
   bool device_sync_is_primary_{true};
   std::string device_id_;
+  bool device_register_pending_{false};
   std::filesystem::path device_sync_key_path_;
   bool device_sync_key_loaded_{false};
   std::array<std::uint8_t, 32> device_sync_key_{};
