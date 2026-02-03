@@ -271,6 +271,7 @@ if(WIN32)
       ../platform/win/platform_net_win.cpp
       ../platform/win/platform_time_win.cpp
       ../platform/win/platform_fs_win.cpp
+      ../platform/win/platform_identity_win.cpp
       ../platform/win/platform_sys_win.cpp
       ../platform/win/platform_tls_win.cpp
       ../platform/win/platform_secure_store_win.cpp
@@ -284,6 +285,7 @@ else()
       ../platform/posix/platform_net_posix.cpp
       ../platform/posix/platform_time_posix.cpp
       ../platform/posix/platform_fs_posix.cpp
+      ../platform/posix/platform_identity_posix.cpp
       ../platform/posix/platform_sys_posix.cpp
       ../platform/posix/platform_tls_posix.cpp
       ../platform/posix/platform_secure_store_posix.cpp
