@@ -33,7 +33,7 @@ struct ProxyConfig {
 };
 
 struct DeviceSyncConfig {
-  bool enabled{false};
+  bool enabled{true};
   DeviceSyncRole role{DeviceSyncRole::kPrimary};
   std::string key_path;
   std::uint32_t rotate_interval_sec{86400};

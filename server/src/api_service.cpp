@@ -11,7 +11,10 @@
 #include <type_traits>
 #include <utility>
 
+#include "crypto.h"
+#include "hex_utils.h"
 #include "protocol.h"
+#include "protected_store.h"
 #include "platform_time.h"
 
 extern "C" {
@@ -104,14 +107,45 @@ bool IsBlockedMysql(const MySqlConfig& cfg, const std::string& username,
 
 }  // namespace
 
+std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  if (!data || len == 0) {
+    return {};
+  }
+  std::string out;
+  out.resize(len * 2);
+  for (std::size_t i = 0; i < len; ++i) {
+    out[i * 2] = kHex[(data[i] >> 4) & 0x0F];
+    out[i * 2 + 1] = kHex[data[i] & 0x0F];
+  }
+  return out;
+}
+
+static bool ConstantTimeEqual(const std::uint8_t* a, const std::uint8_t* b,
+                              std::size_t len) {
+  if (!a || !b || len == 0) {
+    return false;
+  }
+  std::uint8_t acc = 0;
+  for (std::size_t i = 0; i < len; ++i) {
+    acc |= static_cast<std::uint8_t>(a[i] ^ b[i]);
+  }
+  return acc == 0;
+}
+
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupCallManager* calls,
                        GroupDirectory* directory, OfflineStorage* storage,
                        OfflineQueue* queue, MediaRelay* media_relay,
                        std::uint32_t group_threshold,
                        std::optional<MySqlConfig> friend_mysql,
-                       std::filesystem::path kt_dir,
-                       std::filesystem::path kt_signing_key)
+                       std::filesystem::path storage_dir,
+                       std::filesystem::path kt_signing_key,
+                       KeyProtectionMode root_auth_protection,
+                       StateStore* state_store,
+                       bool root_auth_enable,
+                       std::uint32_t root_auth_step_sec,
+                       std::uint32_t root_auth_window)
     : sessions_(sessions),
       groups_(groups),
       calls_(calls),
@@ -124,9 +158,19 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
       rl_global_unauth_(30.0, 10.0),
       rl_user_unauth_(8.0, 0.25),
       rl_user_api_(200.0, 50.0),
-      rl_user_file_(3.0, 0.05) {
-  if (!kt_dir.empty()) {
-    const std::filesystem::path path = kt_dir / "kt_log.bin";
+      rl_user_file_(3.0, 0.05),
+      root_auth_enabled_(root_auth_enable),
+      root_auth_step_sec_(root_auth_step_sec == 0 ? 5 : root_auth_step_sec),
+      root_auth_window_(root_auth_window == 0 ? 1 : root_auth_window),
+      root_auth_protection_(root_auth_protection),
+      state_store_(state_store) {
+  if (!storage_dir.empty()) {
+    root_auth_dir_ = storage_dir / "state" / "root_auth";
+    std::error_code ec;
+    std::filesystem::create_directories(root_auth_dir_, ec);
+  }
+  if (!storage_dir.empty()) {
+    const std::filesystem::path path = storage_dir / "kt_log.bin";
     kt_log_ = std::make_unique<KeyTransparencyLog>(path);
     std::string err;
     if (!kt_log_->Load(err)) {
@@ -266,12 +310,24 @@ bool ApiService::RateLimitAuth(const std::string& action, const std::string& tok
   out_session = sessions_->GetSession(token);
   if (!out_session.has_value()) {
     out_error = "unauthorized";
+    {
+      std::lock_guard<std::mutex> lock(token_device_mutex_);
+      token_device_ids_.erase(token);
+    }
     return false;
   }
   const std::string key = action + "|" + out_session->username;
   if (!rl_user_api_.Allow(key)) {
     out_error = "rate limited";
     return false;
+  }
+  if (root_auth_enabled_ && action != "device_register" &&
+      action != "root_auth_init") {
+    std::string auth_error;
+    if (!IsDeviceAuthorized(token, *out_session, auth_error)) {
+      out_error = auth_error.empty() ? "root auth required" : auth_error;
+      return false;
+    }
   }
   return true;
 }
@@ -296,6 +352,330 @@ bool ApiService::RateLimitFile(const std::string& action, const std::string& tok
     return false;
   }
   return true;
+}
+
+bool ApiService::IsDeviceAuthorized(const std::string& token,
+                                    const Session& session,
+                                    std::string& out_error) {
+  out_error.clear();
+  if (!root_auth_enabled_) {
+    return true;
+  }
+  RootAuthRecord record;
+  std::string load_err;
+  if (!LoadRootAuthRecord(session.username, record, load_err)) {
+    out_error = load_err.empty() ? "root auth state load failed" : load_err;
+    return false;
+  }
+  if (!record.has_secret) {
+    return true;
+  }
+  std::string device_id;
+  {
+    std::lock_guard<std::mutex> lock(token_device_mutex_);
+    const auto it = token_device_ids_.find(token);
+    if (it != token_device_ids_.end()) {
+      device_id = it->second;
+    }
+  }
+  if (device_id.empty()) {
+    out_error = "root auth required";
+    return false;
+  }
+  if (record.devices.find(device_id) == record.devices.end()) {
+    out_error = "root auth required";
+    return false;
+  }
+  return true;
+}
+
+bool ApiService::LoadRootAuthRecord(const std::string& username,
+                                    RootAuthRecord& out_record,
+                                    std::string& out_error) {
+  out_record = RootAuthRecord{};
+  out_error.clear();
+  if (username.empty()) {
+    out_error = "username empty";
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(root_auth_mutex_);
+    const auto it = root_auth_by_user_.find(username);
+    if (it != root_auth_by_user_.end()) {
+      out_record = it->second;
+      return true;
+    }
+  }
+
+  std::vector<std::uint8_t> file_bytes;
+  if (state_store_) {
+    BlobLoadResult blob;
+    std::string load_err;
+    if (!state_store_->LoadBlob("root_auth/" + username, blob, load_err)) {
+      out_error = load_err.empty() ? "root auth load failed" : load_err;
+      return false;
+    }
+    if (!blob.found || blob.data.empty()) {
+      return true;
+    }
+    file_bytes = std::move(blob.data);
+  } else {
+    if (root_auth_dir_.empty()) {
+      return true;
+    }
+    const std::string user_hex =
+        mi::common::Sha256Hex(reinterpret_cast<const std::uint8_t*>(username.data()),
+                              username.size());
+    if (user_hex.empty()) {
+      out_error = "root auth user hash failed";
+      return false;
+    }
+    const auto path = root_auth_dir_ / (user_hex + ".bin");
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
+      return true;
+    }
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) {
+      out_error = "root auth read failed";
+      return false;
+    }
+    const std::uint64_t size = std::filesystem::file_size(path, ec);
+    if (ec || size > static_cast<std::uint64_t>(
+                     (std::numeric_limits<std::size_t>::max)())) {
+      out_error = "root auth size invalid";
+      return false;
+    }
+    file_bytes.resize(static_cast<std::size_t>(size));
+    if (!file_bytes.empty()) {
+      ifs.read(reinterpret_cast<char*>(file_bytes.data()),
+               static_cast<std::streamsize>(file_bytes.size()));
+      if (!ifs || ifs.gcount() != static_cast<std::streamsize>(file_bytes.size())) {
+        out_error = "root auth read failed";
+        return false;
+      }
+    }
+  }
+
+  std::vector<std::uint8_t> plain;
+  if (!file_bytes.empty()) {
+    bool was_protected = false;
+    std::string protect_err;
+    if (!DecodeProtectedFileBytes(file_bytes, root_auth_protection_, plain,
+                                  was_protected, protect_err)) {
+      out_error = protect_err.empty() ? "root auth decode failed" : protect_err;
+      return false;
+    }
+  }
+  if (plain.empty()) {
+    return true;
+  }
+  std::size_t off = 0;
+  if (plain.size() < 1) {
+    out_error = "root auth record invalid";
+    return false;
+  }
+  const std::uint8_t version = plain[off++];
+  if (version != 1) {
+    out_error = "root auth record version invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> secret;
+  if (!mi::server::proto::ReadBytes(plain, off, secret) ||
+      secret.size() != out_record.secret.size()) {
+    out_error = "root auth secret invalid";
+    return false;
+  }
+  std::copy_n(secret.begin(), out_record.secret.size(), out_record.secret.begin());
+  std::uint32_t count = 0;
+  if (!mi::server::proto::ReadUint32(plain, off, count)) {
+    out_error = "root auth record invalid";
+    return false;
+  }
+  for (std::uint32_t i = 0; i < count; ++i) {
+    std::string dev;
+    if (!mi::server::proto::ReadString(plain, off, dev) || dev.empty()) {
+      out_error = "root auth record invalid";
+      return false;
+    }
+    out_record.devices.insert(std::move(dev));
+  }
+  if (off != plain.size()) {
+    out_error = "root auth record invalid";
+    return false;
+  }
+  out_record.has_secret = true;
+  {
+    std::lock_guard<std::mutex> lock(root_auth_mutex_);
+    root_auth_by_user_[username] = out_record;
+  }
+  return true;
+}
+
+bool ApiService::SaveRootAuthRecord(const std::string& username,
+                                    const RootAuthRecord& record,
+                                    std::string& out_error) {
+  out_error.clear();
+  if (username.empty() || !record.has_secret) {
+    out_error = "root auth record invalid";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  plain.reserve(1 + 4 + record.secret.size() + record.devices.size() * 40);
+  plain.push_back(1);
+  mi::server::proto::WriteBytes(record.secret.data(), record.secret.size(), plain);
+  mi::server::proto::WriteUint32(
+      static_cast<std::uint32_t>(record.devices.size()), plain);
+  for (const auto& dev : record.devices) {
+    if (!mi::server::proto::WriteString(dev, plain)) {
+      out_error = "root auth record encode failed";
+      return false;
+    }
+  }
+  std::vector<std::uint8_t> out_bytes;
+  if (root_auth_protection_ != KeyProtectionMode::kNone) {
+    std::string protect_err;
+    if (!EncodeProtectedFileBytes(plain, root_auth_protection_, out_bytes,
+                                  protect_err)) {
+      out_error = protect_err.empty() ? "root auth protect failed" : protect_err;
+      return false;
+    }
+  } else {
+    out_bytes = std::move(plain);
+  }
+
+  if (state_store_) {
+    std::string store_err;
+    if (!state_store_->SaveBlob("root_auth/" + username, out_bytes, store_err)) {
+      out_error = store_err.empty() ? "root auth save failed" : store_err;
+      return false;
+    }
+  } else {
+    if (root_auth_dir_.empty()) {
+      out_error = "root auth dir unavailable";
+      return false;
+    }
+    const std::string user_hex =
+        mi::common::Sha256Hex(reinterpret_cast<const std::uint8_t*>(username.data()),
+                              username.size());
+    if (user_hex.empty()) {
+      out_error = "root auth user hash failed";
+      return false;
+    }
+    const auto path = root_auth_dir_ / (user_hex + ".bin");
+    const auto tmp = root_auth_dir_ / (user_hex + ".tmp");
+    {
+      std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+      if (!ofs) {
+        out_error = "root auth write failed";
+        return false;
+      }
+      if (!out_bytes.empty()) {
+        ofs.write(reinterpret_cast<const char*>(out_bytes.data()),
+                  static_cast<std::streamsize>(out_bytes.size()));
+        if (!ofs) {
+          out_error = "root auth write failed";
+          return false;
+        }
+      }
+      ofs.flush();
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+      out_error = "root auth write failed";
+      return false;
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(root_auth_mutex_);
+    root_auth_by_user_[username] = record;
+  }
+  return true;
+}
+
+bool ApiService::VerifyRootAuthCode(const RootAuthRecord& record,
+                                    const std::string& code) const {
+  if (!record.has_secret || code.empty()) {
+    return false;
+  }
+  std::uint32_t code_val = 0;
+  for (char c : code) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    code_val = code_val * 10u + static_cast<std::uint32_t>(c - '0');
+  }
+  if (code.size() < 6 || code.size() > 8) {
+    return false;
+  }
+  const std::uint64_t step =
+      root_auth_step_sec_ == 0 ? 5 : root_auth_step_sec_;
+  const std::uint64_t now = mi::platform::NowUnixSeconds();
+  const std::uint64_t counter = step == 0 ? 0 : (now / step);
+  const std::uint32_t mod = code.size() == 8 ? 100000000u : 1000000u;
+
+  auto hotp = [&](std::uint64_t ctr) -> std::uint32_t {
+    std::uint8_t msg[8] = {};
+    for (int i = 7; i >= 0; --i) {
+      msg[i] = static_cast<std::uint8_t>(ctr & 0xFF);
+      ctr >>= 8;
+    }
+    crypto::Sha256Digest digest;
+    crypto::HmacSha256(record.secret.data(), record.secret.size(),
+                       msg, sizeof(msg), digest);
+    const std::uint8_t offset = digest.bytes.back() & 0x0F;
+    const std::uint32_t bin =
+        ((static_cast<std::uint32_t>(digest.bytes[offset]) & 0x7fu) << 24) |
+        (static_cast<std::uint32_t>(digest.bytes[offset + 1]) << 16) |
+        (static_cast<std::uint32_t>(digest.bytes[offset + 2]) << 8) |
+        (static_cast<std::uint32_t>(digest.bytes[offset + 3]));
+    return bin % mod;
+  };
+
+  const std::uint32_t window =
+      root_auth_window_ == 0 ? 1u : root_auth_window_;
+  for (std::int32_t w = -static_cast<std::int32_t>(window);
+       w <= static_cast<std::int32_t>(window); ++w) {
+    if (w < 0 && static_cast<std::uint64_t>(-w) > counter) {
+      continue;
+    }
+    const std::uint64_t ctr =
+        w < 0 ? (counter - static_cast<std::uint64_t>(-w))
+              : (counter + static_cast<std::uint64_t>(w));
+    if (hotp(ctr) == code_val) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void ApiService::CleanupQrLoginLocked(
+    std::chrono::steady_clock::time_point now) {
+  if (qr_login_by_id_.empty()) {
+    return;
+  }
+  for (auto it = qr_login_by_id_.begin(); it != qr_login_by_id_.end();) {
+    if (now - it->second.created_at > qr_login_ttl_) {
+      it = qr_login_by_id_.erase(it);
+      continue;
+    }
+    ++it;
+  }
+  constexpr std::size_t kMaxQrRecords = 4096;
+  if (qr_login_by_id_.size() <= kMaxQrRecords) {
+    return;
+  }
+  while (qr_login_by_id_.size() > kMaxQrRecords) {
+    auto oldest = qr_login_by_id_.begin();
+    for (auto it = std::next(qr_login_by_id_.begin());
+         it != qr_login_by_id_.end(); ++it) {
+      if (it->second.created_at < oldest->second.created_at) {
+        oldest = it;
+      }
+    }
+    qr_login_by_id_.erase(oldest);
+  }
 }
 
 bool ApiService::SignKtSth(KeyTransparencySth& sth, std::string& out_error) {
@@ -463,6 +843,10 @@ LogoutResponse ApiService::Logout(const LogoutRequest& req) {
     return resp;
   }
   sessions_->Logout(req.token);
+  {
+    std::lock_guard<std::mutex> lock(token_device_mutex_);
+    token_device_ids_.erase(req.token);
+  }
   resp.success = true;
   return resp;
 }
@@ -4384,6 +4768,304 @@ DeviceKickResponse ApiService::KickDevice(const std::string& token,
     sessions_->Logout(token_to_logout);
   }
   queue_->DrainDeviceSync(MakeDeviceQueueKey(sess->username, target_device_id));
+  resp.success = true;
+  return resp;
+}
+
+DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
+                                                  const std::string& device_id,
+                                                  const std::string& root_code) {
+  DeviceRegisterResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("device_register", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (device_id.empty()) {
+    resp.error = "device id empty";
+    return resp;
+  }
+  if (!LooksLikeHexId(device_id, 32) && device_id.size() > 64) {
+    resp.error = "device id invalid";
+    return resp;
+  }
+
+  if (root_auth_enabled_) {
+    RootAuthRecord record;
+    std::string load_err;
+    if (!LoadRootAuthRecord(sess->username, record, load_err)) {
+      resp.error = load_err.empty() ? "root auth load failed" : load_err;
+      return resp;
+    }
+    if (record.has_secret) {
+      const bool known = record.devices.find(device_id) != record.devices.end();
+      if (!known) {
+        if (!VerifyRootAuthCode(record, root_code)) {
+          resp.error = root_code.empty() ? "root auth required" : "root auth invalid";
+          return resp;
+        }
+        record.devices.insert(device_id);
+        std::string save_err;
+        if (!SaveRootAuthRecord(sess->username, record, save_err)) {
+          resp.error = save_err.empty() ? "root auth save failed" : save_err;
+          return resp;
+        }
+      }
+    }
+  }
+
+  {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(devices_mutex_);
+    auto& map = devices_by_user_[sess->username];
+    auto it = map.find(device_id);
+    if (it == map.end()) {
+      if (map.size() < 64) {
+        DeviceRecord rec;
+        rec.last_seen = now;
+        rec.last_token = sess->token;
+        map.emplace(device_id, std::move(rec));
+      }
+    } else {
+      it->second.last_seen = now;
+      it->second.last_token = sess->token;
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(token_device_mutex_);
+    token_device_ids_[token] = device_id;
+  }
+  resp.success = true;
+  return resp;
+}
+
+RootAuthInitResponse ApiService::RootAuthInit(const std::string& token) {
+  RootAuthInitResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("root_auth_init", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (!root_auth_enabled_) {
+    resp.error = "root auth disabled";
+    return resp;
+  }
+  RootAuthRecord record;
+  std::string load_err;
+  if (!LoadRootAuthRecord(sess->username, record, load_err)) {
+    resp.error = load_err.empty() ? "root auth load failed" : load_err;
+    return resp;
+  }
+  if (record.has_secret) {
+    resp.error = "root auth already initialized";
+    return resp;
+  }
+  if (!crypto::RandomBytes(record.secret.data(), record.secret.size())) {
+    resp.error = "root auth rng failed";
+    return resp;
+  }
+  record.has_secret = true;
+  std::string save_err;
+  if (!SaveRootAuthRecord(sess->username, record, save_err)) {
+    resp.error = save_err.empty() ? "root auth save failed" : save_err;
+    return resp;
+  }
+  resp.success = true;
+  resp.secret_hex =
+      BytesToHexLower(record.secret.data(), record.secret.size());
+  return resp;
+}
+
+QrLoginInitResponse ApiService::QrLoginInit(const std::string& device_id) {
+  QrLoginInitResponse resp;
+  if (device_id.empty()) {
+    resp.error = "device id empty";
+    return resp;
+  }
+  if (!LooksLikeHexId(device_id, 32) && device_id.size() > 64) {
+    resp.error = "device id invalid";
+    return resp;
+  }
+  std::string rl_error;
+  if (!RateLimitUnauth("qr_login_init", device_id, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+
+  std::array<std::uint8_t, 16> id_bytes{};
+  if (!crypto::RandomBytes(id_bytes.data(), id_bytes.size())) {
+    resp.error = "qr login rng failed";
+    return resp;
+  }
+  std::array<std::uint8_t, 32> secret{};
+  if (!crypto::RandomBytes(secret.data(), secret.size())) {
+    resp.error = "qr login rng failed";
+    return resp;
+  }
+  const std::string qr_id = BytesToHexLower(id_bytes.data(), id_bytes.size());
+  const std::string secret_hex = BytesToHexLower(secret.data(), secret.size());
+  if (qr_id.empty() || secret_hex.empty()) {
+    resp.error = "qr login encode failed";
+    return resp;
+  }
+
+  QrLoginRecord record;
+  record.secret = secret;
+  record.device_id = device_id;
+  record.created_at = std::chrono::steady_clock::now();
+  record.approved = false;
+  {
+    std::lock_guard<std::mutex> lock(qr_login_mutex_);
+    CleanupQrLoginLocked(record.created_at);
+    qr_login_by_id_[qr_id] = record;
+  }
+
+  resp.success = true;
+  resp.qr_id = qr_id;
+  resp.secret_hex = secret_hex;
+  return resp;
+}
+
+QrLoginPollResponse ApiService::QrLoginPoll(const std::string& qr_id,
+                                            const std::string& secret_hex,
+                                            TransportKind transport) {
+  QrLoginPollResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  if (qr_id.empty()) {
+    resp.error = "qr id empty";
+    return resp;
+  }
+  if (secret_hex.empty()) {
+    resp.error = "qr secret empty";
+    return resp;
+  }
+  std::vector<std::uint8_t> secret_bytes;
+  if (!mi::common::HexToBytes(secret_hex, secret_bytes) ||
+      secret_bytes.size() != 32) {
+    resp.error = "qr secret invalid";
+    return resp;
+  }
+
+  std::array<std::uint8_t, 32> secret{};
+  std::string username;
+  bool approved = false;
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(qr_login_mutex_);
+    CleanupQrLoginLocked(now);
+    auto it = qr_login_by_id_.find(qr_id);
+    if (it == qr_login_by_id_.end()) {
+      resp.error = "qr login not found";
+      return resp;
+    }
+    if (!ConstantTimeEqual(it->second.secret.data(), secret_bytes.data(),
+                           it->second.secret.size())) {
+      resp.error = "qr secret invalid";
+      return resp;
+    }
+    if (now - it->second.created_at > qr_login_ttl_) {
+      qr_login_by_id_.erase(it);
+      resp.error = "qr login expired";
+      return resp;
+    }
+    approved = it->second.approved;
+    if (approved) {
+      secret = it->second.secret;
+      username = it->second.username;
+      qr_login_by_id_.erase(it);
+    }
+  }
+
+  if (!approved) {
+    resp.success = true;
+    resp.completed = false;
+    return resp;
+  }
+  if (username.empty()) {
+    resp.error = "qr login user missing";
+    return resp;
+  }
+
+  Session session;
+  std::string err;
+  std::vector<std::uint8_t> key(secret.begin(), secret.end());
+  if (!sessions_->QrLoginFinish(username, key, transport, session, err)) {
+    resp.error = err.empty() ? "qr login failed" : err;
+    return resp;
+  }
+
+  resp.success = true;
+  resp.completed = true;
+  resp.token = session.token;
+  resp.username = username;
+  return resp;
+}
+
+QrLoginApproveResponse ApiService::QrLoginApprove(
+    const std::string& token, const std::string& qr_id,
+    const std::string& secret_hex) {
+  QrLoginApproveResponse resp;
+  if (!sessions_) {
+    resp.error = "session manager unavailable";
+    return resp;
+  }
+  std::optional<Session> sess;
+  std::string rl_error;
+  if (!RateLimitAuth("qr_login_approve", token, sess, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+  if (qr_id.empty()) {
+    resp.error = "qr id empty";
+    return resp;
+  }
+  if (secret_hex.empty()) {
+    resp.error = "qr secret empty";
+    return resp;
+  }
+  std::vector<std::uint8_t> secret_bytes;
+  if (!mi::common::HexToBytes(secret_hex, secret_bytes) ||
+      secret_bytes.size() != 32) {
+    resp.error = "qr secret invalid";
+    return resp;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(qr_login_mutex_);
+    CleanupQrLoginLocked(now);
+    auto it = qr_login_by_id_.find(qr_id);
+    if (it == qr_login_by_id_.end()) {
+      resp.error = "qr login not found";
+      return resp;
+    }
+    if (!ConstantTimeEqual(it->second.secret.data(), secret_bytes.data(),
+                           it->second.secret.size())) {
+      resp.error = "qr secret invalid";
+      return resp;
+    }
+    if (now - it->second.created_at > qr_login_ttl_) {
+      qr_login_by_id_.erase(it);
+      resp.error = "qr login expired";
+      return resp;
+    }
+    it->second.username = sess ? sess->username : std::string();
+    it->second.approved = true;
+  }
+
   resp.success = true;
   return resp;
 }

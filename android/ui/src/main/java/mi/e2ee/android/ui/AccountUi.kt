@@ -17,12 +17,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,9 +43,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,11 +60,26 @@ fun AccountScreen(
     val pairingCode = remember { mutableStateOf<String?>(null) }
     val linkedCode = remember { mutableStateOf("") }
     val linkedStatus = remember { mutableStateOf<String?>(null) }
+    val rootCode = remember { mutableStateOf("") }
+    val rootCountdown = remember { mutableStateOf(0) }
+    val rootSecretInput = remember { mutableStateOf("") }
+    val rootSecretError = remember { mutableStateOf<String?>(null) }
+    val showRootSecretDialog = remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
     LaunchedEffect(Unit) {
         sdk.refreshDevices()
         sdk.pollDevicePairingRequests()
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val nowSec = System.currentTimeMillis() / 1000
+            val step = 5
+            rootCountdown.value = step - (nowSec % step).toInt()
+            rootCode.value = sdk.currentRootAuthCode() ?: ""
+            delay(1000)
+        }
     }
 
     Scaffold(
@@ -129,6 +149,72 @@ fun AccountScreen(
                         tr("account_my_qr", "My QR code"),
                         tr("account_my_qr_sub", "Share securely")
                     )
+                }
+            }
+            SectionHeader(text = tr("account_root_auth", "Root Auth"))
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    val code = rootCode.value
+                    if (code.isBlank()) {
+                        Text(
+                            text = tr("account_root_auth_empty", "No root auth secret set"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = tr("account_root_auth_code", "Code: %s").format(code),
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            IconButton(onClick = {
+                                clipboard.setText(AnnotatedString(code))
+                            }) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
+                            }
+                        }
+                        Text(
+                            text = tr("account_root_auth_refresh", "Refresh in %ds").format(rootCountdown.value),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = { sdk.initRootAuthSecret() },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Text(tr("account_root_auth_init", "Init from server"))
+                        }
+                        FilledTonalButton(
+                            onClick = { showRootSecretDialog.value = true },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Text(tr("account_root_auth_set", "Set secret"))
+                        }
+                        FilledTonalButton(
+                            onClick = { sdk.clearRootAuthSecret() },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text(tr("account_root_auth_clear", "Clear"))
+                        }
+                    }
                 }
             }
             SectionHeader(text = tr("account_devices_sessions", "Devices & sessions"))
@@ -292,6 +378,52 @@ fun AccountScreen(
             PrimaryButton(
                 label = tr("account_sign_out", "Sign out"),
                 onClick = { sdk.logout() }
+            )
+        }
+        if (showRootSecretDialog.value) {
+            AlertDialog(
+                onDismissRequest = { showRootSecretDialog.value = false },
+                title = { Text(tr("account_root_auth_dialog", "Set root auth secret")) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = rootSecretInput.value,
+                            onValueChange = { rootSecretInput.value = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(tr("account_root_auth_hint", "Enter 64-hex secret")) },
+                            singleLine = true
+                        )
+                        if (!rootSecretError.value.isNullOrBlank()) {
+                            Text(
+                                text = rootSecretError.value.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (sdk.setRootAuthSecret(rootSecretInput.value)) {
+                            rootSecretError.value = null
+                            rootSecretInput.value = ""
+                            showRootSecretDialog.value = false
+                        } else {
+                            rootSecretError.value = t("account_root_auth_invalid", "Invalid secret hex")
+                        }
+                    }) {
+                        Text(tr("account_root_auth_confirm", "Save"))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        rootSecretError.value = null
+                        rootSecretInput.value = ""
+                        showRootSecretDialog.value = false
+                    }) {
+                        Text(tr("account_root_auth_cancel", "Cancel"))
+                    }
+                }
             )
         }
     }

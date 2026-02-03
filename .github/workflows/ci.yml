@@ -6,6 +6,19 @@ on:
       - master
       - e2ee_dev
   workflow_dispatch:
+    inputs:
+      server_host:
+        description: "E2EE server host/ip for CI tests (default 127.0.0.1)"
+        required: false
+        default: "127.0.0.1"
+      server_port:
+        description: "E2EE server port for CI tests (optional, default 0=auto)"
+        required: false
+        default: "0"
+
+env:
+  MI_E2EE_CI_SERVER_HOST: ${{ inputs.server_host || '127.0.0.1' }}
+  MI_E2EE_CI_SERVER_PORT: ${{ inputs.server_port || '0' }}
 
 jobs:
   build-package:

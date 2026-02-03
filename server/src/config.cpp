@@ -250,6 +250,12 @@ void ApplyKV(IniState& state, const std::string& key,
       state.cfg->server.secure_delete_plugin = value;
     } else if (key == "secure_delete_plugin_sha256") {
       state.cfg->server.secure_delete_plugin_sha256 = value;
+    } else if (key == "root_auth_enable") {
+      ParseBool(value, state.cfg->server.root_auth_enable);
+    } else if (key == "root_auth_step_sec") {
+      ParseUint32(value, state.cfg->server.root_auth_step_sec);
+    } else if (key == "root_auth_window") {
+      ParseUint32(value, state.cfg->server.root_auth_window);
     } else if (key == "ops_enable") {
       ParseBool(value, state.cfg->server.ops_enable);
     } else if (key == "ops_allow_remote") {
@@ -352,6 +358,15 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   }
   if (out_config.server.group_rotation_threshold == 0) {
     out_config.server.group_rotation_threshold = 10000;
+  }
+  if (out_config.server.root_auth_step_sec == 0) {
+    out_config.server.root_auth_step_sec = 5;
+  }
+  if (out_config.server.root_auth_window == 0) {
+    out_config.server.root_auth_window = 1;
+  }
+  if (out_config.server.root_auth_window > 5) {
+    out_config.server.root_auth_window = 5;
   }
   if (out_config.call.max_room_size == 0) {
     out_config.call.max_room_size = 1000;

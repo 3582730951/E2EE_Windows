@@ -906,6 +906,98 @@ std::vector<std::uint8_t> EncodeDeviceKickResp(const DeviceKickResponse& resp) {
   return out;
 }
 
+std::vector<std::uint8_t> EncodeDeviceRegisterResp(
+    const DeviceRegisterResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeRootAuthInitResp(
+    const RootAuthInitResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.secret_hex));
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteString(resp.secret_hex, out);
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeQrLoginInitResp(
+    const QrLoginInitResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.qr_id) +
+                EncodedStringSize(resp.secret_hex));
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteString(resp.qr_id, out);
+    proto::WriteString(resp.secret_hex, out);
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeQrLoginPollResp(
+    const QrLoginPollResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (resp.success) {
+    std::size_t reserve = 2;
+    if (resp.completed) {
+      reserve += EncodedStringSize(resp.token) +
+                 EncodedStringSize(resp.username);
+    }
+    out.reserve(reserve);
+  } else {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    out.push_back(resp.completed ? 1 : 0);
+    if (resp.completed) {
+      proto::WriteString(resp.token, out);
+      proto::WriteString(resp.username, out);
+    }
+  } else {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeQrLoginApproveResp(
+    const QrLoginApproveResponse& resp) {
+  std::vector<std::uint8_t> out;
+  if (!resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.error));
+  } else {
+    out.reserve(1);
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (!resp.success) {
+    proto::WriteString(resp.error, out);
+  }
+  return out;
+}
+
 std::vector<std::uint8_t> EncodeDevicePairingPushResp(
     const DevicePairingPushResponse& resp) {
   std::vector<std::uint8_t> out;
@@ -1784,6 +1876,76 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
       AssignString(s2, s2_view);
       auto resp = api_->KickDevice(token, s1, s2);
       out.payload = EncodeDeviceKickResp(resp);
+      return true;
+    }
+    case FrameType::kDeviceRegister: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // device_id
+        return false;
+      }
+      AssignString(s1, s1_view);
+      s2.clear();
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadStringView(payload_view, offset, s2_view)) {  // root_code
+          return false;
+        }
+        AssignString(s2, s2_view);
+      }
+      if (offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp = api_->RegisterDevice(token, s1, s2);
+      out.payload = EncodeDeviceRegisterResp(resp);
+      return true;
+    }
+    case FrameType::kRootAuthInit: {
+      if (token.empty()) {
+        return false;
+      }
+      if (offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp = api_->RootAuthInit(token);
+      out.payload = EncodeRootAuthInitResp(resp);
+      return true;
+    }
+    case FrameType::kQrLoginInit: {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      AssignString(s1, s1_view);
+      auto resp = api_->QrLoginInit(s1);
+      out.payload = EncodeQrLoginInitResp(resp);
+      return true;
+    }
+    case FrameType::kQrLoginPoll: {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
+      auto resp = api_->QrLoginPoll(s1, s2, transport);
+      out.payload = EncodeQrLoginPollResp(resp);
+      return true;
+    }
+    case FrameType::kQrLoginApprove: {
+      if (token.empty()) {
+        return false;
+      }
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      AssignString(s1, s1_view);
+      AssignString(s2, s2_view);
+      auto resp = api_->QrLoginApprove(token, s1, s2);
+      out.payload = EncodeQrLoginApproveResp(resp);
       return true;
     }
     case FrameType::kDevicePairingRequest: {

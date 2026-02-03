@@ -1,0 +1,18 @@
+name: RootAuthApp
+options:
+  bundleIdPrefix: mi.e2ee.root
+  deploymentTarget:
+    iOS: "14.0"
+targets:
+  RootAuthApp:
+    type: application
+    platform: iOS
+    sources:
+      - RootAuthApp
+    info:
+      path: RootAuthApp/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: mi.e2ee.root.RootAuthApp
+        MARKETING_VERSION: 1.0
+        CURRENT_PROJECT_VERSION: 1

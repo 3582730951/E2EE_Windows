@@ -97,6 +97,11 @@ class SessionManager {
   bool OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
                          TransportKind transport, Session& out_session,
                          std::string& error);
+  bool QrLoginFinish(const std::string& username,
+                     const std::vector<std::uint8_t>& session_key,
+                     TransportKind transport,
+                     Session& out_session,
+                     std::string& error);
 
   bool UserExists(const std::string& username, std::string& error) const;
 

@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -53,13 +54,16 @@ fun LoginApp() {
 @Composable
 fun LoginScreen(
     onRegister: () -> Unit = {},
-    onLogin: (String, String) -> Unit = { _, _ -> },
+    onLogin: (String, String, String) -> Unit = { _, _, _ -> },
+    onShowQr: () -> Unit = {},
+    onScanQr: () -> Unit = {},
     errorMessage: String? = null,
     statusMessage: String? = null,
     remoteError: String? = null
 ) {
     val email = remember { mutableStateOf("") }
     val password = remember { mutableStateOf("") }
+    val rootCode = remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LoginBackground()
@@ -138,31 +142,51 @@ fun LoginScreen(
                         ),
                         shape = RoundedCornerShape(16.dp)
                     )
+                    OutlinedTextField(
+                        value = rootCode.value,
+                        onValueChange = { value ->
+                            rootCode.value = value.filter { it.isDigit() }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(tr("login_root_code", "Root auth code (optional)")) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = "Root auth"
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true
+                    )
                     PrimaryButton(
                         label = tr("login_sign_in", "Sign in"),
                         enabled = email.value.isNotBlank() && password.value.isNotBlank(),
-                        onClick = { onLogin(email.value.trim(), password.value) }
+                        onClick = { onLogin(email.value.trim(), password.value, rootCode.value) }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = {},
+                            onClick = onShowQr,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Mail,
-                                contentDescription = "One-time code"
+                                imageVector = Icons.Filled.QrCode,
+                                contentDescription = "Show QR"
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = tr("login_one_time_code", "One-time code"),
+                                text = tr("login_qr_show", "Show QR"),
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
                         OutlinedButton(
-                            onClick = {},
+                            onClick = onScanQr,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp),

@@ -24,6 +24,8 @@ set(UI_COMMON_SOURCES
     common/ImePluginLoader.cpp
     common/ImePluginLoader.h
     common/OverlayWidget.cpp
+    common/QrCodeGenerator.cpp
+    common/QrCodeGenerator.h
     common/SecureClipboard.cpp
     common/SecureClipboard.h
     common/Toast.cpp
@@ -34,11 +36,15 @@ set(UI_COMMON_SOURCES
     common/UiRuntimePaths.cpp
     common/UiRuntimePaths.h
     common/SettingsDialog.cpp
+    ../../third_party/qrcodegen/qrcodegen.cpp
     common/ui_resources.qrc
 )
 
 add_library(mi_ui_common STATIC ${UI_COMMON_SOURCES})
 target_include_directories(mi_ui_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common)
+target_include_directories(mi_ui_common PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/qrcodegen
+)
 target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets Qt6::Svg)
 target_compile_definitions(mi_ui_common PUBLIC
     UI_REF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/ref"

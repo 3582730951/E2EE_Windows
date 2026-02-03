@@ -26,6 +26,8 @@ import mi.e2ee.android.sdk.GroupMemberRole
 private sealed interface FlowScreen {
     data object Login : FlowScreen
     data object Register : FlowScreen
+    data object QrLoginDisplay : FlowScreen
+    data object QrLoginScan : FlowScreen
     data object Conversations : FlowScreen
     data class Chat(val conversationId: String) : FlowScreen
     data class GroupChat(val groupId: String) : FlowScreen
@@ -96,11 +98,13 @@ fun UiHost(
         when (current) {
         FlowScreen.Login -> LoginScreen(
             onRegister = { navigate(FlowScreen.Register) },
-            onLogin = { username, password ->
-                if (sdk.login(username, password)) {
+            onLogin = { username, password, rootCode ->
+                if (sdk.login(username, password, rootCode)) {
                     resetTo(FlowScreen.Conversations)
                 }
             },
+            onShowQr = { navigate(FlowScreen.QrLoginDisplay) },
+            onScanQr = { navigate(FlowScreen.QrLoginScan) },
             errorMessage = sdk.lastError.takeIf { it.isNotBlank() },
             statusMessage = sdk.statusMessage,
             remoteError = if (sdk.remoteOk) "" else sdk.remoteError
@@ -116,6 +120,15 @@ fun UiHost(
             },
             errorMessage = sdk.lastError.takeIf { it.isNotBlank() },
             statusMessage = sdk.statusMessage
+        )
+        FlowScreen.QrLoginDisplay -> QrLoginDisplayScreen(
+            sdk = sdk,
+            onBack = { goBack() },
+            onLoggedIn = { resetTo(FlowScreen.Conversations) }
+        )
+        FlowScreen.QrLoginScan -> QrLoginScanScreen(
+            sdk = sdk,
+            onBack = { goBack() }
         )
         FlowScreen.Conversations -> ConversationListScreen(
             conversations = sdk.conversations,

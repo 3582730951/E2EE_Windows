@@ -67,6 +67,9 @@ struct ServerSection {
   bool secure_delete_required{false};
   std::string secure_delete_plugin;
   std::string secure_delete_plugin_sha256;
+  bool root_auth_enable{false};
+  std::uint32_t root_auth_step_sec{5};
+  std::uint32_t root_auth_window{1};
   bool kcp_enable{false};
   std::uint16_t kcp_port{0};
   std::uint32_t kcp_mtu{1400};

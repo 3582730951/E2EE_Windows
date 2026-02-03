@@ -2,8 +2,10 @@
 
 #include <QFile>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QtGlobal>
 
@@ -39,6 +41,10 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
             this, &LoginDialog::handleLogin);
     connect(authFlow_, &AuthFlowWidget::registerRequested,
             this, &LoginDialog::handleRegister);
+    connect(authFlow_, &AuthFlowWidget::qrLoginRequested,
+            this, &LoginDialog::handleQrLoginStart);
+    connect(authFlow_, &AuthFlowWidget::qrLoginCancelRequested,
+            this, &LoginDialog::handleQrLoginCancel);
 
     if (backend_) {
         connect(backend_, &BackendAdapter::loginFinished,
@@ -68,8 +74,10 @@ void LoginDialog::handleLogin(const QString &account, const QString &password, b
     if (loginBusy_) {
         return;
     }
+    handleQrLoginCancel();
     const QString acc = account.trimmed();
     const QString pwd = password;
+    const QString rootCode = authFlow_ ? authFlow_->rootCode() : QString();
     if (acc.isEmpty() || pwd.isEmpty()) {
         if (authFlow_) {
             authFlow_->setErrorMessage(QStringLiteral("????????"));
@@ -83,11 +91,12 @@ void LoginDialog::handleLogin(const QString &account, const QString &password, b
     }
     pendingAccount_ = acc;
     pendingPassword_ = pwd;
+    pendingRootCode_ = rootCode;
     if (authFlow_) {
         authFlow_->setErrorMessage(QString());
     }
     setLoginBusy(true);
-    backend_->loginAsync(acc, pwd);
+    backend_->loginAsync(acc, pwd, rootCode);
 }
 
 void LoginDialog::onLoginFinished(bool success, const QString &error) {
@@ -117,6 +126,7 @@ void LoginDialog::handleRegister(const QString &account, const QString &password
     if (loginBusy_) {
         return;
     }
+    handleQrLoginCancel();
     const QString acc = account.trimmed();
     const QString pwd = password;
     if (acc.isEmpty() || pwd.isEmpty()) {
@@ -132,6 +142,7 @@ void LoginDialog::handleRegister(const QString &account, const QString &password
     }
     pendingAccount_ = acc;
     pendingPassword_ = pwd;
+    pendingRootCode_.clear();
     if (authFlow_) {
         authFlow_->setErrorMessage(QString());
     }
@@ -156,7 +167,128 @@ void LoginDialog::onRegisterFinished(bool success, const QString &error) {
         return;
     }
     setLoginBusy(true);
-    backend_->loginAsync(pendingAccount_, pendingPassword_);
+    backend_->loginAsync(pendingAccount_, pendingPassword_, pendingRootCode_);
+}
+
+void LoginDialog::handleQrLoginStart() {
+    if (loginBusy_) {
+        return;
+    }
+    if (!backend_) {
+        if (authFlow_) {
+            authFlow_->setErrorMessage(QStringLiteral("后端不可用"));
+        }
+        return;
+    }
+    QString payload;
+    QString err;
+    if (!backend_->beginQrLogin(payload, err)) {
+        if (authFlow_) {
+            authFlow_->setErrorMessage(err.isEmpty()
+                ? QStringLiteral("生成二维码失败")
+                : err);
+        }
+        stopQrPolling();
+        return;
+    }
+    if (authFlow_) {
+        authFlow_->setErrorMessage(QString());
+        authFlow_->setQrPayload(payload);
+    }
+    qrActive_ = true;
+    if (!qrPollTimer_) {
+        qrPollTimer_ = new QTimer(this);
+        qrPollTimer_->setInterval(1500);
+        connect(qrPollTimer_, &QTimer::timeout, this, &LoginDialog::pollQrLogin);
+    }
+    qrPollTimer_->start();
+}
+
+void LoginDialog::handleQrLoginCancel() {
+    stopQrPolling();
+    if (backend_) {
+        backend_->cancelQrLogin();
+    }
+    if (authFlow_) {
+        authFlow_->setQrPayload(QString());
+    }
+}
+
+void LoginDialog::pollQrLogin() {
+    if (!backend_ || !qrActive_) {
+        return;
+    }
+    bool completed = false;
+    QString err;
+    if (!backend_->pollQrLogin(completed, err)) {
+        if (authFlow_) {
+            authFlow_->setErrorMessage(err.isEmpty()
+                ? QStringLiteral("二维码登录失败")
+                : err);
+        }
+        stopQrPolling();
+        return;
+    }
+    if (completed) {
+        stopQrPolling();
+        QString regErr;
+        if (backend_ && !backend_->registerDevice(QString(), regErr)) {
+            const QString lowered = regErr.toLower();
+            if (lowered.contains(QStringLiteral("root auth")) ||
+                regErr.contains(QStringLiteral("根"))) {
+                bool ok = false;
+                const QString code = QInputDialog::getText(
+                    this,
+                    QStringLiteral("根授权码"),
+                    QStringLiteral("请输入根授权码（6-8 位数字）"),
+                    QLineEdit::Password,
+                    QString(),
+                    &ok);
+                if (!ok || code.trimmed().isEmpty()) {
+                    if (backend_) {
+                        backend_->logout();
+                    }
+                    if (authFlow_) {
+                        authFlow_->setErrorMessage(QStringLiteral("需要根授权码"));
+                    }
+                    return;
+                }
+                if (!backend_->registerDevice(code, regErr)) {
+                    if (backend_) {
+                        backend_->logout();
+                    }
+                    if (authFlow_) {
+                        authFlow_->setErrorMessage(regErr.isEmpty()
+                            ? QStringLiteral("设备注册失败")
+                            : regErr);
+                    }
+                    return;
+                }
+            } else {
+                if (backend_) {
+                    backend_->logout();
+                }
+                if (authFlow_) {
+                    authFlow_->setErrorMessage(regErr.isEmpty()
+                        ? QStringLiteral("设备注册失败")
+                        : regErr);
+                }
+                return;
+            }
+        }
+        if (authFlow_) {
+            authFlow_->setErrorMessage(QString());
+        }
+        emit authSucceeded();
+        accept();
+    }
+}
+
+void LoginDialog::stopQrPolling() {
+    qrActive_ = false;
+    if (qrPollTimer_) {
+        qrPollTimer_->stop();
+    }
 }
 
 bool LoginDialog::handlePendingServerTrust(const QString &account, const QString &password) {
@@ -202,7 +334,7 @@ bool LoginDialog::handlePendingServerTrust(const QString &account, const QString
     }
 
     setLoginBusy(true);
-    backend_->loginAsync(account, password);
+    backend_->loginAsync(account, password, pendingRootCode_);
     return true;
 }
 

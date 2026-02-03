@@ -2514,6 +2514,15 @@ bool ClientCore::Init(const std::string& config_path) {
     }
     e2ee_state_dir_ = base / "e2ee_state";
     kt_state_path_ = e2ee_state_dir_ / "kt_state.bin";
+    const bool sensitive_mode =
+        core_helpers::EnvFlag("MI_E2EE_SENSITIVE_MODE") ||
+        core_helpers::EnvFlag("MI_E2EE_NO_HISTORY");
+    if (sensitive_mode) {
+      history_enabled_ = false;
+      history_store_.reset();
+      std::error_code hist_ec;
+      std::filesystem::remove_all(e2ee_state_dir_ / "history", hist_ec);
+    }
     kt_require_signature_ = cfg.kt.require_signature;
     kt_gossip_alert_threshold_ = cfg.kt.gossip_alert_threshold;
     kt_root_pubkey_.clear();
@@ -2655,6 +2664,17 @@ bool ClientCore::Init(const std::string& config_path) {
   }
   e2ee_state_dir_ = base / "e2ee_state";
   kt_state_path_ = e2ee_state_dir_ / "kt_state.bin";
+  {
+    const bool sensitive_mode =
+        core_helpers::EnvFlag("MI_E2EE_SENSITIVE_MODE") ||
+        core_helpers::EnvFlag("MI_E2EE_NO_HISTORY");
+    if (sensitive_mode) {
+      history_enabled_ = false;
+      history_store_.reset();
+      std::error_code hist_ec;
+      std::filesystem::remove_all(e2ee_state_dir_ / "history", hist_ec);
+    }
+  }
   kt_require_signature_ = false;
   kt_gossip_alert_threshold_ = 3;
   kt_root_pubkey_.clear();
@@ -2907,6 +2927,88 @@ bool ClientCore::FetchPreKeyBundle(const std::string& peer_username,
       return true;
     }
     last_error_ = "kt version unsupported";
+    return false;
+  }
+  return true;
+}
+
+bool ClientCore::RegisterDevice(const std::string& root_code) {
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  if (device_id_.empty()) {
+    LoadOrCreateDeviceId();
+  }
+  if (device_id_.empty()) {
+    last_error_ = "device id unavailable";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  mi::server::proto::WriteString(device_id_, plain);
+  if (!root_code.empty()) {
+    mi::server::proto::WriteString(root_code, plain);
+  }
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kDeviceRegister, plain,
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "device register failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "device register response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ =
+        server_err.empty() ? "device register failed" : server_err;
+    return false;
+  }
+  if (resp_payload.size() != 1) {
+    last_error_ = "device register response invalid";
+    return false;
+  }
+  return true;
+}
+
+bool ClientCore::RootAuthInit(std::string& out_secret_hex) {
+  out_secret_hex.clear();
+  last_error_.clear();
+  if (!EnsureChannel()) {
+    last_error_ = "not logged in";
+    return false;
+  }
+  std::vector<std::uint8_t> resp_payload;
+  if (!ProcessEncrypted(mi::server::FrameType::kRootAuthInit, {},
+                        resp_payload)) {
+    if (last_error_.empty()) {
+      last_error_ = "root auth init failed";
+    }
+    return false;
+  }
+  if (resp_payload.empty()) {
+    last_error_ = "root auth init response empty";
+    return false;
+  }
+  if (resp_payload[0] == 0) {
+    std::string server_err;
+    std::size_t off = 1;
+    mi::server::proto::ReadString(resp_payload, off, server_err);
+    last_error_ =
+        server_err.empty() ? "root auth init failed" : server_err;
+    return false;
+  }
+  std::size_t off = 1;
+  if (!mi::server::proto::ReadString(resp_payload, off, out_secret_hex) ||
+      off != resp_payload.size()) {
+    last_error_ = "root auth init response invalid";
+    out_secret_hex.clear();
     return false;
   }
   return true;

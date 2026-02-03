@@ -380,6 +380,37 @@ struct DeviceKickResponse {
   std::string error;
 };
 
+struct DeviceRegisterResponse {
+  bool success{false};
+  std::string error;
+};
+
+struct RootAuthInitResponse {
+  bool success{false};
+  std::string secret_hex;
+  std::string error;
+};
+
+struct QrLoginInitResponse {
+  bool success{false};
+  std::string qr_id;
+  std::string secret_hex;
+  std::string error;
+};
+
+struct QrLoginPollResponse {
+  bool success{false};
+  bool completed{false};
+  std::string token;
+  std::string username;
+  std::string error;
+};
+
+struct QrLoginApproveResponse {
+  bool success{false};
+  std::string error;
+};
+
 struct DevicePairingPushResponse {
   bool success{false};
   std::string error;
@@ -401,8 +432,13 @@ class ApiService {
              MediaRelay* media_relay = nullptr,
              std::uint32_t group_threshold = 10000,
              std::optional<MySqlConfig> friend_mysql = std::nullopt,
-             std::filesystem::path kt_dir = {},
-             std::filesystem::path kt_signing_key = {});
+             std::filesystem::path storage_dir = {},
+             std::filesystem::path kt_signing_key = {},
+             KeyProtectionMode root_auth_protection = KeyProtectionMode::kNone,
+             StateStore* state_store = nullptr,
+             bool root_auth_enable = false,
+             std::uint32_t root_auth_step_sec = 5,
+             std::uint32_t root_auth_window = 1);
 
   LoginResponse Login(const LoginRequest& req, TransportKind transport);
   OpaqueRegisterStartResponse OpaqueRegisterStart(
@@ -589,6 +625,17 @@ class ApiService {
   DeviceKickResponse KickDevice(const std::string& token,
                                 const std::string& requester_device_id,
                                 const std::string& target_device_id);
+  DeviceRegisterResponse RegisterDevice(const std::string& token,
+                                        const std::string& device_id,
+                                        const std::string& root_code);
+  RootAuthInitResponse RootAuthInit(const std::string& token);
+  QrLoginInitResponse QrLoginInit(const std::string& device_id);
+  QrLoginPollResponse QrLoginPoll(const std::string& qr_id,
+                                  const std::string& secret_hex,
+                                  TransportKind transport);
+  QrLoginApproveResponse QrLoginApprove(const std::string& token,
+                                        const std::string& qr_id,
+                                        const std::string& secret_hex);
 
   DevicePairingPushResponse PushDevicePairingRequest(
       const std::string& token, const std::string& pairing_id_hex,
@@ -662,6 +709,19 @@ class ApiService {
   bool RateLimitFile(const std::string& action, const std::string& token,
                      std::optional<Session>& out_session,
                      std::string& out_error);
+  bool IsDeviceAuthorized(const std::string& token,
+                          const Session& session,
+                          std::string& out_error);
+  struct RootAuthRecord;
+  bool LoadRootAuthRecord(const std::string& username,
+                          RootAuthRecord& out_record,
+                          std::string& out_error);
+  bool SaveRootAuthRecord(const std::string& username,
+                          const RootAuthRecord& record,
+                          std::string& out_error);
+  bool VerifyRootAuthCode(const RootAuthRecord& record,
+                          const std::string& code) const;
+  void CleanupQrLoginLocked(std::chrono::steady_clock::time_point now);
   bool SignKtSth(KeyTransparencySth& sth, std::string& out_error);
   FriendListResponse ListFriendsInternal(const Session& session);
   std::uint32_t CurrentFriendVersionLocked(const std::string& username) const;
@@ -708,6 +768,31 @@ class ApiService {
   };
   std::unordered_map<std::string, std::unordered_map<std::string, DeviceRecord>>
       devices_by_user_;
+  std::mutex root_auth_mutex_;
+  struct RootAuthRecord {
+    std::array<std::uint8_t, 32> secret{};
+    std::unordered_set<std::string> devices;
+    bool has_secret{false};
+  };
+  std::unordered_map<std::string, RootAuthRecord> root_auth_by_user_;
+  std::mutex qr_login_mutex_;
+  struct QrLoginRecord {
+    std::array<std::uint8_t, 32> secret{};
+    std::string username;
+    std::string device_id;
+    std::chrono::steady_clock::time_point created_at{};
+    bool approved{false};
+  };
+  std::unordered_map<std::string, QrLoginRecord> qr_login_by_id_;
+  std::chrono::seconds qr_login_ttl_{std::chrono::seconds(90)};
+  std::mutex token_device_mutex_;
+  std::unordered_map<std::string, std::string> token_device_ids_;
+  bool root_auth_enabled_{false};
+  std::uint32_t root_auth_step_sec_{5};
+  std::uint32_t root_auth_window_{1};
+  KeyProtectionMode root_auth_protection_{KeyProtectionMode::kNone};
+  StateStore* state_store_{nullptr};
+  std::filesystem::path root_auth_dir_;
 
   std::unique_ptr<KeyTransparencyLog> kt_log_;
   std::array<std::uint8_t, kKtSthSigSecretKeyBytes> kt_signing_sk_{};

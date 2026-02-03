@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -142,6 +143,18 @@ inline bool ResolveCoverTrafficEnabled(const TrafficConfig& cfg) {
     default:
       return !IsLowEndDevice();
   }
+}
+
+inline bool EnvFlag(const char* name) {
+  if (!name || *name == '\0') {
+    return false;
+  }
+  const char* value = std::getenv(name);
+  if (!value || *value == '\0') {
+    return false;
+  }
+  const std::string v = ToLower(Trim(value));
+  return v == "1" || v == "true" || v == "on" || v == "yes";
 }
 
 }  // namespace mi::client::core_helpers

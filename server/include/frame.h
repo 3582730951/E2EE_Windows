@@ -67,7 +67,12 @@ enum class FrameType : std::uint16_t {
   kGroupCallSignal = 52,
   kGroupCallSignalPull = 53,
   kGroupMediaPush = 54,
-  kGroupMediaPull = 55
+  kGroupMediaPull = 55,
+  kDeviceRegister = 56,
+  kRootAuthInit = 57,
+  kQrLoginInit = 58,
+  kQrLoginPoll = 59,
+  kQrLoginApprove = 60
 };
 
 struct Frame {

@@ -42,8 +42,11 @@ public:
     };
 
     bool init(const QString &configPath = QString());
-    bool login(const QString &account, const QString &password, QString &err);
-    void loginAsync(const QString &account, const QString &password);
+    bool login(const QString &account, const QString &password,
+               const QString &rootCode, QString &err);
+    void loginAsync(const QString &account, const QString &password,
+                    const QString &rootCode);
+    void logout();
     bool registerUser(const QString &account, const QString &password, QString &err);
     void registerUserAsync(const QString &account, const QString &password);
 
@@ -172,6 +175,7 @@ public:
     };
     QVector<DeviceEntry> listDevices(QString &err);
     bool kickDevice(const QString &deviceId, QString &err);
+    bool registerDevice(const QString &rootCode, QString &err);
 
     bool deviceSyncEnabled() const { return device_sync_enabled_; }
     bool deviceSyncIsPrimary() const { return device_sync_primary_; }
@@ -186,6 +190,9 @@ public:
     bool beginDevicePairingLinked(const QString &pairingCode, QString &err);
     bool pollDevicePairingLinked(bool &outCompleted, QString &err);
     void cancelDevicePairing();
+    bool beginQrLogin(QString &outPayload, QString &err);
+    bool pollQrLogin(bool &outCompleted, QString &err);
+    void cancelQrLogin();
 
 signals:
     void incomingMessage(const QString &convId, bool isGroup, const QString &sender,

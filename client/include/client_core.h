@@ -241,6 +241,14 @@ class ClientCore {
   bool Init(const std::string& config_path = "config/client_config.ini");
   bool Register(const std::string& username, const std::string& password);
   bool Login(const std::string& username, const std::string& password);
+  bool LoginWithRootCode(const std::string& username,
+                         const std::string& password,
+                         const std::string& root_code);
+  bool BeginQrLogin(std::string& out_payload);
+  bool PollQrLogin(bool& out_completed);
+  bool ApproveQrLogin(const std::string& qr_id,
+                      const std::string& qr_secret_hex);
+  void CancelQrLogin();
   bool Relogin();
   bool Logout();
   bool PublishPreKeys();
@@ -448,6 +456,8 @@ class ClientCore {
   bool Heartbeat();
   std::vector<DeviceEntry> ListDevices();
   bool KickDevice(const std::string& target_device_id);
+  bool RegisterDevice(const std::string& root_code);
+  bool RootAuthInit(std::string& out_secret_hex);
 
   bool BeginDevicePairingPrimary(std::string& out_pairing_code);
   std::vector<DevicePairingRequest> PollDevicePairingRequests();
@@ -488,6 +498,7 @@ class ClientCore {
                        std::string& error);
 
   const std::string& token() const { return token_; }
+  const std::string& username() const { return username_; }
   const std::string& last_error() const { return last_error_; }
   void SetLastError(const std::string& error) { last_error_ = error; }
   const std::string& device_id() const { return device_id_; }
@@ -802,6 +813,12 @@ class ClientCore {
   std::string pairing_id_hex_;
   std::array<std::uint8_t, 32> pairing_key_{};
   std::array<std::uint8_t, 16> pairing_request_id_{};
+
+  bool qr_login_active_{false};
+  std::string qr_login_id_;
+  std::string qr_login_secret_hex_;
+  std::array<std::uint8_t, 32> qr_login_secret_{};
+  std::string qr_login_payload_;
 
   std::unordered_set<std::string> chat_seen_ids_;
   std::deque<std::string> chat_seen_order_;

@@ -21,6 +21,7 @@
 #include "../common/SettingsDialog.h"
 #include "../common/UiSettings.h"
 #include "../common/UiStyle.h"
+#include "../common/QrCodeGenerator.h"
 
 namespace {
 
@@ -73,6 +74,9 @@ void AuthFlowWidget::setBusy(bool busy) {
     if (passwordEdit_) {
         passwordEdit_->setEnabled(!busy);
     }
+    if (rootCodeEdit_) {
+        rootCodeEdit_->setEnabled(!busy);
+    }
     if (autoLoginCheck_) {
         autoLoginCheck_->setEnabled(!busy);
     }
@@ -93,6 +97,26 @@ void AuthFlowWidget::setErrorMessage(const QString &message) {
     }
     errorLabel_->setText(message);
     errorLabel_->setVisible(!message.isEmpty());
+}
+
+QString AuthFlowWidget::rootCode() const {
+    if (!rootCodeEdit_) {
+        return {};
+    }
+    return rootCodeEdit_->text().trimmed();
+}
+
+void AuthFlowWidget::setQrPayload(const QString &payload) {
+    qrPayload_ = payload;
+    if (!qrImage_) {
+        return;
+    }
+    if (qrPayload_.isEmpty()) {
+        qrImage_->setPixmap(buildFakeQrPixmap(180));
+        return;
+    }
+    qrImage_->setPixmap(buildQrPixmap(qrPayload_, 180));
+    startQrCountdown();
 }
 
 void AuthFlowWidget::buildUi() {
@@ -196,6 +220,13 @@ void AuthFlowWidget::buildUi() {
     passwordEdit_->setEchoMode(QLineEdit::Password);
     passwordEdit_->setPlaceholderText(QStringLiteral("Password"));
     accountLayout->addWidget(passwordEdit_);
+
+    rootCodeEdit_ = new QLineEdit(accountPage);
+    rootCodeEdit_->setPlaceholderText(QStringLiteral("Root auth code (6-8 digits)"));
+    rootCodeEdit_->setMaxLength(8);
+    rootCodeEdit_->setInputMethodHints(Qt::ImhDigitsOnly);
+    rootCodeEdit_->setEchoMode(QLineEdit::Password);
+    accountLayout->addWidget(rootCodeEdit_);
 
     autoLoginCheck_ = new QCheckBox(QStringLiteral("Auto login"), accountPage);
     accountLayout->addWidget(autoLoginCheck_);
@@ -314,8 +345,7 @@ void AuthFlowWidget::buildUi() {
     connect(qrBackBtn, &QPushButton::clicked, this, &AuthFlowWidget::showAccountPage);
     connect(qrRegisterBtn, &QPushButton::clicked, this, &AuthFlowWidget::showRegisterPage);
     connect(qrRefreshButton_, &QPushButton::clicked, this, [this]() {
-        qrImage_->setPixmap(buildFakeQrPixmap(180));
-        startQrCountdown();
+        emit qrLoginRequested();
     });
 
     qrTimer_ = new QTimer(this);
@@ -329,7 +359,6 @@ void AuthFlowWidget::buildUi() {
             }
         }
     });
-    startQrCountdown();
 }
 
 void AuthFlowWidget::showAccountPage() {
@@ -337,6 +366,7 @@ void AuthFlowWidget::showAccountPage() {
         stack_->setCurrentIndex(0);
     }
     setErrorMessage(QString());
+    emit qrLoginCancelRequested();
 }
 
 void AuthFlowWidget::showRegisterPage() {
@@ -344,6 +374,7 @@ void AuthFlowWidget::showRegisterPage() {
         stack_->setCurrentIndex(1);
     }
     setErrorMessage(QString());
+    emit qrLoginCancelRequested();
 }
 
 void AuthFlowWidget::showQrPage() {
@@ -351,6 +382,7 @@ void AuthFlowWidget::showQrPage() {
         stack_->setCurrentIndex(2);
     }
     setErrorMessage(QString());
+    emit qrLoginRequested();
 }
 
 void AuthFlowWidget::startQrCountdown() {
@@ -413,6 +445,17 @@ QPixmap AuthFlowWidget::buildFakeQrPixmap(int size) const {
     return pixmap;
 }
 
+QPixmap AuthFlowWidget::buildQrPixmap(const QString &payload, int size) const {
+    if (payload.isEmpty()) {
+        return buildFakeQrPixmap(size);
+    }
+    const QImage img = mi::ui::BuildQrImage(payload, size, 2);
+    if (img.isNull()) {
+        return buildFakeQrPixmap(size);
+    }
+    return QPixmap::fromImage(img);
+}
+
 void AuthFlowWidget::handleLoginClicked() {
     if (busy_) {
         return;
@@ -459,7 +502,11 @@ void AuthFlowWidget::handleQrSimulateClicked() {
         return;
     }
     setErrorMessage(QString());
-    emit authSucceeded();
+    if (demoMode_) {
+        emit authSucceeded();
+        return;
+    }
+    emit qrLoginRequested();
 }
 
 bool AuthFlowWidget::eventFilter(QObject *watched, QEvent *event) {

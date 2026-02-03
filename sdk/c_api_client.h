@@ -212,6 +212,23 @@ MI_E2EE_SDK_API int mi_client_register(mi_client_handle* handle,
 MI_E2EE_SDK_API int mi_client_login(mi_client_handle* handle,
                     const char* username,
                     const char* password);
+MI_E2EE_SDK_API int mi_client_login_with_root_code(mi_client_handle* handle,
+                                   const char* username,
+                                   const char* password,
+                                   const char* root_code);
+MI_E2EE_SDK_API int mi_client_register_device(mi_client_handle* handle,
+                             const char* root_code);
+MI_E2EE_SDK_API int mi_client_root_auth_init(mi_client_handle* handle,
+                             char** out_secret_hex);
+MI_E2EE_SDK_API int mi_client_begin_qr_login(mi_client_handle* handle,
+                             char** out_payload);
+MI_E2EE_SDK_API int mi_client_poll_qr_login(mi_client_handle* handle,
+                            int* out_completed,
+                            char** out_username);
+MI_E2EE_SDK_API int mi_client_approve_qr_login(mi_client_handle* handle,
+                               const char* qr_id,
+                               const char* qr_secret_hex);
+MI_E2EE_SDK_API void mi_client_cancel_qr_login(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_publish_prekeys(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_logout(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_heartbeat(mi_client_handle* handle);

@@ -1278,6 +1278,81 @@ bool SessionManager::OpaqueLoginFinish(const OpaqueLoginFinishRequest& req,
   return true;
 }
 
+bool SessionManager::QrLoginFinish(const std::string& username,
+                                   const std::vector<std::uint8_t>& session_key,
+                                   TransportKind transport,
+                                   Session& out_session,
+                                   std::string& error) {
+  error.clear();
+  if (username.empty()) {
+    error = "username empty";
+    return false;
+  }
+  if (session_key.size() != 32) {
+    error = "session key invalid";
+    return false;
+  }
+  {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_store_) {
+      if (!LoadSessionsFromStoreLocked()) {
+        error = "session state load failed";
+        return false;
+      }
+    }
+    if (IsLoginBannedLocked(username, now)) {
+      error = "rate limited";
+      return false;
+    }
+  }
+
+  const std::string token = GenerateToken();
+  if (token.empty()) {
+    error = "token rng failed";
+    return false;
+  }
+
+  DerivedKeys keys{};
+  std::string derive_err;
+  if (!DeriveKeysFromOpaqueSessionKey(session_key, username, token, transport,
+                                      keys, derive_err)) {
+    error = derive_err.empty() ? "key derivation failed" : derive_err;
+    return false;
+  }
+
+  Session session;
+  session.username = username;
+  session.token = token;
+  session.keys = keys;
+  session.created_at = std::chrono::steady_clock::now();
+  session.last_seen = session.created_at;
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ClearLoginFailuresLocked(username);
+    sessions_[session.token] = session;
+    dirty_ = true;
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "sessions",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (!store_lock.locked()) {
+        error = "session state lock failed";
+        return false;
+      }
+      if (!SaveSessionsToStoreLockedUnlocked()) {
+        error = "session state save failed";
+        return false;
+      }
+    } else {
+      SaveSessionsLocked();
+    }
+  }
+  out_session = session;
+  return true;
+}
+
 bool SessionManager::UserExists(const std::string& username,
                                 std::string& error) const {
   if (!auth_) {

@@ -38,6 +38,18 @@ object NativeSdk {
 
     external fun register(handle: Long, username: String, password: String): Boolean
     external fun login(handle: Long, username: String, password: String): Boolean
+    external fun loginWithRootCode(
+        handle: Long,
+        username: String,
+        password: String,
+        rootCode: String
+    ): Boolean
+    external fun registerDevice(handle: Long, rootCode: String): Boolean
+    external fun rootAuthInit(handle: Long): String?
+    external fun beginQrLogin(handle: Long): String?
+    external fun pollQrLogin(handle: Long): Int
+    external fun approveQrLogin(handle: Long, qrId: String, qrSecretHex: String): Boolean
+    external fun cancelQrLogin(handle: Long)
     external fun logout(handle: Long): Boolean
     external fun heartbeat(handle: Long): Boolean
 

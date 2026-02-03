@@ -25,10 +25,14 @@ public:
     void setDemoMode(bool enabled);
     void setBusy(bool busy);
     void setErrorMessage(const QString &message);
+    void setQrPayload(const QString &payload);
+    QString rootCode() const;
 
 signals:
     void loginRequested(const QString &account, const QString &password, bool autoLogin);
     void registerRequested(const QString &account, const QString &password);
+    void qrLoginRequested();
+    void qrLoginCancelRequested();
     void authSucceeded();
     void closeRequested();
 
@@ -40,6 +44,7 @@ private:
     void startQrCountdown();
     void updateQrHint();
     QPixmap buildFakeQrPixmap(int size) const;
+    QPixmap buildQrPixmap(const QString &payload, int size) const;
 
     void handleLoginClicked();
     void handleRegisterClicked();
@@ -49,6 +54,7 @@ private:
     QStackedWidget *stack_{nullptr};
     QComboBox *accountBox_{nullptr};
     QLineEdit *passwordEdit_{nullptr};
+    QLineEdit *rootCodeEdit_{nullptr};
     QCheckBox *autoLoginCheck_{nullptr};
     QPushButton *loginButton_{nullptr};
 
@@ -60,6 +66,7 @@ private:
     QLabel *qrImage_{nullptr};
     QLabel *qrHint_{nullptr};
     QPushButton *qrRefreshButton_{nullptr};
+    QString qrPayload_;
 
     QLabel *errorLabel_{nullptr};
     QToolButton *menuButton_{nullptr};

@@ -48,6 +48,20 @@ bool SetEnv(const char* name, const std::string& value) {
 #endif
 }
 
+bool ParseEnvPort(const std::string& text, std::uint16_t& out) {
+  out = 0;
+  if (text.empty()) {
+    return false;
+  }
+  char* end_ptr = nullptr;
+  const long v = std::strtol(text.c_str(), &end_ptr, 10);
+  if (end_ptr == text.c_str() || v <= 0 || v > 65535) {
+    return false;
+  }
+  out = static_cast<std::uint16_t>(v);
+  return true;
+}
+
 struct UserFileBackup {
   bool existed{false};
   std::string content;
@@ -178,13 +192,14 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
 }
 
 std::string WriteClientConfig(const std::filesystem::path& dir,
+                              const std::string& host,
                               std::uint16_t port,
                               bool device_sync,
                               bool primary) {
   const auto path = dir / "client_config.ini";
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out << "[client]\n";
-  out << "server_ip=127.0.0.1\n";
+  out << "server_ip=" << (host.empty() ? "127.0.0.1" : host) << "\n";
   out << "server_port=" << port << "\n";
   out << "use_tls=0\n";
   out << "require_tls=0\n";
@@ -580,19 +595,36 @@ int main() {
   }
   LogStep("server dir ok");
 
+  const std::string ci_host_env = GetEnv("MI_E2EE_CI_SERVER_HOST");
+  const std::string ci_port_env = GetEnv("MI_E2EE_CI_SERVER_PORT");
+  std::string server_host = ci_host_env.empty() ? "127.0.0.1" : ci_host_env;
+  const bool use_external_server =
+      !ci_host_env.empty() && ci_host_env != "127.0.0.1" &&
+      ci_host_env != "localhost";
+
   std::uint16_t port = 0;
-  std::string server_err;
-  LogStep("start server");
-  if (!StartServer(app, listener, net, server_dir, port, server_err)) {
-    if (server_err.find("tcp server not built") != std::string::npos) {
-      cleanup();
-      return 0;
+  if (use_external_server) {
+    if (!ParseEnvPort(ci_port_env, port)) {
+      port = 31000;
     }
-    std::cerr << "start server failed: " << server_err << "\n";
-    cleanup();
-    return 1;
+    LogStep("use external server");
+  } else {
+    if (server_host == "localhost") {
+      server_host = "127.0.0.1";
+    }
+    std::string server_err;
+    LogStep("start server");
+    if (!StartServer(app, listener, net, server_dir, port, server_err)) {
+      if (server_err.find("tcp server not built") != std::string::npos) {
+        cleanup();
+        return 0;
+      }
+      std::cerr << "start server failed: " << server_err << "\n";
+      cleanup();
+      return 1;
+    }
+    LogStep("server started");
   }
-  LogStep("server started");
 
   const auto alice_primary_dir = base_dir / "alice_primary";
   const auto alice_linked_dir = base_dir / "alice_linked";
@@ -607,11 +639,11 @@ int main() {
   }
 
   const std::string alice_primary_cfg =
-      WriteClientConfig(alice_primary_dir, port, true, true);
+      WriteClientConfig(alice_primary_dir, server_host, port, true, true);
   const std::string alice_linked_cfg =
-      WriteClientConfig(alice_linked_dir, port, true, false);
+      WriteClientConfig(alice_linked_dir, server_host, port, true, false);
   const std::string bob_cfg =
-      WriteClientConfig(bob_dir, port, false, false);
+      WriteClientConfig(bob_dir, server_host, port, false, false);
 
   alice = mi_client_create(alice_primary_cfg.c_str());
   if (!alice) {

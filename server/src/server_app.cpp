@@ -714,7 +714,12 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                                 config_.mysql)
                                           : std::nullopt,
                                       storage_dir,
-                                      kt_signing_key);
+                                      kt_signing_key,
+                                      config_.server.state_protection,
+                                      state_store_.get(),
+                                      config_.server.root_auth_enable,
+                                      config_.server.root_auth_step_sec,
+                                      config_.server.root_auth_window);
   router_ = std::make_unique<FrameRouter>(api_.get());
   last_cleanup_ = std::chrono::steady_clock::now();
   return true;

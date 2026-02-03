@@ -780,7 +780,8 @@ bool BackendAdapter::ensureInited(QString &err) {
     return true;
 }
 
-bool BackendAdapter::login(const QString &account, const QString &password, QString &err) {
+bool BackendAdapter::login(const QString &account, const QString &password,
+                           const QString &rootCode, QString &err) {
     const QString user = account.trimmed();
     if (user.isEmpty() || password.isEmpty()) {
         err = QStringLiteral("账号或密码为空");
@@ -802,14 +803,17 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
         return false;
     }
     QString rawErr;
+    const QString root = rootCode.trimmed();
     const auto loginOnce = [&](QString& outErr) -> bool {
         outErr.clear();
         if (!c_api_) {
             outErr = QStringLiteral("未初始化");
             return false;
         }
-        const bool ok = mi_client_login(c_api_, user.toStdString().c_str(),
-                                        password.toStdString().c_str()) != 0;
+        const bool ok = mi_client_login_with_root_code(
+                            c_api_, user.toStdString().c_str(),
+                            password.toStdString().c_str(),
+                            root.toStdString().c_str()) != 0;
         if (!ok) {
             const char* apiErr = mi_client_last_error(c_api_);
             outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
@@ -875,9 +879,11 @@ bool BackendAdapter::login(const QString &account, const QString &password, QStr
     return true;
 }
 
-void BackendAdapter::loginAsync(const QString &account, const QString &password) {
+void BackendAdapter::loginAsync(const QString &account, const QString &password,
+                                const QString &rootCode) {
     const QString acc = account.trimmed();
     const QString pwd = password;
+    const QString root = rootCode.trimmed();
     QString initErr;
     if (acc.isEmpty() || pwd.isEmpty()) {
         emit loginFinished(false, QStringLiteral("账号或密码为空"));
@@ -912,7 +918,7 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
 
     const bool allowAutoStart = !attemptedAutoStartServer_;
     QPointer<BackendAdapter> self(this);
-    std::thread([self, acc, pwd, allowAutoStart]() {
+    std::thread([self, acc, pwd, root, allowAutoStart]() {
         if (!self) {
             return;
         }
@@ -924,8 +930,10 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
                 outErr = QStringLiteral("未初始化");
                 return false;
             }
-            const bool ok = mi_client_login(self->c_api_, acc.toStdString().c_str(),
-                                            pwd.toStdString().c_str()) != 0;
+            const bool ok = mi_client_login_with_root_code(
+                                self->c_api_, acc.toStdString().c_str(),
+                                pwd.toStdString().c_str(),
+                                root.toStdString().c_str()) != 0;
             if (!ok) {
                 const char* apiErr = mi_client_last_error(self->c_api_);
                 outErr = apiErr ? QString::fromUtf8(apiErr) : QString();
@@ -1008,6 +1016,21 @@ void BackendAdapter::loginAsync(const QString &account, const QString &password)
             emit self->loginFinished(true, QString());
         }, Qt::QueuedConnection);
     }).detach();
+}
+
+void BackendAdapter::logout() {
+    if (fileTransferActive_.load()) {
+        return;
+    }
+    if (c_api_) {
+        mi_client_logout(c_api_);
+    }
+    loggedIn_ = false;
+    online_ = false;
+    currentUser_.clear();
+    if (pollTimer_) {
+        pollTimer_->stop();
+    }
 }
 
 bool BackendAdapter::registerUser(const QString &account, const QString &password, QString &err) {
@@ -3169,6 +3192,34 @@ bool BackendAdapter::kickDevice(const QString &deviceId, QString &err) {
     return true;
 }
 
+bool BackendAdapter::registerDevice(const QString &rootCode, QString &err) {
+    const QString code = rootCode.trimmed();
+    if (!loggedIn_) {
+        err = QStringLiteral("尚未登录");
+        return false;
+    }
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    ok = mi_client_register_device(c_api_, code.toStdString().c_str()) != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("设备注册失败") : errMsg;
+        return false;
+    }
+    err.clear();
+    return true;
+}
+
 bool BackendAdapter::beginDevicePairingPrimary(QString &outPairingCode, QString &err) {
     outPairingCode.clear();
     if (!loggedIn_) {
@@ -3333,6 +3384,87 @@ void BackendAdapter::cancelDevicePairing() {
     }
     if (c_api_) {
         mi_client_cancel_device_pairing(c_api_);
+    }
+}
+
+bool BackendAdapter::beginQrLogin(QString &outPayload, QString &err) {
+    outPayload.clear();
+    if (loggedIn_) {
+        err = QStringLiteral("已登录");
+        return false;
+    }
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    char* out = nullptr;
+    ok = mi_client_begin_qr_login(c_api_, &out) != 0;
+    if (out) {
+        outPayload = QString::fromUtf8(out);
+        mi_client_free(out);
+    }
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("生成二维码失败") : errMsg;
+        return false;
+    }
+    err.clear();
+    return true;
+}
+
+bool BackendAdapter::pollQrLogin(bool &outCompleted, QString &err) {
+    outCompleted = false;
+    if (!ensureInited(err)) {
+        return false;
+    }
+    if (!c_api_) {
+        err = QStringLiteral("未初始化");
+        return false;
+    }
+    bool ok = false;
+    QString errMsg;
+    int completed = 0;
+    char* outUser = nullptr;
+    ok = mi_client_poll_qr_login(c_api_, &completed, &outUser) != 0;
+    if (outUser) {
+        currentUser_ = QString::fromUtf8(outUser);
+        mi_client_free(outUser);
+    }
+    outCompleted = completed != 0;
+    const char* apiErr = mi_client_last_error(c_api_);
+    if (apiErr && *apiErr) {
+        errMsg = QString::fromUtf8(apiErr);
+    }
+    if (!ok) {
+        err = errMsg.isEmpty() ? QStringLiteral("二维码轮询失败") : errMsg;
+        return false;
+    }
+    if (outCompleted) {
+        loggedIn_ = true;
+        lastFriends_.clear();
+        friendSyncForced_.store(true);
+        lastFriendSyncAtMs_.store(0);
+        online_ = true;
+        startPolling(basePollIntervalMs_);
+    }
+    err.clear();
+    return true;
+}
+
+void BackendAdapter::cancelQrLogin() {
+    if (fileTransferActive_.load()) {
+        return;
+    }
+    if (c_api_) {
+        mi_client_cancel_qr_login(c_api_);
     }
 }
 

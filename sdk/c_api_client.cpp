@@ -901,6 +901,126 @@ int mi_client_login(mi_client_handle* handle,
   }
 }
 
+int mi_client_login_with_root_code(mi_client_handle* handle,
+                                   const char* username,
+                                   const char* password,
+                                   const char* root_code) {
+  if (!handle || !username || !password) {
+    return 0;
+  }
+  if (!handle->core) {
+    return 0;
+  }
+  const std::string code = root_code ? root_code : "";
+  try {
+    return handle->core->LoginWithRootCode(username, password, code) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+int mi_client_register_device(mi_client_handle* handle,
+                              const char* root_code) {
+  if (!handle || !handle->core) {
+    return 0;
+  }
+  const std::string code = root_code ? root_code : "";
+  try {
+    return handle->core->RegisterDevice(code) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+int mi_client_root_auth_init(mi_client_handle* handle,
+                             char** out_secret_hex) {
+  if (out_secret_hex) {
+    *out_secret_hex = nullptr;
+  }
+  if (!handle || !handle->core) {
+    return 0;
+  }
+  try {
+    std::string secret;
+    if (!handle->core->RootAuthInit(secret)) {
+      return 0;
+    }
+    return CopyStringToC(secret, out_secret_hex) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+int mi_client_begin_qr_login(mi_client_handle* handle, char** out_payload) {
+  if (out_payload) {
+    *out_payload = nullptr;
+  }
+  if (!handle || !handle->core) {
+    return 0;
+  }
+  try {
+    std::string payload;
+    if (!handle->core->BeginQrLogin(payload)) {
+      return 0;
+    }
+    return CopyStringToC(payload, out_payload) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+int mi_client_poll_qr_login(mi_client_handle* handle, int* out_completed,
+                            char** out_username) {
+  if (out_completed) {
+    *out_completed = 0;
+  }
+  if (out_username) {
+    *out_username = nullptr;
+  }
+  if (!handle || !handle->core || !out_completed) {
+    return 0;
+  }
+  try {
+    bool completed = false;
+    if (!handle->core->PollQrLogin(completed)) {
+      return 0;
+    }
+    *out_completed = completed ? 1 : 0;
+    if (completed && out_username) {
+      const std::string& user = handle->core->username();
+      if (!user.empty()) {
+        (void)CopyStringToC(user, out_username);
+      }
+    }
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+int mi_client_approve_qr_login(mi_client_handle* handle,
+                               const char* qr_id,
+                               const char* qr_secret_hex) {
+  if (!handle || !handle->core || !qr_id || !qr_secret_hex) {
+    return 0;
+  }
+  try {
+    return handle->core->ApproveQrLogin(qr_id, qr_secret_hex) ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+void mi_client_cancel_qr_login(mi_client_handle* handle) {
+  if (!handle || !handle->core) {
+    return;
+  }
+  try {
+    handle->core->CancelQrLogin();
+  } catch (...) {
+  }
+}
+
 int mi_client_publish_prekeys(mi_client_handle* handle) {
   if (!handle || !handle->core) {
     return 0;

@@ -676,6 +676,113 @@ Java_mi_e2ee_android_sdk_NativeSdk_login(JNIEnv* env,
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_loginWithRootCode(JNIEnv* env,
+                                                     jobject,
+                                                     jlong handle,
+                                                     jstring username,
+                                                     jstring password,
+                                                     jstring root_code) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return JNI_FALSE;
+  std::string user_str = JStringToString(env, username);
+  std::string pass_str = JStringToString(env, password);
+  std::string root_str = JStringToString(env, root_code);
+  return static_cast<jboolean>(
+      mi_client_login_with_root_code(
+          ptr, user_str.c_str(), pass_str.c_str(), root_str.c_str()));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_registerDevice(JNIEnv* env,
+                                                  jobject,
+                                                  jlong handle,
+                                                  jstring root_code) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return JNI_FALSE;
+  std::string root_str = JStringToString(env, root_code);
+  return static_cast<jboolean>(
+      mi_client_register_device(ptr, root_str.c_str()));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_rootAuthInit(JNIEnv* env,
+                                                jobject,
+                                                jlong handle) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return nullptr;
+  char* out_secret = nullptr;
+  int ok = mi_client_root_auth_init(ptr, &out_secret);
+  if (!ok || !out_secret) {
+    if (out_secret) {
+      mi_client_free(out_secret);
+    }
+    return nullptr;
+  }
+  jstring result = NewJString(env, out_secret);
+  mi_client_free(out_secret);
+  return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_beginQrLogin(JNIEnv* env,
+                                                jobject,
+                                                jlong handle) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return nullptr;
+  char* out_payload = nullptr;
+  int ok = mi_client_begin_qr_login(ptr, &out_payload);
+  if (!ok || !out_payload) {
+    if (out_payload) {
+      mi_client_free(out_payload);
+    }
+    return nullptr;
+  }
+  jstring result = NewJString(env, out_payload);
+  mi_client_free(out_payload);
+  return result;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_pollQrLogin(JNIEnv* env,
+                                               jobject,
+                                               jlong handle) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return -1;
+  int completed = 0;
+  char* out_user = nullptr;
+  int ok = mi_client_poll_qr_login(ptr, &completed, &out_user);
+  if (out_user) {
+    mi_client_free(out_user);
+  }
+  if (!ok) {
+    return -1;
+  }
+  return completed ? 1 : 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_approveQrLogin(JNIEnv* env,
+                                                  jobject,
+                                                  jlong handle,
+                                                  jstring qr_id,
+                                                  jstring qr_secret_hex) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return JNI_FALSE;
+  std::string id_str = JStringToString(env, qr_id);
+  std::string secret_str = JStringToString(env, qr_secret_hex);
+  return static_cast<jboolean>(
+      mi_client_approve_qr_login(ptr, id_str.c_str(), secret_str.c_str()));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_cancelQrLogin(JNIEnv*, jobject, jlong handle) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (ptr) {
+    mi_client_cancel_qr_login(ptr);
+  }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_mi_e2ee_android_sdk_NativeSdk_logout(JNIEnv*, jobject, jlong handle) {
   mi_client_handle* ptr = FromHandle(handle);
   return static_cast<jboolean>(ptr && mi_client_logout(ptr));

@@ -1,6 +1,7 @@
 package mi.e2ee.android.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.Keep
@@ -10,17 +11,41 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import mi.e2ee.android.sdk.GroupCallInfo
 import mi.e2ee.android.sdk.GroupCallSignalResult
 import mi.e2ee.android.sdk.MediaConfig
 import mi.e2ee.android.sdk.MediaPacket
 import mi.e2ee.android.sdk.NativeBridge
+import mi.e2ee.android.sdk.NativeSdk
 import mi.e2ee.android.sdk.SdkVersion
+import java.util.Locale
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 class SdkBridge(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var nativeHandle: Long = 0L
     private var clientHandleValue: Long = 0L
+    private val rootAuthPrefs: SharedPreferences by lazy {
+        val name = "mi_e2ee_root_auth"
+        runCatching {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                name,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            context.getSharedPreferences(name, Context.MODE_PRIVATE)
+        }
+    }
+    private val rootAuthKey = "root_auth_secret_hex"
 
     var initialized by mutableStateOf(false)
         private set
@@ -125,9 +150,35 @@ class SdkBridge(private val context: Context) {
         }
     }
 
+    private fun refreshLastError(handle: Long) {
+        if (handle == 0L) return
+        val err = NativeSdk.lastError(handle)
+        if (err.isNotBlank()) {
+            runOnMain { lastError = err }
+        }
+    }
+
+    private fun resolveClientHandle(): Long {
+        if (clientHandleValue != 0L) {
+            return clientHandleValue
+        }
+        if (nativeHandle != 0L) {
+            val handle = NativeBridge.clientHandle(nativeHandle)
+            if (handle != 0L) {
+                clientHandleValue = handle
+            }
+            return handle
+        }
+        return 0L
+    }
+
     fun init(configPath: String? = null): Boolean {
         if (!ensureHandle()) return false
-        return NativeBridge.init(nativeHandle, configPath)
+        val ok = NativeBridge.init(nativeHandle, configPath)
+        if (ok) {
+            resolveClientHandle()
+        }
+        return ok
     }
 
     fun dispose() {
@@ -148,9 +199,19 @@ class SdkBridge(private val context: Context) {
         return NativeBridge.register(nativeHandle, usernameInput, password)
     }
 
-    fun login(usernameInput: String, password: String): Boolean {
+    fun login(usernameInput: String, password: String, rootCode: String? = null): Boolean {
         if (!ensureHandle()) return false
-        return NativeBridge.login(nativeHandle, usernameInput, password)
+        val handle = resolveClientHandle()
+        val trimmedRoot = rootCode?.trim().orEmpty()
+        return if (handle != 0L) {
+            val ok = NativeSdk.loginWithRootCode(handle, usernameInput, password, trimmedRoot)
+            if (!ok) {
+                refreshLastError(handle)
+            }
+            ok
+        } else {
+            NativeBridge.login(nativeHandle, usernameInput, password)
+        }
     }
 
     fun logout() {
@@ -171,6 +232,70 @@ class SdkBridge(private val context: Context) {
     fun heartbeat(): Boolean {
         if (!ensureHandle()) return false
         return NativeBridge.heartbeat(nativeHandle)
+    }
+
+    fun registerDevice(rootCode: String): Boolean {
+        if (!ensureHandle()) return false
+        val handle = resolveClientHandle()
+        if (handle == 0L) return false
+        val ok = NativeSdk.registerDevice(handle, rootCode)
+        if (!ok) {
+            refreshLastError(handle)
+        }
+        return ok
+    }
+
+    fun initRootAuthSecret(): Boolean {
+        if (!ensureHandle()) return false
+        val handle = resolveClientHandle()
+        if (handle == 0L) return false
+        val secret = NativeSdk.rootAuthInit(handle)
+        if (secret == null) {
+            refreshLastError(handle)
+            return false
+        }
+        setRootAuthSecret(secret)
+        return true
+    }
+
+    fun beginQrLogin(): String? {
+        if (!ensureHandle()) return null
+        val handle = resolveClientHandle()
+        if (handle == 0L) return null
+        val payload = NativeSdk.beginQrLogin(handle)
+        if (payload == null) {
+            refreshLastError(handle)
+        }
+        return payload
+    }
+
+    fun pollQrLogin(): Int {
+        if (!ensureHandle()) return -1
+        val handle = resolveClientHandle()
+        if (handle == 0L) return -1
+        val state = NativeSdk.pollQrLogin(handle)
+        if (state < 0) {
+            refreshLastError(handle)
+        }
+        return state
+    }
+
+    fun approveQrLogin(qrId: String, qrSecretHex: String): Boolean {
+        if (!ensureHandle()) return false
+        val handle = resolveClientHandle()
+        if (handle == 0L) return false
+        val ok = NativeSdk.approveQrLogin(handle, qrId, qrSecretHex)
+        if (!ok) {
+            refreshLastError(handle)
+        }
+        return ok
+    }
+
+    fun cancelQrLogin() {
+        if (!ensureHandle()) return
+        val handle = resolveClientHandle()
+        if (handle == 0L) return
+        NativeSdk.cancelQrLogin(handle)
     }
 
     fun trustPendingServer(pin: String): Boolean {
@@ -804,6 +929,54 @@ class SdkBridge(private val context: Context) {
     @Keep
     fun onOfflinePayloadsUpdated(items: Array<OfflinePayloadLog>) {
         runOnMain { offlinePayloads.replaceWith(items) }
+    }
+
+    fun hasRootAuthSecret(): Boolean {
+        return rootAuthPrefs.getString(rootAuthKey, null)?.isNotBlank() == true
+    }
+
+    fun setRootAuthSecret(hex: String): Boolean {
+        val cleaned = hex.trim().lowercase(Locale.ROOT)
+        if (!Regex("^[0-9a-f]{64}$").matches(cleaned)) {
+            return false
+        }
+        rootAuthPrefs.edit().putString(rootAuthKey, cleaned).apply()
+        return true
+    }
+
+    fun clearRootAuthSecret() {
+        rootAuthPrefs.edit().remove(rootAuthKey).apply()
+    }
+
+    fun currentRootAuthCode(): String? {
+        val hex = rootAuthPrefs.getString(rootAuthKey, null) ?: return null
+        if (hex.length != 64) return null
+        val secret = hexToBytes(hex)
+        if (secret.size != 32) return null
+        return computeRootCode(secret, 5, 6)
+    }
+
+    private fun computeRootCode(secret: ByteArray, stepSec: Long, digits: Int): String {
+        if (secret.isEmpty()) return ""
+        val now = System.currentTimeMillis() / 1000
+        val counter = now / stepSec
+        val msg = ByteArray(8)
+        var value = counter
+        for (i in 7 downTo 0) {
+            msg[i] = (value and 0xff).toByte()
+            value = value shr 8
+        }
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secret, "HmacSHA256"))
+        val digest = mac.doFinal(msg)
+        val offset = digest[digest.size - 1].toInt() and 0x0f
+        val bin = ((digest[offset].toInt() and 0x7f) shl 24) or
+            ((digest[offset + 1].toInt() and 0xff) shl 16) or
+            ((digest[offset + 2].toInt() and 0xff) shl 8) or
+            (digest[offset + 3].toInt() and 0xff)
+        val mod = if (digits == 8) 100_000_000 else 1_000_000
+        val code = bin % mod
+        return code.toString().padStart(digits, '0')
     }
 
     private fun hexToBytes(hex: String): ByteArray {
