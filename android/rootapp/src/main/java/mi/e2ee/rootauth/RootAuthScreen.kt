@@ -188,6 +188,16 @@ fun RootAuthScreen() {
         }
 
         scanInfo?.let { info ->
+            val proof = if (savedSecret.isNotBlank() && !info.deviceId.isNullOrBlank()) {
+                store.currentProof(savedSecret, info.deviceId!!)
+            } else {
+                null
+            }
+            val authString = if (!proof.isNullOrBlank() && code != "------") {
+                "$code:$proof"
+            } else {
+                null
+            }
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -200,12 +210,21 @@ fun RootAuthScreen() {
                 ) {
                     Text(text = info.title, style = MaterialTheme.typography.titleSmall)
                     info.detail?.let { Text(text = it, style = MaterialTheme.typography.bodySmall) }
-                    OutlinedButton(onClick = {
-                        if (code != "------") {
-                            clipboard.setText(AnnotatedString(code))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            if (code != "------") {
+                                clipboard.setText(AnnotatedString(code))
+                            }
+                        }) {
+                            Text(stringResource(id = R.string.copy_code))
                         }
-                    }) {
-                        Text(stringResource(id = R.string.copy_code))
+                        if (!authString.isNullOrBlank()) {
+                            OutlinedButton(onClick = {
+                                clipboard.setText(AnnotatedString(authString))
+                            }) {
+                                Text(stringResource(id = R.string.copy_auth_string))
+                            }
+                        }
                     }
                 }
             }
@@ -245,7 +264,8 @@ fun RootAuthScreen() {
                                 }
                                 scanInfo = ScanInfo(
                                     context.getString(R.string.scan_login_title),
-                                    detail
+                                    detail,
+                                    parsed.deviceId
                                 )
                             }
                             null -> {
@@ -265,7 +285,8 @@ fun RootAuthScreen() {
 
 private data class ScanInfo(
     val title: String,
-    val detail: String?
+    val detail: String?,
+    val deviceId: String?
 )
 
 private sealed class ScanPayload {

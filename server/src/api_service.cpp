@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -131,6 +132,38 @@ static bool ConstantTimeEqual(const std::uint8_t* a, const std::uint8_t* b,
     acc |= static_cast<std::uint8_t>(a[i] ^ b[i]);
   }
   return acc == 0;
+}
+
+struct RootAuthInput {
+  std::string code;
+  std::string proof_hex;
+};
+
+static RootAuthInput ParseRootAuthInput(const std::string& raw) {
+  RootAuthInput out;
+  if (raw.empty()) {
+    return out;
+  }
+  std::string input = raw;
+  while (!input.empty() && std::isspace(static_cast<unsigned char>(input.front()))) {
+    input.erase(input.begin());
+  }
+  while (!input.empty() && std::isspace(static_cast<unsigned char>(input.back()))) {
+    input.pop_back();
+  }
+  if (input.empty()) {
+    return out;
+  }
+  const std::size_t sep = input.find_first_of(":|");
+  if (sep == std::string::npos) {
+    out.code = std::move(input);
+    return out;
+  }
+  out.code = input.substr(0, sep);
+  if (sep + 1 < input.size()) {
+    out.proof_hex = input.substr(sep + 1);
+  }
+  return out;
 }
 
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
@@ -644,6 +677,63 @@ bool ApiService::VerifyRootAuthCode(const RootAuthRecord& record,
         w < 0 ? (counter - static_cast<std::uint64_t>(-w))
               : (counter + static_cast<std::uint64_t>(w));
     if (hotp(ctr) == code_val) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ApiService::VerifyRootAuthProof(const RootAuthRecord& record,
+                                     const std::string& device_id,
+                                     const std::string& proof_hex) const {
+  if (!record.has_secret || device_id.empty() || proof_hex.empty()) {
+    return false;
+  }
+  std::vector<std::uint8_t> proof_bytes;
+  if (!mi::common::HexToBytes(proof_hex, proof_bytes) ||
+      proof_bytes.size() != 32) {
+    return false;
+  }
+  const std::uint64_t step =
+      root_auth_step_sec_ == 0 ? 5 : root_auth_step_sec_;
+  const std::uint64_t now = mi::platform::NowUnixSeconds();
+  const std::uint64_t counter = step == 0 ? 0 : (now / step);
+  const std::uint32_t window =
+      root_auth_window_ == 0 ? 1u : root_auth_window_;
+  static constexpr char kRootAuthProofLabel[] = "mi_e2ee_root_proof_v1";
+
+  std::vector<std::uint8_t> prefix;
+  prefix.reserve(sizeof(kRootAuthProofLabel) + device_id.size() + 2);
+  prefix.insert(prefix.end(), kRootAuthProofLabel,
+                kRootAuthProofLabel + sizeof(kRootAuthProofLabel) - 1);
+  prefix.push_back(0);
+  prefix.insert(prefix.end(), device_id.begin(), device_id.end());
+  prefix.push_back(0);
+
+  auto check_ctr = [&](std::uint64_t ctr) -> bool {
+    std::uint8_t ctr_bytes[8] = {};
+    for (int i = 7; i >= 0; --i) {
+      ctr_bytes[i] = static_cast<std::uint8_t>(ctr & 0xFFu);
+      ctr >>= 8;
+    }
+    std::vector<std::uint8_t> msg(prefix);
+    msg.insert(msg.end(), ctr_bytes, ctr_bytes + sizeof(ctr_bytes));
+    crypto::Sha256Digest digest;
+    crypto::HmacSha256(record.secret.data(), record.secret.size(),
+                       msg.data(), msg.size(), digest);
+    return ConstantTimeEqual(digest.bytes.data(), proof_bytes.data(),
+                             digest.bytes.size());
+  };
+
+  for (std::int32_t w = -static_cast<std::int32_t>(window);
+       w <= static_cast<std::int32_t>(window); ++w) {
+    if (w < 0 && static_cast<std::uint64_t>(-w) > counter) {
+      continue;
+    }
+    const std::uint64_t ctr =
+        w < 0 ? (counter - static_cast<std::uint64_t>(-w))
+              : (counter + static_cast<std::uint64_t>(w));
+    if (check_ctr(ctr)) {
       return true;
     }
   }
@@ -4805,8 +4895,21 @@ DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
     if (record.has_secret) {
       const bool known = record.devices.find(device_id) != record.devices.end();
       if (!known) {
-        if (!VerifyRootAuthCode(record, root_code)) {
-          resp.error = root_code.empty() ? "root auth required" : "root auth invalid";
+        const RootAuthInput auth_input = ParseRootAuthInput(root_code);
+        const bool has_code = !auth_input.code.empty();
+        const bool has_proof = !auth_input.proof_hex.empty();
+        bool ok_code = false;
+        bool ok_proof = false;
+        if (has_code) {
+          ok_code = VerifyRootAuthCode(record, auth_input.code);
+        }
+        if (has_proof) {
+          ok_proof = VerifyRootAuthProof(record, device_id,
+                                         auth_input.proof_hex);
+        }
+        if (!ok_code && !ok_proof) {
+          resp.error = (has_code || has_proof) ? "root auth invalid"
+                                               : "root auth required";
           return resp;
         }
         record.devices.insert(device_id);

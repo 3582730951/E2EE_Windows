@@ -206,15 +206,18 @@ fun QrLoginDisplayScreen(
             title = { Text(t("qr_login_root_title", "Root auth required")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(t("qr_login_root_body", "Enter the 6-digit code from the Root Auth app."))
+                    Text(t("qr_login_root_body", "Enter the code or auth string from the Root Auth app."))
                     OutlinedTextField(
                         value = rootCodeInput,
                         onValueChange = { value ->
-                            rootCodeInput = value.filter { it.isDigit() }.take(6)
+                            val cleaned = value.trim().filter {
+                                it.isLetterOrDigit() || it == ':' || it == '|'
+                            }
+                            rootCodeInput = cleaned.take(160)
                         },
-                        placeholder = { Text(t("qr_login_root_hint", "6-digit code")) },
+                        placeholder = { Text(t("qr_login_root_hint", "Code or auth string")) },
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),
                         singleLine = true

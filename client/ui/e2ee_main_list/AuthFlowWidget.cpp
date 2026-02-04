@@ -222,7 +222,7 @@ void AuthFlowWidget::buildUi() {
     accountLayout->addWidget(passwordEdit_);
 
     rootCodeEdit_ = new QLineEdit(accountPage);
-    rootCodeEdit_->setPlaceholderText(QStringLiteral("Root auth code (6-8 digits)"));
+    rootCodeEdit_->setPlaceholderText(QStringLiteral("Root auth code / auth string"));
     rootCodeEdit_->setMaxLength(8);
     rootCodeEdit_->setInputMethodHints(Qt::ImhDigitsOnly);
     rootCodeEdit_->setEchoMode(QLineEdit::Password);

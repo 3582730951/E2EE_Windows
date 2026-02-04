@@ -251,7 +251,7 @@ username=
 password=
 
 [device_sync]
-enabled=0
+enabled=1
 role=primary
 key_path=e2ee_state/device_sync_key.bin
 

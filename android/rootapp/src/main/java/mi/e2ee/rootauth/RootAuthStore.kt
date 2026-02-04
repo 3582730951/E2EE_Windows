@@ -37,6 +37,20 @@ class RootAuthStore(context: Context) {
         return TotpResult(code, remaining)
     }
 
+    fun currentProof(secretHex: String, deviceId: String, stepSec: Long = 5L): String? {
+        if (deviceId.isBlank()) {
+            return null
+        }
+        val nowSec = System.currentTimeMillis() / 1000L
+        val counter = nowSec / stepSec
+        val secret = hexToBytes(secretHex) ?: return null
+        val msg = buildProofMessage(deviceId, counter)
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secret, "HmacSHA256"))
+        val digest = mac.doFinal(msg)
+        return bytesToHexLower(digest)
+    }
+
     private fun totp(secret: ByteArray, counter: Long, digits: Int): String {
         val msg = ByteArray(8)
         var value = counter
@@ -57,6 +71,25 @@ class RootAuthStore(context: Context) {
         return code.padStart(digits, '0')
     }
 
+    private fun buildProofMessage(deviceId: String, counter: Long): ByteArray {
+        val label = ROOT_PROOF_LABEL.toByteArray(Charsets.UTF_8)
+        val deviceBytes = deviceId.toByteArray(Charsets.UTF_8)
+        val msg = ByteArray(label.size + 1 + deviceBytes.size + 1 + 8)
+        var offset = 0
+        System.arraycopy(label, 0, msg, offset, label.size)
+        offset += label.size
+        msg[offset++] = 0
+        System.arraycopy(deviceBytes, 0, msg, offset, deviceBytes.size)
+        offset += deviceBytes.size
+        msg[offset++] = 0
+        var value = counter
+        for (i in 7 downTo 0) {
+            msg[offset + i] = (value and 0xFF).toByte()
+            value = value shr 8
+        }
+        return msg
+    }
+
     private fun hexToBytes(hex: String): ByteArray? {
         val cleaned = hex.trim().lowercase(Locale.US)
         if (!isValidSecret(cleaned)) {
@@ -70,6 +103,16 @@ class RootAuthStore(context: Context) {
             idx += 2
         }
         return out
+    }
+
+    private fun bytesToHexLower(bytes: ByteArray): String {
+        val out = StringBuilder(bytes.size * 2)
+        for (b in bytes) {
+            val v = b.toInt() and 0xFF
+            out.append(HEX[v ushr 4])
+            out.append(HEX[v and 0x0F])
+        }
+        return out.toString()
     }
 
     private fun isValidSecret(value: String): Boolean {
@@ -107,6 +150,8 @@ class RootAuthStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "root_auth_prefs"
         private const val KEY_SECRET = "root_secret_hex"
+        private const val ROOT_PROOF_LABEL = "mi_e2ee_root_proof_v1"
+        private val HEX = "0123456789abcdef".toCharArray()
     }
 
     private fun requestStrongBox(builder: MasterKey.Builder) {

@@ -145,10 +145,13 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = rootCode.value,
                         onValueChange = { value ->
-                            rootCode.value = value.filter { it.isDigit() }
+                            val cleaned = value.trim().filter {
+                                it.isLetterOrDigit() || it == ':' || it == '|'
+                            }
+                            rootCode.value = cleaned.take(160)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("login_root_code", "Root auth code (optional)")) },
+                        placeholder = { Text(tr("login_root_code", "Root auth code / auth string (optional)")) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Filled.Warning,
@@ -156,7 +159,7 @@ fun LoginScreen(
                             )
                         },
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),
                         shape = RoundedCornerShape(16.dp),

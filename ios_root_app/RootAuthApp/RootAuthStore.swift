@@ -65,6 +65,30 @@ final class RootAuthStore: ObservableObject {
         currentCode = totp(secret: secretData, counter: counter, digits: 6)
     }
 
+    func authProof(deviceId: String, stepSec: TimeInterval = 5) -> String? {
+        guard !deviceId.isEmpty,
+              let secretData = hexToData(secretHex),
+              secretData.count == 32 else {
+            return nil
+        }
+        let counter = UInt64(Date().timeIntervalSince1970 / stepSec)
+        var msg = Data()
+        if let label = "mi_e2ee_root_proof_v1".data(using: .utf8) {
+            msg.append(label)
+        }
+        msg.append(0)
+        if let dev = deviceId.data(using: .utf8) {
+            msg.append(dev)
+        }
+        msg.append(0)
+        var ctr = counter.bigEndian
+        withUnsafeBytes(of: &ctr) { msg.append(contentsOf: $0) }
+
+        let key = SymmetricKey(data: secretData)
+        let hmac = HMAC<SHA256>.authenticationCode(for: msg, using: key)
+        return hexString(Data(hmac))
+    }
+
     private func totp(secret: Data, counter: Int, digits: Int) -> String {
         var msg = [UInt8](repeating: 0, count: 8)
         var value = UInt64(counter)
@@ -83,6 +107,10 @@ final class RootAuthStore: ObservableObject {
         let mod = digits == 8 ? 100_000_000 : 1_000_000
         let code = binary % mod
         return String(format: "%0*d", digits, code)
+    }
+
+    private func hexString(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
     }
 
     private func hexToData(_ hex: String) -> Data? {

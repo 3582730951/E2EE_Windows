@@ -103,13 +103,24 @@ struct ContentView: View {
                     Text("Device: %s".formatted(device))
                         .font(.footnote)
                 }
-                Text("Enter the auth code on the new device to finish.")
+                Text("Enter the auth code (or auth string) on the new device to finish.")
                     .font(.footnote)
                     .foregroundColor(.secondary)
                 Button(action: copyCode) {
                     Label("Copy auth code", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
+                if let device = result.deviceId,
+                   let proof = store.authProof(deviceId: device),
+                   store.currentCode != "------" {
+                    let authString = "%s:%s".formatted(store.currentCode, proof)
+                    Button(action: {
+                        UIPasteboard.general.string = authString
+                    }) {
+                        Label("Copy auth string", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                }
             } else {
                 Text("Save this secret and start generating codes?")
                     .font(.footnote)

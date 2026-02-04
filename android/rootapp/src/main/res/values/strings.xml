@@ -7,6 +7,7 @@
     <string name="save">Save</string>
     <string name="clear">Clear</string>
     <string name="copy_code">Copy code</string>
+    <string name="copy_auth_string">Copy auth string</string>
     <string name="secret_invalid">Secret must be 64 hex characters.</string>
     <string name="secret_saved">Secret saved.</string>
     <string name="secret_cleared">Secret cleared.</string>

@@ -721,6 +721,9 @@ class ApiService {
                           std::string& out_error);
   bool VerifyRootAuthCode(const RootAuthRecord& record,
                           const std::string& code) const;
+  bool VerifyRootAuthProof(const RootAuthRecord& record,
+                           const std::string& device_id,
+                           const std::string& proof_hex) const;
   void CleanupQrLoginLocked(std::chrono::steady_clock::time_point now);
   bool SignKtSth(KeyTransparencySth& sth, std::string& out_error);
   FriendListResponse ListFriendsInternal(const Session& session);
