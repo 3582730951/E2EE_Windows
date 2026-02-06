@@ -72,5 +72,28 @@ int main() {
     assert(cfg.require_pinned_fingerprint == false);
   }
 
+  {
+    WriteConfig(path,
+                "use_tls=0\nrequire_tls=0\n"
+                "[kcp]\n"
+                "enable=1\n");
+    mi::client::ClientConfig cfg;
+    std::string err;
+    assert(!mi::client::LoadClientConfig(path.string(), cfg, err));
+  }
+
+  {
+    WriteConfig(path,
+                "use_tls=0\nrequire_tls=0\n"
+                "[kcp]\n"
+                "enable=1\n"
+                "allow_insecure=1\n");
+    mi::client::ClientConfig cfg;
+    std::string err;
+    assert(mi::client::LoadClientConfig(path.string(), cfg, err));
+    assert(cfg.kcp.enable);
+    assert(cfg.kcp.allow_insecure);
+  }
+
   return 0;
 }

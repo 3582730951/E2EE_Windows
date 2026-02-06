@@ -2246,26 +2246,38 @@ void OfflineStorage::BestEffortWipe(const std::filesystem::path& path) const {
     std::filesystem::remove(path, ec);
     return;
   }
-  const std::size_t wipe_len = size < 16 ? static_cast<std::size_t>(size) : 16;
-  const std::vector<std::uint8_t> ff(wipe_len, 0xFF);
-  fs.seekp(0);
-  fs.write(reinterpret_cast<const char*>(ff.data()),
-           static_cast<std::streamsize>(wipe_len));
-  if (size > wipe_len) {
-    const std::size_t mid = static_cast<std::size_t>(size / 2);
-    fs.seekp(static_cast<std::streamoff>(mid));
-    fs.write(reinterpret_cast<const char*>(ff.data()),
-             static_cast<std::streamsize>(
-                 std::min(wipe_len, static_cast<std::size_t>(size - mid))));
-    if (size > wipe_len * 2) {
-      const auto tail_pos =
-          static_cast<std::streamoff>(size > wipe_len ? size - wipe_len : 0);
-      fs.seekp(tail_pos);
-      fs.write(reinterpret_cast<const char*>(ff.data()),
-               static_cast<std::streamsize>(wipe_len));
+  constexpr std::size_t kChunkBytes = 64u * 1024u;
+  std::vector<std::uint8_t> chunk(kChunkBytes, 0);
+  auto write_pass = [&](int pass) -> bool {
+    fs.clear();
+    fs.seekp(0, std::ios::beg);
+    if (!fs) {
+      return false;
     }
-  }
-  fs.flush();
+    std::uint64_t remaining = size;
+    while (remaining > 0) {
+      const std::size_t n = static_cast<std::size_t>(
+          std::min<std::uint64_t>(remaining, chunk.size()));
+      if (pass == 0) {
+        std::fill_n(chunk.begin(), n, static_cast<std::uint8_t>(0x00));
+      } else if (pass == 1) {
+        std::fill_n(chunk.begin(), n, static_cast<std::uint8_t>(0xFF));
+      } else if (!crypto::RandomBytes(chunk.data(), n)) {
+        std::fill_n(chunk.begin(), n, static_cast<std::uint8_t>(0xA5));
+      }
+      fs.write(reinterpret_cast<const char*>(chunk.data()),
+               static_cast<std::streamsize>(n));
+      if (!fs) {
+        return false;
+      }
+      remaining -= static_cast<std::uint64_t>(n);
+    }
+    fs.flush();
+    return static_cast<bool>(fs);
+  };
+  (void)write_pass(0);
+  (void)write_pass(1);
+  (void)write_pass(2);
   fs.close();
   std::filesystem::remove(path, ec);
 }

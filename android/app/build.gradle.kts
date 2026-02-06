@@ -18,6 +18,9 @@ val miOpenSslRoot = (project.findProperty("miE2eeAndroidOpenSslRoot") as? String
     ?: System.getenv("MI_E2EE_ANDROID_OPENSSL_ROOT")?.takeIf { it.isNotBlank() }
     ?: rootDir.resolve("../build/openssl/android")
         .takeIf { it.exists() }?.absolutePath
+val miOpaqueLib = (project.findProperty("miE2eeOpaqueLib") as? String)
+    ?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MI_E2EE_OPAQUE_LIB")?.takeIf { it.isNotBlank() }
 val miOllvmEnabled = (project.findProperty("miE2eeOllvm") as? String)
     ?.equals("true", ignoreCase = true) ?: false
 val miOllvmClang = project.findProperty("miE2eeOllvmClang") as? String
@@ -56,6 +59,9 @@ android {
             cmake {
                 arguments += "-DMI_E2EE_ANDROID_USE_RUST_OPAQUE=" +
                     if (miOpaqueEnabled) "ON" else "OFF"
+                if (!miOpaqueLib.isNullOrBlank()) {
+                    arguments += "-DMI_E2EE_OPAQUE_LIB=$miOpaqueLib"
+                }
                 arguments += "-DMI_E2EE_ANDROID_USE_OPENSSL=" +
                     if (miOpenSslEnabled) "ON" else "OFF"
                 arguments += "-DMI_E2EE_ANDROID_ALLOW_TLS_STUB=" +

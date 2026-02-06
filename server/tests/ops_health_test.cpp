@@ -1,4 +1,6 @@
 #include <fstream>
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -24,11 +26,14 @@ static void WriteFile(const std::string& path, const std::string& content) {
 }
 
 int main() {
+  std::error_code ec;
+  std::filesystem::remove_all("offline_ops_health", ec);
+
   WriteFile("config.ini",
             "[mode]\nmode=1\n"
             "[server]\n"
             "list_port=7777\n"
-            "offline_dir=.\n"
+            "offline_dir=offline_ops_health\n"
             "ops_enable=1\n"
             "ops_allow_remote=0\n"
             "ops_token=abcdefghijklmnop\n"
@@ -48,6 +53,7 @@ int main() {
   ServerApp app;
   std::string err;
   if (!app.Init("config.ini", err)) {
+    std::cerr << "app init failed: " << err << "\n";
     return 1;
   }
 

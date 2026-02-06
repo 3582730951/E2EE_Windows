@@ -29,6 +29,10 @@ env:
   MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
   MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '1' }}
   MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '1' }}
+  MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS: "10000"
+  MI_E2EE_PERF_MIN_FRAME_DECODE_OPS: "10000"
+  MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS: "1.0"
+  MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS: "1.0"
 
 jobs:
   build-package:
@@ -365,7 +369,12 @@ jobs:
           }
 
       - name: Perf baseline
-        run: .\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe --quick
+        run: >
+          .\\build\\server\\tools\\Release\\mi_e2ee_perf_baseline.exe --quick
+          --min-frame-encode-ops $env:MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS
+          --min-frame-decode-ops $env:MI_E2EE_PERF_MIN_FRAME_DECODE_OPS
+          --min-offline-put-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS
+          --min-offline-fetch-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS
 
       - name: Deploy Qt runtime
         run: |
@@ -498,7 +507,12 @@ jobs:
         run: .\\tools\\verify_package_windows.ps1
 
       - name: Perf baseline (dist)
-        run: .\\dist\\mi_e2ee_server\\tools\\mi_e2ee_perf_baseline.exe --quick
+        run: >
+          .\\dist\\mi_e2ee_server\\tools\\mi_e2ee_perf_baseline.exe --quick
+          --min-frame-encode-ops $env:MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS
+          --min-frame-decode-ops $env:MI_E2EE_PERF_MIN_FRAME_DECODE_OPS
+          --min-offline-put-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS
+          --min-offline-fetch-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -1060,6 +1074,7 @@ jobs:
       MI_E2EE_ANDROID_ABIS: ${{ vars.MI_E2EE_ANDROID_ABIS || 'arm64-v8a x86_64' }}
       MI_E2EE_ANDROID_USE_OPENSSL: "1"
       MI_E2EE_ANDROID_ALLOW_TLS_STUB: "0"
+      MI_E2EE_OPAQUE_LIB: ${{ vars.MI_E2EE_OPAQUE_LIB || '' }}
       MI_E2EE_ANDROID_OPENSSL_VERSION: ${{ vars.MI_E2EE_ANDROID_OPENSSL_VERSION || '3.3.2' }}
       GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -1269,7 +1284,7 @@ jobs:
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew :app:assembleDebug -PmiE2eeOpaque=false --no-daemon
+          ./gradlew :app:assembleDebug -PmiE2eeOpaque=true --no-daemon
 
       - name: Verify Android ABI artifacts
         run: |
@@ -1301,7 +1316,7 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
 
       - name: Cleanup Android emulator image (api34)
         if: always()
@@ -1319,7 +1334,7 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
 
       - name: Cleanup Android emulator image (api33)
         if: always()
@@ -1348,7 +1363,7 @@ jobs:
         run: |
           set -euo pipefail
           cd android
-          ./gradlew :app:assembleDebugAndroidTest -PmiE2eeOpaque=false --no-daemon
+          ./gradlew :app:assembleDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
           app_apk="app/build/outputs/apk/debug/app-debug.apk"
           test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
           if [ ! -f "$app_apk" ] || [ ! -f "$test_apk" ]; then
@@ -1382,7 +1397,7 @@ jobs:
             OLLVM_ARGS+=("-PmiE2eeOllvmClang=${MI_E2EE_OLLVM_CLANG}")
             OLLVM_ARGS+=("-PmiE2eeOllvmClangxx=${MI_E2EE_OLLVM_CLANGXX}")
           fi
-          ./gradlew :app:assembleRelease -PmiE2eeOpaque=false "${OLLVM_ARGS[@]}" --no-daemon
+          ./gradlew :app:assembleRelease -PmiE2eeOpaque=true "${OLLVM_ARGS[@]}" --no-daemon
 
       - name: Upload Android debug artifact
         uses: actions/upload-artifact@v4

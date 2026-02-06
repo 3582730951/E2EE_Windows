@@ -1,5 +1,7 @@
 #include <cassert>
+#include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -25,9 +27,12 @@ static void WriteFile(const std::string& path, const std::string& content) {
 }
 
 int main() {
+  std::error_code ec;
+  std::filesystem::remove_all("offline_connection_handler", ec);
+
   WriteFile("config.ini",
             "[mode]\nmode=1\n[server]\nlist_port=7778\n"
-            "offline_dir=.\n"
+            "offline_dir=offline_connection_handler\n"
             "tls_enable=1\n"
             "allow_legacy_login=1\n"
             "require_tls=1\n"
@@ -49,6 +54,7 @@ int main() {
   std::string err;
   bool ok = app.Init("config.ini", err);
   if (!ok) {
+    std::cerr << "app init failed: " << err << "\n";
     return 1;
   }
 

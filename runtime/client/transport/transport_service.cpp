@@ -179,6 +179,7 @@ struct ClientCore::RemoteStream {
     }
     if (use_kcp) {
       if (kcp_cfg.enable != kcp_cfg_in.enable ||
+          kcp_cfg.allow_insecure != kcp_cfg_in.allow_insecure ||
           kcp_cfg.server_port != kcp_cfg_in.server_port ||
           kcp_cfg.mtu != kcp_cfg_in.mtu ||
           kcp_cfg.snd_wnd != kcp_cfg_in.snd_wnd ||

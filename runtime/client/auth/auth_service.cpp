@@ -1456,6 +1456,8 @@ bool AuthService::LoadOrCreateDeviceAuthId(ClientCore& core) const {
       }
 #endif
     }
+    return true;
+  }
   return true;
 }
 

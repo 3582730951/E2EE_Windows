@@ -91,8 +91,10 @@ bool ParseEnvFlag(const char* name, bool default_value) noexcept {
 }
 
 bool FailCloseEnabled() noexcept {
-  return ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", false) ||
-         ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", false);
+  // Fail-close is secure-by-default. Set either env to 0/off for local debug.
+  const bool hardening = ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", true);
+  const bool tamper = ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", true);
+  return hardening && tamper;
 }
 
 void FailClose(TamperSignal signal) noexcept {

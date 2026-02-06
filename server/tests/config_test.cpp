@@ -36,6 +36,8 @@ int main() {
     assert(cfg.server.max_connections == 10);
     assert(cfg.server.max_connections_per_ip == 3);
     assert(cfg.server.max_connection_bytes == 65536);
+    assert(cfg.server.tls_enable);
+    assert(cfg.server.require_tls);
   }
 
   {
@@ -50,6 +52,8 @@ int main() {
     assert(ok);
     assert(cfg.mode == AuthMode::kDemo);
     assert(cfg.server.listen_port == 8000);
+    assert(cfg.server.tls_enable);
+    assert(cfg.server.require_tls);
   }
 
   {
@@ -155,6 +159,34 @@ int main() {
     bool ok = LoadConfig(path, cfg, err);
     assert(ok);
     assert(cfg.server.secure_delete_required);
+  }
+
+  {
+    const std::string path = "tmp_config_kcp_policy_fail.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\n"
+              "kt_signing_key=kt_signing_key.bin\n"
+              "[kcp]\nenable=1\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_kcp_policy_ok.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\n"
+              "kt_signing_key=kt_signing_key.bin\n"
+              "[kcp]\nenable=1\nallow_insecure=1\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(ok);
+    assert(cfg.server.kcp_enable);
+    assert(cfg.server.kcp_allow_insecure);
   }
 
   {

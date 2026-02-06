@@ -335,6 +335,8 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     } else if (section == "kcp") {
       if (key == "enable") {
         ParseBool(val, out_cfg.kcp.enable);
+      } else if (key == "allow_insecure") {
+        ParseBool(val, out_cfg.kcp.allow_insecure);
       } else if (key == "server_port") {
         ParseUint16(val, out_cfg.kcp.server_port);
       } else if (key == "mtu") {
@@ -402,13 +404,11 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     error = "legacy auth disabled (set allow_legacy_login=1 to override)";
     return false;
   }
-#ifndef MI_E2EE_ALLOW_PLAINTEXT_LEGACY
   if (out_cfg.auth_mode == AuthMode::kLegacy &&
       (!out_cfg.use_tls || !out_cfg.require_tls)) {
     error = "legacy auth requires TLS (use_tls=1, require_tls=1)";
     return false;
   }
-#endif
   if (out_cfg.identity.tpm_require && !out_cfg.identity.tpm_enable) {
     error = "tpm_require=1 but tpm_enable=0";
     return false;
@@ -433,6 +433,10 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
     return false;
   }
   if (out_cfg.kcp.enable) {
+    if (!out_cfg.kcp.allow_insecure) {
+      error = "kcp disabled by policy (set [kcp] allow_insecure=1 to override)";
+      return false;
+    }
     if (out_cfg.use_tls || out_cfg.require_tls) {
       error = "kcp enabled but use_tls/require_tls enabled";
       return false;

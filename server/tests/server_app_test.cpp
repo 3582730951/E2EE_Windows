@@ -1,4 +1,5 @@
 #include <fstream>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -16,9 +17,12 @@ static void WriteFile(const std::string& path, const std::string& content) {
 }
 
 int main() {
+  std::error_code ec;
+  std::filesystem::remove_all("offline_server_app_test", ec);
+
   WriteFile("config.ini",
             "[mode]\nmode=1\n[server]\nlist_port=7777\n"
-            "offline_dir=.\n"
+            "offline_dir=offline_server_app_test\n"
             "tls_enable=1\n"
             "require_tls=1\n"
             "allow_legacy_login=1\n"

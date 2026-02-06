@@ -289,3 +289,27 @@ if(TARGET mi_e2ee_third_party_audit)
   add_test(NAME third_party_lock_test
            COMMAND mi_e2ee_third_party_audit --verify --lock "${THIRD_PARTY_LOCK}")
 endif()
+
+if(TARGET mi_e2ee_perf_baseline)
+  set(MI_E2EE_PERF_GUARD_ENABLE ON CACHE BOOL
+      "Run quick performance guard in CTest")
+  set(MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS 10000 CACHE STRING
+      "Minimum frame encode throughput (ops/s)")
+  set(MI_E2EE_PERF_MIN_FRAME_DECODE_OPS 10000 CACHE STRING
+      "Minimum frame decode throughput (ops/s)")
+  set(MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS 1.0 CACHE STRING
+      "Minimum offline put throughput (MB/s)")
+  set(MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS 1.0 CACHE STRING
+      "Minimum offline fetch throughput (MB/s)")
+
+  if(MI_E2EE_PERF_GUARD_ENABLE)
+    add_test(NAME perf_baseline_guard_test
+             COMMAND mi_e2ee_perf_baseline
+                     --quick
+                     --min-frame-encode-ops ${MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS}
+                     --min-frame-decode-ops ${MI_E2EE_PERF_MIN_FRAME_DECODE_OPS}
+                     --min-offline-put-mbps ${MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS}
+                     --min-offline-fetch-mbps ${MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS})
+    set_tests_properties(perf_baseline_guard_test PROPERTIES TIMEOUT 180)
+  endif()
+endif()

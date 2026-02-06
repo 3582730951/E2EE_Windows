@@ -41,11 +41,7 @@ struct ServerSection {
 #ifdef _WIN32
   bool iocp_enable{true};
 #endif
-#ifdef _WIN32
   bool tls_enable{true};
-#else
-  bool tls_enable{false};
-#endif
   bool require_tls{false};
   bool require_tls_set{false};
   std::string tls_cert{"mi_e2ee_server.pfx"};
@@ -71,6 +67,7 @@ struct ServerSection {
   std::uint32_t root_auth_step_sec{5};
   std::uint32_t root_auth_window{1};
   bool kcp_enable{false};
+  bool kcp_allow_insecure{false};
   std::uint16_t kcp_port{0};
   std::uint32_t kcp_mtu{1400};
   std::uint32_t kcp_snd_wnd{256};

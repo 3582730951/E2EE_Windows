@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -15,9 +17,12 @@ static void WriteFile(const std::string& path, const std::string& content) {
 }
 
 int main() {
+  std::error_code ec;
+  std::filesystem::remove_all("offline_c_api_test", ec);
+
   WriteFile("config.ini",
             "[mode]\nmode=1\n[server]\nlist_port=8888\n"
-            "offline_dir=.\n"
+            "offline_dir=offline_c_api_test\n"
             "tls_enable=1\n"
             "require_tls=1\n"
             "allow_legacy_login=1\n"
@@ -36,6 +41,7 @@ int main() {
 
   mi_server_handle* h = mi_server_create("config.ini");
   if (!h) {
+    std::cerr << "mi_server_create failed\n";
     return 1;
   }
 

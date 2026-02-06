@@ -22,14 +22,23 @@ option(MI_E2EE_ANDROID_USE_RUST_OPAQUE "Build Rust OPAQUE PAKE library" ON)
 option(MI_E2EE_ANDROID_USE_OPENSSL "Use OpenSSL TLS implementation" ON)
 option(MI_E2EE_ANDROID_ALLOW_TLS_STUB "Allow TLS stub (debug/testing only)" OFF)
 option(MI_E2EE_ANDROID_OLLVM "Use OLLVM for backend library" OFF)
+set(MI_E2EE_OPAQUE_LIB "" CACHE FILEPATH "Path to mi_opaque_pake static lib")
 set(MI_E2EE_ANDROID_OPENSSL_ROOT "" CACHE PATH "OpenSSL root with ABI subdirs")
 set(MI_E2EE_OLLVM_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub" CACHE STRING "OLLVM flags")
 separate_arguments(MI_E2EE_OLLVM_FLAGS)
 
+if(NOT MI_E2EE_ANDROID_USE_RUST_OPAQUE)
+  message(FATAL_ERROR "MI_E2EE_ANDROID_USE_RUST_OPAQUE must be ON (OPAQUE stub fallback is disallowed).")
+endif()
+
 find_program(MI_E2EE_CARGO_EXECUTABLE cargo)
-if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND NOT MI_E2EE_CARGO_EXECUTABLE)
-  message(WARNING "cargo not found; disabling Rust OPAQUE support")
-  set(MI_E2EE_ANDROID_USE_RUST_OPAQUE OFF)
+if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND
+   NOT MI_E2EE_CARGO_EXECUTABLE AND
+   NOT MI_E2EE_OPAQUE_LIB)
+  message(FATAL_ERROR "cargo not found and MI_E2EE_OPAQUE_LIB is empty; secure OPAQUE build cannot proceed.")
+endif()
+if(MI_E2EE_OPAQUE_LIB AND NOT EXISTS "${MI_E2EE_OPAQUE_LIB}")
+  message(FATAL_ERROR "MI_E2EE_OPAQUE_LIB does not exist: ${MI_E2EE_OPAQUE_LIB}")
 endif()
 
 if(MI_E2EE_ANDROID_USE_OPENSSL)
@@ -256,16 +265,10 @@ set(MI_E2EE_JNI_SOURCES
 )
 
 if(MI_E2EE_ANDROID_USE_RUST_OPAQUE)
-  # Expect a prebuilt Rust static library for the current ABI.
-  # Users can set MI_E2EE_OPAQUE_LIB to override the path.
-  set(MI_E2EE_OPAQUE_LIB "" CACHE FILEPATH "Path to mi_opaque_pake static lib")
+  # Secure Android builds must always link a real OPAQUE implementation.
   if(NOT MI_E2EE_OPAQUE_LIB)
-    message(WARNING "MI_E2EE_OPAQUE_LIB not set; build will fail unless OPAQUE is provided")
+    message(FATAL_ERROR "MI_E2EE_OPAQUE_LIB is required for Android secure builds.")
   endif()
-else()
-  list(APPEND MI_E2EE_SHARD_SOURCES "${MI_E2EE_ROOT}/shard/opaque_pake_stub.cpp")
-  add_compile_definitions(MI_E2EE_OPAQUE_DISABLED)
-  add_compile_definitions(MI_E2EE_ALLOW_PLAINTEXT_LEGACY)
 endif()
 
 add_library(mi_e2ee_backend SHARED
@@ -319,9 +322,7 @@ if(MI_E2EE_ANDROID_USE_OPENSSL)
 endif()
 
 if(MI_E2EE_ANDROID_USE_RUST_OPAQUE)
-  if(MI_E2EE_OPAQUE_LIB)
-    target_link_libraries(mi_e2ee_backend PRIVATE "${MI_E2EE_OPAQUE_LIB}")
-  endif()
+  target_link_libraries(mi_e2ee_backend PRIVATE "${MI_E2EE_OPAQUE_LIB}")
 endif()
 
 target_link_libraries(mi_e2ee_jni PRIVATE mi_e2ee_backend log)

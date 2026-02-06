@@ -268,6 +268,8 @@ void ApplyKV(IniState& state, const std::string& key,
   if (state.section == "kcp") {
     if (key == "enable") {
       ParseBool(value, state.cfg->server.kcp_enable);
+    } else if (key == "allow_insecure") {
+      ParseBool(value, state.cfg->server.kcp_allow_insecure);
     } else if (key == "listen_port") {
       ParseUint16(value, state.cfg->server.kcp_port);
     } else if (key == "mtu") {
@@ -506,6 +508,11 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     return false;
   }
   if (out_config.server.kcp_enable) {
+    if (!out_config.server.kcp_allow_insecure) {
+      error =
+          "kcp disabled by policy (set [kcp] allow_insecure=1 to override)";
+      return false;
+    }
     if (out_config.server.kcp_port == 0) {
       out_config.server.kcp_port = out_config.server.listen_port;
     }

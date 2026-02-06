@@ -67,6 +67,7 @@ struct KtConfig {
 
 struct KcpConfig {
   bool enable{false};
+  bool allow_insecure{false};
   std::uint16_t server_port{0};
   std::uint32_t mtu{1400};
   std::uint32_t snd_wnd{256};

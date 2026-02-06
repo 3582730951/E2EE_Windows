@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -16,6 +17,13 @@ struct BenchConfig {
   std::size_t offline_bytes{8u * 1024u * 1024u};
   std::uint32_t frame_iters{60000};
   std::uint32_t decode_iters{60000};
+};
+
+struct GuardConfig {
+  double min_frame_encode_ops{-1.0};
+  double min_frame_decode_ops{-1.0};
+  double min_offline_put_mbps{-1.0};
+  double min_offline_fetch_mbps{-1.0};
 };
 
 struct Metric {
@@ -36,6 +44,39 @@ void PrintMetric(const Metric& metric) {
     std::cout << " " << metric.unit;
   }
   std::cout << "\n";
+}
+
+bool CheckMin(const Metric& metric, double min_value) {
+  if (min_value < 0.0) {
+    return true;
+  }
+  if (metric.value + 1e-9 < min_value) {
+    std::cerr << "perf guard failed: " << metric.name << "=" << metric.value
+              << " < min " << min_value;
+    if (!metric.unit.empty()) {
+      std::cerr << " " << metric.unit;
+    }
+    std::cerr << "\n";
+    return false;
+  }
+  return true;
+}
+
+bool ParseDoubleArg(int& i, int argc, char** argv, double& out) {
+  if (i + 1 >= argc) {
+    return false;
+  }
+  out = std::stod(argv[++i]);
+  return true;
+}
+
+void PrintUsage(const char* argv0) {
+  std::cout << "Usage: " << (argv0 ? argv0 : "mi_e2ee_perf_baseline")
+            << " [--quick] [--payload N]\n"
+            << "       [--min-frame-encode-ops X]\n"
+            << "       [--min-frame-decode-ops X]\n"
+            << "       [--min-offline-put-mbps X]\n"
+            << "       [--min-offline-fetch-mbps X]\n";
 }
 
 bool BenchFrameEncode(const BenchConfig& cfg, Metric& ops, Metric& mbps) {
@@ -162,12 +203,45 @@ bool BenchOfflineStorage(const BenchConfig& cfg,
 
 int main(int argc, char** argv) {
   BenchConfig cfg;
+  GuardConfig guard;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--quick") {
-      cfg.quick = true;
-    } else if (arg == "--payload" && i + 1 < argc) {
-      cfg.frame_payload = static_cast<std::size_t>(std::stoul(argv[++i]));
+    try {
+      if (arg == "--quick") {
+        cfg.quick = true;
+      } else if (arg == "--payload" && i + 1 < argc) {
+        cfg.frame_payload = static_cast<std::size_t>(std::stoul(argv[++i]));
+      } else if (arg == "--min-frame-encode-ops") {
+        if (!ParseDoubleArg(i, argc, argv, guard.min_frame_encode_ops)) {
+          std::cerr << "--min-frame-encode-ops requires a value\n";
+          return 1;
+        }
+      } else if (arg == "--min-frame-decode-ops") {
+        if (!ParseDoubleArg(i, argc, argv, guard.min_frame_decode_ops)) {
+          std::cerr << "--min-frame-decode-ops requires a value\n";
+          return 1;
+        }
+      } else if (arg == "--min-offline-put-mbps") {
+        if (!ParseDoubleArg(i, argc, argv, guard.min_offline_put_mbps)) {
+          std::cerr << "--min-offline-put-mbps requires a value\n";
+          return 1;
+        }
+      } else if (arg == "--min-offline-fetch-mbps") {
+        if (!ParseDoubleArg(i, argc, argv, guard.min_offline_fetch_mbps)) {
+          std::cerr << "--min-offline-fetch-mbps requires a value\n";
+          return 1;
+        }
+      } else if (arg == "--help" || arg == "-h") {
+        PrintUsage(argv[0]);
+        return 0;
+      } else {
+        std::cerr << "unknown argument: " << arg << "\n";
+        PrintUsage(argv[0]);
+        return 1;
+      }
+    } catch (const std::exception& ex) {
+      std::cerr << "invalid argument for " << arg << ": " << ex.what() << "\n";
+      return 1;
     }
   }
   if (cfg.quick) {
@@ -204,6 +278,13 @@ int main(int argc, char** argv) {
   } else {
     std::cerr << "offline storage bench failed: " << err << "\n";
     return 1;
+  }
+
+  if (!CheckMin(enc_ops, guard.min_frame_encode_ops) ||
+      !CheckMin(dec_ops, guard.min_frame_decode_ops) ||
+      !CheckMin(put_mbps, guard.min_offline_put_mbps) ||
+      !CheckMin(fetch_mbps, guard.min_offline_fetch_mbps)) {
+    return 2;
   }
 
   return 0;

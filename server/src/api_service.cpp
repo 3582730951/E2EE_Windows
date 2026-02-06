@@ -5452,6 +5452,8 @@ QrLoginApproveResponse ApiService::QrLoginApprove(
     resp.error = "qr secret invalid";
     return resp;
   }
+  const std::string secret_hex_norm =
+      BytesToHexLower(secret_bytes.data(), secret_bytes.size());
 
   const auto now = std::chrono::steady_clock::now();
   {
@@ -5573,6 +5575,8 @@ QrLoginApproveResponse ApiService::QrLoginApproveRoot(
     resp.error = "qr secret invalid";
     return resp;
   }
+  const std::string secret_hex_norm =
+      BytesToHexLower(secret_bytes.data(), secret_bytes.size());
   std::string rl_error;
   if (!RateLimitUnauth("qr_login_approve_root", username, rl_error)) {
     resp.error = rl_error;

@@ -3,6 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#ifndef MI_E2EE_OPAQUE_STUB_ALLOWED
+#error "opaque_pake_stub.cpp is disabled for secure builds"
+#endif
+
 namespace {
 void ClearBuf(std::uint8_t** ptr, std::size_t* len) {
   if (ptr) {
