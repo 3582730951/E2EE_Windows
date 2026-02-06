@@ -210,6 +210,7 @@ int main() {
              &out_len) == 0);
   assert(out_bytes == nullptr);
   assert(out_len == 0);
+  assert(std::strcmp(mi_client_device_display_id(nullptr), "") == 0);
 
   std::string data_err;
   if (!PrepareDataDir(data_err)) {
@@ -223,7 +224,13 @@ int main() {
   }
 
   assert(std::strlen(mi_client_token(handle)) == 0);
-  assert(std::strlen(mi_client_device_id(handle)) > 0);
+  const char* internal_id = mi_client_device_id(handle);
+  const char* display_id = mi_client_device_display_id(handle);
+  assert(internal_id);
+  assert(display_id);
+  if (std::strlen(internal_id) > 0 && std::strlen(display_id) > 0) {
+    assert(std::strcmp(internal_id, display_id) != 0);
+  }
   assert(mi_client_has_pending_server_trust(handle) == 0);
   assert(mi_client_has_pending_peer_trust(handle) == 0);
   assert(mi_client_remote_ok(handle) == 1);

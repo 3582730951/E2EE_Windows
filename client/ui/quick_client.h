@@ -45,6 +45,7 @@ class QuickClient : public QObject {
   Q_PROPERTY(QVariantList groups READ groups NOTIFY groupsChanged)
   Q_PROPERTY(QVariantList friendRequests READ friendRequests NOTIFY friendRequestsChanged)
   Q_PROPERTY(QString deviceId READ deviceId NOTIFY deviceChanged)
+  Q_PROPERTY(QString deviceDisplayId READ deviceDisplayId NOTIFY deviceChanged)
   Q_PROPERTY(bool remoteOk READ remoteOk NOTIFY connectionChanged)
   Q_PROPERTY(QString remoteError READ remoteError NOTIFY connectionChanged)
   Q_PROPERTY(bool hasPendingServerTrust READ hasPendingServerTrust NOTIFY trustStateChanged)
@@ -54,6 +55,8 @@ class QuickClient : public QObject {
   Q_PROPERTY(QString pendingPeerUsername READ pendingPeerUsername NOTIFY trustStateChanged)
   Q_PROPERTY(QString pendingPeerFingerprint READ pendingPeerFingerprint NOTIFY trustStateChanged)
   Q_PROPERTY(QString pendingPeerPin READ pendingPeerPin NOTIFY trustStateChanged)
+  Q_PROPERTY(QString qrLoginPayload READ qrLoginPayload NOTIFY qrLoginChanged)
+  Q_PROPERTY(bool qrLoginActive READ qrLoginActive NOTIFY qrLoginChanged)
   Q_PROPERTY(QString activeCallId READ activeCallId NOTIFY callStateChanged)
   Q_PROPERTY(QString activeCallPeer READ activeCallPeer NOTIFY callStateChanged)
   Q_PROPERTY(bool activeCallVideo READ activeCallVideo NOTIFY callStateChanged)
@@ -73,7 +76,14 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool init(const QString& configPath);
   Q_INVOKABLE bool registerUser(const QString& user, const QString& pass);
   Q_INVOKABLE bool login(const QString& user, const QString& pass);
+  Q_INVOKABLE bool loginWithRootCode(const QString& user,
+                                     const QString& pass,
+                                     const QString& rootCode);
   Q_INVOKABLE void logout();
+  Q_INVOKABLE bool beginQrLogin(const QString& username);
+  Q_INVOKABLE bool pollQrLogin();
+  Q_INVOKABLE void cancelQrLogin();
+  Q_INVOKABLE QString qrLoginImage(int size);
   Q_INVOKABLE bool joinGroup(const QString& groupId);
   Q_INVOKABLE QString createGroup();
   Q_INVOKABLE bool sendGroupInvite(const QString& groupId,
@@ -177,6 +187,7 @@ class QuickClient : public QObject {
   QVariantList groups() const;
   QVariantList friendRequests() const;
   QString deviceId() const;
+  QString deviceDisplayId() const;
   bool remoteOk() const;
   QString remoteError() const;
   bool hasPendingServerTrust() const;
@@ -186,6 +197,8 @@ class QuickClient : public QObject {
   QString pendingPeerUsername() const;
   QString pendingPeerFingerprint() const;
   QString pendingPeerPin() const;
+  QString qrLoginPayload() const;
+  bool qrLoginActive() const;
   QString activeCallId() const { return active_call_id_; }
   QString activeCallPeer() const { return active_call_peer_; }
   bool activeCallVideo() const { return active_call_video_; }
@@ -208,6 +221,7 @@ class QuickClient : public QObject {
   void deviceChanged();
   void connectionChanged();
   void trustStateChanged();
+  void qrLoginChanged();
   void serverTrustRequired(const QString& fingerprint, const QString& pin);
   void peerTrustRequired(const QString& peer, const QString& fingerprint,
                          const QString& pin);
@@ -247,9 +261,11 @@ class QuickClient : public QObject {
   QVariantMap BuildHistoryMessageFromC(const mi_history_entry_t& entry) const;
   void HandlePollResult(const mi::sdk::ChatPollResult& result);
   void HandleSessionInvalid(const QString& message);
+  void HandleLoginSuccess(const QString& username);
   void UpdateLastError(const QString& message);
   void UpdateConnectionState(bool force_emit);
   void MaybeEmitTrustSignals();
+  void ClearQrLoginCache();
   void EmitDownloadProgress(const QString& fileId,
                             const QString& savePath,
                             double progress);
@@ -354,6 +370,9 @@ class QuickClient : public QObject {
   QString last_pending_peer_fingerprint_;
   QString last_system_clipboard_text_;
   qint64 last_system_clipboard_ms_{0};
+  QString qr_login_payload_;
+  bool qr_login_active_{false};
+  QHash<int, QString> qr_login_image_cache_;
   void* ime_session_{nullptr};
   bool clipboard_isolation_enabled_{true};
   bool internal_ime_enabled_{true};

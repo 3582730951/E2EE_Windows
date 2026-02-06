@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -20,7 +21,9 @@
 #include "secure_store_util.h"
 #include "opaque_pake.h"
 #include "path_security.h"
+#include "hex_utils.h"
 #include "platform_fs.h"
+#include "platform_identity.h"
 #include "platform_random.h"
 #include "protocol.h"
 
@@ -44,22 +47,31 @@ std::string Trim(const std::string& input) {
   return std::string(begin, end);
 }
 
-std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  if (!data || len == 0) {
-    return {};
-  }
-  std::string out;
-  out.resize(len * 2);
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i * 2] = kHex[data[i] >> 4];
-    out[i * 2 + 1] = kHex[data[i] & 0x0F];
-  }
-  return out;
-}
-
 bool RandomBytes(std::uint8_t* out, std::size_t len) {
   return mi::platform::RandomBytes(out, len);
+}
+
+std::uint64_t FileTimeNs(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return 0;
+  }
+  std::error_code ec;
+  const auto ts = std::filesystem::last_write_time(path, ec);
+  if (ec) {
+    return 0;
+  }
+  const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      ts.time_since_epoch()).count();
+  if (ns <= 0) {
+    return 0;
+  }
+  return static_cast<std::uint64_t>(ns);
+}
+
+void AppendUint64LE(std::uint64_t value, std::vector<std::uint8_t>& out) {
+  for (int i = 0; i < 8; ++i) {
+    out.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
+  }
 }
 
 }  // namespace
@@ -872,6 +884,339 @@ bool AuthService::SaveKtState(ClientCore& core) const {
   return true;
 }
 
+bool AuthService::LoadOrCreateDeviceClaimId(ClientCore& core) const {
+  if (!core.device_claim_id_.empty()) {
+    return true;
+  }
+  if (core.e2ee_state_dir_.empty()) {
+    return true;
+  }
+
+  std::error_code ec;
+  pfs::CreateDirectories(core.e2ee_state_dir_, ec);
+
+  const auto claim_path = core.e2ee_state_dir_ / "device_claim_id.txt";
+  const auto seed_path = core.e2ee_state_dir_ / "device_seed.bin";
+
+  std::vector<std::uint8_t> bytes;
+  std::uint64_t size = 0;
+  if (pfs::Exists(claim_path, ec)) {
+    if (ec) {
+      core.last_error_ = "device claim id path error";
+      return false;
+    }
+    size = pfs::FileSize(claim_path, ec);
+    if (ec) {
+      core.last_error_ = "device claim id size stat failed";
+      return false;
+    }
+    if (size > kMaxDeviceIdFileBytes) {
+      core.last_error_ = "device claim id file too large";
+      return false;
+    }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(claim_path, perm_err)) {
+      core.last_error_ = perm_err.empty()
+                             ? "device claim id permissions insecure"
+                             : perm_err;
+      return false;
+    }
+    std::ifstream f(claim_path, std::ios::binary);
+    if (f.is_open()) {
+      bytes.resize(static_cast<std::size_t>(size));
+      if (!bytes.empty()) {
+        f.read(reinterpret_cast<char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+        if (!f || f.gcount() != static_cast<std::streamsize>(bytes.size())) {
+          core.last_error_ = "device claim id read failed";
+          return false;
+        }
+      }
+    }
+  } else if (ec) {
+    core.last_error_ = "device claim id path error";
+    return false;
+  }
+
+  if (!bytes.empty()) {
+    std::vector<std::uint8_t> plain;
+    mi::common::ScopedWipe plain_wipe(plain);
+    bool was_dpapi = false;
+    static constexpr char kMagic[] = "MI_E2EE_DEVICE_CLAIM_ID_DPAPI1";
+    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_CLAIM_ID_ENTROPY_V1";
+    std::string dpapi_err;
+    if (!MaybeUnprotectSecureStore(bytes, kMagic, kEntropy, plain, was_dpapi,
+                                   dpapi_err)) {
+      core.last_error_ = dpapi_err.empty()
+                             ? "device claim id unprotect failed"
+                             : dpapi_err;
+      return false;
+    }
+    std::string id = Trim(
+        std::string(reinterpret_cast<const char*>(plain.data()), plain.size()));
+    if (id.size() != 64) {
+      core.last_error_ = "device claim id invalid";
+      return false;
+    }
+    for (char& ch : id) {
+      const unsigned char uc = static_cast<unsigned char>(ch);
+      if (!(std::isdigit(uc) || (uc >= 'a' && uc <= 'f') ||
+            (uc >= 'A' && uc <= 'F'))) {
+        core.last_error_ = "device claim id invalid";
+        return false;
+      }
+      ch = static_cast<char>(std::tolower(uc));
+    }
+    core.device_claim_id_ = id;
+
+    if (!was_dpapi) {
+      std::string perm_err;
+      if (!mi::shard::security::CheckPathNotWorldWritable(claim_path, perm_err)) {
+        core.last_error_ = perm_err.empty()
+                               ? "device claim id permissions insecure"
+                               : perm_err;
+        return false;
+      }
+      std::vector<std::uint8_t> canonical(core.device_claim_id_.begin(),
+                                          core.device_claim_id_.end());
+      mi::common::ScopedWipe canonical_wipe(canonical);
+      std::vector<std::uint8_t> wrapped;
+      std::string wrap_err;
+      if (!ProtectSecureStore(canonical, kMagic, kEntropy, wrapped, wrap_err)) {
+        core.last_error_ = wrap_err.empty()
+                               ? "device claim id protect failed"
+                               : wrap_err;
+        return false;
+      }
+      std::error_code write_ec;
+      if (!pfs::AtomicWrite(claim_path, wrapped.data(), wrapped.size(),
+                            write_ec)) {
+        core.last_error_ = "device claim id write failed";
+        return false;
+      }
+#ifndef _WIN32
+      {
+        std::error_code perm_ec;
+        std::filesystem::permissions(
+            claim_path,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, perm_ec);
+      }
+#endif
+    }
+    return true;
+  }
+
+  std::vector<std::uint8_t> seed;
+  std::uint64_t seed_size = 0;
+  if (pfs::Exists(seed_path, ec)) {
+    if (ec) {
+      core.last_error_ = "device seed path error";
+      return false;
+    }
+    seed_size = pfs::FileSize(seed_path, ec);
+    if (ec) {
+      core.last_error_ = "device seed size stat failed";
+      return false;
+    }
+    if (seed_size > kMaxDeviceIdFileBytes) {
+      core.last_error_ = "device seed file too large";
+      return false;
+    }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(seed_path, perm_err)) {
+      core.last_error_ =
+          perm_err.empty() ? "device seed permissions insecure" : perm_err;
+      return false;
+    }
+    std::ifstream f(seed_path, std::ios::binary);
+    if (f.is_open()) {
+      seed.resize(static_cast<std::size_t>(seed_size));
+      if (!seed.empty()) {
+        f.read(reinterpret_cast<char*>(seed.data()),
+               static_cast<std::streamsize>(seed.size()));
+        if (!f || f.gcount() != static_cast<std::streamsize>(seed.size())) {
+          core.last_error_ = "device seed read failed";
+          return false;
+        }
+      }
+    }
+  } else if (ec) {
+    core.last_error_ = "device seed path error";
+    return false;
+  }
+
+  if (!seed.empty()) {
+    std::vector<std::uint8_t> plain;
+    mi::common::ScopedWipe plain_wipe(plain);
+    bool was_dpapi = false;
+    static constexpr char kMagic[] = "MI_E2EE_DEVICE_SEED_DPAPI1";
+    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_SEED_ENTROPY_V1";
+    std::string dpapi_err;
+    if (!MaybeUnprotectSecureStore(seed, kMagic, kEntropy, plain, was_dpapi,
+                                   dpapi_err)) {
+      core.last_error_ =
+          dpapi_err.empty() ? "device seed unprotect failed" : dpapi_err;
+      return false;
+    }
+    if (plain.size() < 16) {
+      core.last_error_ = "device seed invalid";
+      return false;
+    }
+    if (!was_dpapi) {
+      std::string perm_err;
+      if (!mi::shard::security::CheckPathNotWorldWritable(seed_path, perm_err)) {
+        core.last_error_ =
+            perm_err.empty() ? "device seed permissions insecure" : perm_err;
+        return false;
+      }
+      std::vector<std::uint8_t> wrapped;
+      std::string wrap_err;
+      if (!ProtectSecureStore(plain, kMagic, kEntropy, wrapped, wrap_err)) {
+        core.last_error_ =
+            wrap_err.empty() ? "device seed protect failed" : wrap_err;
+        return false;
+      }
+      std::error_code write_ec;
+      if (!pfs::AtomicWrite(seed_path, wrapped.data(), wrapped.size(),
+                            write_ec)) {
+        core.last_error_ = "device seed write failed";
+        return false;
+      }
+#ifndef _WIN32
+      {
+        std::error_code perm_ec;
+        std::filesystem::permissions(
+            seed_path,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, perm_ec);
+      }
+#endif
+    }
+    seed = std::move(plain);
+  } else {
+    seed.resize(32);
+    if (!RandomBytes(seed.data(), seed.size())) {
+      core.last_error_ = "rng failed";
+      return false;
+    }
+  }
+
+  std::string machine_id = mi::platform::MachineId();
+  const std::string dir_str = core.e2ee_state_dir_.lexically_normal().string();
+  std::string parent_str;
+  const auto parent = core.e2ee_state_dir_.parent_path();
+  if (!parent.empty()) {
+    parent_str = parent.lexically_normal().string();
+  }
+  const std::uint64_t dir_time = FileTimeNs(core.e2ee_state_dir_);
+  const std::uint64_t parent_time = FileTimeNs(parent);
+
+  std::vector<std::uint8_t> buf;
+  buf.reserve(128 + seed.size() + machine_id.size() + dir_str.size() +
+              parent_str.size());
+  static constexpr char kPrefix[] = "mi_e2ee_device_claim_v1";
+  buf.insert(buf.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  buf.push_back(0);
+  buf.insert(buf.end(), seed.begin(), seed.end());
+  buf.push_back(0);
+  buf.insert(buf.end(), machine_id.begin(), machine_id.end());
+  buf.push_back(0);
+  buf.insert(buf.end(), dir_str.begin(), dir_str.end());
+  buf.push_back(0);
+  buf.insert(buf.end(), parent_str.begin(), parent_str.end());
+  buf.push_back(0);
+  AppendUint64LE(dir_time, buf);
+  AppendUint64LE(parent_time, buf);
+
+  const std::string claim_hex = mi::common::Sha256Hex(buf.data(), buf.size());
+  if (claim_hex.size() != 64) {
+    core.last_error_ = "device claim id generation failed";
+    return false;
+  }
+  core.device_claim_id_ = claim_hex;
+
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(claim_path, perm_err)) {
+    core.last_error_ = perm_err.empty()
+                           ? "device claim id permissions insecure"
+                           : perm_err;
+    return false;
+  }
+
+  {
+    std::vector<std::uint8_t> plain(core.device_claim_id_.begin(),
+                                    core.device_claim_id_.end());
+    mi::common::ScopedWipe plain_wipe(plain);
+    static constexpr char kMagic[] = "MI_E2EE_DEVICE_CLAIM_ID_DPAPI1";
+    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_CLAIM_ID_ENTROPY_V1";
+    std::vector<std::uint8_t> wrapped;
+    std::string wrap_err;
+    if (!ProtectSecureStore(plain, kMagic, kEntropy, wrapped, wrap_err)) {
+      core.last_error_ = wrap_err.empty()
+                             ? "device claim id protect failed"
+                             : wrap_err;
+      return false;
+    }
+    std::error_code write_ec;
+    if (!pfs::AtomicWrite(claim_path, wrapped.data(), wrapped.size(),
+                          write_ec)) {
+      core.last_error_ = "device claim id write failed";
+      return false;
+    }
+#ifndef _WIN32
+    {
+      std::error_code perm_ec;
+      std::filesystem::permissions(
+          claim_path,
+          std::filesystem::perms::owner_read |
+              std::filesystem::perms::owner_write,
+          std::filesystem::perm_options::replace, perm_ec);
+    }
+#endif
+  }
+
+  {
+    std::string perm_err_seed;
+    if (!mi::shard::security::CheckPathNotWorldWritable(seed_path, perm_err_seed)) {
+      core.last_error_ =
+          perm_err_seed.empty() ? "device seed permissions insecure" : perm_err_seed;
+      return false;
+    }
+    std::vector<std::uint8_t> plain(seed.begin(), seed.end());
+    mi::common::ScopedWipe plain_wipe(plain);
+    static constexpr char kMagic[] = "MI_E2EE_DEVICE_SEED_DPAPI1";
+    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_SEED_ENTROPY_V1";
+    std::vector<std::uint8_t> wrapped;
+    std::string wrap_err;
+    if (!ProtectSecureStore(plain, kMagic, kEntropy, wrapped, wrap_err)) {
+      core.last_error_ =
+          wrap_err.empty() ? "device seed protect failed" : wrap_err;
+      return false;
+    }
+    std::error_code write_ec;
+    if (!pfs::AtomicWrite(seed_path, wrapped.data(), wrapped.size(),
+                          write_ec)) {
+      core.last_error_ = "device seed write failed";
+      return false;
+    }
+#ifndef _WIN32
+    {
+      std::error_code perm_ec;
+      std::filesystem::permissions(
+          seed_path,
+          std::filesystem::perms::owner_read |
+              std::filesystem::perms::owner_write,
+          std::filesystem::perm_options::replace, perm_ec);
+    }
+#endif
+  }
+
+  return true;
+}
+
 bool AuthService::LoadOrCreateDeviceId(ClientCore& core) const {
   if (!core.device_id_.empty()) {
     return true;
@@ -989,24 +1334,150 @@ bool AuthService::LoadOrCreateDeviceId(ClientCore& core) const {
     }
     return true;
   }
+  return true;
+}
 
-  std::array<std::uint8_t, 16> rnd{};
-  if (!RandomBytes(rnd.data(), rnd.size())) {
-    core.last_error_ = "rng failed";
+bool AuthService::LoadOrCreateDeviceAuthId(ClientCore& core) const {
+  if (!core.device_auth_id_.empty()) {
+    return true;
+  }
+  if (core.e2ee_state_dir_.empty()) {
+    return true;
+  }
+
+  std::error_code ec;
+  pfs::CreateDirectories(core.e2ee_state_dir_, ec);
+
+  const auto path = core.e2ee_state_dir_ / "device_auth_id.txt";
+
+  std::vector<std::uint8_t> bytes;
+  std::uint64_t size = 0;
+  if (pfs::Exists(path, ec)) {
+    if (ec) {
+      core.last_error_ = "device auth id path error";
+      return false;
+    }
+    size = pfs::FileSize(path, ec);
+    if (ec) {
+      core.last_error_ = "device auth id size stat failed";
+      return false;
+    }
+    if (size > kMaxDeviceIdFileBytes) {
+      core.last_error_ = "device auth id file too large";
+      return false;
+    }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+      core.last_error_ =
+          perm_err.empty() ? "device auth id permissions insecure" : perm_err;
+      return false;
+    }
+    std::ifstream f(path, std::ios::binary);
+    if (f.is_open()) {
+      bytes.resize(static_cast<std::size_t>(size));
+      if (!bytes.empty()) {
+        f.read(reinterpret_cast<char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+        if (!f || f.gcount() != static_cast<std::streamsize>(bytes.size())) {
+          core.last_error_ = "device auth id read failed";
+          return false;
+        }
+      }
+    }
+  } else if (ec) {
+    core.last_error_ = "device auth id path error";
     return false;
   }
-  core.device_id_ = BytesToHexLower(rnd.data(), rnd.size());
+
+  if (!bytes.empty()) {
+    std::vector<std::uint8_t> plain;
+    mi::common::ScopedWipe plain_wipe(plain);
+    bool was_dpapi = false;
+    static constexpr char kMagic[] = "MI_E2EE_DEVICE_AUTH_ID_DPAPI1";
+    static constexpr char kEntropy[] = "MI_E2EE_DEVICE_AUTH_ID_ENTROPY_V1";
+    std::string dpapi_err;
+    if (!MaybeUnprotectSecureStore(bytes, kMagic, kEntropy, plain, was_dpapi,
+                                   dpapi_err)) {
+      core.last_error_ =
+          dpapi_err.empty() ? "device auth id unprotect failed" : dpapi_err;
+      return false;
+    }
+    std::string id = Trim(
+        std::string(reinterpret_cast<const char*>(plain.data()), plain.size()));
+    if (id.size() != 32) {
+      core.last_error_ = "device auth id invalid";
+      return false;
+    }
+    for (char& ch : id) {
+      const unsigned char uc = static_cast<unsigned char>(ch);
+      if (!(std::isdigit(uc) || (uc >= 'a' && uc <= 'f') ||
+            (uc >= 'A' && uc <= 'F'))) {
+        core.last_error_ = "device auth id invalid";
+        return false;
+      }
+      ch = static_cast<char>(std::tolower(uc));
+    }
+    if (core.device_id_.empty() || id != core.device_id_) {
+      core.device_auth_id_ = id;
+    } else {
+      core.device_auth_id_.clear();
+    }
+
+    if (!core.device_auth_id_.empty() && !was_dpapi) {
+      std::string perm_err;
+      if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+        core.last_error_ =
+            perm_err.empty() ? "device auth id permissions insecure" : perm_err;
+        return false;
+      }
+      std::vector<std::uint8_t> canonical(core.device_auth_id_.begin(),
+                                          core.device_auth_id_.end());
+      mi::common::ScopedWipe canonical_wipe(canonical);
+      std::vector<std::uint8_t> wrapped;
+      std::string wrap_err;
+      if (!ProtectSecureStore(canonical, kMagic, kEntropy, wrapped, wrap_err)) {
+        core.last_error_ =
+            wrap_err.empty() ? "device auth id protect failed" : wrap_err;
+        return false;
+      }
+      std::error_code write_ec;
+      if (!pfs::AtomicWrite(path, wrapped.data(), wrapped.size(), write_ec)) {
+        core.last_error_ = "device auth id write failed";
+        return false;
+      }
+#ifndef _WIN32
+      {
+        std::error_code perm_ec;
+        std::filesystem::permissions(
+            path,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, perm_ec);
+      }
+#endif
+    }
+  return true;
+}
+
+bool AuthService::SaveDeviceId(ClientCore& core) const {
+  if (core.e2ee_state_dir_.empty()) {
+    return true;
+  }
   if (core.device_id_.empty()) {
-    core.last_error_ = "device id generation failed";
-    return false;
+    return true;
   }
 
+  std::error_code ec;
+  pfs::CreateDirectories(core.e2ee_state_dir_, ec);
+
+  const auto path = core.e2ee_state_dir_ / "device_id.txt";
   std::string perm_err;
   if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
     core.last_error_ =
         perm_err.empty() ? "device id permissions insecure" : perm_err;
     return false;
   }
+
   std::vector<std::uint8_t> plain(core.device_id_.begin(),
                                   core.device_id_.end());
   mi::common::ScopedWipe plain_wipe(plain);
@@ -1022,6 +1493,56 @@ bool AuthService::LoadOrCreateDeviceId(ClientCore& core) const {
   std::error_code write_ec;
   if (!pfs::AtomicWrite(path, wrapped.data(), wrapped.size(), write_ec)) {
     core.last_error_ = "device id write failed";
+    return false;
+  }
+#ifndef _WIN32
+  {
+    std::error_code perm_ec;
+    std::filesystem::permissions(
+        path,
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace, perm_ec);
+  }
+#endif
+  return true;
+}
+
+bool AuthService::SaveDeviceAuthId(ClientCore& core) const {
+  if (core.e2ee_state_dir_.empty()) {
+    return true;
+  }
+  if (core.device_auth_id_.empty()) {
+    return true;
+  }
+
+  std::error_code ec;
+  pfs::CreateDirectories(core.e2ee_state_dir_, ec);
+
+  const auto path = core.e2ee_state_dir_ / "device_auth_id.txt";
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    core.last_error_ =
+        perm_err.empty() ? "device auth id permissions insecure" : perm_err;
+    return false;
+  }
+
+  std::vector<std::uint8_t> plain(core.device_auth_id_.begin(),
+                                  core.device_auth_id_.end());
+  mi::common::ScopedWipe plain_wipe(plain);
+  static constexpr char kMagic[] = "MI_E2EE_DEVICE_AUTH_ID_DPAPI1";
+  static constexpr char kEntropy[] = "MI_E2EE_DEVICE_AUTH_ID_ENTROPY_V1";
+  std::vector<std::uint8_t> wrapped;
+  std::string wrap_err;
+  if (!ProtectSecureStore(plain, kMagic, kEntropy, wrapped, wrap_err)) {
+    core.last_error_ =
+        wrap_err.empty() ? "device auth id protect failed" : wrap_err;
+    return false;
+  }
+
+  std::error_code write_ec;
+  if (!pfs::AtomicWrite(path, wrapped.data(), wrapped.size(), write_ec)) {
+    core.last_error_ = "device auth id write failed";
     return false;
   }
 #ifndef _WIN32

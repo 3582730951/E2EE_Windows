@@ -166,11 +166,13 @@ public:
     bool isOnline() const { return online_; }
     QString currentUser() const { return currentUser_; }
     QString currentDeviceId() const;
+    QString currentDeviceDisplayId() const;
     QString configPath() const { return configPath_; }
     bool isPendingOutgoingMessage(const QString &messageId) const;
 
     struct DeviceEntry {
         QString deviceId;
+        QString displayId;
         quint32 lastSeenSec{0};
     };
     QVector<DeviceEntry> listDevices(QString &err);
@@ -182,6 +184,7 @@ public:
 
     struct DevicePairingRequestEntry {
         QString deviceId;
+        QString displayId;
         QString requestIdHex;
     };
     bool beginDevicePairingPrimary(QString &outPairingCode, QString &err);
@@ -190,7 +193,7 @@ public:
     bool beginDevicePairingLinked(const QString &pairingCode, QString &err);
     bool pollDevicePairingLinked(bool &outCompleted, QString &err);
     void cancelDevicePairing();
-    bool beginQrLogin(QString &outPayload, QString &err);
+    bool beginQrLogin(const QString &username, QString &outPayload, QString &err);
     bool pollQrLogin(bool &outCompleted, QString &err);
     void cancelQrLogin();
 

@@ -172,7 +172,10 @@ fun DiagnosticsScreen(
                     } ?: tr("diagnostics_unknown", "Unknown")
                     InfoRow(label = tr("diagnostics_version", "Version"), value = versionLabel)
                     InfoRow(label = tr("diagnostics_caps", "Capabilities"), value = sdk.capabilities.toString())
-                    InfoRow(label = tr("diagnostics_device_id", "Device id"), value = sdk.deviceId.ifBlank { "-" })
+                    InfoRow(
+                        label = tr("diagnostics_device_id", "Device id"),
+                        value = sdk.deviceDisplayId.ifBlank { "-" }
+                    )
                     InfoRow(label = tr("diagnostics_token", "Token"), value = sdk.token.ifBlank { "-" })
                     InfoRow(
                         label = tr("diagnostics_remote_status", "Remote status"),

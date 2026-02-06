@@ -19,6 +19,7 @@ data class FriendRequestEntry(
 
 data class DeviceEntry(
     val deviceId: String,
+    val displayId: String,
     val lastSeenSec: Int
 )
 
@@ -33,6 +34,7 @@ data class GroupCallMember(
 
 data class DevicePairingRequest(
     val deviceId: String,
+    val displayId: String,
     val requestIdHex: String
 )
 

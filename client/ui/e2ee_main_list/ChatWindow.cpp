@@ -3132,7 +3132,8 @@ void ChatWindow::exportEvidencePackage() {
     rootObj.insert(QStringLiteral("include_content"), includeContent);
     if (backend_) {
         rootObj.insert(QStringLiteral("local_user"), backend_->currentUser());
-        rootObj.insert(QStringLiteral("local_device_id"), backend_->currentDeviceId());
+        rootObj.insert(QStringLiteral("local_device_id"),
+                       backend_->currentDeviceDisplayId());
     }
 
     QJsonArray messages;

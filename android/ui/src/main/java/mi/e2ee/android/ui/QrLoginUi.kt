@@ -73,6 +73,7 @@ import java.util.concurrent.Executors
 @Composable
 fun QrLoginDisplayScreen(
     sdk: SdkBridge,
+    username: String,
     onBack: () -> Unit,
     onLoggedIn: () -> Unit
 ) {
@@ -86,7 +87,7 @@ fun QrLoginDisplayScreen(
     var rootError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        payload = sdk.beginQrLogin()
+        payload = sdk.beginQrLogin(username)
         if (payload == null) {
             error = t("qr_login_init_failed", "Failed to start QR login")
         }
@@ -206,7 +207,7 @@ fun QrLoginDisplayScreen(
             title = { Text(t("qr_login_root_title", "Root auth required")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(t("qr_login_root_body", "Enter the code or auth string from the Root Auth app."))
+                    Text(t("qr_login_root_body", "Enter the auth string (code:signature) from the Root Auth app."))
                     OutlinedTextField(
                         value = rootCodeInput,
                         onValueChange = { value ->
@@ -215,7 +216,7 @@ fun QrLoginDisplayScreen(
                             }
                             rootCodeInput = cleaned.take(160)
                         },
-                        placeholder = { Text(t("qr_login_root_hint", "Code or auth string")) },
+                        placeholder = { Text(t("qr_login_root_hint", "Auth string (code:signature)")) },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
@@ -305,6 +306,7 @@ fun QrLoginScanScreen(
     var scanError by remember { mutableStateOf<String?>(null) }
     var approved by remember { mutableStateOf(false) }
     var scanKey by remember { mutableStateOf(0) }
+    var rootCodeInput by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -407,25 +409,50 @@ fun QrLoginScanScreen(
                         text = t("qr_scan_confirm", "Authorize new device login?"),
                         style = MaterialTheme.typography.titleMedium
                     )
+                    payload.username?.takeIf { it.isNotBlank() }?.let { user ->
+                        Text(
+                            text = t("qr_scan_user", "Account: %s").format(user),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                     Text(
                         text = t("qr_scan_device", "Device: %s").format(deviceLabel),
                         style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = rootCodeInput,
+                        onValueChange = { value ->
+                            val cleaned = value.trim().filter {
+                                it.isLetterOrDigit() || it == ':' || it == '|'
+                            }
+                            rootCodeInput = cleaned.take(160)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(t("qr_scan_root_hint", "Root auth string (code:signature) (optional)")) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Ascii,
+                            imeAction = ImeAction.Done
+                        ),
+                        singleLine = true
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
                             scanned = null
                             scanError = null
                             approved = false
+                            rootCodeInput = ""
                             scanKey += 1
                         }) {
                             Text(t("qr_scan_rescan", "Rescan"))
                         }
                         Button(
                             onClick = {
-                                val ok = sdk.approveQrLogin(payload.qrId, payload.secret)
+                                val code = rootCodeInput.trim().ifBlank { null }
+                                val ok = sdk.approveQrLogin(payload.qrId, payload.secret, code)
                                 if (ok) {
                                     approved = true
                                     scanned = null
+                                    rootCodeInput = ""
                                 } else {
                                     scanError = sdk.lastError.ifBlank {
                                         t("qr_scan_failed", "Approval failed")
@@ -571,7 +598,8 @@ private fun QrScannerView(
 private data class QrLoginPayload(
     val qrId: String,
     val secret: String,
-    val deviceId: String?
+    val deviceId: String?,
+    val username: String?
 )
 
 private fun parseQrLoginPayload(raw: String): QrLoginPayload? {
@@ -581,7 +609,8 @@ private fun parseQrLoginPayload(raw: String): QrLoginPayload? {
         val id = uri.getQueryParameter("id") ?: return null
         val secret = uri.getQueryParameter("s") ?: return null
         val deviceId = uri.getQueryParameter("d")
-        QrLoginPayload(id, secret, deviceId)
+        val username = uri.getQueryParameter("u")
+        QrLoginPayload(id, secret, deviceId, username)
     } catch (_: Exception) {
         null
     }

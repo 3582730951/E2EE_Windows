@@ -8,6 +8,7 @@
 #include <QAudioFormat>
 #include <QAudioSink>
 #include <QAudioSource>
+#include <QBuffer>
 #include <QCamera>
 #include <QCameraDevice>
 #include <QCoreApplication>
@@ -54,6 +55,7 @@
 
 #include "common/EmojiPackManager.h"
 #include "common/ImePluginLoader.h"
+#include "common/QrCodeGenerator.h"
 #include "common/UiRuntimePaths.h"
 #include "platform_time.h"
 #include "protocol.h"
@@ -2228,6 +2230,10 @@ bool QuickClient::init(const QString& configPath) {
     StopMedia();
     ResetMediaTransport();
   }
+  qr_login_active_ = false;
+  qr_login_payload_.clear();
+  ClearQrLoginCache();
+  emit qrLoginChanged();
   bool historySave = history_save_enabled_;
   LoadPrivacySettings(historySave);
   history_save_enabled_ = historySave;
@@ -2267,14 +2273,27 @@ bool QuickClient::registerUser(const QString& user, const QString& pass) {
 }
 
 bool QuickClient::login(const QString& user, const QString& pass) {
+  return loginWithRootCode(user, pass, QString());
+}
+
+bool QuickClient::loginWithRootCode(const QString& user,
+                                    const QString& pass,
+                                    const QString& rootCode) {
   bool ok = false;
   if (!c_api_) {
     UpdateLastError(QStringLiteral("未初始化"));
     emit status(QStringLiteral("登录失败"));
     return false;
   }
-  ok = mi_client_login(c_api_, user.toStdString().c_str(),
-                       pass.toStdString().c_str()) != 0;
+  const std::string account = user.trimmed().toStdString();
+  const std::string password = pass.toStdString();
+  const std::string root = rootCode.trimmed().toStdString();
+  if (root.empty()) {
+    ok = mi_client_login(c_api_, account.c_str(), password.c_str()) != 0;
+  } else {
+    ok = mi_client_login_with_root_code(c_api_, account.c_str(),
+                                        password.c_str(), root.c_str()) != 0;
+  }
   if (!ok) {
     emit status(QStringLiteral("登录失败"));
     token_.clear();
@@ -2283,39 +2302,7 @@ bool QuickClient::login(const QString& user, const QString& pass) {
     UpdateLastError(err ? QString::fromUtf8(err) : QString());
     StopPolling();
   } else {
-    const char* token = mi_client_token(c_api_);
-    token_ = token ? QString::fromUtf8(token) : QString();
-    username_ = user.trimmed();
-    QString historyErr;
-    if (!history_save_enabled_) {
-      if (!mi_client_clear_all_history(c_api_, 1, 0)) {
-        const char* err = mi_client_last_error(c_api_);
-        historyErr = err ? QString::fromUtf8(err) : QString();
-      }
-      mi_client_set_history_enabled(c_api_, 0);
-    }
-    emit status(QStringLiteral("登录成功"));
-    UpdateLastError(historyErr);
-    StartPolling();
-    std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
-    int changed = 0;
-    std::uint32_t count =
-        mi_client_sync_friends(c_api_, buffer.data(), kMaxFriendEntries,
-                               &changed);
-    const char* sync_err = mi_client_last_error(c_api_);
-    if (sync_err && *sync_err) {
-      count = mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
-    }
-    UpdateFriendList(ReadFriendEntries(buffer.data(), count));
-
-    std::vector<mi_friend_request_entry_t> req_buffer(
-        kMaxFriendRequestEntries);
-    const std::uint32_t req_count =
-        mi_client_list_friend_requests(c_api_, req_buffer.data(),
-                                       kMaxFriendRequestEntries);
-    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
-                                                  req_count));
-    emit deviceChanged();
+    HandleLoginSuccess(QString::fromStdString(account));
   }
   UpdateConnectionState(true);
   MaybeEmitTrustSignals();
@@ -2324,12 +2311,135 @@ bool QuickClient::login(const QString& user, const QString& pass) {
   return ok;
 }
 
+bool QuickClient::beginQrLogin(const QString& username) {
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  if (!token_.isEmpty()) {
+    UpdateLastError(QStringLiteral("已登录"));
+    return false;
+  }
+  const QByteArray user = username.trimmed().toUtf8();
+  const char* user_ptr = user.isEmpty() ? nullptr : user.constData();
+  char* out_payload = nullptr;
+  const bool ok =
+      mi_client_begin_qr_login_with_username(c_api_, user_ptr, &out_payload) != 0;
+  if (out_payload) {
+    qr_login_payload_ = QString::fromUtf8(out_payload);
+    mi_client_free(out_payload);
+  } else {
+    qr_login_payload_.clear();
+  }
+  const char* err = mi_client_last_error(c_api_);
+  const QString errMsg = err ? QString::fromUtf8(err) : QString();
+  if (!ok) {
+    qr_login_active_ = false;
+    qr_login_payload_.clear();
+    ClearQrLoginCache();
+    emit qrLoginChanged();
+    UpdateLastError(errMsg.isEmpty() ? QStringLiteral("生成二维码失败") : errMsg);
+    return false;
+  }
+  qr_login_active_ = true;
+  ClearQrLoginCache();
+  emit qrLoginChanged();
+  UpdateLastError(QString());
+  return true;
+}
+
+bool QuickClient::pollQrLogin() {
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  int completed = 0;
+  char* out_user = nullptr;
+  const bool ok = mi_client_poll_qr_login(c_api_, &completed, &out_user) != 0;
+  QString user;
+  if (out_user) {
+    user = QString::fromUtf8(out_user);
+    mi_client_free(out_user);
+  }
+  const char* err = mi_client_last_error(c_api_);
+  const QString errMsg = err ? QString::fromUtf8(err) : QString();
+  if (!ok) {
+    UpdateLastError(errMsg.isEmpty() ? QStringLiteral("二维码登录失败") : errMsg);
+    qr_login_active_ = false;
+    qr_login_payload_.clear();
+    ClearQrLoginCache();
+    emit qrLoginChanged();
+    UpdateConnectionState(true);
+    MaybeEmitTrustSignals();
+    return false;
+  }
+  UpdateLastError(QString());
+  if (completed) {
+    qr_login_active_ = false;
+    qr_login_payload_.clear();
+    ClearQrLoginCache();
+    emit qrLoginChanged();
+    if (user.isEmpty()) {
+      user = username_;
+    }
+    HandleLoginSuccess(user);
+    UpdateConnectionState(true);
+    MaybeEmitTrustSignals();
+    emit tokenChanged();
+    emit userChanged();
+  } else {
+    UpdateConnectionState(false);
+    MaybeEmitTrustSignals();
+  }
+  return true;
+}
+
+void QuickClient::cancelQrLogin() {
+  if (c_api_) {
+    mi_client_cancel_qr_login(c_api_);
+  }
+  qr_login_active_ = false;
+  qr_login_payload_.clear();
+  ClearQrLoginCache();
+  emit qrLoginChanged();
+}
+
+QString QuickClient::qrLoginImage(int size) {
+  if (qr_login_payload_.isEmpty() || size <= 0) {
+    return {};
+  }
+  const int safeSize = std::max(64, std::min(size, 512));
+  auto it = qr_login_image_cache_.find(safeSize);
+  if (it != qr_login_image_cache_.end()) {
+    return it.value();
+  }
+  const QImage img = mi::ui::BuildQrImage(qr_login_payload_, safeSize, 2);
+  if (img.isNull()) {
+    return {};
+  }
+  QByteArray png;
+  QBuffer buffer(&png);
+  buffer.open(QIODevice::WriteOnly);
+  if (!img.save(&buffer, "PNG")) {
+    return {};
+  }
+  const QString url =
+      QStringLiteral("data:image/png;base64,") +
+      QString::fromLatin1(png.toBase64());
+  qr_login_image_cache_.insert(safeSize, url);
+  return url;
+}
+
 void QuickClient::logout() {
   StopPolling();
   StopMedia();
   if (c_api_) {
     mi_client_logout(c_api_);
   }
+  qr_login_active_ = false;
+  qr_login_payload_.clear();
+  ClearQrLoginCache();
+  emit qrLoginChanged();
   token_.clear();
   username_.clear();
   UpdateLastError(QString());
@@ -3430,6 +3540,12 @@ QVariantList QuickClient::listDevices() {
     } else {
       map.insert(QStringLiteral("deviceId"), QString());
     }
+    if (buffer[i].display_id) {
+      map.insert(QStringLiteral("deviceDisplayId"),
+                 QString::fromUtf8(buffer[i].display_id));
+    } else {
+      map.insert(QStringLiteral("deviceDisplayId"), QString());
+    }
     map.insert(QStringLiteral("lastSeenSec"),
                static_cast<int>(buffer[i].last_seen_sec));
     out.push_back(map);
@@ -4301,6 +4417,14 @@ QString QuickClient::deviceId() const {
   return {};
 }
 
+QString QuickClient::deviceDisplayId() const {
+  if (c_api_) {
+    const char* value = mi_client_device_display_id(c_api_);
+    return value ? QString::fromUtf8(value) : QString();
+  }
+  return {};
+}
+
 bool QuickClient::remoteOk() const {
   if (c_api_) {
     return mi_client_remote_ok(c_api_) != 0;
@@ -4377,6 +4501,14 @@ QString QuickClient::pendingPeerPin() const {
     return value ? QString::fromUtf8(value) : QString();
   }
   return {};
+}
+
+QString QuickClient::qrLoginPayload() const {
+  return qr_login_payload_;
+}
+
+bool QuickClient::qrLoginActive() const {
+  return qr_login_active_;
 }
 
 void QuickClient::StartPolling() {
@@ -5497,6 +5629,46 @@ void QuickClient::HandleSessionInvalid(const QString& message) {
     emit groupCallRoomsChanged();
   }
   emit status(hint);
+}
+
+void QuickClient::HandleLoginSuccess(const QString& username) {
+  const char* token = mi_client_token(c_api_);
+  token_ = token ? QString::fromUtf8(token) : QString();
+  username_ = username.trimmed();
+  QString historyErr;
+  if (!history_save_enabled_) {
+    if (!mi_client_clear_all_history(c_api_, 1, 0)) {
+      const char* err = mi_client_last_error(c_api_);
+      historyErr = err ? QString::fromUtf8(err) : QString();
+    }
+    mi_client_set_history_enabled(c_api_, 0);
+  }
+  emit status(QStringLiteral("登录成功"));
+  UpdateLastError(historyErr);
+  StartPolling();
+  std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
+  int changed = 0;
+  std::uint32_t count =
+      mi_client_sync_friends(c_api_, buffer.data(), kMaxFriendEntries,
+                             &changed);
+  const char* sync_err = mi_client_last_error(c_api_);
+  if (sync_err && *sync_err) {
+    count = mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
+  }
+  UpdateFriendList(ReadFriendEntries(buffer.data(), count));
+
+  std::vector<mi_friend_request_entry_t> req_buffer(
+      kMaxFriendRequestEntries);
+  const std::uint32_t req_count =
+      mi_client_list_friend_requests(c_api_, req_buffer.data(),
+                                     kMaxFriendRequestEntries);
+  UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+                                                req_count));
+  emit deviceChanged();
+}
+
+void QuickClient::ClearQrLoginCache() {
+  qr_login_image_cache_.clear();
 }
 
 void QuickClient::UpdateLastError(const QString& message) {

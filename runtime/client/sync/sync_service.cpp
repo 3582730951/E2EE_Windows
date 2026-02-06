@@ -236,21 +236,25 @@ bool DecryptPairingPayload(const std::array<std::uint8_t, 32>& key,
 }
 
 bool EncodePairingRequestPlain(const std::string& device_id,
+                               const std::string& display_id,
                                const std::array<std::uint8_t, 16>& request_id,
                                std::vector<std::uint8_t>& out) {
   out.clear();
   static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'P', 'R'};
-  static constexpr std::uint8_t kVer = 1;
+  static constexpr std::uint8_t kVer = 2;
   out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
   out.push_back(kVer);
   WriteFixed16(request_id, out);
-  return mi::server::proto::WriteString(device_id, out);
+  return mi::server::proto::WriteString(device_id, out) &&
+         mi::server::proto::WriteString(display_id, out);
 }
 
 bool DecodePairingRequestPlain(const std::vector<std::uint8_t>& plain,
                                std::string& out_device_id,
+                               std::string& out_display_id,
                                std::array<std::uint8_t, 16>& out_request_id) {
   out_device_id.clear();
+  out_display_id.clear();
   out_request_id.fill(0);
   static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'P', 'R'};
   if (plain.size() < (sizeof(kMagic) + 1 + out_request_id.size())) {
@@ -261,14 +265,23 @@ bool DecodePairingRequestPlain(const std::vector<std::uint8_t>& plain,
     return false;
   }
   off += sizeof(kMagic);
-  if (plain[off++] != 1) {
+  const std::uint8_t ver = plain[off++];
+  if (ver != 1 && ver != 2) {
     return false;
   }
   if (!ReadFixed16(plain, off, out_request_id)) {
     return false;
   }
-  return mi::server::proto::ReadString(plain, off, out_device_id) &&
-         off == plain.size();
+  if (!mi::server::proto::ReadString(plain, off, out_device_id)) {
+    return false;
+  }
+  if (ver == 1) {
+    return off == plain.size();
+  }
+  if (!mi::server::proto::ReadString(plain, off, out_display_id)) {
+    return false;
+  }
+  return off == plain.size();
 }
 
 bool EncodePairingResponsePlain(const std::array<std::uint8_t, 16>& request_id,
@@ -1127,8 +1140,9 @@ std::vector<ClientCore::DevicePairingRequest> SyncService::PollDevicePairingRequ
       continue;
     }
     std::string device_id;
+    std::string display_id;
     std::array<std::uint8_t, 16> request_id{};
-    if (!DecodePairingRequestPlain(plain_msg, device_id, request_id)) {
+    if (!DecodePairingRequestPlain(plain_msg, device_id, display_id, request_id)) {
       continue;
     }
     if (device_id.empty() || device_id == core.device_id_) {
@@ -1136,6 +1150,7 @@ std::vector<ClientCore::DevicePairingRequest> SyncService::PollDevicePairingRequ
     }
     DevicePairingRequest r;
     r.device_id = std::move(device_id);
+    r.display_id = std::move(display_id);
     r.request_id_hex = BytesToHexLower(request_id.data(), request_id.size());
     out.push_back(std::move(r));
   }
@@ -1268,6 +1283,11 @@ bool SyncService::BeginDevicePairingLinked(ClientCore& core, const std::string& 
     core.last_error_ = core.last_error_.empty() ? "device id unavailable" : core.last_error_;
     return false;
   }
+  if (!core.LoadOrCreateDeviceAuthId() || core.device_auth_id_.empty()) {
+    core.last_error_ =
+        core.last_error_.empty() ? "device auth id unavailable" : core.last_error_;
+    return false;
+  }
   {
     const std::string saved_err = core.last_error_;
     (void)core.PullDeviceSyncCiphertexts();
@@ -1281,7 +1301,8 @@ bool SyncService::BeginDevicePairingLinked(ClientCore& core, const std::string& 
   }
 
   std::vector<std::uint8_t> req_plain;
-  if (!EncodePairingRequestPlain(core.device_id_, request_id, req_plain)) {
+  if (!EncodePairingRequestPlain(core.device_id_, core.device_auth_id_,
+                                 request_id, req_plain)) {
     core.last_error_ = "pairing encode failed";
     return false;
   }

@@ -72,7 +72,8 @@ enum class FrameType : std::uint16_t {
   kRootAuthInit = 57,
   kQrLoginInit = 58,
   kQrLoginPoll = 59,
-  kQrLoginApprove = 60
+  kQrLoginApprove = 60,
+  kQrLoginApproveRoot = 61
 };
 
 struct Frame {

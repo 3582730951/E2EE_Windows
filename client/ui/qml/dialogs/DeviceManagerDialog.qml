@@ -29,6 +29,8 @@ ApplicationWindow {
     }
 
     property ListModel devicesModel: ListModel {}
+    property string pendingKickId: ""
+    property string pendingKickDisplayId: ""
 
     function refreshDevices() {
         devicesModel.clear()
@@ -44,6 +46,7 @@ ApplicationWindow {
             }
             devicesModel.append({
                 deviceId: d.deviceId,
+                deviceDisplayId: d.deviceDisplayId,
                 lastSeenSec: d.lastSeenSec || 0
             })
         }
@@ -140,8 +143,8 @@ ApplicationWindow {
                         font.pixelSize: 13
                     }
                     Text {
-                        text: (clientBridge && clientBridge.deviceId.length > 0)
-                              ? ("ID: " + clientBridge.deviceId)
+                        text: (clientBridge && clientBridge.deviceDisplayId.length > 0)
+                              ? ("ID: " + clientBridge.deviceDisplayId)
                               : Ui.I18n.t("dialog.deviceManager.deviceOnline")
                         color: Ui.Style.textMuted
                         font.pixelSize: 11
@@ -180,7 +183,9 @@ ApplicationWindow {
                             width: 36
                             height: 36
                             radius: 18
-                            color: Ui.Style.avatarColor(deviceId)
+                            color: Ui.Style.avatarColor(deviceDisplayId.length > 0
+                                                       ? deviceDisplayId
+                                                       : "device")
                             Text {
                                 anchors.centerIn: parent
                                 text: "LD"
@@ -193,7 +198,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: deviceId
+                                text: deviceDisplayId.length > 0 ? deviceDisplayId : "N/A"
                                 color: Ui.Style.textPrimary
                                 font.pixelSize: 12
                                 elide: Text.ElideRight
@@ -210,9 +215,10 @@ ApplicationWindow {
                             text: Ui.I18n.t("dialog.deviceManager.unlink")
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: {
-                                if (clientBridge && clientBridge.kickDevice(deviceId)) {
-                                    root.refreshDevices()
-                                }
+                                pendingKickId = deviceId
+                                pendingKickDisplayId =
+                                    deviceDisplayId.length > 0 ? deviceDisplayId : "N/A"
+                                kickConfirm.open()
                             }
                         }
                     }
@@ -229,5 +235,45 @@ ApplicationWindow {
         }
 
         Item { Layout.fillHeight: true }
+    }
+
+    Dialog {
+        id: kickConfirm
+        modal: true
+        focus: true
+        title: Ui.I18n.t("dialog.deviceManager.kickTitle")
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        onAccepted: {
+            var target = pendingKickId
+            pendingKickId = ""
+            pendingKickDisplayId = ""
+            if (clientBridge && target.length > 0) {
+                if (clientBridge.kickDevice(target)) {
+                    root.refreshDevices()
+                }
+            }
+        }
+        onRejected: {
+            pendingKickId = ""
+            pendingKickDisplayId = ""
+        }
+        background: Rectangle {
+            radius: Ui.Style.radiusMedium
+            color: Ui.Style.panelBgAlt
+            border.color: Ui.Style.borderSubtle
+        }
+        contentItem: ColumnLayout {
+            spacing: Ui.Style.paddingS
+            Text {
+                text: Ui.I18n.format("dialog.deviceManager.kickConfirm",
+                                     pendingKickDisplayId.length > 0
+                                     ? pendingKickDisplayId
+                                     : "N/A")
+                color: Ui.Style.textPrimary
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+        }
     }
 }

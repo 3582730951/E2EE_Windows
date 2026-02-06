@@ -37,6 +37,8 @@
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QHash>
+#include <QByteArray>
+#include <QCryptographicHash>
 
 #include <memory>
 
@@ -2367,6 +2369,8 @@ void MainListWindow::handleDeviceManager() {
     }
 
     const QString selfId = backend_->currentDeviceId().trimmed();
+    const QString selfDisplayId = backend_->currentDeviceDisplayId().trimmed();
+    const QString selfLabel = !selfDisplayId.isEmpty() ? selfDisplayId : selfId;
     QString err;
     const auto initial = backend_->listDevices(err);
     if (initial.isEmpty()) {
@@ -2393,9 +2397,9 @@ void MainListWindow::handleDeviceManager() {
     auto *hint = new QLabel(dlg);
     hint->setTextFormat(Qt::PlainText);
     hint->setWordWrap(true);
-    hint->setText(selfId.isEmpty()
+    hint->setText(selfLabel.isEmpty()
                       ? QStringLiteral("当前设备 ID：未知")
-                      : QStringLiteral("当前设备 ID：%1").arg(selfId));
+                      : QStringLiteral("当前设备 ID：%1").arg(selfLabel));
     root->addWidget(hint);
 
     auto *table = new QTableWidget(dlg);
@@ -2430,7 +2434,9 @@ void MainListWindow::handleDeviceManager() {
         table->setRowCount(list.size());
         for (int i = 0; i < list.size(); ++i) {
             const auto &d = list[i];
-            auto *idItem = new QTableWidgetItem(d.deviceId);
+            const QString label = d.displayId.isEmpty() ? QStringLiteral("N/A") : d.displayId;
+            auto *idItem = new QTableWidgetItem(label);
+            idItem->setData(Qt::UserRole, d.deviceId);
             auto *ageItem = new QTableWidgetItem(formatAge(d.lastSeenSec));
             table->setItem(i, 0, idItem);
             table->setItem(i, 1, ageItem);
@@ -2528,19 +2534,42 @@ void MainListWindow::handleDeviceManager() {
             }
             const int row = rows.first().row();
             if (auto *item = reqTable->item(row, 0)) {
-                out.deviceId = item->text();
+                out.deviceId = item->data(Qt::UserRole + 2).toString();
+                out.displayId = item->text();
                 out.requestIdHex = item->data(Qt::UserRole + 1).toString();
             }
             return out;
         };
 
-        auto populateReq = [reqTable](const QVector<BackendAdapter::DevicePairingRequestEntry> &list) {
+        auto pairingAlias = [](const QString &deviceId) -> QString {
+            if (deviceId.isEmpty()) {
+                return {};
+            }
+            const QByteArray input =
+                QByteArrayLiteral("mi_e2ee_pairing_alias_v1|") + deviceId.toUtf8();
+            const QByteArray digest =
+                QCryptographicHash::hash(input, QCryptographicHash::Sha256).toHex();
+            if (digest.size() < 8) {
+                return {};
+            }
+            return QStringLiteral("DEV-") + QString::fromLatin1(digest.left(8));
+        };
+
+        auto populateReq = [reqTable, pairingAlias](const QVector<BackendAdapter::DevicePairingRequestEntry> &list) {
             reqTable->clearContents();
             reqTable->setRowCount(list.size());
             for (int i = 0; i < list.size(); ++i) {
                 const auto &r = list[i];
-                auto *item = new QTableWidgetItem(r.deviceId);
+                QString label = r.displayId;
+                if (label.isEmpty()) {
+                    label = pairingAlias(r.deviceId);
+                }
+                if (label.isEmpty()) {
+                    label = QStringLiteral("N/A");
+                }
+                auto *item = new QTableWidgetItem(label);
                 item->setData(Qt::UserRole + 1, r.requestIdHex);
+                item->setData(Qt::UserRole + 2, r.deviceId);
                 reqTable->setItem(i, 0, item);
             }
             reqTable->resizeColumnsToContents();
@@ -2595,7 +2624,12 @@ void MainListWindow::handleDeviceManager() {
                 return;
             }
             if (QMessageBox::question(this, QStringLiteral("设备配对"),
-                                      QStringLiteral("确认允许该设备配对？\n\n%1").arg(req.deviceId)) != QMessageBox::Yes) {
+                                      QStringLiteral("确认允许该设备配对？\n\n%1")
+                                          .arg(req.displayId.isEmpty()
+                                                   ? (pairingAlias(req.deviceId).isEmpty()
+                                                          ? QStringLiteral("N/A")
+                                                          : pairingAlias(req.deviceId))
+                                                   : req.displayId)) != QMessageBox::Yes) {
                 return;
             }
             QString err;
@@ -2690,7 +2724,22 @@ void MainListWindow::handleDeviceManager() {
 
     root->addWidget(pairFrame);
 
-    auto currentSelected = [table]() -> QString {
+    auto currentSelectedInternal = [table]() -> QString {
+        const QModelIndexList rows = table->selectionModel()
+                                         ? table->selectionModel()->selectedRows()
+                                         : QModelIndexList{};
+        if (rows.isEmpty()) {
+            return {};
+        }
+        const QModelIndex idx = rows.first();
+        if (auto *item = table->item(idx.row(), 0)) {
+            const QString internal = item->data(Qt::UserRole).toString();
+            return internal.isEmpty() ? item->text() : internal;
+        }
+        return {};
+    };
+
+    auto currentSelectedDisplay = [table]() -> QString {
         const QModelIndexList rows = table->selectionModel()
                                          ? table->selectionModel()->selectedRows()
                                          : QModelIndexList{};
@@ -2709,7 +2758,7 @@ void MainListWindow::handleDeviceManager() {
     root->addWidget(buttons);
 
     auto updateButtons = [=]() {
-        const QString selected = currentSelected().trimmed();
+        const QString selected = currentSelectedInternal().trimmed();
         const bool hasSel = !selected.isEmpty();
         copyBtn->setEnabled(hasSel);
         kickBtn->setEnabled(hasSel && !selfId.isEmpty() && selected != selfId);
@@ -2734,7 +2783,7 @@ void MainListWindow::handleDeviceManager() {
     QObject::connect(table, &QTableWidget::itemSelectionChanged, dlg, updateButtons);
 
     QObject::connect(copyBtn, &QPushButton::clicked, dlg, [=]() {
-        const QString selected = currentSelected().trimmed();
+        const QString selected = currentSelectedDisplay().trimmed();
         if (selected.isEmpty()) {
             return;
         }
@@ -2743,7 +2792,8 @@ void MainListWindow::handleDeviceManager() {
     });
 
     QObject::connect(kickBtn, &QPushButton::clicked, dlg, [=]() {
-        const QString selected = currentSelected().trimmed();
+        const QString selected = currentSelectedInternal().trimmed();
+        const QString selectedDisplay = currentSelectedDisplay().trimmed();
         if (selected.isEmpty()) {
             return;
         }
@@ -2752,7 +2802,8 @@ void MainListWindow::handleDeviceManager() {
             return;
         }
         if (QMessageBox::question(this, QStringLiteral("踢下线"),
-                                  QStringLiteral("确认踢下线该设备？\n\n%1").arg(selected)) != QMessageBox::Yes) {
+                                  QStringLiteral("确认踢下线该设备？\n\n%1").arg(
+                                      selectedDisplay.isEmpty() ? selected : selectedDisplay)) != QMessageBox::Yes) {
             return;
         }
         QString err;

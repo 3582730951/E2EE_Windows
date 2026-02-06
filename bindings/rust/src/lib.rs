@@ -74,6 +74,7 @@ pub struct mi_friend_request_entry_t {
 #[derive(Copy, Clone)]
 pub struct mi_device_entry_t {
     pub device_id: *const c_char,
+    pub display_id: *const c_char,
     pub last_seen_sec: u32,
 }
 
@@ -81,6 +82,7 @@ pub struct mi_device_entry_t {
 #[derive(Copy, Clone)]
 pub struct mi_device_pairing_request_t {
     pub device_id: *const c_char,
+    pub display_id: *const c_char,
     pub request_id_hex: *const c_char,
 }
 
@@ -200,6 +202,7 @@ extern "C" {
     fn mi_client_last_error(handle: *mut mi_client_handle) -> *const c_char;
     fn mi_client_token(handle: *mut mi_client_handle) -> *const c_char;
     fn mi_client_device_id(handle: *mut mi_client_handle) -> *const c_char;
+    fn mi_client_device_display_id(handle: *mut mi_client_handle) -> *const c_char;
     fn mi_client_remote_ok(handle: *mut mi_client_handle) -> c_int;
     fn mi_client_remote_error(handle: *mut mi_client_handle) -> *const c_char;
     fn mi_client_is_remote_mode(handle: *mut mi_client_handle) -> c_int;
@@ -560,12 +563,14 @@ pub struct FriendRequestEntry {
 #[derive(Debug, Clone)]
 pub struct DeviceEntry {
     pub device_id: String,
+    pub display_id: String,
     pub last_seen_sec: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct DevicePairingRequest {
     pub device_id: String,
+    pub display_id: String,
     pub request_id_hex: String,
 }
 
@@ -680,6 +685,7 @@ fn friend_request_from_c(entry: &mi_friend_request_entry_t) -> FriendRequestEntr
 fn device_from_c(entry: &mi_device_entry_t) -> DeviceEntry {
     DeviceEntry {
         device_id: opt_string(entry.device_id).unwrap_or_default(),
+        display_id: opt_string(entry.display_id).unwrap_or_default(),
         last_seen_sec: entry.last_seen_sec,
     }
 }
@@ -687,6 +693,7 @@ fn device_from_c(entry: &mi_device_entry_t) -> DeviceEntry {
 fn pairing_request_from_c(entry: &mi_device_pairing_request_t) -> DevicePairingRequest {
     DevicePairingRequest {
         device_id: opt_string(entry.device_id).unwrap_or_default(),
+        display_id: opt_string(entry.display_id).unwrap_or_default(),
         request_id_hex: opt_string(entry.request_id_hex).unwrap_or_default(),
     }
 }
@@ -820,6 +827,14 @@ impl Client {
             return String::new();
         }
         let ptr = unsafe { mi_client_device_id(self.handle) };
+        opt_string(ptr).unwrap_or_default()
+    }
+
+    pub fn device_display_id(&self) -> String {
+        if self.handle.is_null() {
+            return String::new();
+        }
+        let ptr = unsafe { mi_client_device_display_id(self.handle) };
         opt_string(ptr).unwrap_or_default()
     }
 

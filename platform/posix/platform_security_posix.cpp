@@ -5,7 +5,9 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <unistd.h>
 
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -69,6 +71,28 @@ HardeningLevel ParseHardeningLevel() noexcept {
     return HardeningLevel::kHigh;
   }
   return HardeningLevel::kHigh;
+}
+
+std::uint32_t ParseHardeningPollMs() noexcept {
+  const char* env = std::getenv("MI_E2EE_HARDENING_POLL_MS");
+  if (!env || *env == '\0') {
+    env = std::getenv("MI_E2EE_HARDENING_INTERVAL_MS");
+  }
+  if (!env || *env == '\0') {
+    return 5000;
+  }
+  char* end = nullptr;
+  long value = std::strtol(env, &end, 10);
+  if (end == env || value <= 0) {
+    return 5000;
+  }
+  if (value < 500) {
+    value = 500;
+  }
+  if (value > 600000) {
+    value = 600000;
+  }
+  return static_cast<std::uint32_t>(value);
 }
 
 bool ParseEnvFlag(const char* name, bool default_value) noexcept {
@@ -310,6 +334,36 @@ bool IsTracedLinux() noexcept {
 }
 #endif
 
+void MonitorThreadMain(HardeningLevel level, std::uint32_t poll_ms) noexcept {
+  if (level == HardeningLevel::kOff || level == HardeningLevel::kLow) {
+    return;
+  }
+  if (poll_ms == 0) {
+    poll_ms = 5000;
+  }
+  const std::chrono::milliseconds interval(poll_ms);
+  for (;;) {
+    ApplyBestEffortMitigations(level);
+#if defined(__APPLE__)
+    ApplyAppleIntegrityBestEffort(level);
+    if (IsTamperDetected()) {
+      return;
+    }
+    if (IsTracedMac()) {
+      ReportTamper(TamperSignal::kDebugger);
+      return;
+    }
+#endif
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (IsTracedLinux()) {
+      ReportTamper(TamperSignal::kDebugger);
+      return;
+    }
+#endif
+    std::this_thread::sleep_for(interval);
+  }
+}
+
 }  // namespace
 
 void StartEndpointHardening() noexcept {
@@ -331,6 +385,13 @@ void StartEndpointHardening() noexcept {
     ReportTamper(TamperSignal::kDebugger);
   }
 #endif
+  if (level >= HardeningLevel::kMedium) {
+    const auto poll_ms = ParseHardeningPollMs();
+    try {
+      std::thread(MonitorThreadMain, level, poll_ms).detach();
+    } catch (...) {
+    }
+  }
 }
 
 void SetTamperHandler(TamperHandler handler) noexcept {

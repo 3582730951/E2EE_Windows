@@ -182,7 +182,8 @@ void LoginDialog::handleQrLoginStart() {
     }
     QString payload;
     QString err;
-    if (!backend_->beginQrLogin(payload, err)) {
+    const QString account = authFlow_ ? authFlow_->account() : QString();
+    if (!backend_->beginQrLogin(account, payload, err)) {
         if (authFlow_) {
             authFlow_->setErrorMessage(err.isEmpty()
                 ? QStringLiteral("生成二维码失败")
@@ -240,7 +241,7 @@ void LoginDialog::pollQrLogin() {
                 const QString code = QInputDialog::getText(
                     this,
                     QStringLiteral("根授权码"),
-                    QStringLiteral("请输入根授权码（6-8 位数字）"),
+                    QStringLiteral("请输入根授权码或授权字符串"),
                     QLineEdit::Password,
                     QString(),
                     &ok);

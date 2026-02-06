@@ -97,11 +97,13 @@ class ClientCore {
 
   struct DeviceEntry {
     std::string device_id;
+    std::string display_id;
     std::uint32_t last_seen_sec{0};
   };
 
   struct DevicePairingRequest {
     std::string device_id;
+    std::string display_id;
     std::string request_id_hex;
   };
 
@@ -245,9 +247,14 @@ class ClientCore {
                          const std::string& password,
                          const std::string& root_code);
   bool BeginQrLogin(std::string& out_payload);
+  bool BeginQrLoginWithUsername(const std::string& username,
+                                std::string& out_payload);
   bool PollQrLogin(bool& out_completed);
   bool ApproveQrLogin(const std::string& qr_id,
                       const std::string& qr_secret_hex);
+  bool ApproveQrLogin(const std::string& qr_id,
+                      const std::string& qr_secret_hex,
+                      const std::string& root_code);
   void CancelQrLogin();
   bool Relogin();
   bool Logout();
@@ -457,7 +464,7 @@ class ClientCore {
   std::vector<DeviceEntry> ListDevices();
   bool KickDevice(const std::string& target_device_id);
   bool RegisterDevice(const std::string& root_code);
-  bool RootAuthInit(std::string& out_secret_hex);
+  bool RootAuthInit(const std::string& pubkey_hex);
 
   bool BeginDevicePairingPrimary(std::string& out_pairing_code);
   std::vector<DevicePairingRequest> PollDevicePairingRequests();
@@ -502,6 +509,7 @@ class ClientCore {
   const std::string& last_error() const { return last_error_; }
   void SetLastError(const std::string& error) { last_error_ = error; }
   const std::string& device_id() const { return device_id_; }
+  const std::string& device_auth_id() const { return device_auth_id_; }
   bool device_sync_enabled() const { return device_sync_enabled_; }
   bool device_sync_is_primary() const { return device_sync_is_primary_; }
   bool is_remote_mode() const { return remote_mode_; }
@@ -632,6 +640,8 @@ class ClientCore {
   void RecordKtGossipMismatch(const std::string& reason);
 
   bool LoadOrCreateDeviceId();
+  bool LoadOrCreateDeviceClaimId();
+  bool LoadOrCreateDeviceAuthId();
   bool LoadDeviceSyncKey();
   bool StoreDeviceSyncKey(const std::array<std::uint8_t, 32>& key);
   bool EncryptDeviceSync(const std::vector<std::uint8_t>& plaintext,
@@ -728,6 +738,7 @@ class ClientCore {
   bool remote_mode_{false};
   std::string server_ip_;
   std::uint16_t server_port_{0};
+  std::uint16_t server_port_plain_{0};
   bool use_tls_{false};
   bool require_tls_{true};
   TlsVerifyMode tls_verify_mode_{TlsVerifyMode::kPin};
@@ -739,6 +750,7 @@ class ClientCore {
   mi::server::TransportKind transport_kind_{mi::server::TransportKind::kLocal};
   AuthMode auth_mode_{AuthMode::kLegacy};
   ProxyConfig proxy_;
+  bool qr_login_use_tls_{false};
   std::mutex remote_stream_mutex_;
   std::unique_ptr<RemoteStream> remote_stream_;
   bool remote_ok_{true};
@@ -778,6 +790,8 @@ class ClientCore {
   bool device_sync_enabled_{false};
   bool device_sync_is_primary_{true};
   std::string device_id_;
+  std::string device_claim_id_;
+  std::string device_auth_id_;
   bool device_register_pending_{false};
   std::filesystem::path device_sync_key_path_;
   bool device_sync_key_loaded_{false};

@@ -520,6 +520,8 @@ std::uint32_t FillDeviceView(
   for (const auto& entry : src) {
     mi_device_entry_t v{};
     v.device_id = entry.device_id.empty() ? nullptr : entry.device_id.c_str();
+    v.display_id =
+        entry.display_id.empty() ? nullptr : entry.display_id.c_str();
     v.last_seen_sec = entry.last_seen_sec;
     view.push_back(v);
   }
@@ -541,6 +543,8 @@ std::uint32_t FillDevicePairingView(
   for (const auto& entry : src) {
     mi_device_pairing_request_t v{};
     v.device_id = entry.device_id.empty() ? nullptr : entry.device_id.c_str();
+    v.display_id =
+        entry.display_id.empty() ? nullptr : entry.display_id.c_str();
     v.request_id_hex =
         entry.request_id_hex.empty() ? nullptr : entry.request_id_hex.c_str();
     view.push_back(v);
@@ -766,6 +770,13 @@ const char* mi_client_device_id(mi_client_handle* handle) {
   return handle->core->device_id().c_str();
 }
 
+const char* mi_client_device_display_id(mi_client_handle* handle) {
+  if (!handle || !handle->core) {
+    return "";
+  }
+  return handle->core->device_auth_id().c_str();
+}
+
 int mi_client_remote_ok(mi_client_handle* handle) {
   if (!handle || !handle->core) {
     return 0;
@@ -933,40 +944,40 @@ int mi_client_register_device(mi_client_handle* handle,
 }
 
 int mi_client_root_auth_init(mi_client_handle* handle,
-                             char** out_secret_hex) {
-  if (out_secret_hex) {
-    *out_secret_hex = nullptr;
-  }
-  if (!handle || !handle->core) {
+                             const char* pubkey_hex) {
+  if (!handle || !handle->core || !pubkey_hex) {
     return 0;
   }
   try {
-    std::string secret;
-    if (!handle->core->RootAuthInit(secret)) {
-      return 0;
-    }
-    return CopyStringToC(secret, out_secret_hex) ? 1 : 0;
+    return handle->core->RootAuthInit(pubkey_hex) ? 1 : 0;
   } catch (...) {
     return 0;
   }
 }
 
-int mi_client_begin_qr_login(mi_client_handle* handle, char** out_payload) {
+int mi_client_begin_qr_login_with_username(mi_client_handle* handle,
+                                           const char* username,
+                                           char** out_payload) {
   if (out_payload) {
     *out_payload = nullptr;
   }
   if (!handle || !handle->core) {
     return 0;
   }
+  const std::string user = username ? username : "";
   try {
     std::string payload;
-    if (!handle->core->BeginQrLogin(payload)) {
+    if (!handle->core->BeginQrLoginWithUsername(user, payload)) {
       return 0;
     }
     return CopyStringToC(payload, out_payload) ? 1 : 0;
   } catch (...) {
     return 0;
   }
+}
+
+int mi_client_begin_qr_login(mi_client_handle* handle, char** out_payload) {
+  return mi_client_begin_qr_login_with_username(handle, nullptr, out_payload);
 }
 
 int mi_client_poll_qr_login(mi_client_handle* handle, int* out_completed,
@@ -1001,11 +1012,20 @@ int mi_client_poll_qr_login(mi_client_handle* handle, int* out_completed,
 int mi_client_approve_qr_login(mi_client_handle* handle,
                                const char* qr_id,
                                const char* qr_secret_hex) {
+  return mi_client_approve_qr_login_with_root_code(handle, qr_id,
+                                                   qr_secret_hex, nullptr);
+}
+
+int mi_client_approve_qr_login_with_root_code(mi_client_handle* handle,
+                                              const char* qr_id,
+                                              const char* qr_secret_hex,
+                                              const char* root_code) {
   if (!handle || !handle->core || !qr_id || !qr_secret_hex) {
     return 0;
   }
+  const std::string code = root_code ? root_code : "";
   try {
-    return handle->core->ApproveQrLogin(qr_id, qr_secret_hex) ? 1 : 0;
+    return handle->core->ApproveQrLogin(qr_id, qr_secret_hex, code) ? 1 : 0;
   } catch (...) {
     return 0;
   }

@@ -55,7 +55,7 @@ fun LoginApp() {
 fun LoginScreen(
     onRegister: () -> Unit = {},
     onLogin: (String, String, String) -> Unit = { _, _, _ -> },
-    onShowQr: () -> Unit = {},
+    onShowQr: (String) -> Unit = {},
     onScanQr: () -> Unit = {},
     errorMessage: String? = null,
     statusMessage: String? = null,
@@ -151,7 +151,7 @@ fun LoginScreen(
                             rootCode.value = cleaned.take(160)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("login_root_code", "Root auth code / auth string (optional)")) },
+                        placeholder = { Text(tr("login_root_code", "Root auth string (code:signature) (optional)")) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Filled.Warning,
@@ -172,7 +172,7 @@ fun LoginScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = onShowQr,
+                            onClick = { onShowQr(email.value.trim()) },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp),

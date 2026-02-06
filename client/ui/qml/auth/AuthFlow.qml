@@ -9,6 +9,7 @@ Item {
 
     property string accountInput: ""
     property string passwordInput: ""
+    property string rootCodeInput: ""
     property string registerAccount: ""
     property string registerPassword: ""
     property string registerConfirm: ""
@@ -16,7 +17,9 @@ Item {
     property string errorText: ""
     property string lastLoginAccount: ""
     property string lastLoginPassword: ""
+    property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
+    property bool qrActive: false
 
     signal authSucceeded()
 
@@ -29,16 +32,25 @@ Item {
                 qrSeconds -= 1
             } else {
                 qrTimer.stop()
+                stopQrLogin()
             }
         }
     }
 
+    Timer {
+        id: qrPollTimer
+        interval: 1500
+        repeat: true
+        onTriggered: pollQrLogin()
+    }
+
     function completeAuth() {
+        stopQrLogin()
         authSucceeded()
         Ui.AppStore.currentPage = 1
     }
 
-    function attemptLogin(user, pass, fromTrust) {
+    function attemptLogin(user, pass, rootCode, fromTrust) {
         if (!clientBridge) {
             errorText = Ui.I18n.t("auth.error.login")
             return false
@@ -49,7 +61,7 @@ Item {
                 : Ui.I18n.t("auth.error.login")
             return false
         }
-        if (!clientBridge.login(user, pass)) {
+        if (!clientBridge.loginWithRootCode(user, pass, rootCode)) {
             if (clientBridge.hasPendingServerTrust) {
                 waitingServerTrust = true
                 if (!fromTrust) {
@@ -67,6 +79,60 @@ Item {
         Ui.AppStore.bootstrapAfterLogin()
         completeAuth()
         return true
+    }
+
+    function startQrLogin() {
+        if (!clientBridge) {
+            errorText = Ui.I18n.t("auth.error.login")
+            return false
+        }
+        if (!clientBridge.init("")) {
+            errorText = clientBridge.lastError.length
+                ? clientBridge.lastError
+                : Ui.I18n.t("auth.error.login")
+            return false
+        }
+        var user = accountInput
+        if (!clientBridge.beginQrLogin(user)) {
+            errorText = clientBridge.lastError.length
+                ? clientBridge.lastError
+                : Ui.I18n.t("auth.error.login")
+            stopQrLogin()
+            return false
+        }
+        errorText = ""
+        qrActive = true
+        resetQrTimer()
+        qrPollTimer.restart()
+        return true
+    }
+
+    function pollQrLogin() {
+        if (!qrActive || !clientBridge) {
+            return
+        }
+        if (!clientBridge.pollQrLogin()) {
+            errorText = clientBridge.lastError.length
+                ? clientBridge.lastError
+                : Ui.I18n.t("auth.error.login")
+            stopQrLogin()
+            return
+        }
+        if (clientBridge.loggedIn) {
+            errorText = ""
+            stopQrLogin()
+            Ui.AppStore.bootstrapAfterLogin()
+            completeAuth()
+        }
+    }
+
+    function stopQrLogin() {
+        if (clientBridge) {
+            clientBridge.cancelQrLogin()
+        }
+        qrActive = false
+        qrPollTimer.stop()
+        qrTimer.stop()
     }
 
     function resetQrTimer() {
@@ -211,7 +277,9 @@ Item {
                 onCurrentIndexChanged: {
                     errorText = ""
                     if (currentIndex === 2) {
-                        resetQrTimer()
+                        startQrLogin()
+                    } else {
+                        stopQrLogin()
                     }
                 }
 
@@ -251,6 +319,21 @@ Item {
                             onTextChanged: passwordInput = text
                         }
 
+                        Components.SecureTextField {
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+                            font.pixelSize: 14
+                            color: "#FFFFFF"
+                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
+                                border.color: Ui.Style.borderSubtle
+                            }
+                            onTextChanged: rootCodeInput = text
+                        }
+
                         CheckBox {
                             text: Ui.I18n.t("auth.autoLogin")
                             font.pixelSize: 14
@@ -278,7 +361,8 @@ Item {
                                 errorText = ""
                                 lastLoginAccount = accountInput
                                 lastLoginPassword = passwordInput
-                                attemptLogin(accountInput, passwordInput, false)
+                                lastLoginRootCode = rootCodeInput
+                                attemptLogin(accountInput, passwordInput, rootCodeInput, false)
                             }
                         }
 
@@ -451,50 +535,20 @@ Item {
                             radius: Ui.Style.radiusMedium
                             color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
                             border.color: Ui.Style.borderSubtle
-                            Canvas {
+                            Image {
                                 anchors.fill: parent
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.clearRect(0, 0, width, height)
-                                    ctx.fillStyle = "#0b0b0c"
-                                    var size = width
-                                    var cells = 21
-                                    var cell = Math.floor(size / cells)
-                                    function drawMarker(x, y) {
-                                        for (var iy = 0; iy < 7; ++iy) {
-                                            for (var ix = 0; ix < 7; ++ix) {
-                                                var border = ix === 0 || ix === 6 || iy === 0 || iy === 6
-                                                var inner = ix >= 2 && ix <= 4 && iy >= 2 && iy <= 4
-                                                if (border || inner) {
-                                                    ctx.fillRect((x + ix) * cell, (y + iy) * cell, cell, cell)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    drawMarker(0, 0)
-                                    drawMarker(cells - 7, 0)
-                                    drawMarker(0, cells - 7)
-                                    for (var y = 0; y < cells; ++y) {
-                                        for (var x = 0; x < cells; ++x) {
-                                            var inMarker = (x < 7 && y < 7) ||
-                                                           (x >= cells - 7 && y < 7) ||
-                                                           (x < 7 && y >= cells - 7)
-                                            if (inMarker) {
-                                                continue
-                                            }
-                                            if (((x * 7 + y * 11) % 13) < 5) {
-                                                ctx.fillRect(x * cell, y * cell, cell, cell)
-                                            }
-                                        }
-                                    }
-                                }
+                                fillMode: Image.PreserveAspectFit
+                                source: clientBridge && clientBridge.qrLoginPayload.length > 0
+                                        ? clientBridge.qrLoginImage(qrBox.width)
+                                        : ""
+                                visible: source.length > 0
                             }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    errorText = ""
-                                    completeAuth()
-                                }
+                            Text {
+                                anchors.centerIn: parent
+                                text: Ui.I18n.t("auth.qr.placeholder")
+                                color: Ui.Style.textMuted
+                                font.pixelSize: 12
+                                visible: !(clientBridge && clientBridge.qrLoginPayload.length > 0)
                             }
                         }
 
@@ -514,7 +568,7 @@ Item {
                             Button {
                                 text: Ui.I18n.t("auth.qr.refresh")
                                 flat: true
-                                onClicked: resetQrTimer()
+                                onClicked: startQrLogin()
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.qr.refresh")
                                     color: Ui.Style.link
@@ -572,7 +626,7 @@ Item {
         target: clientBridge
         function onTrustStateChanged() {
             if (waitingServerTrust && clientBridge && !clientBridge.hasPendingServerTrust) {
-                attemptLogin(lastLoginAccount, lastLoginPassword, true)
+                attemptLogin(lastLoginAccount, lastLoginPassword, lastLoginRootCode, true)
             }
         }
         function onErrorChanged() {

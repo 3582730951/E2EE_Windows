@@ -1,5 +1,6 @@
 #include "client_core.h"
 #include "client_core_helpers.h"
+#include "auth_service.h"
 #include "file_blob.h"
 #include "media_service.h"
 #include "transport_service.h"
@@ -472,21 +473,25 @@ bool ReadFixed16(const std::vector<std::uint8_t>& data, std::size_t& offset,
                  std::array<std::uint8_t, 16>& out);
 
 bool EncodePairingRequestPlain(const std::string& device_id,
+                              const std::string& display_id,
                               const std::array<std::uint8_t, 16>& request_id,
                               std::vector<std::uint8_t>& out) {
   out.clear();
   static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'P', 'R'};
-  static constexpr std::uint8_t kVer = 1;
+  static constexpr std::uint8_t kVer = 2;
   out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
   out.push_back(kVer);
   WriteFixed16(request_id, out);
-  return mi::server::proto::WriteString(device_id, out);
+  return mi::server::proto::WriteString(device_id, out) &&
+         mi::server::proto::WriteString(display_id, out);
 }
 
 bool DecodePairingRequestPlain(const std::vector<std::uint8_t>& plain,
                               std::string& out_device_id,
+                              std::string& out_display_id,
                               std::array<std::uint8_t, 16>& out_request_id) {
   out_device_id.clear();
+  out_display_id.clear();
   out_request_id.fill(0);
   static constexpr std::uint8_t kMagic[4] = {'M', 'I', 'P', 'R'};
   if (plain.size() < (sizeof(kMagic) + 1 + out_request_id.size())) {
@@ -497,14 +502,23 @@ bool DecodePairingRequestPlain(const std::vector<std::uint8_t>& plain,
     return false;
   }
   off += sizeof(kMagic);
-  if (plain[off++] != 1) {
+  const std::uint8_t ver = plain[off++];
+  if (ver != 1 && ver != 2) {
     return false;
   }
   if (!ReadFixed16(plain, off, out_request_id)) {
     return false;
   }
-  return mi::server::proto::ReadString(plain, off, out_device_id) &&
-         off == plain.size();
+  if (!mi::server::proto::ReadString(plain, off, out_device_id)) {
+    return false;
+  }
+  if (ver == 1) {
+    return off == plain.size();
+  }
+  if (!mi::server::proto::ReadString(plain, off, out_display_id)) {
+    return false;
+  }
+  return off == plain.size();
 }
 
 bool EncodePairingResponsePlain(const std::array<std::uint8_t, 16>& request_id,
@@ -2447,6 +2461,8 @@ bool ClientCore::Init(const std::string& config_path) {
     server_ip_ = cfg.server_ip;
     use_tls_ = cfg.use_tls;
     require_tls_ = cfg.require_tls;
+    server_port_plain_ = cfg.server_port;
+    qr_login_use_tls_ = cfg.use_tls;
     tls_verify_mode_ = cfg.tls_verify_mode;
     tls_verify_hostname_ = cfg.tls_verify_hostname;
     tls_ca_bundle_path_.clear();
@@ -2626,9 +2642,21 @@ bool ClientCore::Init(const std::string& config_path) {
         device_sync_key_path_ = e2ee_state_dir_ / "device_sync_key.bin";
       }
     LoadKtState();
-    if (!LoadOrCreateDeviceId() || device_id_.empty()) {
+    if (!LoadOrCreateDeviceClaimId() || device_claim_id_.empty()) {
+      if (last_error_.empty()) {
+        last_error_ = "device claim id unavailable";
+      }
+      return false;
+    }
+    if (!LoadOrCreateDeviceId()) {
       if (last_error_.empty()) {
         last_error_ = "device id unavailable";
+      }
+      return false;
+    }
+    if (!LoadOrCreateDeviceAuthId()) {
+      if (last_error_.empty()) {
+        last_error_ = "device display id unavailable";
       }
       return false;
     }
@@ -2651,6 +2679,7 @@ bool ClientCore::Init(const std::string& config_path) {
 
   server_ip_.clear();
   server_port_ = 0;
+  server_port_plain_ = 0;
   use_tls_ = false;
   require_tls_ = true;
   tls_verify_mode_ = TlsVerifyMode::kPin;
@@ -2662,7 +2691,8 @@ bool ClientCore::Init(const std::string& config_path) {
   transport_kind_ = mi::server::TransportKind::kLocal;
   auth_mode_ = AuthMode::kLegacy;
   proxy_ = ProxyConfig{};
-  device_sync_enabled_ = false;
+  qr_login_use_tls_ = false;
+  device_sync_enabled_ = ClientConfig{}.device_sync.enabled;
   device_sync_is_primary_ = true;
   device_sync_key_loaded_ = false;
   device_sync_key_.fill(0);
@@ -2681,6 +2711,8 @@ bool ClientCore::Init(const std::string& config_path) {
   device_sync_prev_key_until_ms_ = 0;
   device_sync_prev_recv_counter_ = 0;
   device_id_.clear();
+  device_claim_id_.clear();
+  device_auth_id_.clear();
   trust_store_path_.clear();
   trust_store_tls_required_ = false;
   require_pinned_fingerprint_ = true;
@@ -2731,9 +2763,21 @@ bool ClientCore::Init(const std::string& config_path) {
   kt_gossip_alerted_ = false;
   device_sync_key_path_ = e2ee_state_dir_ / "device_sync_key.bin";
   LoadKtState();
-  if (!LoadOrCreateDeviceId() || device_id_.empty()) {
+  if (!LoadOrCreateDeviceClaimId() || device_claim_id_.empty()) {
+    if (last_error_.empty()) {
+      last_error_ = "device claim id unavailable";
+    }
+    return false;
+  }
+  if (!LoadOrCreateDeviceId()) {
     if (last_error_.empty()) {
       last_error_ = "device id unavailable";
+    }
+    return false;
+  }
+  if (!LoadOrCreateDeviceAuthId()) {
+    if (last_error_.empty()) {
+      last_error_ = "device display id unavailable";
     }
     return false;
   }
@@ -2986,17 +3030,18 @@ bool ClientCore::RegisterDevice(const std::string& root_code) {
     last_error_ = "not logged in";
     return false;
   }
-  if (device_id_.empty()) {
-    LoadOrCreateDeviceId();
+  if (device_claim_id_.empty()) {
+    LoadOrCreateDeviceClaimId();
   }
-  if (device_id_.empty()) {
-    last_error_ = "device id unavailable";
+  if (device_claim_id_.empty()) {
+    last_error_ = "device claim id unavailable";
     return false;
   }
   std::vector<std::uint8_t> plain;
-  mi::server::proto::WriteString(device_id_, plain);
-  if (!root_code.empty()) {
-    mi::server::proto::WriteString(root_code, plain);
+  if (!mi::server::proto::WriteString(device_claim_id_, plain) ||
+      !mi::server::proto::WriteString(root_code, plain)) {
+    last_error_ = "device register request invalid";
+    return false;
   }
   std::vector<std::uint8_t> resp_payload;
   if (!ProcessEncrypted(mi::server::FrameType::kDeviceRegister, plain,
@@ -3010,31 +3055,63 @@ bool ClientCore::RegisterDevice(const std::string& root_code) {
     last_error_ = "device register response empty";
     return false;
   }
+  std::size_t off = 1;
   if (resp_payload[0] == 0) {
     std::string server_err;
-    std::size_t off = 1;
     mi::server::proto::ReadString(resp_payload, off, server_err);
+    if (off < resp_payload.size()) {
+      std::string display;
+      if (mi::server::proto::ReadString(resp_payload, off, display) &&
+          !display.empty()) {
+        device_auth_id_ = display;
+        AuthService().SaveDeviceAuthId(*this);
+      }
+    }
+    if (off < resp_payload.size()) {
+      std::string server_id;
+      if (mi::server::proto::ReadString(resp_payload, off, server_id) &&
+          !server_id.empty()) {
+        device_id_ = server_id;
+        AuthService().SaveDeviceId(*this);
+      }
+    }
     last_error_ =
         server_err.empty() ? "device register failed" : server_err;
     return false;
   }
-  if (resp_payload.size() != 1) {
+  std::string server_id;
+  std::string display;
+  if (!mi::server::proto::ReadString(resp_payload, off, server_id) ||
+      !mi::server::proto::ReadString(resp_payload, off, display) ||
+      off != resp_payload.size() || server_id.empty() || display.empty()) {
     last_error_ = "device register response invalid";
     return false;
   }
+  device_id_ = server_id;
+  device_auth_id_ = display;
+  AuthService().SaveDeviceId(*this);
+  AuthService().SaveDeviceAuthId(*this);
   device_register_pending_ = false;
   return true;
 }
 
-bool ClientCore::RootAuthInit(std::string& out_secret_hex) {
-  out_secret_hex.clear();
+bool ClientCore::RootAuthInit(const std::string& pubkey_hex) {
   last_error_.clear();
   if (!EnsureChannel()) {
     last_error_ = "not logged in";
     return false;
   }
+  if (pubkey_hex.empty()) {
+    last_error_ = "root auth pubkey empty";
+    return false;
+  }
+  std::vector<std::uint8_t> plain;
+  if (!mi::server::proto::WriteString(pubkey_hex, plain)) {
+    last_error_ = "root auth init request invalid";
+    return false;
+  }
   std::vector<std::uint8_t> resp_payload;
-  if (!ProcessEncrypted(mi::server::FrameType::kRootAuthInit, {},
+  if (!ProcessEncrypted(mi::server::FrameType::kRootAuthInit, plain,
                         resp_payload)) {
     if (last_error_.empty()) {
       last_error_ = "root auth init failed";
@@ -3053,11 +3130,8 @@ bool ClientCore::RootAuthInit(std::string& out_secret_hex) {
         server_err.empty() ? "root auth init failed" : server_err;
     return false;
   }
-  std::size_t off = 1;
-  if (!mi::server::proto::ReadString(resp_payload, off, out_secret_hex) ||
-      off != resp_payload.size()) {
+  if (resp_payload.size() != 1) {
     last_error_ = "root auth init response invalid";
-    out_secret_hex.clear();
     return false;
   }
   return true;
@@ -3135,8 +3209,10 @@ std::vector<ClientCore::DeviceEntry> ClientCore::ListDevices() {
   out.reserve(count);
   for (std::uint32_t i = 0; i < count; ++i) {
     std::string dev;
+    std::string display;
     std::uint32_t age = 0;
     if (!mi::server::proto::ReadString(resp_payload, off, dev) ||
+        !mi::server::proto::ReadString(resp_payload, off, display) ||
         !mi::server::proto::ReadUint32(resp_payload, off, age)) {
       last_error_ = "device list response invalid";
       out.clear();
@@ -3144,6 +3220,7 @@ std::vector<ClientCore::DeviceEntry> ClientCore::ListDevices() {
     }
     DeviceEntry e;
     e.device_id = std::move(dev);
+    e.display_id = std::move(display);
     e.last_seen_sec = age;
     out.push_back(std::move(e));
   }

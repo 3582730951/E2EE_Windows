@@ -29,6 +29,22 @@ if(NOT TARGET monocypher)
   target_include_directories(monocypher PUBLIC ../third_party/monocypher)
 endif()
 
+if(NOT TARGET ed25519)
+  add_library(ed25519 STATIC
+      ../third_party/ed25519/src/add_scalar.c
+      ../third_party/ed25519/src/fe.c
+      ../third_party/ed25519/src/ge.c
+      ../third_party/ed25519/src/key_exchange.c
+      ../third_party/ed25519/src/keypair.c
+      ../third_party/ed25519/src/sc.c
+      ../third_party/ed25519/src/seed.c
+      ../third_party/ed25519/src/sha512.c
+      ../third_party/ed25519/src/sign.c
+      ../third_party/ed25519/src/verify.c
+  )
+  target_include_directories(ed25519 PUBLIC ../third_party/ed25519/src)
+endif()
+
 if(NOT TARGET kcp)
   add_library(kcp STATIC
       ../third_party/kcp/ikcp.c
@@ -332,7 +348,7 @@ add_library(mi_e2ee_core STATIC
 )
 
 target_include_directories(mi_e2ee_core PUBLIC include ../shard ../common ../platform/include)
-target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags mi_platform_random shard_secure mi_crypto monocypher pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
+target_link_libraries(mi_e2ee_core PUBLIC mi_e2ee_build_flags mi_platform_random shard_secure mi_crypto monocypher ed25519 pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
 if(TARGET mi_opaque_pake_rust)
   target_link_libraries(mi_e2ee_core PUBLIC mi_opaque_pake_rust)
 endif()

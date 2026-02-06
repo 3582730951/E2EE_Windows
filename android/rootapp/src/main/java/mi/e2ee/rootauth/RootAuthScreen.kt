@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +53,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -62,15 +66,19 @@ fun RootAuthScreen() {
     val store = remember { RootAuthStore(context) }
     val clipboard = LocalClipboardManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
-    var secretInput by remember { mutableStateOf(store.loadSecret().orEmpty()) }
-    var savedSecret by remember { mutableStateOf(store.loadSecret().orEmpty()) }
+    var publicKey by remember { mutableStateOf(store.publicKeyHex()) }
     var code by remember { mutableStateOf("------") }
     var remaining by remember { mutableStateOf(0) }
+    var manualDeviceId by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     var statusError by remember { mutableStateOf(false) }
     var scanInfo by remember { mutableStateOf<ScanInfo?>(null) }
     var scanError by remember { mutableStateOf<String?>(null) }
+    var approveStatus by remember { mutableStateOf("") }
+    var approveError by remember { mutableStateOf("") }
+    var approveBusy by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -88,13 +96,19 @@ fun RootAuthScreen() {
         }
     }
 
-    LaunchedEffect(savedSecret) {
+    LaunchedEffect(Unit) {
         while (true) {
-            val result = store.currentCode(savedSecret)
+            val result = store.currentCode()
             code = result.code
             remaining = result.remaining
             delay(1000)
         }
+    }
+
+    val manualAuthString = if (manualDeviceId.isBlank()) {
+        ""
+    } else {
+        store.currentAuthString(manualDeviceId.trim(), "device_register") ?: ""
     }
 
     Column(
@@ -130,39 +144,70 @@ fun RootAuthScreen() {
         }
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
-            value = secretInput,
-            onValueChange = { secretInput = it },
-            label = { Text(stringResource(id = R.string.secret_hint)) },
-            modifier = Modifier.fillMaxWidth()
+            value = publicKey,
+            onValueChange = {},
+            label = { Text(stringResource(id = R.string.pubkey_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            readOnly = true
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = {
-                if (store.saveSecret(secretInput)) {
-                    savedSecret = secretInput.trim().lowercase(Locale.US)
-                    status = context.getString(R.string.secret_saved)
-                    statusError = false
-                } else {
-                    status = context.getString(R.string.secret_invalid)
-                    statusError = true
-                }
-            }) {
-                Text(stringResource(id = R.string.save))
-            }
-            OutlinedButton(onClick = {
-                store.clearSecret()
-                secretInput = ""
-                savedSecret = ""
-                status = context.getString(R.string.secret_cleared)
-                statusError = false
-            }) {
-                Text(stringResource(id = R.string.clear))
-            }
-            OutlinedButton(onClick = {
                 if (code != "------") {
                     clipboard.setText(AnnotatedString(code))
                 }
             }) {
                 Text(stringResource(id = R.string.copy_code))
+            }
+            OutlinedButton(onClick = {
+                if (publicKey.isNotBlank()) {
+                    clipboard.setText(AnnotatedString(publicKey))
+                }
+            }) {
+                Text(stringResource(id = R.string.copy_pubkey))
+            }
+            OutlinedButton(onClick = {
+                publicKey = store.regenerateKeyPair()
+                status = context.getString(R.string.key_regenerated)
+                statusError = false
+            }) {
+                Text(stringResource(id = R.string.regen_key))
+            }
+        }
+
+        Divider(modifier = Modifier.padding(top = 8.dp))
+        Text(
+            text = stringResource(id = R.string.manual_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(id = R.string.manual_hint),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        OutlinedTextField(
+            value = manualDeviceId,
+            onValueChange = { manualDeviceId = it },
+            label = { Text(stringResource(id = R.string.manual_device_label)) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (manualAuthString.isNotBlank()) {
+            Text(
+                text = manualAuthString,
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            Text(
+                text = stringResource(id = R.string.manual_auth_placeholder),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                if (manualAuthString.isNotBlank()) {
+                    clipboard.setText(AnnotatedString(manualAuthString))
+                }
+            }) {
+                Text(stringResource(id = R.string.copy_auth_string))
             }
         }
 
@@ -178,6 +223,8 @@ fun RootAuthScreen() {
         Button(onClick = {
             scanError = null
             scanInfo = null
+            approveStatus = ""
+            approveError = ""
             if (hasCameraPermission) {
                 showScanner = true
             } else {
@@ -188,16 +235,18 @@ fun RootAuthScreen() {
         }
 
         scanInfo?.let { info ->
-            val proof = if (savedSecret.isNotBlank() && !info.deviceId.isNullOrBlank()) {
-                store.currentProof(savedSecret, info.deviceId!!)
+            val codeValue = if (code == "------") "" else code
+            val context = buildQrContext(info.qrId, info.secretHex)
+            val authString = if (!info.deviceId.isNullOrBlank()) {
+                store.currentAuthString(info.deviceId!!, context)
             } else {
                 null
             }
-            val authString = if (!proof.isNullOrBlank() && code != "------") {
-                "$code:$proof"
-            } else {
-                null
-            }
+            val canApprove = !authString.isNullOrBlank() &&
+                !info.username.isNullOrBlank() &&
+                !info.host.isNullOrBlank() &&
+                info.port != null &&
+                !info.deviceId.isNullOrBlank()
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -210,6 +259,34 @@ fun RootAuthScreen() {
                 ) {
                     Text(text = info.title, style = MaterialTheme.typography.titleSmall)
                     info.detail?.let { Text(text = it, style = MaterialTheme.typography.bodySmall) }
+                    info.username?.let {
+                        Text(text = stringResource(id = R.string.scan_user, it),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (!info.host.isNullOrBlank() && info.port != null) {
+                        Text(
+                            text = stringResource(id = R.string.scan_host, info.host!!, info.port!!),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = stringResource(
+                                id = if (info.useTls) R.string.scan_tls_on else R.string.scan_tls_off
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        info.fingerprint?.let {
+                            Text(
+                                text = stringResource(id = R.string.scan_fingerprint, it),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = stringResource(id = R.string.scan_missing_info),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
                             if (code != "------") {
@@ -225,6 +302,63 @@ fun RootAuthScreen() {
                                 Text(stringResource(id = R.string.copy_auth_string))
                             }
                         }
+                    }
+                    if (codeValue.isBlank()) {
+                        Text(
+                            text = stringResource(id = R.string.scan_missing_key),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            approveBusy = true
+                            approveStatus = context.getString(R.string.scan_approve_progress)
+                            approveError = ""
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    QrLoginApproveClient.approve(
+                                        username = info.username!!,
+                                        qrId = info.qrId,
+                                        secretHex = info.secretHex,
+                                        deviceId = info.deviceId!!,
+                                        rootCode = authString!!,
+                                        host = info.host!!,
+                                        port = info.port!!,
+                                        useTls = info.useTls,
+                                        fingerprint = info.fingerprint
+                                    )
+                                }
+                                approveBusy = false
+                                if (result.success) {
+                                    approveStatus = context.getString(R.string.scan_approve_ok)
+                                    approveError = ""
+                                } else {
+                                    approveStatus = ""
+                                    val err = result.error ?: context.getString(
+                                        R.string.scan_approve_unknown
+                                    )
+                                    approveError = context.getString(R.string.scan_approve_failed, err)
+                                }
+                            }
+                        },
+                        enabled = canApprove && !approveBusy
+                    ) {
+                        Text(stringResource(id = R.string.scan_approve))
+                    }
+                    if (approveStatus.isNotBlank()) {
+                        Text(
+                            text = approveStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (approveError.isNotBlank()) {
+                        Text(
+                            text = approveError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -247,17 +381,6 @@ fun RootAuthScreen() {
                     QrScannerView(lifecycleOwner) { raw ->
                         val parsed = parseScanPayload(raw)
                         when (parsed) {
-                            is ScanPayload.RootSecret -> {
-                                if (store.saveSecret(parsed.secret)) {
-                                    savedSecret = parsed.secret
-                                    secretInput = parsed.secret
-                                    status = context.getString(R.string.secret_saved)
-                                    statusError = false
-                                } else {
-                                    status = context.getString(R.string.secret_invalid)
-                                    statusError = true
-                                }
-                            }
                             is ScanPayload.QrLogin -> {
                                 val detail = parsed.deviceId?.let { id ->
                                     context.getString(R.string.scan_device, id)
@@ -265,11 +388,22 @@ fun RootAuthScreen() {
                                 scanInfo = ScanInfo(
                                     context.getString(R.string.scan_login_title),
                                     detail,
-                                    parsed.deviceId
+                                    parsed.qrId,
+                                    parsed.secretHex,
+                                    parsed.deviceId,
+                                    parsed.username,
+                                    parsed.host,
+                                    parsed.port,
+                                    parsed.useTls,
+                                    parsed.fingerprint
                                 )
+                                approveStatus = ""
+                                approveError = ""
                             }
                             null -> {
                                 scanError = context.getString(R.string.scan_invalid)
+                                approveStatus = ""
+                                approveError = ""
                             }
                         }
                         showScanner = false
@@ -286,12 +420,27 @@ fun RootAuthScreen() {
 private data class ScanInfo(
     val title: String,
     val detail: String?,
-    val deviceId: String?
+    val qrId: String,
+    val secretHex: String,
+    val deviceId: String?,
+    val username: String?,
+    val host: String?,
+    val port: Int?,
+    val useTls: Boolean,
+    val fingerprint: String?
 )
 
 private sealed class ScanPayload {
-    data class RootSecret(val secret: String) : ScanPayload()
-    data class QrLogin(val qrId: String, val deviceId: String?) : ScanPayload()
+    data class QrLogin(
+        val qrId: String,
+        val secretHex: String,
+        val deviceId: String?,
+        val username: String?,
+        val host: String?,
+        val port: Int?,
+        val useTls: Boolean,
+        val fingerprint: String?
+    ) : ScanPayload()
 }
 
 private fun parseScanPayload(raw: String): ScanPayload? {
@@ -300,19 +449,27 @@ private fun parseScanPayload(raw: String): ScanPayload? {
         if (uri.scheme != "mi_e2ee") {
             return null
         }
-        if (uri.host == "root-auth") {
-            val secret = uri.getQueryParameter("secret") ?: return null
-            return ScanPayload.RootSecret(secret)
-        }
         if (uri.host == "qr-login") {
             val id = uri.getQueryParameter("id") ?: return null
+            val secret = uri.getQueryParameter("s") ?: return null
             val deviceId = uri.getQueryParameter("d")
-            return ScanPayload.QrLogin(id, deviceId)
+            val username = uri.getQueryParameter("u")
+            val host = uri.getQueryParameter("h")
+            val port = uri.getQueryParameter("p")?.toIntOrNull()
+            val tlsParam = uri.getQueryParameter("tls")?.toIntOrNull()
+            val useTls = tlsParam?.let { it != 0 } ?: true
+            val fingerprint = uri.getQueryParameter("fp")
+            return ScanPayload.QrLogin(id, secret, deviceId, username, host, port, useTls, fingerprint)
         }
         null
     } catch (_: Exception) {
         null
     }
+}
+
+private fun buildQrContext(qrId: String, secretHex: String): String {
+    val clean = secretHex.trim().lowercase(Locale.US)
+    return "qr:$qrId:$clean"
 }
 
 @Composable

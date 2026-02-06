@@ -68,6 +68,20 @@
     },
     {
       "type": "library",
+      "name": "ed25519",
+      "version": "snapshot",
+      "licenses": [
+        { "license": { "id": "Zlib" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-256", "content": "90d96f19034fde7c77c130102e6b42985fb7ba5d51d1a78c812abb0db3994264" }
+      ],
+      "properties": [
+        { "name": "path", "value": "third_party/ed25519" }
+      ]
+    },
+    {
+      "type": "library",
       "name": "pqclean_mlkem768_clean",
       "version": "snapshot",
       "licenses": [

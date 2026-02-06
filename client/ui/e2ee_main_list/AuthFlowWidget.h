@@ -27,6 +27,7 @@ public:
     void setErrorMessage(const QString &message);
     void setQrPayload(const QString &payload);
     QString rootCode() const;
+    QString account() const;
 
 signals:
     void loginRequested(const QString &account, const QString &password, bool autoLogin);

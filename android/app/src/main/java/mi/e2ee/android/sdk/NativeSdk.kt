@@ -20,6 +20,7 @@ object NativeSdk {
     external fun lastError(handle: Long): String
     external fun token(handle: Long): String
     external fun deviceId(handle: Long): String
+    external fun deviceDisplayId(handle: Long): String
     external fun remoteOk(handle: Long): Boolean
     external fun remoteError(handle: Long): String
     external fun isRemoteMode(handle: Long): Boolean
@@ -45,10 +46,17 @@ object NativeSdk {
         rootCode: String
     ): Boolean
     external fun registerDevice(handle: Long, rootCode: String): Boolean
-    external fun rootAuthInit(handle: Long): String?
+    external fun rootAuthInit(handle: Long, pubkeyHex: String): Boolean
+    external fun beginQrLoginWithUsername(handle: Long, username: String?): String?
     external fun beginQrLogin(handle: Long): String?
     external fun pollQrLogin(handle: Long): Int
     external fun approveQrLogin(handle: Long, qrId: String, qrSecretHex: String): Boolean
+    external fun approveQrLoginWithRootCode(
+        handle: Long,
+        qrId: String,
+        qrSecretHex: String,
+        rootCode: String?
+    ): Boolean
     external fun cancelQrLogin(handle: Long)
     external fun logout(handle: Long): Boolean
     external fun heartbeat(handle: Long): Boolean

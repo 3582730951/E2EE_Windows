@@ -3,20 +3,20 @@ import CryptoKit
 import Security
 
 final class RootAuthStore: ObservableObject {
-    @Published var secretHex: String = ""
+    @Published var publicKeyHex: String = ""
     @Published var currentCode: String = "------"
     @Published var secondsRemaining: Int = 0
 
     private let keychainService = "mi.e2ee.rootauth"
-    private let keychainAccountPlain = "root_auth_secret"
-    private let keychainAccountCipher = "root_auth_secret_cipher"
+    private let keychainAccountPlain = "root_auth_sk_plain"
+    private let keychainAccountCipher = "root_auth_sk_cipher"
     private let keychainKeyTag = "mi.e2ee.rootauth.key"
     private var timer: Timer?
+    private var signingKey: Curve25519.Signing.PrivateKey?
 
     init() {
-        if let stored = loadSecret() {
-            secretHex = stored
-        }
+        signingKey = loadOrCreateSigningKey()
+        refreshPublicKey()
         startTimer()
     }
 
@@ -33,128 +33,146 @@ final class RootAuthStore: ObservableObject {
         RunLoop.main.add(timer!, forMode: .common)
     }
 
-    func setSecret(hex: String) -> Bool {
-        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard cleaned.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
-            return false
-        }
-        secretHex = cleaned
-        saveSecret(cleaned)
+    func regenerateKey() {
+        signingKey = Curve25519.Signing.PrivateKey()
+        saveSigningKey(signingKey)
+        refreshPublicKey()
         updateCode()
-        return true
-    }
-
-    func clearSecret() {
-        secretHex = ""
-        currentCode = "------"
-        secondsRemaining = 0
-        deleteSecret()
     }
 
     func updateCode() {
         let now = Date()
         let step: TimeInterval = 5
-        let counter = Int(now.timeIntervalSince1970 / step)
+        let counter = UInt64(now.timeIntervalSince1970 / step)
         let remaining = Int(step - (now.timeIntervalSince1970.truncatingRemainder(dividingBy: step)))
         secondsRemaining = remaining
 
-        guard let secretData = hexToData(secretHex), secretData.count == 32 else {
+        guard let pub = signingKey?.publicKey.rawRepresentation else {
             currentCode = "------"
             return
         }
-        currentCode = totp(secret: secretData, counter: counter, digits: 6)
+        currentCode = deriveCode(pubkey: pub, counter: counter, digits: 6)
     }
 
-    func authProof(deviceId: String, stepSec: TimeInterval = 5) -> String? {
-        guard !deviceId.isEmpty,
-              let secretData = hexToData(secretHex),
-              secretData.count == 32 else {
+    func authProof(deviceId: String, context: String, stepSec: TimeInterval = 5) -> String? {
+        guard !deviceId.isEmpty, let key = signingKey else {
             return nil
         }
         let counter = UInt64(Date().timeIntervalSince1970 / stepSec)
+        return signProof(key: key, deviceId: deviceId, context: context, counter: counter)
+    }
+
+    func authString(deviceId: String, context: String, stepSec: TimeInterval = 5) -> String? {
+        guard !deviceId.isEmpty, let key = signingKey else {
+            return nil
+        }
+        let counter = UInt64(Date().timeIntervalSince1970 / stepSec)
+        let pub = key.publicKey.rawRepresentation
+        let code = deriveCode(pubkey: pub, counter: counter, digits: 6)
+        guard let proof = signProof(key: key, deviceId: deviceId, context: context,
+                                    counter: counter) else {
+            return nil
+        }
+        return "\(code):\(proof)"
+    }
+
+    private func refreshPublicKey() {
+        if let pub = signingKey?.publicKey.rawRepresentation {
+            publicKeyHex = hexString(pub)
+        } else {
+            publicKeyHex = ""
+        }
+    }
+
+    private func deriveCode(pubkey: Data, counter: UInt64, digits: Int) -> String {
         var msg = Data()
-        if let label = "mi_e2ee_root_proof_v1".data(using: .utf8) {
-            msg.append(label)
-        }
+        msg.append(Data("mi_e2ee_root_code_v1".utf8))
         msg.append(0)
-        if let dev = deviceId.data(using: .utf8) {
-            msg.append(dev)
-        }
+        msg.append(pubkey)
         msg.append(0)
         var ctr = counter.bigEndian
         withUnsafeBytes(of: &ctr) { msg.append(contentsOf: $0) }
-
-        let key = SymmetricKey(data: secretData)
-        let hmac = HMAC<SHA256>.authenticationCode(for: msg, using: key)
-        return hexString(Data(hmac))
+        let digest = SHA256.hash(data: msg)
+        let bytes = Array(digest)
+        let bin = (UInt32(bytes[0]) << 24) |
+            (UInt32(bytes[1]) << 16) |
+            (UInt32(bytes[2]) << 8) |
+            UInt32(bytes[3])
+        let mod: UInt32 = digits == 8 ? 100_000_000 : 1_000_000
+        let code = bin % mod
+        return String(format: "%0*d", digits, code)
     }
 
-    private func totp(secret: Data, counter: Int, digits: Int) -> String {
-        var msg = [UInt8](repeating: 0, count: 8)
-        var value = UInt64(counter)
-        for i in stride(from: 7, through: 0, by: -1) {
-            msg[i] = UInt8(value & 0xff)
-            value >>= 8
+    private func buildProofMessage(deviceId: String, context: String, counter: UInt64) -> Data {
+        var msg = Data()
+        msg.append(Data("mi_e2ee_root_proof_v2".utf8))
+        msg.append(0)
+        msg.append(Data(deviceId.utf8))
+        msg.append(0)
+        msg.append(Data(context.utf8))
+        msg.append(0)
+        var ctr = counter.bigEndian
+        withUnsafeBytes(of: &ctr) { msg.append(contentsOf: $0) }
+        return msg
+    }
+
+    private func signProof(key: Curve25519.Signing.PrivateKey,
+                           deviceId: String,
+                           context: String,
+                           counter: UInt64) -> String? {
+        let msg = buildProofMessage(deviceId: deviceId, context: context, counter: counter)
+        guard let signature = try? key.signature(for: msg) else {
+            return nil
         }
-        let key = SymmetricKey(data: secret)
-        let hmac = HMAC<SHA256>.authenticationCode(for: msg, using: key)
-        let digest = Array(hmac)
-        let offset = Int(digest.last! & 0x0f)
-        let binary = ((Int(digest[offset]) & 0x7f) << 24) |
-            ((Int(digest[offset + 1]) & 0xff) << 16) |
-            ((Int(digest[offset + 2]) & 0xff) << 8) |
-            (Int(digest[offset + 3]) & 0xff)
-        let mod = digits == 8 ? 100_000_000 : 1_000_000
-        let code = binary % mod
-        return String(format: "%0*d", digits, code)
+        return hexString(signature)
     }
 
     private func hexString(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func hexToData(_ hex: String) -> Data? {
-        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard cleaned.count % 2 == 0 else { return nil }
-        var data = Data(capacity: cleaned.count / 2)
-        var index = cleaned.startIndex
-        while index < cleaned.endIndex {
-            let next = cleaned.index(index, offsetBy: 2)
-            let byteString = cleaned[index..<next]
-            guard let byte = UInt8(byteString, radix: 16) else { return nil }
-            data.append(byte)
-            index = next
+    private func saveSigningKey(_ key: Curve25519.Signing.PrivateKey?) {
+        guard let key = key else {
+            deleteKey()
+            return
         }
-        return data
-    }
-
-    private func saveSecret(_ secret: String) {
-        deleteSecret()
-        if let cipher = encryptSecret(secret) {
+        let raw = key.rawRepresentation
+        deleteKey()
+        if let cipher = encryptData(raw) {
             storeData(cipher, account: keychainAccountCipher)
             return
         }
-        storeData(Data(secret.utf8), account: keychainAccountPlain)
+        storeData(raw, account: keychainAccountPlain)
     }
 
-    private func loadSecret() -> String? {
+    private func loadOrCreateSigningKey() -> Curve25519.Signing.PrivateKey? {
+        if let key = loadSigningKey() {
+            return key
+        }
+        let key = Curve25519.Signing.PrivateKey()
+        saveSigningKey(key)
+        return key
+    }
+
+    private func loadSigningKey() -> Curve25519.Signing.PrivateKey? {
         if let cipher = loadData(account: keychainAccountCipher) {
-            if let decoded = decryptSecret(cipher) {
-                return decoded
+            if let decoded = decryptData(cipher) {
+                return try? Curve25519.Signing.PrivateKey(rawRepresentation: decoded)
             }
         }
-        if let plain = loadData(account: keychainAccountPlain),
-           let text = String(data: plain, encoding: .utf8) {
-            if let cipher = encryptSecret(text) {
-                storeData(cipher, account: keychainAccountCipher)
-                deleteData(account: keychainAccountPlain)
+        if let plain = loadData(account: keychainAccountPlain) {
+            if let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: plain) {
+                if let cipher = encryptData(plain) {
+                    storeData(cipher, account: keychainAccountCipher)
+                    deleteData(account: keychainAccountPlain)
+                }
+                return key
             }
-            return text
         }
         return nil
     }
 
-    private func deleteSecret() {
+    private func deleteKey() {
         deleteData(account: keychainAccountPlain)
         deleteData(account: keychainAccountCipher)
     }
@@ -199,7 +217,7 @@ final class RootAuthStore: ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
 
-    private func loadOrCreateKey() -> SecKey? {
+    private func loadOrCreateWrapKey() -> SecKey? {
         guard let tag = keychainKeyTag.data(using: .utf8) else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassKey,
@@ -247,24 +265,23 @@ final class RootAuthStore: ObservableObject {
         return SecKeyCreateRandomKey(attributes as CFDictionary, &error)
     }
 
-    private func encryptSecret(_ secret: String) -> Data? {
-        guard let key = loadOrCreateKey(),
+    private func encryptData(_ data: Data) -> Data? {
+        guard let key = loadOrCreateWrapKey(),
               let publicKey = SecKeyCopyPublicKey(key) else { return nil }
         let algorithm = SecKeyAlgorithm.eciesEncryptionCofactorX963SHA256AESGCM
         guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
             return nil
         }
-        let plain = Data(secret.utf8)
         var error: Unmanaged<CFError>?
         guard let cipher = SecKeyCreateEncryptedData(publicKey, algorithm,
-                                                     plain as CFData, &error) else {
+                                                     data as CFData, &error) else {
             return nil
         }
         return cipher as Data
     }
 
-    private func decryptSecret(_ data: Data) -> String? {
-        guard let key = loadOrCreateKey() else { return nil }
+    private func decryptData(_ data: Data) -> Data? {
+        guard let key = loadOrCreateWrapKey() else { return nil }
         let algorithm = SecKeyAlgorithm.eciesEncryptionCofactorX963SHA256AESGCM
         guard SecKeyIsAlgorithmSupported(key, .decrypt, algorithm) else {
             return nil
@@ -274,6 +291,6 @@ final class RootAuthStore: ObservableObject {
                                                     data as CFData, &error) else {
             return nil
         }
-        return String(data: plain as Data, encoding: .utf8)
+        return plain as Data
     }
 }

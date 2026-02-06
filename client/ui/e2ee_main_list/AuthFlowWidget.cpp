@@ -106,6 +106,13 @@ QString AuthFlowWidget::rootCode() const {
     return rootCodeEdit_->text().trimmed();
 }
 
+QString AuthFlowWidget::account() const {
+    if (!accountBox_) {
+        return {};
+    }
+    return accountBox_->currentText().trimmed();
+}
+
 void AuthFlowWidget::setQrPayload(const QString &payload) {
     qrPayload_ = payload;
     if (!qrImage_) {
@@ -223,8 +230,8 @@ void AuthFlowWidget::buildUi() {
 
     rootCodeEdit_ = new QLineEdit(accountPage);
     rootCodeEdit_->setPlaceholderText(QStringLiteral("Root auth code / auth string"));
-    rootCodeEdit_->setMaxLength(8);
-    rootCodeEdit_->setInputMethodHints(Qt::ImhDigitsOnly);
+    rootCodeEdit_->setMaxLength(160);
+    rootCodeEdit_->setInputMethodHints(Qt::ImhNoPredictiveText | Qt::ImhSensitiveData);
     rootCodeEdit_->setEchoMode(QLineEdit::Password);
     accountLayout->addWidget(rootCodeEdit_);
 

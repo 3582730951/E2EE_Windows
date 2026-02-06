@@ -156,7 +156,7 @@ static bool InitCache(JNIEnv* env) {
   g_cache.clsDeviceEntry = reinterpret_cast<jclass>(env->NewGlobalRef(local));
   env->DeleteLocalRef(local);
   g_cache.ctorDeviceEntry = env->GetMethodID(
-      g_cache.clsDeviceEntry, "<init>", "(Ljava/lang/String;I)V");
+      g_cache.clsDeviceEntry, "<init>", "(Ljava/lang/String;Ljava/lang/String;I)V");
   if (!g_cache.ctorDeviceEntry) return false;
 
   local = env->FindClass("mi/e2ee/android/sdk/GroupMemberEntry");
@@ -183,7 +183,7 @@ static bool InitCache(JNIEnv* env) {
       reinterpret_cast<jclass>(env->NewGlobalRef(local));
   env->DeleteLocalRef(local);
   g_cache.ctorDevicePairingRequest = env->GetMethodID(
-      g_cache.clsDevicePairingRequest, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V");
+      g_cache.clsDevicePairingRequest, "<init>", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
   if (!g_cache.ctorDevicePairingRequest) return false;
 
   local = env->FindClass("mi/e2ee/android/sdk/MediaPacket");
@@ -302,12 +302,15 @@ static jobject NewFriendRequestEntry(JNIEnv* env,
 
 static jobject NewDeviceEntry(JNIEnv* env, const mi_device_entry_t& entry) {
   jstring device_id = NewJString(env, entry.device_id);
+  jstring display_id = NewJString(env, entry.display_id);
   jobject obj = env->NewObject(
       g_cache.clsDeviceEntry,
       g_cache.ctorDeviceEntry,
       device_id,
+      display_id,
       static_cast<jint>(entry.last_seen_sec));
   env->DeleteLocalRef(device_id);
+  env->DeleteLocalRef(display_id);
   return obj;
 }
 
@@ -335,13 +338,16 @@ static jobject NewGroupCallMember(JNIEnv* env, const mi_group_call_member_t& ent
 static jobject NewDevicePairingRequest(JNIEnv* env,
                                        const mi_device_pairing_request_t& entry) {
   jstring device_id = NewJString(env, entry.device_id);
+  jstring display_id = NewJString(env, entry.display_id);
   jstring request_id = NewJString(env, entry.request_id_hex);
   jobject obj = env->NewObject(
       g_cache.clsDevicePairingRequest,
       g_cache.ctorDevicePairingRequest,
       device_id,
+      display_id,
       request_id);
   env->DeleteLocalRef(device_id);
+  env->DeleteLocalRef(display_id);
   env->DeleteLocalRef(request_id);
   return obj;
 }
@@ -558,6 +564,13 @@ Java_mi_e2ee_android_sdk_NativeSdk_deviceId(JNIEnv* env, jobject, jlong handle) 
   return NewJString(env, ptr ? mi_client_device_id(ptr) : "");
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_deviceDisplayId(JNIEnv* env, jobject,
+                                                   jlong handle) {
+  mi_client_handle* ptr = FromHandle(handle);
+  return NewJString(env, ptr ? mi_client_device_display_id(ptr) : "");
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_mi_e2ee_android_sdk_NativeSdk_remoteOk(JNIEnv*, jobject, jlong handle) {
   mi_client_handle* ptr = FromHandle(handle);
@@ -704,33 +717,29 @@ Java_mi_e2ee_android_sdk_NativeSdk_registerDevice(JNIEnv* env,
       mi_client_register_device(ptr, root_str.c_str()));
 }
 
-extern "C" JNIEXPORT jstring JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_mi_e2ee_android_sdk_NativeSdk_rootAuthInit(JNIEnv* env,
                                                 jobject,
-                                                jlong handle) {
+                                                jlong handle,
+                                                jstring pubkey_hex) {
   mi_client_handle* ptr = FromHandle(handle);
-  if (!ptr) return nullptr;
-  char* out_secret = nullptr;
-  int ok = mi_client_root_auth_init(ptr, &out_secret);
-  if (!ok || !out_secret) {
-    if (out_secret) {
-      mi_client_free(out_secret);
-    }
-    return nullptr;
-  }
-  jstring result = NewJString(env, out_secret);
-  mi_client_free(out_secret);
-  return result;
+  if (!ptr) return JNI_FALSE;
+  std::string pubkey_str = JStringToString(env, pubkey_hex);
+  int ok = mi_client_root_auth_init(ptr, pubkey_str.c_str());
+  return static_cast<jboolean>(ok != 0);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_mi_e2ee_android_sdk_NativeSdk_beginQrLogin(JNIEnv* env,
-                                                jobject,
-                                                jlong handle) {
+Java_mi_e2ee_android_sdk_NativeSdk_beginQrLoginWithUsername(JNIEnv* env,
+                                                            jobject,
+                                                            jlong handle,
+                                                            jstring username) {
   mi_client_handle* ptr = FromHandle(handle);
   if (!ptr) return nullptr;
   char* out_payload = nullptr;
-  int ok = mi_client_begin_qr_login(ptr, &out_payload);
+  std::string user_str = JStringToString(env, username);
+  int ok = mi_client_begin_qr_login_with_username(ptr, user_str.c_str(),
+                                                  &out_payload);
   if (!ok || !out_payload) {
     if (out_payload) {
       mi_client_free(out_payload);
@@ -740,6 +749,14 @@ Java_mi_e2ee_android_sdk_NativeSdk_beginQrLogin(JNIEnv* env,
   jstring result = NewJString(env, out_payload);
   mi_client_free(out_payload);
   return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_beginQrLogin(JNIEnv* env,
+                                                jobject,
+                                                jlong handle) {
+  return Java_mi_e2ee_android_sdk_NativeSdk_beginQrLoginWithUsername(
+      env, nullptr, handle, nullptr);
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -770,8 +787,21 @@ Java_mi_e2ee_android_sdk_NativeSdk_approveQrLogin(JNIEnv* env,
   if (!ptr) return JNI_FALSE;
   std::string id_str = JStringToString(env, qr_id);
   std::string secret_str = JStringToString(env, qr_secret_hex);
-  return static_cast<jboolean>(
-      mi_client_approve_qr_login(ptr, id_str.c_str(), secret_str.c_str()));
+  return static_cast<jboolean>(mi_client_approve_qr_login_with_root_code(
+      ptr, id_str.c_str(), secret_str.c_str(), ""));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_mi_e2ee_android_sdk_NativeSdk_approveQrLoginWithRootCode(
+    JNIEnv* env, jobject, jlong handle, jstring qr_id, jstring qr_secret_hex,
+    jstring root_code) {
+  mi_client_handle* ptr = FromHandle(handle);
+  if (!ptr) return JNI_FALSE;
+  std::string id_str = JStringToString(env, qr_id);
+  std::string secret_str = JStringToString(env, qr_secret_hex);
+  std::string root_str = JStringToString(env, root_code);
+  return static_cast<jboolean>(mi_client_approve_qr_login_with_root_code(
+      ptr, id_str.c_str(), secret_str.c_str(), root_str.c_str()));
 }
 
 extern "C" JNIEXPORT void JNICALL

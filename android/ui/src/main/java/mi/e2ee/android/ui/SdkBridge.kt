@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import mi.e2ee.android.sdk.NativeSdk
 import androidx.annotation.Keep
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -20,9 +21,8 @@ import mi.e2ee.android.sdk.MediaPacket
 import mi.e2ee.android.sdk.NativeBridge
 import mi.e2ee.android.sdk.NativeSdk
 import mi.e2ee.android.sdk.SdkVersion
+import java.security.MessageDigest
 import java.util.Locale
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 class SdkBridge(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -45,7 +45,8 @@ class SdkBridge(private val context: Context) {
             context.getSharedPreferences(name, Context.MODE_PRIVATE)
         }
     }
-    private val rootAuthKey = "root_auth_secret_hex"
+    private val rootAuthKey = "root_auth_pubkey_hex"
+    private val rootAuthCodeLabel = "mi_e2ee_root_code_v1"
 
     var initialized by mutableStateOf(false)
         private set
@@ -56,6 +57,8 @@ class SdkBridge(private val context: Context) {
     var token by mutableStateOf("")
         private set
     var deviceId by mutableStateOf("")
+        private set
+    var deviceDisplayId by mutableStateOf("")
         private set
     var lastError by mutableStateOf("")
         private set
@@ -245,24 +248,29 @@ class SdkBridge(private val context: Context) {
         return ok
     }
 
-    fun initRootAuthSecret(): Boolean {
+    fun initRootAuthPubkey(pubkeyHex: String): Boolean {
         if (!ensureHandle()) return false
         val handle = resolveClientHandle()
         if (handle == 0L) return false
-        val secret = NativeSdk.rootAuthInit(handle)
-        if (secret == null) {
+        val cleaned = pubkeyHex.trim().lowercase(Locale.ROOT)
+        if (!isValidRootAuthPubkey(cleaned)) {
+            lastError = "invalid root auth pubkey"
+            return false
+        }
+        val ok = NativeSdk.rootAuthInit(handle, cleaned)
+        if (!ok) {
             refreshLastError(handle)
             return false
         }
-        setRootAuthSecret(secret)
+        rootAuthPrefs.edit().putString(rootAuthKey, cleaned).apply()
         return true
     }
 
-    fun beginQrLogin(): String? {
+    fun beginQrLogin(username: String? = null): String? {
         if (!ensureHandle()) return null
         val handle = resolveClientHandle()
         if (handle == 0L) return null
-        val payload = NativeSdk.beginQrLogin(handle)
+        val payload = NativeSdk.beginQrLoginWithUsername(handle, username)
         if (payload == null) {
             refreshLastError(handle)
         }
@@ -280,11 +288,11 @@ class SdkBridge(private val context: Context) {
         return state
     }
 
-    fun approveQrLogin(qrId: String, qrSecretHex: String): Boolean {
+    fun approveQrLogin(qrId: String, qrSecretHex: String, rootCode: String? = null): Boolean {
         if (!ensureHandle()) return false
         val handle = resolveClientHandle()
         if (handle == 0L) return false
-        val ok = NativeSdk.approveQrLogin(handle, qrId, qrSecretHex)
+        val ok = NativeSdk.approveQrLoginWithRootCode(handle, qrId, qrSecretHex, rootCode)
         if (!ok) {
             refreshLastError(handle)
         }
@@ -790,6 +798,11 @@ class SdkBridge(private val context: Context) {
             this.username = username
             this.token = token
             this.deviceId = deviceId
+            this.deviceDisplayId = if (NativeSdk.available && clientHandle != 0L) {
+                runCatching { NativeSdk.deviceDisplayId(clientHandle) }.getOrDefault("")
+            } else {
+                ""
+            }
             this.lastError = lastError
             this.statusMessage = statusMessage
             this.remoteOk = remoteOk
@@ -931,49 +944,58 @@ class SdkBridge(private val context: Context) {
         runOnMain { offlinePayloads.replaceWith(items) }
     }
 
-    fun hasRootAuthSecret(): Boolean {
+    fun rootAuthPubkey(): String? {
+        return rootAuthPrefs.getString(rootAuthKey, null)
+    }
+
+    fun hasRootAuthPubkey(): Boolean {
         return rootAuthPrefs.getString(rootAuthKey, null)?.isNotBlank() == true
     }
 
-    fun setRootAuthSecret(hex: String): Boolean {
+    fun setRootAuthPubkey(hex: String): Boolean {
         val cleaned = hex.trim().lowercase(Locale.ROOT)
-        if (!Regex("^[0-9a-f]{64}$").matches(cleaned)) {
+        if (!isValidRootAuthPubkey(cleaned)) {
             return false
         }
         rootAuthPrefs.edit().putString(rootAuthKey, cleaned).apply()
         return true
     }
 
-    fun clearRootAuthSecret() {
+    fun clearRootAuthPubkey() {
         rootAuthPrefs.edit().remove(rootAuthKey).apply()
     }
 
     fun currentRootAuthCode(): String? {
         val hex = rootAuthPrefs.getString(rootAuthKey, null) ?: return null
-        if (hex.length != 64) return null
-        val secret = hexToBytes(hex)
-        if (secret.size != 32) return null
-        return computeRootCode(secret, 5, 6)
+        if (!isValidRootAuthPubkey(hex)) return null
+        val pubkey = hexToBytes(hex)
+        if (pubkey.size != 32) return null
+        return computeRootCode(pubkey, 5, 6)
     }
 
-    private fun computeRootCode(secret: ByteArray, stepSec: Long, digits: Int): String {
-        if (secret.isEmpty()) return ""
+    private fun computeRootCode(pubkey: ByteArray, stepSec: Long, digits: Int): String {
+        if (pubkey.size != 32) return ""
         val now = System.currentTimeMillis() / 1000
         val counter = now / stepSec
-        val msg = ByteArray(8)
+        val label = rootAuthCodeLabel.toByteArray(Charsets.UTF_8)
+        val msg = ByteArray(label.size + 1 + pubkey.size + 1 + 8)
+        var offset = 0
+        System.arraycopy(label, 0, msg, offset, label.size)
+        offset += label.size
+        msg[offset++] = 0
+        System.arraycopy(pubkey, 0, msg, offset, pubkey.size)
+        offset += pubkey.size
+        msg[offset++] = 0
         var value = counter
         for (i in 7 downTo 0) {
-            msg[i] = (value and 0xff).toByte()
+            msg[offset + i] = (value and 0xff).toByte()
             value = value shr 8
         }
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(secret, "HmacSHA256"))
-        val digest = mac.doFinal(msg)
-        val offset = digest[digest.size - 1].toInt() and 0x0f
-        val bin = ((digest[offset].toInt() and 0x7f) shl 24) or
-            ((digest[offset + 1].toInt() and 0xff) shl 16) or
-            ((digest[offset + 2].toInt() and 0xff) shl 8) or
-            (digest[offset + 3].toInt() and 0xff)
+        val digest = MessageDigest.getInstance("SHA-256").digest(msg)
+        val bin = ((digest[0].toInt() and 0xff) shl 24) or
+            ((digest[1].toInt() and 0xff) shl 16) or
+            ((digest[2].toInt() and 0xff) shl 8) or
+            (digest[3].toInt() and 0xff)
         val mod = if (digits == 8) 100_000_000 else 1_000_000
         val code = bin % mod
         return code.toString().padStart(digits, '0')
@@ -991,6 +1013,18 @@ class SdkBridge(private val context: Context) {
             i += 2
         }
         return output
+    }
+
+    private fun isValidRootAuthPubkey(value: String): Boolean {
+        if (value.length != 64) {
+            return false
+        }
+        for (c in value) {
+            if (c !in '0'..'9' && c !in 'a'..'f') {
+                return false
+            }
+        }
+        return true
     }
 
     private fun <T> SnapshotStateList<T>.replaceWith(items: Array<out T>) {

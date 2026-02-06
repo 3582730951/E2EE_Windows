@@ -156,6 +156,8 @@ cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 运行时环境变量：
 - `MI_E2EE_HARDENING=off|low|medium|high`（或 `MI_E2EE_HARDENING_LEVEL`，默认 high）
 - 硬化等级行为：low=仅基础进程缓解；medium=增加调试器检测；high=调试器+硬件断点检测+`.text`完整性扫描
+- `MI_E2EE_HARDENING_POLL_MS`（或 `MI_E2EE_HARDENING_INTERVAL_MS`，默认 5000ms）：低频检测周期
+- `MI_E2EE_SENSITIVE_MODE=1`（或 `MI_E2EE_NO_HISTORY=1`：禁止历史落盘并清理本地缓存）
 - `MI_E2EE_SECCOMP=1`（Linux + libseccomp 可选；启用基础 seccomp denylist）
 - `MI_E2EE_MAC_REQUIRE_SIGNATURE=1`（macOS：强制代码签名有效）
 - `MI_E2EE_MAC_REQUIRE_SANDBOX=1`（macOS：强制 app sandbox entitlement）

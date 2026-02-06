@@ -8,9 +8,9 @@ data class GroupUi(val id: String, val name: String)
 
 data class GroupMemberUi(val username: String, val role: Int)
 
-data class DeviceUi(val deviceId: String, val lastSeenSec: Int)
+data class DeviceUi(val deviceId: String, val displayId: String, val lastSeenSec: Int)
 
-data class PairingRequestUi(val deviceId: String, val requestId: String)
+data class PairingRequestUi(val deviceId: String, val displayId: String, val requestId: String)
 
 data class MediaRelayLog(
     val timestampMs: Long,

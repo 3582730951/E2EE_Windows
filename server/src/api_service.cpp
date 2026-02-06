@@ -17,6 +17,7 @@
 #include "protocol.h"
 #include "protected_store.h"
 #include "platform_time.h"
+#include "ed25519.h"
 
 extern "C" {
 int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
@@ -122,6 +123,25 @@ std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
   return out;
 }
 
+static constexpr char kDeviceIdLabel[] = "mi_e2ee_device_id_v1";
+static constexpr char kDeviceDisplayLabel[] = "mi_e2ee_device_display_v1";
+
+static std::string HashIdWithLabel(const mi::server::MetadataProtector* protector,
+                                   const char* label,
+                                   const std::string& value) {
+  if (!protector || !label || value.empty()) {
+    return {};
+  }
+  std::string input(label);
+  input.push_back('|');
+  input.append(value);
+  std::string hex = protector->HashId(input);
+  if (hex.size() > 32) {
+    hex.resize(32);
+  }
+  return hex;
+}
+
 static bool ConstantTimeEqual(const std::uint8_t* a, const std::uint8_t* b,
                               std::size_t len) {
   if (!a || !b || len == 0) {
@@ -138,6 +158,14 @@ struct RootAuthInput {
   std::string code;
   std::string proof_hex;
 };
+
+static constexpr std::uint8_t kRootAuthRecordVersionLegacy = 1;
+static constexpr std::uint8_t kRootAuthRecordVersionV2 = 2;
+static constexpr std::uint8_t kRootAuthAlgEd25519 = 1;
+static constexpr char kRootAuthCodeLabel[] = "mi_e2ee_root_code_v1";
+static constexpr char kRootAuthProofLabelV2[] = "mi_e2ee_root_proof_v2";
+static constexpr char kRootAuthProofLabelLegacy[] = "mi_e2ee_root_proof_v1";
+static constexpr char kRootAuthContextDeviceRegister[] = "device_register";
 
 static RootAuthInput ParseRootAuthInput(const std::string& raw) {
   RootAuthInput out;
@@ -166,10 +194,98 @@ static RootAuthInput ParseRootAuthInput(const std::string& raw) {
   return out;
 }
 
+static bool ParseRootAuthCode(const std::string& code,
+                              std::uint32_t& out_value,
+                              std::uint32_t& out_mod) {
+  out_value = 0;
+  out_mod = 0;
+  if (code.size() < 6 || code.size() > 8) {
+    return false;
+  }
+  std::uint32_t value = 0;
+  for (char c : code) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    value = value * 10u + static_cast<std::uint32_t>(c - '0');
+  }
+  out_mod = (code.size() == 8) ? 100000000u : 1000000u;
+  out_value = value;
+  return true;
+}
+
+static void AppendCounterBe(std::uint64_t counter,
+                            std::vector<std::uint8_t>& out) {
+  std::uint8_t buf[8] = {};
+  for (int i = 7; i >= 0; --i) {
+    buf[i] = static_cast<std::uint8_t>(counter & 0xFFu);
+    counter >>= 8;
+  }
+  out.insert(out.end(), buf, buf + sizeof(buf));
+}
+
+static std::uint32_t DeriveRootAuthCode(
+    const std::array<std::uint8_t, 32>& pubkey,
+    std::uint64_t counter,
+    std::uint32_t mod) {
+  if (mod == 0) {
+    return 0;
+  }
+  std::vector<std::uint8_t> msg;
+  msg.reserve(sizeof(kRootAuthCodeLabel) + pubkey.size() + 10);
+  msg.insert(msg.end(), kRootAuthCodeLabel,
+             kRootAuthCodeLabel + sizeof(kRootAuthCodeLabel) - 1);
+  msg.push_back(0);
+  msg.insert(msg.end(), pubkey.begin(), pubkey.end());
+  msg.push_back(0);
+  AppendCounterBe(counter, msg);
+  crypto::Sha256Digest digest;
+  crypto::Sha256(msg.data(), msg.size(), digest);
+  const std::uint32_t bin =
+      (static_cast<std::uint32_t>(digest.bytes[0]) << 24) |
+      (static_cast<std::uint32_t>(digest.bytes[1]) << 16) |
+      (static_cast<std::uint32_t>(digest.bytes[2]) << 8) |
+      (static_cast<std::uint32_t>(digest.bytes[3]));
+  return bin % mod;
+}
+
+static std::vector<std::uint8_t> BuildRootAuthProofMessage(
+    const std::string& device_id,
+    const std::string& context,
+    std::uint64_t counter) {
+  if (device_id.empty()) {
+    return {};
+  }
+  std::vector<std::uint8_t> msg;
+  msg.reserve(sizeof(kRootAuthProofLabelV2) + device_id.size() + context.size() +
+              11);
+  msg.insert(msg.end(), kRootAuthProofLabelV2,
+             kRootAuthProofLabelV2 + sizeof(kRootAuthProofLabelV2) - 1);
+  msg.push_back(0);
+  msg.insert(msg.end(), device_id.begin(), device_id.end());
+  msg.push_back(0);
+  msg.insert(msg.end(), context.begin(), context.end());
+  msg.push_back(0);
+  AppendCounterBe(counter, msg);
+  return msg;
+}
+
+static std::string BuildRootAuthQrContext(const std::string& qr_id,
+                                          const std::string& secret_hex) {
+  std::string ctx;
+  ctx.reserve(3 + qr_id.size() + 1 + secret_hex.size());
+  ctx.append("qr:");
+  ctx.append(qr_id);
+  ctx.push_back(':');
+  ctx.append(secret_hex);
+  return ctx;
+}
+
 ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
                        GroupCallManager* calls,
                        GroupDirectory* directory, OfflineStorage* storage,
                        OfflineQueue* queue, MediaRelay* media_relay,
+                       MetadataProtector* metadata_protector,
                        std::uint32_t group_threshold,
                        std::optional<MySqlConfig> friend_mysql,
                        std::filesystem::path storage_dir,
@@ -186,6 +302,7 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
       storage_(storage),
       queue_(queue),
       media_relay_(media_relay),
+      metadata_protector_(metadata_protector),
       group_threshold_(group_threshold == 0 ? 10000 : group_threshold),
       friend_mysql_(std::move(friend_mysql)),
       rl_global_unauth_(30.0, 10.0),
@@ -400,7 +517,7 @@ bool ApiService::IsDeviceAuthorized(const std::string& token,
     out_error = load_err.empty() ? "root auth state load failed" : load_err;
     return false;
   }
-  if (!record.has_secret) {
+  if (!record.has_pubkey && !record.has_legacy_secret) {
     return true;
   }
   std::string device_id;
@@ -509,17 +626,40 @@ bool ApiService::LoadRootAuthRecord(const std::string& username,
     return false;
   }
   const std::uint8_t version = plain[off++];
-  if (version != 1) {
+  if (version != kRootAuthRecordVersionLegacy &&
+      version != kRootAuthRecordVersionV2) {
     out_error = "root auth record version invalid";
     return false;
   }
-  std::vector<std::uint8_t> secret;
-  if (!mi::server::proto::ReadBytes(plain, off, secret) ||
-      secret.size() != out_record.secret.size()) {
-    out_error = "root auth secret invalid";
-    return false;
+  if (version == kRootAuthRecordVersionLegacy) {
+    std::vector<std::uint8_t> secret;
+    if (!mi::server::proto::ReadBytes(plain, off, secret) ||
+        secret.size() != out_record.legacy_secret.size()) {
+      out_error = "root auth secret invalid";
+      return false;
+    }
+    std::copy_n(secret.begin(), out_record.legacy_secret.size(),
+                out_record.legacy_secret.begin());
+    out_record.has_legacy_secret = true;
+  } else {
+    if (off >= plain.size()) {
+      out_error = "root auth record invalid";
+      return false;
+    }
+    const std::uint8_t alg = plain[off++];
+    if (alg != kRootAuthAlgEd25519) {
+      out_error = "root auth record invalid";
+      return false;
+    }
+    std::vector<std::uint8_t> pub;
+    if (!mi::server::proto::ReadBytes(plain, off, pub) ||
+        pub.size() != out_record.pubkey.size()) {
+      out_error = "root auth record invalid";
+      return false;
+    }
+    std::copy_n(pub.begin(), out_record.pubkey.size(), out_record.pubkey.begin());
+    out_record.has_pubkey = true;
   }
-  std::copy_n(secret.begin(), out_record.secret.size(), out_record.secret.begin());
   std::uint32_t count = 0;
   if (!mi::server::proto::ReadUint32(plain, off, count)) {
     out_error = "root auth record invalid";
@@ -537,7 +677,6 @@ bool ApiService::LoadRootAuthRecord(const std::string& username,
     out_error = "root auth record invalid";
     return false;
   }
-  out_record.has_secret = true;
   {
     std::lock_guard<std::mutex> lock(root_auth_mutex_);
     root_auth_by_user_[username] = out_record;
@@ -549,14 +688,22 @@ bool ApiService::SaveRootAuthRecord(const std::string& username,
                                     const RootAuthRecord& record,
                                     std::string& out_error) {
   out_error.clear();
-  if (username.empty() || !record.has_secret) {
+  if (username.empty() || (!record.has_pubkey && !record.has_legacy_secret)) {
     out_error = "root auth record invalid";
     return false;
   }
   std::vector<std::uint8_t> plain;
-  plain.reserve(1 + 4 + record.secret.size() + record.devices.size() * 40);
-  plain.push_back(1);
-  mi::server::proto::WriteBytes(record.secret.data(), record.secret.size(), plain);
+  plain.reserve(1 + 4 + record.pubkey.size() + record.devices.size() * 40);
+  if (record.has_pubkey) {
+    plain.push_back(kRootAuthRecordVersionV2);
+    plain.push_back(kRootAuthAlgEd25519);
+    mi::server::proto::WriteBytes(record.pubkey.data(), record.pubkey.size(),
+                                  plain);
+  } else {
+    plain.push_back(kRootAuthRecordVersionLegacy);
+    mi::server::proto::WriteBytes(record.legacy_secret.data(),
+                                  record.legacy_secret.size(), plain);
+  }
   mi::server::proto::WriteUint32(
       static_cast<std::uint32_t>(record.devices.size()), plain);
   for (const auto& dev : record.devices) {
@@ -629,7 +776,7 @@ bool ApiService::SaveRootAuthRecord(const std::string& username,
 
 bool ApiService::VerifyRootAuthCode(const RootAuthRecord& record,
                                     const std::string& code) const {
-  if (!record.has_secret || code.empty()) {
+  if (!record.has_legacy_secret || code.empty()) {
     return false;
   }
   std::uint32_t code_val = 0;
@@ -655,7 +802,8 @@ bool ApiService::VerifyRootAuthCode(const RootAuthRecord& record,
       ctr >>= 8;
     }
     crypto::Sha256Digest digest;
-    crypto::HmacSha256(record.secret.data(), record.secret.size(),
+    crypto::HmacSha256(record.legacy_secret.data(),
+                       record.legacy_secret.size(),
                        msg, sizeof(msg), digest);
     const std::uint8_t offset = digest.bytes.back() & 0x0F;
     const std::uint32_t bin =
@@ -686,7 +834,7 @@ bool ApiService::VerifyRootAuthCode(const RootAuthRecord& record,
 bool ApiService::VerifyRootAuthProof(const RootAuthRecord& record,
                                      const std::string& device_id,
                                      const std::string& proof_hex) const {
-  if (!record.has_secret || device_id.empty() || proof_hex.empty()) {
+  if (!record.has_legacy_secret || device_id.empty() || proof_hex.empty()) {
     return false;
   }
   std::vector<std::uint8_t> proof_bytes;
@@ -700,12 +848,11 @@ bool ApiService::VerifyRootAuthProof(const RootAuthRecord& record,
   const std::uint64_t counter = step == 0 ? 0 : (now / step);
   const std::uint32_t window =
       root_auth_window_ == 0 ? 1u : root_auth_window_;
-  static constexpr char kRootAuthProofLabel[] = "mi_e2ee_root_proof_v1";
-
   std::vector<std::uint8_t> prefix;
-  prefix.reserve(sizeof(kRootAuthProofLabel) + device_id.size() + 2);
-  prefix.insert(prefix.end(), kRootAuthProofLabel,
-                kRootAuthProofLabel + sizeof(kRootAuthProofLabel) - 1);
+  prefix.reserve(sizeof(kRootAuthProofLabelLegacy) + device_id.size() + 2);
+  prefix.insert(prefix.end(), kRootAuthProofLabelLegacy,
+                kRootAuthProofLabelLegacy +
+                    sizeof(kRootAuthProofLabelLegacy) - 1);
   prefix.push_back(0);
   prefix.insert(prefix.end(), device_id.begin(), device_id.end());
   prefix.push_back(0);
@@ -719,7 +866,8 @@ bool ApiService::VerifyRootAuthProof(const RootAuthRecord& record,
     std::vector<std::uint8_t> msg(prefix);
     msg.insert(msg.end(), ctr_bytes, ctr_bytes + sizeof(ctr_bytes));
     crypto::Sha256Digest digest;
-    crypto::HmacSha256(record.secret.data(), record.secret.size(),
+    crypto::HmacSha256(record.legacy_secret.data(),
+                       record.legacy_secret.size(),
                        msg.data(), msg.size(), digest);
     return ConstantTimeEqual(digest.bytes.data(), proof_bytes.data(),
                              digest.bytes.size());
@@ -738,6 +886,75 @@ bool ApiService::VerifyRootAuthProof(const RootAuthRecord& record,
     }
   }
   return false;
+}
+
+ApiService::RootAuthCheckResult ApiService::VerifyRootAuth(
+    const RootAuthRecord& record, const std::string& device_id,
+    const std::string& context, const std::string& code,
+    const std::string& proof_hex) const {
+  const bool has_code = !code.empty();
+  const bool has_proof = !proof_hex.empty();
+  if (!record.has_pubkey && !record.has_legacy_secret) {
+    return RootAuthCheckResult::kOk;
+  }
+  if (record.has_pubkey) {
+    if (!has_code && !has_proof) {
+      return RootAuthCheckResult::kMissing;
+    }
+    if (!has_code || !has_proof || device_id.empty()) {
+      return RootAuthCheckResult::kInvalid;
+    }
+    std::uint32_t code_val = 0;
+    std::uint32_t code_mod = 0;
+    if (!ParseRootAuthCode(code, code_val, code_mod)) {
+      return RootAuthCheckResult::kInvalid;
+    }
+    std::vector<std::uint8_t> sig;
+    if (!mi::common::HexToBytes(proof_hex, sig) || sig.size() != 64) {
+      return RootAuthCheckResult::kInvalid;
+    }
+    const std::uint64_t step =
+        root_auth_step_sec_ == 0 ? 5 : root_auth_step_sec_;
+    const std::uint64_t now = mi::platform::NowUnixSeconds();
+    const std::uint64_t counter = step == 0 ? 0 : (now / step);
+    const std::uint32_t window =
+        root_auth_window_ == 0 ? 1u : root_auth_window_;
+
+    for (std::int32_t w = -static_cast<std::int32_t>(window);
+         w <= static_cast<std::int32_t>(window); ++w) {
+      if (w < 0 && static_cast<std::uint64_t>(-w) > counter) {
+        continue;
+      }
+      const std::uint64_t ctr =
+          w < 0 ? (counter - static_cast<std::uint64_t>(-w))
+                : (counter + static_cast<std::uint64_t>(w));
+      if (DeriveRootAuthCode(record.pubkey, ctr, code_mod) != code_val) {
+        continue;
+      }
+      const std::vector<std::uint8_t> msg =
+          BuildRootAuthProofMessage(device_id, context, ctr);
+      if (msg.empty()) {
+        continue;
+      }
+      if (ed25519_verify(sig.data(), msg.data(), msg.size(),
+                         record.pubkey.data()) == 1) {
+        return RootAuthCheckResult::kOk;
+      }
+    }
+    return RootAuthCheckResult::kInvalid;
+  }
+
+  if (!has_code && !has_proof) {
+    return RootAuthCheckResult::kMissing;
+  }
+  bool ok = false;
+  if (has_code) {
+    ok = VerifyRootAuthCode(record, code);
+  }
+  if (!ok && has_proof) {
+    ok = VerifyRootAuthProof(record, device_id, proof_hex);
+  }
+  return ok ? RootAuthCheckResult::kOk : RootAuthCheckResult::kInvalid;
 }
 
 void ApiService::CleanupQrLoginLocked(
@@ -4762,10 +4979,21 @@ DeviceListResponse ApiService::ListDevices(const std::string& token,
       it->second.last_token = sess->token;
     }
 
+    for (auto& kv : map) {
+      if (kv.second.display_id.empty() || kv.second.display_id == kv.first) {
+        const std::string display =
+            HashIdWithLabel(metadata_protector_, kDeviceDisplayLabel, kv.first);
+        if (!display.empty()) {
+          kv.second.display_id = display;
+        }
+      }
+    }
+
     resp.devices.reserve(map.size());
     for (const auto& kv : map) {
       DeviceListResponse::Entry e;
       e.device_id = kv.first;
+      e.display_id = kv.second.display_id;
       const auto seen = kv.second.last_seen;
       if (seen.time_since_epoch().count() == 0) {
         e.last_seen_sec = 0;
@@ -4863,7 +5091,7 @@ DeviceKickResponse ApiService::KickDevice(const std::string& token,
 }
 
 DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
-                                                  const std::string& device_id,
+                                                  const std::string& device_claim_id,
                                                   const std::string& root_code) {
   DeviceRegisterResponse resp;
   if (!sessions_) {
@@ -4876,13 +5104,34 @@ DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
     resp.error = rl_error;
     return resp;
   }
-  if (device_id.empty()) {
-    resp.error = "device id empty";
+  if (device_claim_id.empty()) {
+    resp.error = "device claim id empty";
     return resp;
   }
-  if (!LooksLikeHexId(device_id, 32) && device_id.size() > 64) {
-    resp.error = "device id invalid";
+  if (!LooksLikeHexId(device_claim_id, 64) &&
+      !LooksLikeHexId(device_claim_id, 32)) {
+    resp.error = "device claim id invalid";
     return resp;
+  }
+  if (!metadata_protector_) {
+    resp.error = "device id key unavailable";
+    return resp;
+  }
+  const std::string server_device_id =
+      HashIdWithLabel(metadata_protector_, kDeviceIdLabel, device_claim_id);
+  if (server_device_id.empty()) {
+    resp.error = "device id derive failed";
+    return resp;
+  }
+  std::string display_id =
+      HashIdWithLabel(metadata_protector_, kDeviceDisplayLabel,
+                      server_device_id);
+  if (display_id.empty()) {
+    resp.error = "device display id derive failed";
+    return resp;
+  }
+  if (display_id == server_device_id) {
+    display_id[0] = (display_id[0] == '0') ? '1' : '0';
   }
 
   if (root_auth_enabled_) {
@@ -4892,27 +5141,30 @@ DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
       resp.error = load_err.empty() ? "root auth load failed" : load_err;
       return resp;
     }
-    if (record.has_secret) {
-      const bool known = record.devices.find(device_id) != record.devices.end();
+    if (record.has_pubkey || record.has_legacy_secret) {
+      const bool known = record.devices.find(server_device_id) != record.devices.end();
+      const bool known_display =
+          record.devices.find(display_id) != record.devices.end();
       if (!known) {
         const RootAuthInput auth_input = ParseRootAuthInput(root_code);
-        const bool has_code = !auth_input.code.empty();
-        const bool has_proof = !auth_input.proof_hex.empty();
-        bool ok_code = false;
-        bool ok_proof = false;
-        if (has_code) {
-          ok_code = VerifyRootAuthCode(record, auth_input.code);
-        }
-        if (has_proof) {
-          ok_proof = VerifyRootAuthProof(record, device_id,
-                                         auth_input.proof_hex);
-        }
-        if (!ok_code && !ok_proof) {
-          resp.error = (has_code || has_proof) ? "root auth invalid"
-                                               : "root auth required";
+        const auto check = VerifyRootAuth(
+            record, display_id, kRootAuthContextDeviceRegister,
+            auth_input.code, auth_input.proof_hex);
+        if (check != RootAuthCheckResult::kOk) {
+          resp.error = (check == RootAuthCheckResult::kMissing)
+                           ? "root auth required"
+                           : "root auth invalid";
           return resp;
         }
-        record.devices.insert(device_id);
+        record.devices.insert(server_device_id);
+        std::string save_err;
+        if (!SaveRootAuthRecord(sess->username, record, save_err)) {
+          resp.error = save_err.empty() ? "root auth save failed" : save_err;
+          return resp;
+        }
+      } else if (known_display && !known) {
+        record.devices.erase(display_id);
+        record.devices.insert(server_device_id);
         std::string save_err;
         if (!SaveRootAuthRecord(sess->username, record, save_err)) {
           resp.error = save_err.empty() ? "root auth save failed" : save_err;
@@ -4926,28 +5178,33 @@ DeviceRegisterResponse ApiService::RegisterDevice(const std::string& token,
     const auto now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(devices_mutex_);
     auto& map = devices_by_user_[sess->username];
-    auto it = map.find(device_id);
+    auto it = map.find(server_device_id);
     if (it == map.end()) {
       if (map.size() < 64) {
         DeviceRecord rec;
         rec.last_seen = now;
         rec.last_token = sess->token;
-        map.emplace(device_id, std::move(rec));
+        rec.display_id = display_id;
+        map.emplace(server_device_id, std::move(rec));
       }
     } else {
       it->second.last_seen = now;
       it->second.last_token = sess->token;
+      it->second.display_id = display_id;
     }
   }
   {
     std::lock_guard<std::mutex> lock(token_device_mutex_);
-    token_device_ids_[token] = device_id;
+    token_device_ids_[token] = server_device_id;
   }
+  resp.device_id = server_device_id;
+  resp.display_id = display_id;
   resp.success = true;
   return resp;
 }
 
-RootAuthInitResponse ApiService::RootAuthInit(const std::string& token) {
+RootAuthInitResponse ApiService::RootAuthInit(const std::string& token,
+                                              const std::string& pubkey_hex) {
   RootAuthInitResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
@@ -4963,44 +5220,91 @@ RootAuthInitResponse ApiService::RootAuthInit(const std::string& token) {
     resp.error = "root auth disabled";
     return resp;
   }
+  if (pubkey_hex.empty()) {
+    resp.error = "root auth pubkey empty";
+    return resp;
+  }
+  std::vector<std::uint8_t> pub_bytes;
+  if (!mi::common::HexToBytes(pubkey_hex, pub_bytes) ||
+      pub_bytes.size() != 32) {
+    resp.error = "root auth pubkey invalid";
+    return resp;
+  }
+  bool all_zero = true;
+  for (std::uint8_t b : pub_bytes) {
+    if (b != 0) {
+      all_zero = false;
+      break;
+    }
+  }
+  if (all_zero) {
+    resp.error = "root auth pubkey invalid";
+    return resp;
+  }
   RootAuthRecord record;
   std::string load_err;
   if (!LoadRootAuthRecord(sess->username, record, load_err)) {
     resp.error = load_err.empty() ? "root auth load failed" : load_err;
     return resp;
   }
-  if (record.has_secret) {
+  if (record.has_pubkey) {
+    if (ConstantTimeEqual(record.pubkey.data(), pub_bytes.data(),
+                          record.pubkey.size())) {
+      resp.success = true;
+      return resp;
+    }
     resp.error = "root auth already initialized";
     return resp;
   }
-  if (!crypto::RandomBytes(record.secret.data(), record.secret.size())) {
-    resp.error = "root auth rng failed";
-    return resp;
+  std::copy_n(pub_bytes.begin(), record.pubkey.size(), record.pubkey.begin());
+  record.has_pubkey = true;
+  if (record.has_legacy_secret) {
+    record.legacy_secret.fill(0);
+    record.has_legacy_secret = false;
   }
-  record.has_secret = true;
   std::string save_err;
   if (!SaveRootAuthRecord(sess->username, record, save_err)) {
     resp.error = save_err.empty() ? "root auth save failed" : save_err;
     return resp;
   }
   resp.success = true;
-  resp.secret_hex =
-      BytesToHexLower(record.secret.data(), record.secret.size());
   return resp;
 }
 
-QrLoginInitResponse ApiService::QrLoginInit(const std::string& device_id) {
+QrLoginInitResponse ApiService::QrLoginInit(const std::string& username,
+                                            const std::string& device_claim_id) {
   QrLoginInitResponse resp;
-  if (device_id.empty()) {
-    resp.error = "device id empty";
+  if (device_claim_id.empty()) {
+    resp.error = "device claim id empty";
     return resp;
   }
-  if (!LooksLikeHexId(device_id, 32) && device_id.size() > 64) {
-    resp.error = "device id invalid";
+  if (!LooksLikeHexId(device_claim_id, 64) &&
+      !LooksLikeHexId(device_claim_id, 32)) {
+    resp.error = "device claim id invalid";
     return resp;
+  }
+  if (!metadata_protector_) {
+    resp.error = "device id key unavailable";
+    return resp;
+  }
+  const std::string server_device_id =
+      HashIdWithLabel(metadata_protector_, kDeviceIdLabel, device_claim_id);
+  if (server_device_id.empty()) {
+    resp.error = "device id derive failed";
+    return resp;
+  }
+  std::string display_id =
+      HashIdWithLabel(metadata_protector_, kDeviceDisplayLabel,
+                      server_device_id);
+  if (display_id.empty()) {
+    resp.error = "device display id derive failed";
+    return resp;
+  }
+  if (display_id == server_device_id) {
+    display_id[0] = (display_id[0] == '0') ? '1' : '0';
   }
   std::string rl_error;
-  if (!RateLimitUnauth("qr_login_init", device_id, rl_error)) {
+  if (!RateLimitUnauth("qr_login_init", server_device_id, rl_error)) {
     resp.error = rl_error;
     return resp;
   }
@@ -5024,7 +5328,9 @@ QrLoginInitResponse ApiService::QrLoginInit(const std::string& device_id) {
 
   QrLoginRecord record;
   record.secret = secret;
-  record.device_id = device_id;
+  record.username = username;
+  record.device_id = server_device_id;
+  record.display_id = display_id;
   record.created_at = std::chrono::steady_clock::now();
   record.approved = false;
   {
@@ -5036,6 +5342,7 @@ QrLoginInitResponse ApiService::QrLoginInit(const std::string& device_id) {
   resp.success = true;
   resp.qr_id = qr_id;
   resp.secret_hex = secret_hex;
+  resp.display_id = display_id;
   return resp;
 }
 
@@ -5119,7 +5426,7 @@ QrLoginPollResponse ApiService::QrLoginPoll(const std::string& qr_id,
 
 QrLoginApproveResponse ApiService::QrLoginApprove(
     const std::string& token, const std::string& qr_id,
-    const std::string& secret_hex) {
+    const std::string& secret_hex, const std::string& root_code) {
   QrLoginApproveResponse resp;
   if (!sessions_) {
     resp.error = "session manager unavailable";
@@ -5165,7 +5472,180 @@ QrLoginApproveResponse ApiService::QrLoginApprove(
       resp.error = "qr login expired";
       return resp;
     }
-    it->second.username = sess ? sess->username : std::string();
+    const std::string user = sess ? sess->username : std::string();
+    if (!it->second.username.empty() && !user.empty() &&
+        it->second.username != user) {
+      resp.error = "qr login user mismatch";
+      return resp;
+    }
+
+    if (root_auth_enabled_ && !user.empty()) {
+      RootAuthRecord record;
+      std::string load_err;
+      if (!LoadRootAuthRecord(user, record, load_err)) {
+        resp.error = load_err.empty() ? "root auth load failed" : load_err;
+        return resp;
+      }
+      if (record.has_pubkey || record.has_legacy_secret) {
+        const bool known =
+            !it->second.device_id.empty() &&
+            record.devices.find(it->second.device_id) != record.devices.end();
+        const bool known_display =
+            !it->second.display_id.empty() &&
+            record.devices.find(it->second.display_id) != record.devices.end();
+        if (!known) {
+          const RootAuthInput auth_input = ParseRootAuthInput(root_code);
+          const std::string context =
+              BuildRootAuthQrContext(qr_id, secret_hex_norm);
+          const auto check = VerifyRootAuth(
+              record, it->second.display_id, context, auth_input.code,
+              auth_input.proof_hex);
+          if (check != RootAuthCheckResult::kOk) {
+            resp.error = (check == RootAuthCheckResult::kMissing)
+                             ? "root auth required"
+                             : "root auth invalid";
+            return resp;
+          }
+          if (!it->second.device_id.empty()) {
+            if (known_display) {
+              record.devices.erase(it->second.display_id);
+            }
+            record.devices.insert(it->second.device_id);
+            std::string save_err;
+            if (!SaveRootAuthRecord(user, record, save_err)) {
+              resp.error =
+                  save_err.empty() ? "root auth save failed" : save_err;
+              return resp;
+            }
+          }
+        } else if (known_display && !it->second.device_id.empty()) {
+          record.devices.erase(it->second.display_id);
+          record.devices.insert(it->second.device_id);
+          std::string save_err;
+          if (!SaveRootAuthRecord(user, record, save_err)) {
+            resp.error = save_err.empty() ? "root auth save failed" : save_err;
+            return resp;
+          }
+        }
+      }
+    }
+
+    it->second.username = user;
+    it->second.approved = true;
+  }
+
+  resp.success = true;
+  return resp;
+}
+
+QrLoginApproveResponse ApiService::QrLoginApproveRoot(
+    const std::string& username, const std::string& qr_id,
+    const std::string& secret_hex, const std::string& display_id,
+    const std::string& root_code) {
+  QrLoginApproveResponse resp;
+  if (!root_auth_enabled_) {
+    resp.error = "root auth disabled";
+    return resp;
+  }
+  if (username.empty()) {
+    resp.error = "username empty";
+    return resp;
+  }
+  if (qr_id.empty()) {
+    resp.error = "qr id empty";
+    return resp;
+  }
+  if (secret_hex.empty()) {
+    resp.error = "qr secret empty";
+    return resp;
+  }
+  if (display_id.empty()) {
+    resp.error = "device auth id empty";
+    return resp;
+  }
+  if (!LooksLikeHexId(display_id, 32)) {
+    resp.error = "device auth id invalid";
+    return resp;
+  }
+  std::vector<std::uint8_t> secret_bytes;
+  if (!mi::common::HexToBytes(secret_hex, secret_bytes) ||
+      secret_bytes.size() != 32) {
+    resp.error = "qr secret invalid";
+    return resp;
+  }
+  std::string rl_error;
+  if (!RateLimitUnauth("qr_login_approve_root", username, rl_error)) {
+    resp.error = rl_error;
+    return resp;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(qr_login_mutex_);
+    CleanupQrLoginLocked(now);
+    auto it = qr_login_by_id_.find(qr_id);
+    if (it == qr_login_by_id_.end()) {
+      resp.error = "qr login not found";
+      return resp;
+    }
+    if (!ConstantTimeEqual(it->second.secret.data(), secret_bytes.data(),
+                           it->second.secret.size())) {
+      resp.error = "qr secret invalid";
+      return resp;
+    }
+    if (now - it->second.created_at > qr_login_ttl_) {
+      qr_login_by_id_.erase(it);
+      resp.error = "qr login expired";
+      return resp;
+    }
+    if (!it->second.username.empty() && it->second.username != username) {
+      resp.error = "qr login user mismatch";
+      return resp;
+    }
+    if (!it->second.display_id.empty() &&
+        it->second.display_id != display_id) {
+      resp.error = "qr login device mismatch";
+      return resp;
+    }
+
+    RootAuthRecord record;
+    std::string load_err;
+    if (!LoadRootAuthRecord(username, record, load_err)) {
+      resp.error = load_err.empty() ? "root auth load failed" : load_err;
+      return resp;
+    }
+    if (!record.has_pubkey && !record.has_legacy_secret) {
+      resp.error = "root auth not initialized";
+      return resp;
+    }
+    const RootAuthInput auth_input = ParseRootAuthInput(root_code);
+    const std::string context =
+        BuildRootAuthQrContext(qr_id, secret_hex_norm);
+    const auto check = VerifyRootAuth(record, display_id, context,
+                                      auth_input.code, auth_input.proof_hex);
+    if (check != RootAuthCheckResult::kOk) {
+      resp.error = (check == RootAuthCheckResult::kMissing)
+                       ? "root auth required"
+                       : "root auth invalid";
+      return resp;
+    }
+    if (!it->second.device_id.empty() &&
+        record.devices.find(it->second.device_id) == record.devices.end()) {
+      record.devices.insert(it->second.device_id);
+      if (record.devices.find(display_id) != record.devices.end()) {
+        record.devices.erase(display_id);
+      }
+      std::string save_err;
+      if (!SaveRootAuthRecord(username, record, save_err)) {
+        resp.error = save_err.empty() ? "root auth save failed" : save_err;
+        return resp;
+      }
+    }
+
+    it->second.username = username;
+    if (it->second.display_id.empty()) {
+      it->second.display_id = display_id;
+    }
     it->second.approved = true;
   }
 

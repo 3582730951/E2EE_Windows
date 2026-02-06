@@ -121,11 +121,13 @@ typedef struct mi_friend_request_entry_t {
 
 typedef struct mi_device_entry_t {
   const char* device_id;
+  const char* display_id;
   std::uint32_t last_seen_sec;
 } mi_device_entry_t;
 
 typedef struct mi_device_pairing_request_t {
   const char* device_id;
+  const char* display_id;
   const char* request_id_hex;
 } mi_device_pairing_request_t;
 
@@ -190,6 +192,7 @@ MI_E2EE_SDK_API void mi_client_destroy(mi_client_handle* handle);
 MI_E2EE_SDK_API const char* mi_client_last_error(mi_client_handle* handle);
 MI_E2EE_SDK_API const char* mi_client_token(mi_client_handle* handle);
 MI_E2EE_SDK_API const char* mi_client_device_id(mi_client_handle* handle);
+MI_E2EE_SDK_API const char* mi_client_device_display_id(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_remote_ok(mi_client_handle* handle);
 MI_E2EE_SDK_API const char* mi_client_remote_error(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_is_remote_mode(mi_client_handle* handle);
@@ -218,8 +221,14 @@ MI_E2EE_SDK_API int mi_client_login_with_root_code(mi_client_handle* handle,
                                    const char* root_code);
 MI_E2EE_SDK_API int mi_client_register_device(mi_client_handle* handle,
                              const char* root_code);
+// pubkey_hex: 64-hex Ed25519 public key from RootAuth app.
 MI_E2EE_SDK_API int mi_client_root_auth_init(mi_client_handle* handle,
-                             char** out_secret_hex);
+                             const char* pubkey_hex);
+// username can be null/empty to use legacy QR payload (no username).
+MI_E2EE_SDK_API int mi_client_begin_qr_login_with_username(
+                            mi_client_handle* handle,
+                            const char* username,
+                            char** out_payload);
 MI_E2EE_SDK_API int mi_client_begin_qr_login(mi_client_handle* handle,
                              char** out_payload);
 MI_E2EE_SDK_API int mi_client_poll_qr_login(mi_client_handle* handle,
@@ -228,6 +237,11 @@ MI_E2EE_SDK_API int mi_client_poll_qr_login(mi_client_handle* handle,
 MI_E2EE_SDK_API int mi_client_approve_qr_login(mi_client_handle* handle,
                                const char* qr_id,
                                const char* qr_secret_hex);
+MI_E2EE_SDK_API int mi_client_approve_qr_login_with_root_code(
+                               mi_client_handle* handle,
+                               const char* qr_id,
+                               const char* qr_secret_hex,
+                               const char* root_code);
 MI_E2EE_SDK_API void mi_client_cancel_qr_login(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_publish_prekeys(mi_client_handle* handle);
 MI_E2EE_SDK_API int mi_client_logout(mi_client_handle* handle);

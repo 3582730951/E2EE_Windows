@@ -873,6 +873,7 @@ std::vector<std::uint8_t> EncodeDeviceListResp(const DeviceListResponse& resp) {
     std::size_t reserve = 1 + 4;
     for (const auto& d : resp.devices) {
       reserve += EncodedStringSize(d.device_id);
+      reserve += EncodedStringSize(d.display_id);
       reserve += 4;
     }
     out.reserve(reserve);
@@ -884,6 +885,7 @@ std::vector<std::uint8_t> EncodeDeviceListResp(const DeviceListResponse& resp) {
     proto::WriteUint32(static_cast<std::uint32_t>(resp.devices.size()), out);
     for (const auto& d : resp.devices) {
       proto::WriteString(d.device_id, out);
+      proto::WriteString(d.display_id, out);
       proto::WriteUint32(d.last_seen_sec, out);
     }
   } else {
@@ -909,6 +911,38 @@ std::vector<std::uint8_t> EncodeDeviceKickResp(const DeviceKickResponse& resp) {
 std::vector<std::uint8_t> EncodeDeviceRegisterResp(
     const DeviceRegisterResponse& resp) {
   std::vector<std::uint8_t> out;
+  if (resp.success) {
+    out.reserve(1 + EncodedStringSize(resp.device_id) +
+                EncodedStringSize(resp.display_id));
+  } else {
+    std::size_t reserve = 1 + EncodedStringSize(resp.error);
+    if (!resp.display_id.empty()) {
+      reserve += EncodedStringSize(resp.display_id);
+    }
+    if (!resp.device_id.empty()) {
+      reserve += EncodedStringSize(resp.device_id);
+    }
+    out.reserve(reserve);
+  }
+  out.push_back(resp.success ? 1 : 0);
+  if (resp.success) {
+    proto::WriteString(resp.device_id, out);
+    proto::WriteString(resp.display_id, out);
+  } else {
+    proto::WriteString(resp.error, out);
+    if (!resp.display_id.empty()) {
+      proto::WriteString(resp.display_id, out);
+    }
+    if (!resp.device_id.empty()) {
+      proto::WriteString(resp.device_id, out);
+    }
+  }
+  return out;
+}
+
+std::vector<std::uint8_t> EncodeRootAuthInitResp(
+    const RootAuthInitResponse& resp) {
+  std::vector<std::uint8_t> out;
   if (!resp.success) {
     out.reserve(1 + EncodedStringSize(resp.error));
   } else {
@@ -921,29 +955,13 @@ std::vector<std::uint8_t> EncodeDeviceRegisterResp(
   return out;
 }
 
-std::vector<std::uint8_t> EncodeRootAuthInitResp(
-    const RootAuthInitResponse& resp) {
-  std::vector<std::uint8_t> out;
-  if (resp.success) {
-    out.reserve(1 + EncodedStringSize(resp.secret_hex));
-  } else {
-    out.reserve(1 + EncodedStringSize(resp.error));
-  }
-  out.push_back(resp.success ? 1 : 0);
-  if (resp.success) {
-    proto::WriteString(resp.secret_hex, out);
-  } else {
-    proto::WriteString(resp.error, out);
-  }
-  return out;
-}
-
 std::vector<std::uint8_t> EncodeQrLoginInitResp(
     const QrLoginInitResponse& resp) {
   std::vector<std::uint8_t> out;
   if (resp.success) {
     out.reserve(1 + EncodedStringSize(resp.qr_id) +
-                EncodedStringSize(resp.secret_hex));
+                EncodedStringSize(resp.secret_hex) +
+                EncodedStringSize(resp.display_id));
   } else {
     out.reserve(1 + EncodedStringSize(resp.error));
   }
@@ -951,6 +969,7 @@ std::vector<std::uint8_t> EncodeQrLoginInitResp(
   if (resp.success) {
     proto::WriteString(resp.qr_id, out);
     proto::WriteString(resp.secret_hex, out);
+    proto::WriteString(resp.display_id, out);
   } else {
     proto::WriteString(resp.error, out);
   }
@@ -1183,9 +1202,12 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
   const PayloadView payload_bytes = MakePayloadView(in);
   const proto::ByteView payload_view = payload_bytes.view;
   std::size_t offset = 0;
-  std::string s1, s2;
+  std::string s1, s2, s3, s4, s5;
   std::string_view s1_view;
   std::string_view s2_view;
+  std::string_view s3_view;
+  std::string_view s4_view;
+  std::string_view s5_view;
   switch (in.type) {
     case FrameType::kLogin: {
       if (!proto::ReadStringView(payload_view, offset, s1_view) ||
@@ -1824,7 +1846,7 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
       if (token.empty()) {
         return false;
       }
-      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // device_id
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {  // device_claim_id
         return false;
       }
       AssignString(s1, s1_view);
@@ -1887,11 +1909,18 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
       }
       AssignString(s1, s1_view);
       s2.clear();
+      s3.clear();
       if (offset < payload_bytes.size()) {
         if (!proto::ReadStringView(payload_view, offset, s2_view)) {  // root_code
           return false;
         }
         AssignString(s2, s2_view);
+      }
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadStringView(payload_view, offset, s3_view)) {  // legacy auth_device_id
+          return false;
+        }
+        AssignString(s3, s3_view);
       }
       if (offset != payload_bytes.size()) {
         return false;
@@ -1904,20 +1933,40 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
       if (token.empty()) {
         return false;
       }
-      if (offset != payload_bytes.size()) {
-        return false;
-      }
-      auto resp = api_->RootAuthInit(token);
-      out.payload = EncodeRootAuthInitResp(resp);
-      return true;
-    }
-    case FrameType::kQrLoginInit: {
       if (!proto::ReadStringView(payload_view, offset, s1_view) ||
           offset != payload_bytes.size()) {
         return false;
       }
       AssignString(s1, s1_view);
-      auto resp = api_->QrLoginInit(s1);
+      auto resp = api_->RootAuthInit(token, s1);
+      out.payload = EncodeRootAuthInitResp(resp);
+      return true;
+    }
+    case FrameType::kQrLoginInit: {
+      if (!proto::ReadStringView(payload_view, offset, s1_view)) {
+        return false;
+      }
+      AssignString(s1, s1_view);
+      if (offset == payload_bytes.size()) {
+        auto resp = api_->QrLoginInit(std::string(), s1);
+        out.payload = EncodeQrLoginInitResp(resp);
+        return true;
+      }
+      if (!proto::ReadStringView(payload_view, offset, s2_view)) {
+        return false;
+      }
+      AssignString(s2, s2_view);
+      if (offset == payload_bytes.size()) {
+        auto resp = api_->QrLoginInit(s1, s2);
+        out.payload = EncodeQrLoginInitResp(resp);
+        return true;
+      }
+      if (!proto::ReadStringView(payload_view, offset, s3_view) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      AssignString(s3, s3_view);
+      auto resp = api_->QrLoginInit(s1, s2);
       out.payload = EncodeQrLoginInitResp(resp);
       return true;
     }
@@ -1938,13 +1987,42 @@ bool FrameRouter::HandleView(const FrameView& in, Frame& out,
         return false;
       }
       if (!proto::ReadStringView(payload_view, offset, s1_view) ||
-          !proto::ReadStringView(payload_view, offset, s2_view) ||
-          offset != payload_bytes.size()) {
+          !proto::ReadStringView(payload_view, offset, s2_view)) {
         return false;
       }
       AssignString(s1, s1_view);
       AssignString(s2, s2_view);
-      auto resp = api_->QrLoginApprove(token, s1, s2);
+      s3.clear();
+      if (offset < payload_bytes.size()) {
+        if (!proto::ReadStringView(payload_view, offset, s3_view) ||
+            offset != payload_bytes.size()) {
+          return false;
+        }
+        AssignString(s3, s3_view);
+      } else if (offset != payload_bytes.size()) {
+        return false;
+      }
+      auto resp = api_->QrLoginApprove(token, s1, s2, s3);
+      out.payload = EncodeQrLoginApproveResp(resp);
+      return true;
+    }
+    case FrameType::kQrLoginApproveRoot: {
+      if (!proto::ReadStringView(payload_view, offset, s1_view) ||
+          !proto::ReadStringView(payload_view, offset, s2_view) ||
+          !proto::ReadStringView(payload_view, offset, s3_view)) {
+        return false;
+      }
+      AssignString(s1, s1_view);  // username
+      AssignString(s2, s2_view);  // qr_id
+      AssignString(s3, s3_view);  // secret_hex
+      if (!proto::ReadStringView(payload_view, offset, s4_view) ||
+          !proto::ReadStringView(payload_view, offset, s5_view) ||
+          offset != payload_bytes.size()) {
+        return false;
+      }
+      AssignString(s4, s4_view);  // display_id
+      AssignString(s5, s5_view);  // root_code
+      auto resp = api_->QrLoginApproveRoot(s1, s2, s3, s4, s5);
       out.payload = EncodeQrLoginApproveResp(resp);
       return true;
     }

@@ -30,6 +30,8 @@ std::atomic<bool> gTamperDetected{false};
 std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
 std::atomic<TamperHandler> gTamperHandler{nullptr};
 
+std::uint32_t ParseHardeningPollMs() noexcept;
+
 using SetProcessMitigationPolicyFn = BOOL(WINAPI*)(int, PVOID, SIZE_T);
 using NtQueryInformationProcessFn =
     LONG(WINAPI*)(HANDLE, int, PVOID, ULONG, PULONG);
@@ -326,8 +328,7 @@ void ScanThreadMain(TextRegion region,
   }
 }
 
-void MonitorThreadMain() noexcept {
-  const auto level = gLevel.load();
+void MonitorThreadMain(HardeningLevel level, std::uint32_t poll_ms) noexcept {
   if (level == HardeningLevel::kOff || level == HardeningLevel::kLow) {
     return;
   }
@@ -351,7 +352,7 @@ void MonitorThreadMain() noexcept {
         return;
       }
     }
-    Sleep(5000);
+    Sleep(static_cast<DWORD>(poll_ms));
   }
 }
 
@@ -370,7 +371,7 @@ void StartThreadsBestEffort(HardeningLevel level) noexcept {
       std::thread(ScanThreadMain, region, baseline).detach();
     }
     if (level >= HardeningLevel::kMedium) {
-      std::thread(MonitorThreadMain).detach();
+      std::thread(MonitorThreadMain, level, ParseHardeningPollMs()).detach();
     }
   } catch (...) {
   }
@@ -401,6 +402,28 @@ HardeningLevel ParseHardeningLevel() noexcept {
     return HardeningLevel::kHigh;
   }
   return HardeningLevel::kHigh;
+}
+
+std::uint32_t ParseHardeningPollMs() noexcept {
+  const char* env = std::getenv("MI_E2EE_HARDENING_POLL_MS");
+  if (!env || *env == '\0') {
+    env = std::getenv("MI_E2EE_HARDENING_INTERVAL_MS");
+  }
+  if (!env || *env == '\0') {
+    return 5000;
+  }
+  char* end = nullptr;
+  long value = std::strtol(env, &end, 10);
+  if (end == env || value <= 0) {
+    return 5000;
+  }
+  if (value < 500) {
+    value = 500;
+  }
+  if (value > 600000) {
+    value = 600000;
+  }
+  return static_cast<std::uint32_t>(value);
 }
 
 }  // namespace

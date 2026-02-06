@@ -49,6 +49,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import java.security.MessageDigest
+import java.util.Locale
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,9 +64,9 @@ fun AccountScreen(
     val linkedStatus = remember { mutableStateOf<String?>(null) }
     val rootCode = remember { mutableStateOf("") }
     val rootCountdown = remember { mutableStateOf(0) }
-    val rootSecretInput = remember { mutableStateOf("") }
-    val rootSecretError = remember { mutableStateOf<String?>(null) }
-    val showRootSecretDialog = remember { mutableStateOf(false) }
+    val rootPubkeyInput = remember { mutableStateOf("") }
+    val rootPubkeyError = remember { mutableStateOf<String?>(null) }
+    val showRootPubkeyDialog = remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
@@ -105,7 +107,7 @@ fun AccountScreen(
             AccountHeader(
                 displayName = sdk.username.ifBlank { tr("account_user_placeholder", "MI User") },
                 username = sdk.username.ifBlank { "mi_user" },
-                deviceId = sdk.deviceId
+                deviceId = sdk.deviceDisplayId
             )
             SectionHeader(text = tr("account_security", "Security"))
             Card(
@@ -158,9 +160,10 @@ fun AccountScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                     val code = rootCode.value
-                    if (code.isBlank()) {
+                    val pubkey = sdk.rootAuthPubkey().orEmpty()
+                    if (pubkey.isBlank()) {
                         Text(
-                            text = tr("account_root_auth_empty", "No root auth secret set"),
+                            text = tr("account_root_auth_empty", "No root auth public key set"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -170,17 +173,43 @@ fun AccountScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = tr("account_root_auth_code", "Code: %s").format(code),
-                                style = MaterialTheme.typography.titleLarge
+                                text = tr("account_root_auth_pubkey", "Public key: %s")
+                                    .format(pubkey),
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             IconButton(onClick = {
-                                clipboard.setText(AnnotatedString(code))
+                                clipboard.setText(AnnotatedString(pubkey))
                             }) {
                                 Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
                             }
                         }
+                        if (code.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = tr("account_root_auth_code", "Code: %s").format(code),
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                                IconButton(onClick = {
+                                    clipboard.setText(AnnotatedString(code))
+                                }) {
+                                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
+                                }
+                            }
+                            Text(
+                                text = tr("account_root_auth_refresh", "Refresh in %ds")
+                                    .format(rootCountdown.value),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
-                            text = tr("account_root_auth_refresh", "Refresh in %ds").format(rootCountdown.value),
+                            text = tr(
+                                "account_root_auth_notice",
+                                "Use the Root Auth app to generate the auth string (code + signature)."
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -188,25 +217,16 @@ fun AccountScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(
-                            onClick = { sdk.initRootAuthSecret() },
+                            onClick = { showRootPubkeyDialog.value = true },
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
                                 contentColor = MaterialTheme.colorScheme.secondary
                             )
                         ) {
-                            Text(tr("account_root_auth_init", "Init from server"))
+                            Text(tr("account_root_auth_init", "Init with public key"))
                         }
                         FilledTonalButton(
-                            onClick = { showRootSecretDialog.value = true },
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text(tr("account_root_auth_set", "Set secret"))
-                        }
-                        FilledTonalButton(
-                            onClick = { sdk.clearRootAuthSecret() },
+                            onClick = { sdk.clearRootAuthPubkey() },
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
                                 contentColor = MaterialTheme.colorScheme.error
@@ -287,6 +307,9 @@ fun AccountScreen(
                         Text(text = tr("account_pair_requests", "Pending requests"), style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(6.dp))
                         sdk.pairingRequests.forEach { request ->
+                            val label = request.displayId.ifBlank {
+                                pairingAlias(request.deviceId).ifBlank { "N/A" }
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -294,7 +317,7 @@ fun AccountScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = request.deviceId,
+                                    text = label,
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -380,22 +403,22 @@ fun AccountScreen(
                 onClick = { sdk.logout() }
             )
         }
-        if (showRootSecretDialog.value) {
+        if (showRootPubkeyDialog.value) {
             AlertDialog(
-                onDismissRequest = { showRootSecretDialog.value = false },
-                title = { Text(tr("account_root_auth_dialog", "Set root auth secret")) },
+                onDismissRequest = { showRootPubkeyDialog.value = false },
+                title = { Text(tr("account_root_auth_dialog", "Set root auth public key")) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = rootSecretInput.value,
-                            onValueChange = { rootSecretInput.value = it },
+                            value = rootPubkeyInput.value,
+                            onValueChange = { rootPubkeyInput.value = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(tr("account_root_auth_hint", "Enter 64-hex secret")) },
+                            placeholder = { Text(tr("account_root_auth_hint", "Enter 64-hex public key")) },
                             singleLine = true
                         )
-                        if (!rootSecretError.value.isNullOrBlank()) {
+                        if (!rootPubkeyError.value.isNullOrBlank()) {
                             Text(
-                                text = rootSecretError.value.orEmpty(),
+                                text = rootPubkeyError.value.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -404,12 +427,14 @@ fun AccountScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (sdk.setRootAuthSecret(rootSecretInput.value)) {
-                            rootSecretError.value = null
-                            rootSecretInput.value = ""
-                            showRootSecretDialog.value = false
+                        if (sdk.initRootAuthPubkey(rootPubkeyInput.value)) {
+                            rootPubkeyError.value = null
+                            rootPubkeyInput.value = ""
+                            showRootPubkeyDialog.value = false
                         } else {
-                            rootSecretError.value = t("account_root_auth_invalid", "Invalid secret hex")
+                            rootPubkeyError.value = sdk.lastError.ifBlank {
+                                t("account_root_auth_invalid", "Invalid public key")
+                            }
                         }
                     }) {
                         Text(tr("account_root_auth_confirm", "Save"))
@@ -417,9 +442,9 @@ fun AccountScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        rootSecretError.value = null
-                        rootSecretInput.value = ""
-                        showRootSecretDialog.value = false
+                        rootPubkeyError.value = null
+                        rootPubkeyInput.value = ""
+                        showRootPubkeyDialog.value = false
                     }) {
                         Text(tr("account_root_auth_cancel", "Cancel"))
                     }
@@ -519,11 +544,14 @@ private fun DeviceRow(
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.Devices, contentDescription = device.deviceId)
+            Icon(Icons.Filled.Devices, contentDescription = device.displayId.ifBlank { "Device" })
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = device.deviceId, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = device.displayId.ifBlank { "N/A" },
+                style = MaterialTheme.typography.bodyLarge
+            )
             Text(
                 text = tr("account_device_last_seen", "Last seen %s").format(formatLastSeen(device.lastSeenSec)),
                 style = MaterialTheme.typography.bodyMedium,
@@ -568,6 +596,23 @@ private fun DividerLine() {
             .background(MaterialTheme.colorScheme.outline)
             .padding(horizontal = 16.dp)
     )
+}
+
+private fun pairingAlias(deviceId: String): String {
+    if (deviceId.isBlank()) {
+        return ""
+    }
+    val input = "mi_e2ee_pairing_alias_v1|$deviceId"
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(input.toByteArray(Charsets.UTF_8))
+    val hex = StringBuilder(digest.size * 2)
+    for (b in digest) {
+        hex.append(String.format(Locale.US, "%02x", b))
+    }
+    if (hex.length < 8) {
+        return ""
+    }
+    return "DEV-${hex.substring(0, 8)}"
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)

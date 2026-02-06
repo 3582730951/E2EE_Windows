@@ -17,7 +17,11 @@ class AuthService {
   bool Logout(ClientCore& core) const;
   bool LoadKtState(ClientCore& core) const;
   bool SaveKtState(ClientCore& core) const;
+  bool LoadOrCreateDeviceClaimId(ClientCore& core) const;
   bool LoadOrCreateDeviceId(ClientCore& core) const;
+  bool LoadOrCreateDeviceAuthId(ClientCore& core) const;
+  bool SaveDeviceId(ClientCore& core) const;
+  bool SaveDeviceAuthId(ClientCore& core) const;
 };
 
 }  // namespace mi::client

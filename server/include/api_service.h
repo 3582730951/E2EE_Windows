@@ -19,6 +19,7 @@
 #include "group_directory.h"
 #include "group_manager.h"
 #include "key_transparency.h"
+#include "metadata_protector.h"
 #include "media_relay.h"
 #include "offline_storage.h"
 #include "session_manager.h"
@@ -369,6 +370,7 @@ struct DeviceListResponse {
   bool success{false};
   struct Entry {
     std::string device_id;
+    std::string display_id;
     std::uint32_t last_seen_sec{0};
   };
   std::vector<Entry> devices;
@@ -382,12 +384,13 @@ struct DeviceKickResponse {
 
 struct DeviceRegisterResponse {
   bool success{false};
+  std::string device_id;
+  std::string display_id;
   std::string error;
 };
 
 struct RootAuthInitResponse {
   bool success{false};
-  std::string secret_hex;
   std::string error;
 };
 
@@ -395,6 +398,7 @@ struct QrLoginInitResponse {
   bool success{false};
   std::string qr_id;
   std::string secret_hex;
+  std::string display_id;
   std::string error;
 };
 
@@ -430,6 +434,7 @@ class ApiService {
              OfflineStorage* storage = nullptr,
              OfflineQueue* queue = nullptr,
              MediaRelay* media_relay = nullptr,
+             MetadataProtector* metadata_protector = nullptr,
              std::uint32_t group_threshold = 10000,
              std::optional<MySqlConfig> friend_mysql = std::nullopt,
              std::filesystem::path storage_dir = {},
@@ -626,16 +631,24 @@ class ApiService {
                                 const std::string& requester_device_id,
                                 const std::string& target_device_id);
   DeviceRegisterResponse RegisterDevice(const std::string& token,
-                                        const std::string& device_id,
+                                        const std::string& device_claim_id,
                                         const std::string& root_code);
-  RootAuthInitResponse RootAuthInit(const std::string& token);
-  QrLoginInitResponse QrLoginInit(const std::string& device_id);
+  RootAuthInitResponse RootAuthInit(const std::string& token,
+                                    const std::string& pubkey_hex);
+  QrLoginInitResponse QrLoginInit(const std::string& username,
+                                  const std::string& device_claim_id);
   QrLoginPollResponse QrLoginPoll(const std::string& qr_id,
                                   const std::string& secret_hex,
                                   TransportKind transport);
   QrLoginApproveResponse QrLoginApprove(const std::string& token,
                                         const std::string& qr_id,
-                                        const std::string& secret_hex);
+                                        const std::string& secret_hex,
+                                        const std::string& root_code);
+  QrLoginApproveResponse QrLoginApproveRoot(const std::string& username,
+                                            const std::string& qr_id,
+                                            const std::string& secret_hex,
+                                            const std::string& display_id,
+                                            const std::string& root_code);
 
   DevicePairingPushResponse PushDevicePairingRequest(
       const std::string& token, const std::string& pairing_id_hex,
@@ -719,6 +732,12 @@ class ApiService {
   bool SaveRootAuthRecord(const std::string& username,
                           const RootAuthRecord& record,
                           std::string& out_error);
+  enum class RootAuthCheckResult { kOk, kMissing, kInvalid };
+  RootAuthCheckResult VerifyRootAuth(const RootAuthRecord& record,
+                                     const std::string& device_id,
+                                     const std::string& context,
+                                     const std::string& code,
+                                     const std::string& proof_hex) const;
   bool VerifyRootAuthCode(const RootAuthRecord& record,
                           const std::string& code) const;
   bool VerifyRootAuthProof(const RootAuthRecord& record,
@@ -742,6 +761,7 @@ class ApiService {
   OfflineStorage* storage_;
   OfflineQueue* queue_;
   MediaRelay* media_relay_;
+  MetadataProtector* metadata_protector_;
   std::uint32_t group_threshold_;
   std::optional<MySqlConfig> friend_mysql_;
 
@@ -768,14 +788,17 @@ class ApiService {
   struct DeviceRecord {
     std::chrono::steady_clock::time_point last_seen{};
     std::string last_token;
+    std::string display_id;
   };
   std::unordered_map<std::string, std::unordered_map<std::string, DeviceRecord>>
       devices_by_user_;
   std::mutex root_auth_mutex_;
   struct RootAuthRecord {
-    std::array<std::uint8_t, 32> secret{};
     std::unordered_set<std::string> devices;
-    bool has_secret{false};
+    std::array<std::uint8_t, 32> pubkey{};
+    bool has_pubkey{false};
+    std::array<std::uint8_t, 32> legacy_secret{};
+    bool has_legacy_secret{false};
   };
   std::unordered_map<std::string, RootAuthRecord> root_auth_by_user_;
   std::mutex qr_login_mutex_;
@@ -783,6 +806,7 @@ class ApiService {
     std::array<std::uint8_t, 32> secret{};
     std::string username;
     std::string device_id;
+    std::string display_id;
     std::chrono::steady_clock::time_point created_at{};
     bool approved{false};
   };

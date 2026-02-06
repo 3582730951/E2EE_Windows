@@ -207,7 +207,7 @@ fun SettingsScreen(
                 SettingsHeader(
                     displayName = sdk.username.ifBlank { tr("settings_user_placeholder", "MI User") },
                     username = sdk.username.ifBlank { "mi_user" },
-                    deviceId = sdk.deviceId,
+                    deviceId = sdk.deviceDisplayId,
                     remoteOk = sdk.remoteOk
                 )
             }

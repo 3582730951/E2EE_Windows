@@ -1,15 +1,15 @@
 RootAuth iOS App
 
 Purpose
-- Standalone trusted Root Auth app for 5-second rotating auth codes (TOTP/HMAC-SHA256).
+- Standalone trusted Root Auth app for 5-second rotating auth codes (SHA-256).
 - Scan login QR codes and show device info before authorizing.
 
 Features
 - 6-digit auth code, refreshed every 5 seconds.
 - Scan login QR codes and prompt for approval.
-- Optional auth string (code:proof) for device-bound authorization.
-- Import root secret via QR (mi_e2ee://root-auth?secret=...) or manual 64-hex entry.
-- Secret is stored device-only and encrypted with Secure Enclave key when available.
+- Auth string (code:signature) for device-bound authorization.
+- Generates an Ed25519 keypair and exposes the public key (64-hex).
+- Private key is stored device-only and encrypted with Secure Enclave key when available.
 
 Build
 1) Install XcodeGen (optional)
@@ -20,4 +20,4 @@ Build
 
 Notes
 - This repo does not bundle iOS networking or server bindings; the app focuses on code generation and QR verification.
-- Server approval is completed by entering the auth code on the new device.
+- Server approval is completed by entering the auth string on the new device.

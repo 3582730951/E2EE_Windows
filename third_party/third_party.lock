@@ -3,6 +3,7 @@ monocypher|__git__|BSD-2-Clause OR CC0-1.0|monocypher|274f12b0b457003dc3ba00aee1
 miniz|3.1.0|public-domain|miniz|10ce092315b2c2bdb69e3acb574ae9dfeb5065f13593e9fda9a1cb3177b0a9be
 kcp|snapshot|MIT|kcp|76860ea7d1e51b12dff4367d3e81e21ded1eb193e4b82e1a840732ba9a6166d7
 qrcodegen|snapshot|MIT|qrcodegen|45e67766469682d31e0564227574fbbd0b13845a1230c1db6cfda84d6b44ab76
+ed25519|snapshot|Zlib|ed25519|90d96f19034fde7c77c130102e6b42985fb7ba5d51d1a78c812abb0db3994264
 pqclean_mlkem768_clean|snapshot|CC0-1.0 AND MIT|pqclean_mlkem768_clean|9a9ed8cce6732c75ae7662ea8fd8216048cb71721248e965ba608a2e9bd50ee5
 pqclean_mldsa65_clean|snapshot|CC0-1.0 AND MIT|pqclean_mldsa65_clean|00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd
 rime-luna-pinyin|2024.02.10|LGPL-3.0|../client/ui/data/ime_pinyin.dat|405355580591bc45e7973aa69937e9044ad579ef1d2b99394570387e2f84807b

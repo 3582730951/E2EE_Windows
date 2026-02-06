@@ -567,7 +567,7 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
     }
   }
   std::filesystem::remove(state_dir / ".probe", ec);
-  if (config_.server.state_backend == StateBackend::kMySql) {
+  {
     MetadataKeyConfig meta_cfg;
     meta_cfg.protection = config_.server.metadata_protection;
     meta_cfg.key_hex = config_.server.metadata_key_hex.get();
@@ -587,6 +587,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
       return false;
     }
     metadata_protector_ = std::make_unique<MetadataProtector>(meta_key);
+  }
+  if (config_.server.state_backend == StateBackend::kMySql) {
     state_store_ = CreateMysqlStateStore(config_.state_mysql,
                                          metadata_protector_.get(),
                                          error);
@@ -708,6 +710,7 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                       group_calls_.get(), directory_.get(),
                                       offline_storage_.get(),
                                       offline_queue_.get(), media_relay_.get(),
+                                      metadata_protector_.get(),
                                       config_.server.group_rotation_threshold,
                                       config_.mode == AuthMode::kMySQL
                                           ? std::optional<MySqlConfig>(

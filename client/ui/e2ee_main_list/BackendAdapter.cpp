@@ -567,6 +567,9 @@ QVector<BackendAdapter::DevicePairingRequestEntry> ToDevicePairingRequests(
         if (entries[i].device_id) {
             e.deviceId = QString::fromUtf8(entries[i].device_id);
         }
+        if (entries[i].display_id) {
+            e.displayId = QString::fromUtf8(entries[i].display_id);
+        }
         if (entries[i].request_id_hex) {
             e.requestIdHex = QString::fromUtf8(entries[i].request_id_hex);
         }
@@ -587,6 +590,9 @@ QVector<BackendAdapter::DeviceEntry> ToDeviceEntries(
         BackendAdapter::DeviceEntry e;
         if (entries[i].device_id) {
             e.deviceId = QString::fromUtf8(entries[i].device_id);
+        }
+        if (entries[i].display_id) {
+            e.displayId = QString::fromUtf8(entries[i].display_id);
         }
         e.lastSeenSec = static_cast<quint32>(entries[i].last_seen_sec);
         out.push_back(std::move(e));
@@ -3125,6 +3131,17 @@ QString BackendAdapter::currentDeviceId() const {
     return {};
 }
 
+QString BackendAdapter::currentDeviceDisplayId() const {
+    if (fileTransferActive_.load()) {
+        return {};
+    }
+    if (c_api_) {
+        const char* value = mi_client_device_display_id(c_api_);
+        return value ? QString::fromUtf8(value) : QString();
+    }
+    return {};
+}
+
 bool BackendAdapter::isPendingOutgoingMessage(const QString &messageId) const {
     const std::string key = messageId.trimmed().toStdString();
     if (key.empty()) {
@@ -3387,7 +3404,9 @@ void BackendAdapter::cancelDevicePairing() {
     }
 }
 
-bool BackendAdapter::beginQrLogin(QString &outPayload, QString &err) {
+bool BackendAdapter::beginQrLogin(const QString &username,
+                                  QString &outPayload,
+                                  QString &err) {
     outPayload.clear();
     if (loggedIn_) {
         err = QStringLiteral("已登录");
@@ -3403,7 +3422,8 @@ bool BackendAdapter::beginQrLogin(QString &outPayload, QString &err) {
     bool ok = false;
     QString errMsg;
     char* out = nullptr;
-    ok = mi_client_begin_qr_login(c_api_, &out) != 0;
+    const QByteArray user = username.trimmed().toUtf8();
+    ok = mi_client_begin_qr_login_with_username(c_api_, user.constData(), &out) != 0;
     if (out) {
         outPayload = QString::fromUtf8(out);
         mi_client_free(out);

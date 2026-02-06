@@ -286,6 +286,14 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
 
+      - name: Verify third-party lock
+        run: |
+          $tool = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_third_party_audit.exe" | Select-Object -First 1
+          if (-not $tool) {
+            throw "mi_e2ee_third_party_audit.exe not found"
+          }
+          & $tool.FullName --lock "$env:GITHUB_WORKSPACE\\third_party\\third_party.lock" --verify
+
       - name: Build ops health test
         run: cmake --build build/server --config Release --target ops_health_test
 
@@ -527,6 +535,16 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release
 
+      - name: Verify third-party lock
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_third_party_audit not found" >&2
+            exit 1
+          fi
+          "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
+
       - name: Run server tests
         env:
           MI_E2EE_HARDENING: off
@@ -744,6 +762,16 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release
 
+      - name: Verify third-party lock
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_third_party_audit not found" >&2
+            exit 1
+          fi
+          "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
+
       - name: Run server tests
         env:
           MI_E2EE_HARDENING: off
@@ -889,6 +917,16 @@ jobs:
 
       - name: Build server
         run: cmake --build build/server --config Release
+
+      - name: Verify third-party lock
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_third_party_audit not found" >&2
+            exit 1
+          fi
+          "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
 
       - name: Run server tests
         env:

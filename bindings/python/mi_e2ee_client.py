@@ -70,12 +70,14 @@ class MiFriendRequestEntry(ctypes.Structure):
 class MiDeviceEntry(ctypes.Structure):
     _fields_ = [
         ("device_id", ctypes.c_char_p),
+        ("display_id", ctypes.c_char_p),
         ("last_seen_sec", ctypes.c_uint32),
     ]
 
 class MiDevicePairingRequest(ctypes.Structure):
     _fields_ = [
         ("device_id", ctypes.c_char_p),
+        ("display_id", ctypes.c_char_p),
         ("request_id_hex", ctypes.c_char_p),
     ]
 
@@ -181,6 +183,8 @@ _lib.mi_client_token.restype = ctypes.c_char_p
 
 _lib.mi_client_device_id.argtypes = [ctypes.c_void_p]
 _lib.mi_client_device_id.restype = ctypes.c_char_p
+_lib.mi_client_device_display_id.argtypes = [ctypes.c_void_p]
+_lib.mi_client_device_display_id.restype = ctypes.c_char_p
 
 _lib.mi_client_remote_ok.argtypes = [ctypes.c_void_p]
 _lib.mi_client_remote_ok.restype = ctypes.c_int
@@ -798,6 +802,9 @@ class Client:
     def device_id(self):
         return _decode_cstr(_lib.mi_client_device_id(self._handle)) or ""
 
+    def device_display_id(self):
+        return _decode_cstr(_lib.mi_client_device_display_id(self._handle)) or ""
+
     def remote_ok(self):
         return bool(_lib.mi_client_remote_ok(self._handle))
 
@@ -952,6 +959,7 @@ class Client:
             entry = buf[i]
             devices.append({
                 "device_id": _decode_cstr(entry.device_id) or "",
+                "display_id": _decode_cstr(entry.display_id) or "",
                 "last_seen_sec": entry.last_seen_sec,
             })
         return devices
@@ -1200,6 +1208,7 @@ class Client:
             entry = buf[i]
             requests.append({
                 "device_id": _decode_cstr(entry.device_id) or "",
+                "display_id": _decode_cstr(entry.display_id) or "",
                 "request_id_hex": _decode_cstr(entry.request_id_hex) or "",
             })
         return requests

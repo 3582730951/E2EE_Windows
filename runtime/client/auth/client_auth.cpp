@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -27,6 +28,25 @@ std::string GetEnvValue(const char* name) {
   }
   const char* v = std::getenv(name);
   return v ? std::string(v) : std::string();
+}
+
+std::string UrlEncode(const std::string& input) {
+  static constexpr char kHex[] = "0123456789ABCDEF";
+  std::string out;
+  out.reserve(input.size());
+  for (unsigned char ch : input) {
+    if ((ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= '0' && ch <= '9') ||
+        ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+      out.push_back(static_cast<char>(ch));
+    } else {
+      out.push_back('%');
+      out.push_back(kHex[(ch >> 4) & 0x0F]);
+      out.push_back(kHex[ch & 0x0F]);
+    }
+  }
+  return out;
 }
 
 }  // namespace
@@ -69,6 +89,11 @@ bool ClientCore::LoginWithRootCode(const std::string& username,
 }
 
 bool ClientCore::BeginQrLogin(std::string& out_payload) {
+  return BeginQrLoginWithUsername(std::string(), out_payload);
+}
+
+bool ClientCore::BeginQrLoginWithUsername(const std::string& username,
+                                          std::string& out_payload) {
   out_payload.clear();
   last_error_.clear();
   if (!token_.empty()) {
@@ -76,21 +101,27 @@ bool ClientCore::BeginQrLogin(std::string& out_payload) {
     return false;
   }
   CancelQrLogin();
-  if (!LoadOrCreateDeviceId()) {
+  if (!LoadOrCreateDeviceClaimId()) {
     if (last_error_.empty()) {
-      last_error_ = "device id unavailable";
+      last_error_ = "device claim id unavailable";
     }
     return false;
   }
-  if (device_id_.empty()) {
-    last_error_ = "device id unavailable";
+  if (device_claim_id_.empty()) {
+    last_error_ = "device claim id unavailable";
     return false;
   }
 
   mi::server::Frame req;
   req.type = mi::server::FrameType::kQrLoginInit;
-  if (!mi::server::proto::WriteString(device_id_, req.payload)) {
-    last_error_ = "device id invalid";
+  if (username.empty()) {
+    if (!mi::server::proto::WriteString(device_claim_id_, req.payload)) {
+      last_error_ = "qr login request invalid";
+      return false;
+    }
+  } else if (!mi::server::proto::WriteString(username, req.payload) ||
+             !mi::server::proto::WriteString(device_claim_id_, req.payload)) {
+    last_error_ = "qr login request invalid";
     return false;
   }
 
@@ -117,11 +148,43 @@ bool ClientCore::BeginQrLogin(std::string& out_payload) {
   }
   std::string qr_id;
   std::string secret_hex;
+  std::string display_id;
   if (!mi::server::proto::ReadString(resp.payload, off, qr_id) ||
-      !mi::server::proto::ReadString(resp.payload, off, secret_hex) ||
-      off != resp.payload.size() || qr_id.empty() || secret_hex.empty()) {
+      !mi::server::proto::ReadString(resp.payload, off, secret_hex)) {
     last_error_ = "qr login init response invalid";
     return false;
+  }
+  if (off < resp.payload.size()) {
+    if (!mi::server::proto::ReadString(resp.payload, off, display_id) ||
+        off != resp.payload.size()) {
+      last_error_ = "qr login init response invalid";
+      return false;
+    }
+  } else if (off != resp.payload.size()) {
+    last_error_ = "qr login init response invalid";
+    return false;
+  }
+  if (qr_id.empty() || secret_hex.empty()) {
+    last_error_ = "qr login init response invalid";
+    return false;
+  }
+  if (!display_id.empty()) {
+    if (display_id.size() != 32) {
+      last_error_ = "qr login init response invalid";
+      return false;
+    }
+    for (const char ch : display_id) {
+      const unsigned char uc = static_cast<unsigned char>(ch);
+      if (!(std::isdigit(uc) || (uc >= 'a' && uc <= 'f') ||
+            (uc >= 'A' && uc <= 'F'))) {
+        last_error_ = "qr login init response invalid";
+        return false;
+      }
+    }
+    std::transform(display_id.begin(), display_id.end(), display_id.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    device_auth_id_ = display_id;
+    AuthService().SaveDeviceAuthId(*this);
   }
   std::vector<std::uint8_t> secret_bytes;
   if (!mi::common::HexToBytes(secret_hex, secret_bytes) ||
@@ -134,9 +197,29 @@ bool ClientCore::BeginQrLogin(std::string& out_payload) {
   qr_login_id_ = qr_id;
   qr_login_secret_hex_ = secret_hex;
   qr_login_active_ = true;
-  static constexpr char kQrPrefix[] = "mi_e2ee://qr-login?v=1";
+  static constexpr char kQrPrefix[] = "mi_e2ee://qr-login?v=2";
   qr_login_payload_ = std::string(kQrPrefix) + "&id=" + qr_id +
-                      "&s=" + secret_hex + "&d=" + device_id_;
+                      "&s=" + secret_hex;
+  const std::string qr_display =
+      !display_id.empty() ? display_id : device_auth_id_;
+  if (!qr_display.empty()) {
+    qr_login_payload_ += "&d=" + qr_display;
+  }
+  if (!username.empty()) {
+    qr_login_payload_ += "&u=" + UrlEncode(username);
+  }
+  if (remote_mode_ && !server_ip_.empty()) {
+    const std::uint16_t port =
+        server_port_plain_ != 0 ? server_port_plain_ : server_port_;
+    if (port != 0) {
+      qr_login_payload_ += "&h=" + UrlEncode(server_ip_);
+      qr_login_payload_ += "&p=" + std::to_string(port);
+      qr_login_payload_ += "&tls=" + std::string(qr_login_use_tls_ ? "1" : "0");
+      if (!pinned_server_fingerprint_.empty()) {
+        qr_login_payload_ += "&fp=" + pinned_server_fingerprint_;
+      }
+    }
+  }
   out_payload = qr_login_payload_;
   return true;
 }
@@ -241,6 +324,12 @@ bool ClientCore::PollQrLogin(bool& out_completed) {
 
 bool ClientCore::ApproveQrLogin(const std::string& qr_id,
                                 const std::string& qr_secret_hex) {
+  return ApproveQrLogin(qr_id, qr_secret_hex, std::string());
+}
+
+bool ClientCore::ApproveQrLogin(const std::string& qr_id,
+                                const std::string& qr_secret_hex,
+                                const std::string& root_code) {
   last_error_.clear();
   if (!EnsureChannel()) {
     last_error_ = "not logged in";
@@ -253,6 +342,9 @@ bool ClientCore::ApproveQrLogin(const std::string& qr_id,
   std::vector<std::uint8_t> plain;
   mi::server::proto::WriteString(qr_id, plain);
   mi::server::proto::WriteString(qr_secret_hex, plain);
+  if (!root_code.empty()) {
+    mi::server::proto::WriteString(root_code, plain);
+  }
   std::vector<std::uint8_t> resp_payload;
   if (!ProcessEncrypted(mi::server::FrameType::kQrLoginApprove, plain,
                         resp_payload)) {
@@ -445,6 +537,16 @@ bool ClientCore::EnsureE2ee() {
 bool ClientCore::LoadOrCreateDeviceId() {
   AuthService auth_service;
   return auth_service.LoadOrCreateDeviceId(*this);
+}
+
+bool ClientCore::LoadOrCreateDeviceClaimId() {
+  AuthService auth_service;
+  return auth_service.LoadOrCreateDeviceClaimId(*this);
+}
+
+bool ClientCore::LoadOrCreateDeviceAuthId() {
+  AuthService auth_service;
+  return auth_service.LoadOrCreateDeviceAuthId(*this);
 }
 
 }  // namespace mi::client
