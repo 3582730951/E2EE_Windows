@@ -1,5 +1,6 @@
 #include "c_api_client.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -13,8 +14,17 @@
 #include "listener.h"
 #include "key_transparency.h"
 #include "network_server.h"
+#include "path_security.h"
+#include "platform_net.h"
 #include "platform_time.h"
 #include "server_app.h"
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -129,6 +139,35 @@ bool WriteTestUsers() {
   return static_cast<bool>(out);
 }
 
+bool HardenDirForTest(const std::filesystem::path& dir, std::string& error) {
+  error.clear();
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  if (ec) {
+    error = "dir create failed";
+    return false;
+  }
+#ifdef _WIN32
+  std::string perm_err;
+  if (!mi::shard::security::HardenPathAcl(dir, perm_err)) {
+    error = perm_err.empty() ? "dir acl harden failed" : perm_err;
+    return false;
+  }
+#else
+  std::filesystem::permissions(
+      dir,
+      std::filesystem::perms::owner_read |
+          std::filesystem::perms::owner_write |
+          std::filesystem::perms::owner_exec,
+      std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "dir perms set failed";
+    return false;
+  }
+#endif
+  return true;
+}
+
 void LogStep(const char* msg) {
   if (!msg) {
     return;
@@ -160,6 +199,9 @@ constexpr std::uint32_t kChatTimeoutMs = 15000;
 constexpr std::uint32_t kGroupInviteTimeoutMs = 8000;
 constexpr std::uint32_t kGroupTextTimeoutMs = 10000;
 constexpr std::uint32_t kPostLoginDelayMs = 300;
+constexpr char kTestMetadataKeyHex[] =
+    "00112233445566778899aabbccddeeff"
+    "fedcba98765432100123456789abcdef";
 
 [[noreturn]] void FailNow(const char* msg, mi_client_handle* handle) {
   if (msg) {
@@ -172,14 +214,163 @@ constexpr std::uint32_t kPostLoginDelayMs = 300;
 }
 
 std::filesystem::path MakeUniqueDir(const std::string& prefix) {
-  const auto now = static_cast<unsigned long long>(
-      mi::platform::NowSteadyMs());
-  std::filesystem::path dir =
-      std::filesystem::current_path() / (prefix + "_" + std::to_string(now));
   std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  return dir;
+  auto base = std::filesystem::current_path(ec);
+  if (ec || base.empty()) {
+    ec.clear();
+    base = std::filesystem::temp_directory_path(ec);
+  }
+  if (ec || base.empty()) {
+    base = std::filesystem::path(".");
+  }
+
+  for (int attempt = 0; attempt < 32; ++attempt) {
+    const auto stamp = std::chrono::high_resolution_clock::now()
+                           .time_since_epoch()
+                           .count();
+    const std::filesystem::path dir =
+        base / (prefix + "_" + std::to_string(stamp) + "_" +
+                std::to_string(attempt));
+    ec.clear();
+    if (std::filesystem::create_directories(dir, ec)) {
+      return dir;
+    }
+  }
+
+  const std::filesystem::path fallback = base / (prefix + "_fallback");
+  std::filesystem::create_directories(fallback, ec);
+  return fallback;
 }
+
+#ifdef _WIN32
+#ifndef MI_E2EE_SERVER_EXE_PATH
+#define MI_E2EE_SERVER_EXE_PATH ""
+#endif
+
+PROCESS_INFORMATION g_server_process{};
+
+void CloseLaunchedServerHandles() {
+  if (g_server_process.hThread != nullptr) {
+    CloseHandle(g_server_process.hThread);
+  }
+  if (g_server_process.hProcess != nullptr) {
+    CloseHandle(g_server_process.hProcess);
+  }
+  g_server_process = PROCESS_INFORMATION{};
+}
+
+void StopLaunchedServer() {
+  if (g_server_process.hProcess == nullptr) {
+    return;
+  }
+  DWORD exit_code = 0;
+  if (GetExitCodeProcess(g_server_process.hProcess, &exit_code) &&
+      exit_code == STILL_ACTIVE) {
+    (void)TerminateProcess(g_server_process.hProcess, 0);
+    (void)WaitForSingleObject(g_server_process.hProcess, 3000);
+  }
+  CloseLaunchedServerHandles();
+}
+
+std::filesystem::path FindServerExecutable() {
+  std::error_code ec;
+  const std::string configured = MI_E2EE_SERVER_EXE_PATH;
+  if (!configured.empty()) {
+    const std::filesystem::path path(configured);
+    if (std::filesystem::exists(path, ec) && !ec) {
+      return path;
+    }
+  }
+
+  auto cursor = std::filesystem::current_path(ec);
+  if (ec || cursor.empty()) {
+    return {};
+  }
+  for (int depth = 0; depth < 8 && !cursor.empty(); ++depth) {
+    const std::filesystem::path candidate1 =
+        cursor / "build" / "server" / "Release" / "mi_e2ee_server.exe";
+    ec.clear();
+    if (std::filesystem::exists(candidate1, ec) && !ec) {
+      return candidate1;
+    }
+
+    const std::filesystem::path candidate2 =
+        cursor / "server_build" / "Release" / "mi_e2ee_server.exe";
+    ec.clear();
+    if (std::filesystem::exists(candidate2, ec) && !ec) {
+      return candidate2;
+    }
+
+    const std::filesystem::path candidate3 =
+        cursor / "server" / "Release" / "mi_e2ee_server.exe";
+    ec.clear();
+    if (std::filesystem::exists(candidate3, ec) && !ec) {
+      return candidate3;
+    }
+
+    if (!cursor.has_parent_path()) {
+      break;
+    }
+    cursor = cursor.parent_path();
+  }
+  return {};
+}
+
+bool LaunchServerProcess(const std::filesystem::path& exe_path,
+                         const std::string& cfg_path,
+                         std::uint16_t port,
+                         std::string& error) {
+  error.clear();
+  StopLaunchedServer();
+  if (exe_path.empty()) {
+    error = "server executable missing";
+    return false;
+  }
+
+  const std::wstring exe = exe_path.wstring();
+  const std::wstring cfg = std::filesystem::path(cfg_path).wstring();
+  std::wstring cmdline = L"\"" + exe + L"\" \"" + cfg + L"\"";
+  std::vector<wchar_t> cmdline_buf(cmdline.begin(), cmdline.end());
+  cmdline_buf.push_back(L'\0');
+
+  STARTUPINFOW si{};
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi{};
+  if (!CreateProcessW(exe.c_str(), cmdline_buf.data(), nullptr, nullptr, FALSE,
+                      CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+    error = "CreateProcess failed: " + std::to_string(GetLastError());
+    return false;
+  }
+  g_server_process = pi;
+
+  const auto deadline = mi::platform::NowSteadyMs() + 10000;
+  while (mi::platform::NowSteadyMs() < deadline) {
+    DWORD exit_code = 0;
+    if (!GetExitCodeProcess(pi.hProcess, &exit_code)) {
+      error = "GetExitCodeProcess failed";
+      StopLaunchedServer();
+      return false;
+    }
+    if (exit_code != STILL_ACTIVE) {
+      error = "server exited early: " + std::to_string(exit_code);
+      StopLaunchedServer();
+      return false;
+    }
+    mi::platform::net::Socket probe = mi::platform::net::kInvalidSocket;
+    std::string connect_error;
+    if (mi::platform::net::ConnectTcp("127.0.0.1", port, probe,
+                                      connect_error)) {
+      mi::platform::net::CloseSocket(probe);
+      return true;
+    }
+    mi::platform::SleepMs(100);
+  }
+
+  error = "server startup timeout";
+  StopLaunchedServer();
+  return false;
+}
+#endif
 
 std::string WriteServerConfig(const std::filesystem::path& dir,
                               std::uint16_t port) {
@@ -194,6 +385,7 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "tls_enable=0\n";
   out << "require_tls=0\n";
   out << "key_protection=none\n";
+  out << "metadata_key_hex=" << kTestMetadataKeyHex << "\n";
   out << "kt_signing_key=" << (dir / "kt_signing_key.bin").string() << "\n";
   out << "allow_legacy_login=0\n";
   out << "[call]\n";
@@ -201,17 +393,6 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "[kcp]\n";
   out << "enable=0\n";
   out.flush();
-  {
-    const auto key_path = dir / "kt_signing_key.bin";
-    std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x42);
-    std::ofstream key_out(key_path, std::ios::binary | std::ios::trunc);
-    if (key_out) {
-      key_out.write(reinterpret_cast<const char*>(key.data()),
-                    static_cast<std::streamsize>(key.size()));
-    } else {
-      std::cerr << "write kt_signing_key failed\n";
-    }
-  }
   return path.string();
 }
 
@@ -250,14 +431,47 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
                  std::string& error) {
   error.clear();
   for (std::uint16_t port = 31000; port < 31100; ++port) {
-    const std::string cfg_path = WriteServerConfig(dir, port);
+    // Isolate state for each port probe to avoid stale files poisoning retries.
+    const auto run_dir = dir / ("port_" + std::to_string(port));
+    std::error_code ec;
+    std::filesystem::remove_all(run_dir, ec);
+    ec.clear();
+    std::filesystem::create_directories(run_dir, ec);
+    if (ec) {
+      continue;
+    }
+    const std::string cfg_path = WriteServerConfig(run_dir, port);
     {
       const std::string msg = "server init " + std::to_string(port);
       LogStep(msg.c_str());
     }
+#ifdef _WIN32
+    const auto server_exe = FindServerExecutable();
+    if (server_exe.empty()) {
+      error = "server executable not found";
+      return false;
+    }
+    std::string launch_err;
+    if (!LaunchServerProcess(server_exe, cfg_path, port, launch_err)) {
+      std::cerr << "[sdk_c_api_e2e_test] external server start failed";
+      if (!launch_err.empty()) {
+        std::cerr << ": " << launch_err;
+      }
+      std::cerr << "\n";
+      continue;
+    }
+    out_port = port;
+    mi::platform::SleepMs(300);
+    return true;
+#else
     auto app_try = std::make_unique<mi::server::ServerApp>();
     std::string init_err;
     if (!app_try->Init(cfg_path, init_err)) {
+      std::cerr << "[sdk_c_api_e2e_test] server init failed";
+      if (!init_err.empty()) {
+        std::cerr << ": " << init_err;
+      }
+      std::cerr << "\n";
       continue;
     }
     LogStep("server app ok");
@@ -267,21 +481,30 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     limits.max_io_threads = 2;
     limits.max_pending_tasks = 256;
     auto net_try = std::make_unique<mi::server::NetworkServer>(
-        listener_try.get(), port, false, "", false, limits);
+        listener_try.get(), port, false, "", true, limits);
+    LogStep("server net object ok");
+    LogStep("server net start begin");
     std::string net_err;
     if (!net_try->Start(net_err)) {
+      std::cerr << "[sdk_c_api_e2e_test] server net start failed";
+      if (!net_err.empty()) {
+        std::cerr << ": " << net_err;
+      }
+      std::cerr << "\n";
       if (net_err.find("tcp server not built") != std::string::npos) {
         error = net_err;
         return false;
       }
       continue;
     }
+    LogStep("server net start ok");
     app = std::move(app_try);
     listener = std::move(listener_try);
     net = std::move(net_try);
     out_port = port;
     mi::platform::SleepMs(500);
     return true;
+#endif
   }
   error = "network server start failed";
   return false;
@@ -614,6 +837,9 @@ int main() {
     net.reset();
     listener.reset();
     app.reset();
+#ifdef _WIN32
+    StopLaunchedServer();
+#endif
     SetEnv("MI_E2EE_DATA_DIR", prev_data_dir);
     SetEnv("MI_E2EE_HARDENING", prev_hardening);
     RestoreTestUsers(backup);
@@ -650,6 +876,11 @@ int main() {
   if (ec) {
     return fail("create server dir failed", nullptr);
   }
+  std::string harden_err;
+  if (!HardenDirForTest(server_dir, harden_err)) {
+    const std::string err = "harden server dir failed: " + harden_err;
+    return fail(err.c_str(), nullptr);
+  }
   LogStep("server dir ok");
 
   const std::string ci_host_env = GetEnv("MI_E2EE_CI_SERVER_HOST");
@@ -682,9 +913,10 @@ int main() {
     LogStep("server started");
   }
   {
+    const bool runtime_external = use_external_server || (!app && !net);
     const std::string msg = "server ready " + server_host + ":" +
                             std::to_string(port) +
-                            (use_external_server ? " (external)" : " (embedded)");
+                            (runtime_external ? " (external)" : " (embedded)");
     LogStep(msg.c_str());
   }
 
@@ -697,6 +929,18 @@ int main() {
   if (ec) {
     return fail("create client dirs failed", nullptr);
   }
+  if (!HardenDirForTest(alice_primary_dir, harden_err)) {
+    const std::string err = "harden alice primary dir failed: " + harden_err;
+    return fail(err.c_str(), nullptr);
+  }
+  if (!HardenDirForTest(alice_linked_dir, harden_err)) {
+    const std::string err = "harden alice linked dir failed: " + harden_err;
+    return fail(err.c_str(), nullptr);
+  }
+  if (!HardenDirForTest(bob_dir, harden_err)) {
+    const std::string err = "harden bob dir failed: " + harden_err;
+    return fail(err.c_str(), nullptr);
+  }
 
   const std::string alice_primary_cfg =
       WriteClientConfig(alice_primary_dir, server_host, port, true, true);
@@ -707,7 +951,11 @@ int main() {
 
   alice = mi_client_create(alice_primary_cfg.c_str());
   if (!alice) {
-    return fail("create alice failed", nullptr);
+    const char* create_err = mi_client_last_create_error();
+    const std::string err = (create_err && *create_err)
+                                ? std::string("create alice failed: ") + create_err
+                                : "create alice failed";
+    return fail(err.c_str(), nullptr);
   }
   if (!LoginWithRetry(alice, "alice", "alice123", "alice", 5, 500)) {
     return fail("alice login failed", alice);
@@ -718,7 +966,11 @@ int main() {
 
   bob = mi_client_create(bob_cfg.c_str());
   if (!bob) {
-    return fail("create bob failed", alice);
+    const char* create_err = mi_client_last_create_error();
+    const std::string err = (create_err && *create_err)
+                                ? std::string("create bob failed: ") + create_err
+                                : "create bob failed";
+    return fail(err.c_str(), alice);
   }
   if (!LoginWithRetry(bob, "bob", "bob123", "bob", 5, 500)) {
     return fail("bob login failed", bob);
@@ -755,7 +1007,12 @@ int main() {
 
   alice_linked = mi_client_create(alice_linked_cfg.c_str());
   if (!alice_linked) {
-    return fail("create linked alice failed", alice);
+    const char* create_err = mi_client_last_create_error();
+    const std::string err = (create_err && *create_err)
+                                ? std::string("create linked alice failed: ") +
+                                      create_err
+                                : "create linked alice failed";
+    return fail(err.c_str(), alice);
   }
   if (!LoginWithRetry(alice_linked, "alice", "alice123", "linked", 5, 500)) {
     return fail("linked alice login failed", alice_linked);
@@ -790,6 +1047,9 @@ int main() {
     return fail("pairing completion timeout", alice_linked);
   }
   LogStep("pairing ok");
+  if (!EnsurePeerTrusted(alice, bob, "bob", "alice")) {
+    return fail("peer trust refresh failed", alice);
+  }
 
   DrainEvents(bob);
   bool private_ok = false;

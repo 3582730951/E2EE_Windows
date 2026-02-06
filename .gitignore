@@ -47,6 +47,8 @@
 *.ppt
 !README.md
 !**/README.md
+!docs/security/
+!docs/security/*.md
 
 # Forbidden push directories
 /client/ui_example/

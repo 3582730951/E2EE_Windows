@@ -146,6 +146,11 @@ add_executable(sdk_c_api_e2e_test
 )
 
 target_link_libraries(sdk_c_api_e2e_test PRIVATE mi_e2ee_client_core)
+if(TARGET mi_e2ee_server)
+  add_dependencies(sdk_c_api_e2e_test mi_e2ee_server)
+  target_compile_definitions(sdk_c_api_e2e_test PRIVATE
+      MI_E2EE_SERVER_EXE_PATH="$<TARGET_FILE:mi_e2ee_server>")
+endif()
 if (COMMAND mi_copy_msvc_runtime)
   mi_copy_msvc_runtime(sdk_c_api_e2e_test)
 endif()

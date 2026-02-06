@@ -45,6 +45,9 @@ void WriteConfig(const std::filesystem::path& path,
   out << "auth_mode=opaque\n";
   out << "allow_legacy_login=0\n";
   out << "\n";
+  out << "[kt]\n";
+  out << "require_signature=0\n";
+  out << "\n";
   out << "[device_sync]\n";
   out << "enabled=1\n";
   out << role_line;
@@ -65,7 +68,12 @@ bool InitCore(mi::client::ClientCore& core, const std::filesystem::path& dir,
               const std::string& role_line) {
   const auto cfg_path = dir / "client_config.ini";
   WriteConfig(cfg_path, role_line);
-  return core.Init(cfg_path.string());
+  const bool ok = core.Init(cfg_path.string());
+  if (!ok) {
+    std::cerr << "InitCore failed: path=" << cfg_path.string()
+              << " error=" << core.last_error() << "\n";
+  }
+  return ok;
 }
 
 }  // namespace

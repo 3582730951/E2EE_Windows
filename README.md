@@ -14,6 +14,7 @@
 - 构建与测试
 - 配置要点
 - CI
+- 安全治理流程
 - 贡献与反馈
 - License
 
@@ -110,6 +111,7 @@ cmake -S client -B build/client
 cmake --build build/client --config Release
 ctest --output-on-failure --test-dir build/client
 ```
+回归不稳定定位可用：`tools/run_client_secure_flaky_repro.ps1`（默认循环执行 `device_sync_ratchet_test` 与 `sdk_c_api_e2e_test`）。
 Linux 可选依赖：安装 `libavcodec` / `libavutil` / `libswscale` 可启用 H264 编解码，否则回退 RAW。
 macOS 使用 VideoToolbox/AVFoundation H264 编解码（系统自带，无需额外依赖）。
 
@@ -165,6 +167,11 @@ cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
 ## CI
 GitHub Actions：`.github/workflows/ci.yml`
 - Windows 构建默认生成自签 TLS 证书并执行 Debug/Release 测试。
+- Android 构建在进入 Gradle 前会执行 OPAQUE 依赖预检（`MI_E2EE_OPAQUE_LIB` 必填且文件必须存在）。
+
+## 安全治理流程
+- 首次 Pin 信任与审计闭环：`docs/security/first_pin_trust_audit.md`
+- 季度对抗演练（IDA/动态调试/抓包）：`docs/security/quarterly_adversarial_drill.md`
 
 ## 贡献与反馈
 - 提交遵循 Conventional Commits

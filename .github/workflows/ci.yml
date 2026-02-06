@@ -1086,6 +1086,22 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
 
+      - name: Precheck Android OPAQUE dependency
+        run: |
+          set -euo pipefail
+          if [ -z "${MI_E2EE_OPAQUE_LIB:-}" ]; then
+            echo "::error::MI_E2EE_OPAQUE_LIB is empty. Android secure build requires a prebuilt Rust OPAQUE static library."
+            echo "::error::Set repository variable MI_E2EE_OPAQUE_LIB to an absolute path available on the runner, or mount/copy the library before Gradle build."
+            echo "::error::Expected file name examples: libmi_opaque_pake.a (Linux/Android), mi_opaque_pake.lib (Windows)."
+            exit 1
+          fi
+          if [ ! -f "${MI_E2EE_OPAQUE_LIB}" ]; then
+            echo "::error::MI_E2EE_OPAQUE_LIB points to a missing file: ${MI_E2EE_OPAQUE_LIB}"
+            echo "::error::Fix the variable value or add a prior step that downloads/copies the library to this path."
+            exit 1
+          fi
+          echo "Using OPAQUE library: ${MI_E2EE_OPAQUE_LIB}"
+
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
