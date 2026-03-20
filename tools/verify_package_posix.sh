@@ -83,10 +83,69 @@ require_file() {
   fi
 }
 
+require_absent() {
+  local path="$1"
+  if [[ -e "$path" ]]; then
+    echo "forbidden file present: $path" >&2
+    exit 1
+  fi
+}
+
 require_dir() {
   local path="$1"
   if [[ ! -d "$path" ]]; then
     echo "missing dir: $path" >&2
+    exit 1
+  fi
+}
+
+require_ini_value() {
+  local cfg="$1"
+  local section="$2"
+  local key="$3"
+  local expected="$4"
+  local value
+  value="$(
+    awk -v want_section="$(echo "$section" | tr '[:upper:]' '[:lower:]')" \
+        -v want_key="$(echo "$key" | tr '[:upper:]' '[:lower:]')" '
+      BEGIN { current = "" }
+      {
+        line = $0
+        sub(/[;#].*$/, "", line)
+        gsub(/^[ \t]+|[ \t]+$/, "", line)
+        if (line == "") {
+          next
+        }
+        lower = tolower(line)
+        if (lower ~ /^\[.*\]$/) {
+          current = substr(lower, 2, length(lower) - 2)
+          gsub(/^[ \t]+|[ \t]+$/, "", current)
+          next
+        }
+        if (current != want_section) {
+          next
+        }
+        split(line, parts, "=")
+        name = tolower(parts[1])
+        gsub(/[ \t]/, "", name)
+        if (name == want_key) {
+          val = ""
+          if (length(parts) > 1) {
+            val = substr(line, index(line, "=") + 1)
+            gsub(/^[ \t]+|[ \t]+$/, "", val)
+          }
+          print val
+          exit
+        }
+      }
+    ' "$cfg"
+  )"
+  if [[ -z "$value" ]]; then
+    echo "missing config key [$section] $key in $cfg" >&2
+    exit 1
+  fi
+  if [[ "$value" != "$expected" ]]; then
+    echo "unexpected config value [$section] $key=$value (expected $expected)" >&2
     exit 1
   fi
 }
@@ -103,6 +162,11 @@ require_file "$client_root/sdk/c_api_client.h"
 require_file "$client_root/bindings/python/mi_e2ee_client.py"
 require_file "$client_root/bindings/rust/Cargo.toml"
 require_file "$client_root/env.sh"
+require_absent "$client_root/mi_e2ee_client"
+require_absent "$client_root/e2ee_login"
+require_absent "$client_root/e2ee_main_list"
+require_absent "$client_root/e2ee_group_chat"
+require_absent "$client_root/e2ee_chat_empty"
 
 require_file "$server_root/mi_e2ee_server"
 require_file "$server_root/config/config.ini"
@@ -127,6 +191,103 @@ if ! grep -q "^tls_cert=config/mi_e2ee_server.pem" "$server_root/config/config.i
   echo "server config missing tls_cert=config/mi_e2ee_server.pem" >&2
   exit 1
 fi
+require_ini_value "$server_root/config/config.ini" "server" "tls_enable" "1"
+require_ini_value "$server_root/config/config.ini" "server" "require_tls" "1"
+require_ini_value "$server_root/config/config.ini" "server" "tls_cert" "config/mi_e2ee_server.pem"
+require_ini_value "$client_root/config/client_config.ini" "client" "use_tls" "1"
+require_ini_value "$client_root/config/client_config.ini" "client" "require_tls" "1"
+require_ini_value "$client_root/config/client_config.ini" "client" "require_pinned_fingerprint" "1"
+require_ini_value "$client_root/config/client_config.ini" "client" "tls_verify_mode" "pin"
+
+check_kcp_disabled() {
+  local cfg="$1"
+  local value
+  value="$(
+    awk '
+      BEGIN { in_kcp = 0 }
+      {
+        line = $0
+        sub(/[;#].*$/, "", line)
+        gsub(/^[ \t]+|[ \t]+$/, "", line)
+        if (line == "") {
+          next
+        }
+        lower = tolower(line)
+        if (lower ~ /^\[.*\]$/) {
+          in_kcp = (lower == "[kcp]")
+          next
+        }
+        if (in_kcp == 1) {
+          split(line, parts, "=")
+          key = tolower(parts[1])
+          gsub(/[ \t]/, "", key)
+          if (key == "enable") {
+            val = ""
+            if (length(parts) > 1) {
+              val = parts[2]
+            }
+            gsub(/[ \t]/, "", val)
+            print tolower(val)
+            exit
+          }
+        }
+      }
+    ' "$cfg"
+  )"
+  if [[ "$value" == "1" || "$value" == "true" || "$value" == "on" || "$value" == "yes" ]]; then
+    echo "release package forbids [kcp] enable=1" >&2
+    exit 1
+  fi
+}
+
+check_kcp_disabled "$server_root/config/config.ini"
+
+check_blob_budget() {
+  local cfg="$1"
+  local value
+  value="$(
+    awk '
+      BEGIN { in_server = 0 }
+      {
+        line = $0
+        sub(/[;#].*$/, "", line)
+        gsub(/^[ \t]+|[ \t]+$/, "", line)
+        if (line == "") {
+          next
+        }
+        lower = tolower(line)
+        if (lower ~ /^\[.*\]$/) {
+          in_server = (lower == "[server]")
+          next
+        }
+        if (in_server == 1) {
+          split(line, parts, "=")
+          key = tolower(parts[1])
+          gsub(/[ \t]/, "", key)
+          if (key == "offline_blob_temp_budget_bytes") {
+            val = ""
+            if (length(parts) > 1) {
+              val = parts[2]
+            }
+            gsub(/[ \t]/, "", val)
+            print val
+            exit
+          }
+        }
+      }
+    ' "$cfg"
+  )"
+  if [[ -z "$value" || ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "server config missing valid offline_blob_temp_budget_bytes" >&2
+    exit 1
+  fi
+  if (( value < 67108864 )); then
+    echo "offline_blob_temp_budget_bytes too small in package config" >&2
+    exit 1
+  fi
+}
+
+check_blob_budget "$server_root/config/config.ini"
 
 verify_manifest() {
   local root="$1"

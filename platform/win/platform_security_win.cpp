@@ -91,10 +91,14 @@ bool ParseEnvFlag(const char* name, bool default_value) noexcept {
 }
 
 bool FailCloseEnabled() noexcept {
+#if defined(MI_E2EE_SECURE_RELEASE)
+  return true;
+#else
   // Fail-close is secure-by-default. Set either env to 0/off for local debug.
   const bool hardening = ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", true);
   const bool tamper = ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", true);
   return hardening && tamper;
+#endif
 }
 
 void FailClose(TamperSignal signal) noexcept {
@@ -380,6 +384,9 @@ void StartThreadsBestEffort(HardeningLevel level) noexcept {
 }
 
 HardeningLevel ParseHardeningLevel() noexcept {
+#if defined(MI_E2EE_SECURE_RELEASE)
+  return HardeningLevel::kHigh;
+#else
   const char* env = std::getenv("MI_E2EE_HARDENING");
   if (!env || *env == '\0') {
     env = std::getenv("MI_E2EE_HARDENING_LEVEL");
@@ -404,6 +411,7 @@ HardeningLevel ParseHardeningLevel() noexcept {
     return HardeningLevel::kHigh;
   }
   return HardeningLevel::kHigh;
+#endif
 }
 
 std::uint32_t ParseHardeningPollMs() noexcept {

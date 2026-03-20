@@ -35,6 +35,7 @@ namespace {
 
 constexpr std::uint64_t kMaxBlobBytes = 320u * 1024u * 1024u;
 constexpr std::uint32_t kMaxBlobChunkBytes = 4u * 1024u * 1024u;
+constexpr auto kBlobSessionTtl = std::chrono::minutes(15);
 constexpr std::size_t kOfflineFileAeadNonceBytes = 24;
 constexpr std::size_t kOfflineFileAeadTagBytes = 16;
 constexpr std::size_t kOfflineFileLegacyNonceBytes = 16;
@@ -75,6 +76,22 @@ constexpr std::array<std::uint8_t, 8> kOfflineQueueStoreMagic = {
 constexpr std::uint8_t kOfflineQueueStoreVersion = 1;
 constexpr std::size_t kOfflineQueueStoreHeaderBytes =
     kOfflineQueueStoreMagic.size() + 1 + 3 + 4;
+constexpr std::array<std::uint8_t, 8> kBlobUploadTokenMagic = {
+    'M', 'I', 'U', 'P', 'T', 'O', 'K', '1'};
+constexpr std::array<std::uint8_t, 8> kBlobDownloadTokenMagic = {
+    'M', 'I', 'D', 'L', 'T', 'O', 'K', '1'};
+constexpr std::size_t kBlobTokenMacBytes = 32;
+constexpr std::size_t kBlobUploadTokenPrefixBytes = 8 + 8 + 8 + 16 + 16 + 32;
+constexpr std::size_t kBlobUploadTokenBytes =
+    kBlobUploadTokenPrefixBytes + kBlobTokenMacBytes;
+constexpr std::size_t kBlobDownloadTokenPrefixBytes = 8 + 8 + 8 + 16 + 32;
+constexpr std::size_t kBlobDownloadTokenBytes =
+    kBlobDownloadTokenPrefixBytes + kBlobTokenMacBytes;
+constexpr std::array<std::uint8_t, 8> kBlobUploadTagMagic = {
+    'M', 'I', 'U', 'P', 'T', 'A', 'G', '1'};
+constexpr std::uint8_t kBlobUploadTagVersion = 1;
+constexpr std::size_t kBlobUploadTagBytes =
+    kBlobUploadTagMagic.size() + 1 + 3 + 8 + 32;
 
 mi::common::ByteBufferPool& OfflineStorageBufferPool() {
   static mi::common::ByteBufferPool pool(32, 16u * 1024u * 1024u);
@@ -455,17 +472,554 @@ std::string FormatMessageId(std::uint64_t id) {
   return oss.str();
 }
 
-void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
+bool EnforceOwnerOnlyPermissions(const std::filesystem::path& path,
+                                 std::string& error) {
+  error.clear();
 #ifdef _WIN32
   std::string acl_err;
-  (void)mi::shard::security::HardenPathAcl(path, acl_err);
+  if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+    error = acl_err.empty() ? "file permissions set failed" : acl_err;
+    return false;
+  }
 #else
   std::error_code ec;
   std::filesystem::permissions(
       path, std::filesystem::perms::owner_read |
                 std::filesystem::perms::owner_write,
       std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "file permissions set failed";
+    return false;
+  }
 #endif
+
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    error = perm_err.empty() ? "file permissions insecure" : perm_err;
+    return false;
+  }
+  return true;
+}
+
+bool AtomicWriteOwnerOnly(const std::filesystem::path& path,
+                          const std::uint8_t* data,
+                          std::size_t len,
+                          std::string& error) {
+  error.clear();
+  std::error_code ec;
+  if (!pfs::AtomicWrite(path, data, len, ec) || ec) {
+    error = "write file failed";
+    return false;
+  }
+  std::string perm_err;
+  if (!EnforceOwnerOnlyPermissions(path, perm_err)) {
+    std::filesystem::remove(path, ec);
+    error = perm_err.empty() ? "file permissions insecure" : perm_err;
+    return false;
+  }
+  return true;
+}
+
+std::string BytesToHexLower(const std::uint8_t* data, std::size_t len) {
+  if (!data || len == 0) {
+    return {};
+  }
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string out;
+  out.resize(len * 2);
+  for (std::size_t i = 0; i < len; ++i) {
+    const std::uint8_t v = data[i];
+    out[i * 2] = kHex[v >> 4];
+    out[i * 2 + 1] = kHex[v & 0x0F];
+  }
+  return out;
+}
+
+bool IsValidFileId(const std::string& file_id);
+
+bool FileIdHexToBytes(const std::string& file_id,
+                      std::array<std::uint8_t, 16>& out) {
+  if (!IsValidFileId(file_id)) {
+    return false;
+  }
+  std::vector<std::uint8_t> bytes;
+  if (!mi::common::HexToBytes(file_id, bytes) || bytes.size() != out.size()) {
+    return false;
+  }
+  std::memcpy(out.data(), bytes.data(), out.size());
+  return true;
+}
+
+std::array<std::uint8_t, 32> HashOwner(const std::string& owner) {
+  mi::server::crypto::Sha256Digest d;
+  mi::server::crypto::Sha256(
+      reinterpret_cast<const std::uint8_t*>(owner.data()), owner.size(), d);
+  return d.bytes;
+}
+
+bool GetBlobTokenMasterKey(std::array<std::uint8_t, 32>& out) {
+  struct KeyState {
+    std::array<std::uint8_t, 32> key{};
+    bool ready{false};
+  };
+  static const KeyState state = [] {
+    KeyState s;
+    s.ready = FillRandom(s.key.data(), s.key.size());
+    return s;
+  }();
+  if (!state.ready) {
+    out.fill(0);
+    return false;
+  }
+  out = state.key;
+  return true;
+}
+
+struct BlobUploadTokenClaims {
+  std::array<std::uint8_t, 16> nonce{};
+  std::uint64_t expected_size{0};
+};
+
+struct BlobDownloadTokenClaims {
+  bool wipe_after_read{false};
+};
+
+std::string EncodeBlobUploadToken(const std::string& owner,
+                                  const std::string& file_id,
+                                  std::uint64_t expected_size,
+                                  std::string& error) {
+  error.clear();
+  std::array<std::uint8_t, 16> file_id_bytes{};
+  if (!FileIdHexToBytes(file_id, file_id_bytes)) {
+    error = "invalid file id";
+    return {};
+  }
+  std::array<std::uint8_t, 16> nonce{};
+  if (!FillRandom(nonce.data(), nonce.size())) {
+    error = "rng failed";
+    return {};
+  }
+
+  std::array<std::uint8_t, kBlobUploadTokenBytes> token{};
+  std::size_t off = 0;
+  std::memcpy(token.data() + off, kBlobUploadTokenMagic.data(),
+              kBlobUploadTokenMagic.size());
+  off += kBlobUploadTokenMagic.size();
+  const std::uint64_t exp_ms = UnixMsFrom(std::chrono::system_clock::now() +
+                                          kBlobSessionTtl);
+  WriteUint64Le(exp_ms, token.data() + off);
+  off += 8;
+  WriteUint64Le(expected_size, token.data() + off);
+  off += 8;
+  std::memcpy(token.data() + off, nonce.data(), nonce.size());
+  off += nonce.size();
+  std::memcpy(token.data() + off, file_id_bytes.data(), file_id_bytes.size());
+  off += file_id_bytes.size();
+  const auto owner_hash = HashOwner(owner);
+  std::memcpy(token.data() + off, owner_hash.data(), owner_hash.size());
+  off += owner_hash.size();
+
+  mi::server::crypto::Sha256Digest mac;
+  std::array<std::uint8_t, 32> key{};
+  if (!GetBlobTokenMasterKey(key)) {
+    error = "rng failed";
+    return {};
+  }
+  mi::server::crypto::HmacSha256(key.data(), key.size(), token.data(),
+                                 kBlobUploadTokenPrefixBytes, mac);
+  std::memcpy(token.data() + off, mac.bytes.data(), mac.bytes.size());
+  return BytesToHexLower(token.data(), token.size());
+}
+
+bool DecodeBlobUploadToken(const std::string& token_hex,
+                           const std::string& owner,
+                           const std::string& file_id,
+                           BlobUploadTokenClaims& claims,
+                           std::string& error) {
+  error.clear();
+  std::vector<std::uint8_t> token;
+  if (!mi::common::HexToBytes(token_hex, token) ||
+      token.size() != kBlobUploadTokenBytes) {
+    error = "invalid session";
+    return false;
+  }
+  if (!std::equal(kBlobUploadTokenMagic.begin(), kBlobUploadTokenMagic.end(),
+                  token.begin())) {
+    error = "invalid session";
+    return false;
+  }
+  std::array<std::uint8_t, 16> file_id_bytes{};
+  if (!FileIdHexToBytes(file_id, file_id_bytes)) {
+    error = "invalid file id";
+    return false;
+  }
+  std::size_t off = kBlobUploadTokenMagic.size();
+  const std::uint64_t exp_ms = ReadUint64Le(token.data() + off);
+  off += 8;
+  claims.expected_size = ReadUint64Le(token.data() + off);
+  off += 8;
+  std::memcpy(claims.nonce.data(), token.data() + off, claims.nonce.size());
+  off += claims.nonce.size();
+  if (!std::equal(file_id_bytes.begin(), file_id_bytes.end(),
+                  token.begin() + static_cast<std::ptrdiff_t>(off))) {
+    error = "invalid session";
+    return false;
+  }
+  off += file_id_bytes.size();
+  const auto owner_hash = HashOwner(owner);
+  if (crypto_verify32(owner_hash.data(),
+                      token.data() + static_cast<std::ptrdiff_t>(off)) != 0) {
+    error = "unauthorized";
+    return false;
+  }
+  mi::server::crypto::Sha256Digest mac;
+  std::array<std::uint8_t, 32> key{};
+  if (!GetBlobTokenMasterKey(key)) {
+    error = "session subsystem unavailable";
+    return false;
+  }
+  mi::server::crypto::HmacSha256(key.data(), key.size(), token.data(),
+                                 kBlobUploadTokenPrefixBytes, mac);
+  if (crypto_verify32(
+          mac.bytes.data(),
+          token.data() + static_cast<std::ptrdiff_t>(kBlobUploadTokenPrefixBytes)) !=
+      0) {
+    error = "invalid session";
+    return false;
+  }
+  if (UnixMsFrom(std::chrono::system_clock::now()) > exp_ms) {
+    error = "upload session expired";
+    return false;
+  }
+  return true;
+}
+
+std::string EncodeBlobDownloadToken(const std::string& owner,
+                                    const std::string& file_id,
+                                    bool wipe_after_read,
+                                    std::string& error) {
+  error.clear();
+  std::array<std::uint8_t, 16> file_id_bytes{};
+  if (!FileIdHexToBytes(file_id, file_id_bytes)) {
+    error = "invalid file id";
+    return {};
+  }
+  std::array<std::uint8_t, kBlobDownloadTokenBytes> token{};
+  std::size_t off = 0;
+  std::memcpy(token.data() + off, kBlobDownloadTokenMagic.data(),
+              kBlobDownloadTokenMagic.size());
+  off += kBlobDownloadTokenMagic.size();
+  const std::uint64_t exp_ms = UnixMsFrom(std::chrono::system_clock::now() +
+                                          kBlobSessionTtl);
+  WriteUint64Le(exp_ms, token.data() + off);
+  off += 8;
+  token[off++] = wipe_after_read ? 1u : 0u;
+  token[off++] = 0;
+  token[off++] = 0;
+  token[off++] = 0;
+  token[off++] = 0;
+  token[off++] = 0;
+  token[off++] = 0;
+  token[off++] = 0;
+  std::memcpy(token.data() + off, file_id_bytes.data(), file_id_bytes.size());
+  off += file_id_bytes.size();
+  const auto owner_hash = HashOwner(owner);
+  std::memcpy(token.data() + off, owner_hash.data(), owner_hash.size());
+  off += owner_hash.size();
+
+  mi::server::crypto::Sha256Digest mac;
+  std::array<std::uint8_t, 32> key{};
+  if (!GetBlobTokenMasterKey(key)) {
+    error = "rng failed";
+    return {};
+  }
+  mi::server::crypto::HmacSha256(key.data(), key.size(), token.data(),
+                                 kBlobDownloadTokenPrefixBytes, mac);
+  std::memcpy(token.data() + off, mac.bytes.data(), mac.bytes.size());
+  return BytesToHexLower(token.data(), token.size());
+}
+
+bool DecodeBlobDownloadToken(const std::string& token_hex,
+                             const std::string& owner,
+                             const std::string& file_id,
+                             BlobDownloadTokenClaims& claims,
+                             std::string& error) {
+  error.clear();
+  std::vector<std::uint8_t> token;
+  if (!mi::common::HexToBytes(token_hex, token) ||
+      token.size() != kBlobDownloadTokenBytes) {
+    error = "invalid session";
+    return false;
+  }
+  if (!std::equal(kBlobDownloadTokenMagic.begin(), kBlobDownloadTokenMagic.end(),
+                  token.begin())) {
+    error = "invalid session";
+    return false;
+  }
+  std::array<std::uint8_t, 16> file_id_bytes{};
+  if (!FileIdHexToBytes(file_id, file_id_bytes)) {
+    error = "invalid file id";
+    return false;
+  }
+  std::size_t off = kBlobDownloadTokenMagic.size();
+  const std::uint64_t exp_ms = ReadUint64Le(token.data() + off);
+  off += 8;
+  claims.wipe_after_read = token[off] != 0;
+  off += 8;
+  if (!std::equal(file_id_bytes.begin(), file_id_bytes.end(),
+                  token.begin() + static_cast<std::ptrdiff_t>(off))) {
+    error = "invalid session";
+    return false;
+  }
+  off += file_id_bytes.size();
+  const auto owner_hash = HashOwner(owner);
+  if (crypto_verify32(owner_hash.data(),
+                      token.data() + static_cast<std::ptrdiff_t>(off)) != 0) {
+    error = "unauthorized";
+    return false;
+  }
+  mi::server::crypto::Sha256Digest mac;
+  std::array<std::uint8_t, 32> key{};
+  if (!GetBlobTokenMasterKey(key)) {
+    error = "session subsystem unavailable";
+    return false;
+  }
+  mi::server::crypto::HmacSha256(key.data(), key.size(), token.data(),
+                                 kBlobDownloadTokenPrefixBytes, mac);
+  if (crypto_verify32(
+          mac.bytes.data(),
+          token.data() +
+              static_cast<std::ptrdiff_t>(kBlobDownloadTokenPrefixBytes)) != 0) {
+    error = "invalid session";
+    return false;
+  }
+  if (UnixMsFrom(std::chrono::system_clock::now()) > exp_ms) {
+    error = "download session expired";
+    return false;
+  }
+  return true;
+}
+
+bool DeriveBlobUploadIntegrityKey(
+    const BlobUploadTokenClaims& claims,
+    const std::string& owner,
+    const std::string& file_id,
+    std::array<std::uint8_t, 32>& out_key) {
+  static constexpr std::array<std::uint8_t, 18> kInfo = {
+      'M', 'I', '_', 'B', 'L', 'O', 'B', '_', 'I',
+      'N', 'T', 'E', 'G', 'R', 'I', 'T', 'Y', '1'};
+  std::vector<std::uint8_t> info;
+  info.reserve(kInfo.size() + claims.nonce.size() + owner.size() +
+               file_id.size());
+  info.insert(info.end(), kInfo.begin(), kInfo.end());
+  info.insert(info.end(), claims.nonce.begin(), claims.nonce.end());
+  info.insert(info.end(), owner.begin(), owner.end());
+  info.insert(info.end(), file_id.begin(), file_id.end());
+  std::array<std::uint8_t, 32> key{};
+  if (!GetBlobTokenMasterKey(key)) {
+    out_key.fill(0);
+    return false;
+  }
+  mi::server::crypto::Sha256Digest d;
+  mi::server::crypto::HmacSha256(key.data(), key.size(), info.data(),
+                                 info.size(), d);
+  out_key = d.bytes;
+  return true;
+}
+
+bool CheckBlobTempStorageBudget(const std::filesystem::path& base_dir,
+                                std::uint64_t max_upload_temp_bytes,
+                                std::uint64_t additional_bytes,
+                                std::string& error) {
+  error.clear();
+  std::error_code ec;
+  std::filesystem::directory_iterator it(base_dir, ec);
+  if (ec) {
+    error = "offline storage unavailable";
+    return false;
+  }
+  std::uint64_t total = 0;
+  const std::filesystem::directory_iterator end;
+  for (; it != end; it.increment(ec)) {
+    if (ec) {
+      error = "offline storage unavailable";
+      return false;
+    }
+    if (!it->is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    if (it->path().extension() != ".part") {
+      continue;
+    }
+    const auto s = std::filesystem::file_size(it->path(), ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (total > (std::numeric_limits<std::uint64_t>::max)() - s) {
+      error = "upload temp storage exhausted";
+      return false;
+    }
+    total += s;
+  }
+  if (total > max_upload_temp_bytes ||
+      additional_bytes > max_upload_temp_bytes - total) {
+    error = "upload temp storage exhausted";
+    return false;
+  }
+  return true;
+}
+
+std::filesystem::path UploadLockPath(const std::filesystem::path& temp_path) {
+  return temp_path.string() + ".lock";
+}
+
+std::filesystem::path UploadTagPath(const std::filesystem::path& temp_path) {
+  return temp_path.string() + ".itag";
+}
+
+void RemoveUploadSidecars(const std::filesystem::path& temp_path) {
+  std::error_code ec;
+  std::filesystem::remove(UploadTagPath(temp_path), ec);
+  ec.clear();
+  std::filesystem::remove(UploadLockPath(temp_path), ec);
+}
+
+bool AcquireUploadLock(const std::filesystem::path& temp_path,
+                       pfs::FileLock& lock,
+                       std::string& error) {
+  error.clear();
+  const auto status =
+      pfs::AcquireExclusiveFileLock(UploadLockPath(temp_path), lock);
+  if (status == pfs::FileLockStatus::kOk) {
+    return true;
+  }
+  if (status == pfs::FileLockStatus::kBusy) {
+    error = "upload busy";
+  } else {
+    error = "upload lock failed";
+  }
+  return false;
+}
+
+void UpdateBlobUploadIntegrityTag(
+    const std::array<std::uint8_t, 32>& key,
+    const std::uint8_t* chunk,
+    std::size_t chunk_len,
+    std::array<std::uint8_t, 32>& inout_tag) {
+  std::vector<std::uint8_t> mac_input;
+  mac_input.reserve(inout_tag.size() + chunk_len);
+  mac_input.insert(mac_input.end(), inout_tag.begin(), inout_tag.end());
+  if (chunk_len != 0 && chunk != nullptr) {
+    mac_input.insert(mac_input.end(), chunk, chunk + chunk_len);
+  }
+  mi::server::crypto::Sha256Digest digest;
+  mi::server::crypto::HmacSha256(key.data(), key.size(), mac_input.data(),
+                                 mac_input.size(), digest);
+  inout_tag = digest.bytes;
+}
+
+bool PersistBlobUploadIntegrityTag(
+    const std::filesystem::path& temp_path,
+    std::uint64_t bytes_received,
+    const std::array<std::uint8_t, 32>& tag,
+    std::string& error) {
+  std::array<std::uint8_t, kBlobUploadTagBytes> out{};
+  std::size_t off = 0;
+  std::memcpy(out.data() + off, kBlobUploadTagMagic.data(),
+              kBlobUploadTagMagic.size());
+  off += kBlobUploadTagMagic.size();
+  out[off++] = kBlobUploadTagVersion;
+  out[off++] = 0;
+  out[off++] = 0;
+  out[off++] = 0;
+  WriteUint64Le(bytes_received, out.data() + off);
+  off += 8;
+  std::memcpy(out.data() + off, tag.data(), tag.size());
+  return AtomicWriteOwnerOnly(UploadTagPath(temp_path), out.data(), out.size(),
+                              error);
+}
+
+bool LoadBlobUploadIntegrityTag(
+    const std::filesystem::path& temp_path,
+    std::uint64_t& bytes_received,
+    std::array<std::uint8_t, 32>& tag,
+    std::string& error) {
+  error.clear();
+  std::ifstream ifs(UploadTagPath(temp_path), std::ios::binary);
+  if (!ifs) {
+    error = "upload integrity tag missing";
+    return false;
+  }
+  std::array<std::uint8_t, kBlobUploadTagBytes> in{};
+  ifs.read(reinterpret_cast<char*>(in.data()),
+           static_cast<std::streamsize>(in.size()));
+  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(in.size())) {
+    error = "upload integrity tag invalid";
+    return false;
+  }
+  std::uint8_t extra = 0;
+  if (ifs.read(reinterpret_cast<char*>(&extra), 1)) {
+    error = "upload integrity tag invalid";
+    return false;
+  }
+  if (!std::equal(kBlobUploadTagMagic.begin(), kBlobUploadTagMagic.end(),
+                  in.begin())) {
+    error = "upload integrity tag invalid";
+    return false;
+  }
+  std::size_t off = kBlobUploadTagMagic.size();
+  if (in[off++] != kBlobUploadTagVersion) {
+    error = "upload integrity tag invalid";
+    return false;
+  }
+  off += 3;
+  bytes_received = ReadUint64Le(in.data() + off);
+  off += 8;
+  std::memcpy(tag.data(), in.data() + off, tag.size());
+  return true;
+}
+
+bool ComputeBlobUploadIntegrityTagFromFile(
+    const std::filesystem::path& temp_path,
+    const std::array<std::uint8_t, 32>& key,
+    std::array<std::uint8_t, 32>& tag,
+    std::uint64_t& bytes,
+    std::string& error) {
+  error.clear();
+  tag.fill(0);
+  bytes = 0;
+  std::ifstream ifs(temp_path, std::ios::binary);
+  if (!ifs) {
+    error = "open file failed";
+    return false;
+  }
+  std::vector<std::uint8_t> buffer;
+  buffer.resize(kOfflineFileStreamChunkBytes);
+  while (true) {
+    ifs.read(reinterpret_cast<char*>(buffer.data()),
+             static_cast<std::streamsize>(buffer.size()));
+    const auto got = ifs.gcount();
+    if (got > 0) {
+      const auto got_u64 = static_cast<std::uint64_t>(got);
+      if (bytes > (std::numeric_limits<std::uint64_t>::max)() - got_u64) {
+        error = "upload integrity overflow";
+        return false;
+      }
+      UpdateBlobUploadIntegrityTag(key, buffer.data(),
+                                   static_cast<std::size_t>(got), tag);
+      bytes += got_u64;
+    }
+    if (ifs.eof()) {
+      break;
+    }
+    if (!ifs) {
+      error = "read file failed";
+      return false;
+    }
+  }
+  return true;
 }
 
 std::array<std::uint8_t, kOfflineFileAeadNonceBytes> DeriveChunkNonce(
@@ -515,12 +1069,17 @@ OfflineStorage::OfflineStorage(std::filesystem::path base_dir,
                                std::chrono::seconds ttl,
                                SecureDeleteConfig secure_delete,
                                KeyProtectionMode state_protection,
-                               StateStore* state_store)
+                               StateStore* state_store,
+                               std::uint64_t blob_upload_temp_budget_bytes)
     : base_dir_(std::move(base_dir)),
       ttl_(ttl),
       secure_delete_(std::move(secure_delete)),
       state_protection_(state_protection),
-      state_store_(state_store) {
+      state_store_(state_store),
+      blob_upload_temp_budget_bytes_(blob_upload_temp_budget_bytes) {
+  if (blob_upload_temp_budget_bytes_ == 0) {
+    blob_upload_temp_budget_bytes_ = 4ull * 1024ull * 1024ull * 1024ull;
+  }
   std::error_code ec;
   std::filesystem::create_directories(base_dir_, ec);
   if (state_store_) {
@@ -578,14 +1137,13 @@ bool OfflineStorage::PersistMetadata(const StoredFileMeta& meta,
     error = "metadata path invalid";
     return false;
   }
-  std::error_code ec;
-  if (!pfs::AtomicWrite(path, protected_bytes.data(), protected_bytes.size(),
-                        ec) ||
-      ec) {
-    error = "metadata write failed";
+  if (!AtomicWriteOwnerOnly(path, protected_bytes.data(), protected_bytes.size(),
+                            error)) {
+    if (error.empty()) {
+      error = "metadata write failed";
+    }
     return false;
   }
-  SetOwnerOnlyPermissions(path);
   return true;
 }
 
@@ -843,7 +1401,8 @@ PutResult OfflineStorage::Put(const std::string& owner,
                 ad_prefix.data() + kOfflineFileMagic.size() + 1 + 4);
 
   const auto path = ResolvePath(id);
-  std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+  const std::filesystem::path tmp_path = path.string() + ".tmp";
+  std::ofstream ofs(tmp_path, std::ios::binary | std::ios::trunc);
   if (!ofs) {
     result.error = "open file failed";
     crypto_wipe(storage_key.data(), storage_key.size());
@@ -889,7 +1448,8 @@ PutResult OfflineStorage::Put(const std::string& owner,
       crypto_wipe(erase_key.data(), erase_key.size());
       crypto_wipe(file_key.data(), file_key.size());
       ofs.close();
-      WipeFile(path);
+      std::error_code rm_ec;
+      std::filesystem::remove(tmp_path, rm_ec);
       return result;
     }
     offset += to_copy;
@@ -901,6 +1461,39 @@ PutResult OfflineStorage::Put(const std::string& owner,
     crypto_wipe(storage_key.data(), storage_key.size());
     crypto_wipe(erase_key.data(), erase_key.size());
     crypto_wipe(file_key.data(), file_key.size());
+    std::error_code rm_ec;
+    std::filesystem::remove(tmp_path, rm_ec);
+    return result;
+  }
+  std::string perm_err;
+  if (!EnforceOwnerOnlyPermissions(tmp_path, perm_err)) {
+    result.error = perm_err.empty() ? "file permissions insecure" : perm_err;
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
+    std::error_code rm_ec;
+    std::filesystem::remove(tmp_path, rm_ec);
+    return result;
+  }
+  {
+    std::error_code ec;
+    if (!pfs::Rename(tmp_path, path, ec) || ec) {
+      result.error = "write file failed";
+      crypto_wipe(storage_key.data(), storage_key.size());
+      crypto_wipe(erase_key.data(), erase_key.size());
+      crypto_wipe(file_key.data(), file_key.size());
+      std::error_code rm_ec;
+      std::filesystem::remove(tmp_path, rm_ec);
+      return result;
+    }
+  }
+  if (!EnforceOwnerOnlyPermissions(path, perm_err)) {
+    result.error = perm_err.empty() ? "file permissions insecure" : perm_err;
+    crypto_wipe(storage_key.data(), storage_key.size());
+    crypto_wipe(erase_key.data(), erase_key.size());
+    crypto_wipe(file_key.data(), file_key.size());
+    std::error_code rm_ec;
+    std::filesystem::remove(path, rm_ec);
     return result;
   }
 
@@ -976,14 +1569,11 @@ PutBlobResult OfflineStorage::PutBlob(const std::string& owner,
 
   const std::string id = GenerateId();
   const auto path = ResolvePath(id);
-  std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
-  if (!ofs) {
-    result.error = "open file failed";
+  std::string write_err;
+  if (!AtomicWriteOwnerOnly(path, blob.data(), blob.size(), write_err)) {
+    result.error = write_err.empty() ? "write file failed" : write_err;
     return result;
   }
-  ofs.write(reinterpret_cast<const char*>(blob.data()),
-            static_cast<std::streamsize>(blob.size()));
-  ofs.close();
 
   StoredFileMeta meta;
   meta.id = id;
@@ -1043,34 +1633,57 @@ BlobUploadStartResult OfflineStorage::BeginBlobUpload(const std::string& owner,
     return result;
   }
 
-  const std::string file_id = GenerateId();
-  const std::string upload_id = GenerateSessionId();
-  const auto temp_path = ResolveUploadTempPath(file_id);
+  CleanupExpiredBlobArtifacts();
 
-  std::ofstream ofs(temp_path, std::ios::binary | std::ios::trunc);
-  if (!ofs) {
-    result.error = "open file failed";
-    return result;
-  }
-  ofs.close();
-
-  BlobUploadSession sess;
-  sess.upload_id = upload_id;
-  sess.owner = owner;
-  sess.expected_size = expected_size;
-  sess.bytes_received = 0;
-  sess.temp_path = temp_path;
-  sess.created_at = std::chrono::steady_clock::now();
-  sess.last_activity = sess.created_at;
-
+  std::string budget_err;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (metadata_.find(file_id) != metadata_.end() ||
-        blob_uploads_.find(file_id) != blob_uploads_.end()) {
-      result.error = "id collision";
+    if (!CheckBlobTempStorageBudget(base_dir_, blob_upload_temp_budget_bytes_, 0,
+                                    budget_err)) {
+      result.error = budget_err.empty() ? "upload temp storage exhausted"
+                                        : budget_err;
       return result;
     }
-    blob_uploads_[file_id] = std::move(sess);
+  }
+
+  std::string file_id;
+  bool unique_id = false;
+  for (int i = 0; i < 8; ++i) {
+    file_id = GenerateId();
+    std::error_code ec;
+    const auto path = ResolvePath(file_id);
+    const auto temp_path = ResolveUploadTempPath(file_id);
+    const auto tag_path = UploadTagPath(temp_path);
+    const auto lock_path = UploadLockPath(temp_path);
+    if (std::filesystem::exists(path, ec) && !ec) {
+      continue;
+    }
+    ec.clear();
+    if (std::filesystem::exists(temp_path, ec) && !ec) {
+      continue;
+    }
+    ec.clear();
+    if (std::filesystem::exists(tag_path, ec) && !ec) {
+      continue;
+    }
+    ec.clear();
+    if (std::filesystem::exists(lock_path, ec) && !ec) {
+      continue;
+    }
+    unique_id = true;
+    break;
+  }
+  if (!unique_id || file_id.empty()) {
+    result.error = "id collision";
+    return result;
+  }
+
+  std::string token_err;
+  const std::string upload_id =
+      EncodeBlobUploadToken(owner, file_id, expected_size, token_err);
+  if (upload_id.empty()) {
+    result.error = token_err.empty() ? "session issue failed" : token_err;
+    return result;
   }
 
   result.success = true;
@@ -1101,42 +1714,117 @@ BlobUploadChunkResult OfflineStorage::AppendBlobUploadChunk(
     return result;
   }
 
-  std::filesystem::path temp_path;
-  std::uint64_t expected = 0;
-  std::uint64_t received = 0;
+  BlobUploadTokenClaims claims;
+  std::string token_err;
+  if (!DecodeBlobUploadToken(upload_id, owner, file_id, claims, token_err)) {
+    result.error = token_err.empty() ? "invalid session" : token_err;
+    return result;
+  }
+  if (claims.expected_size != 0 && offset > claims.expected_size) {
+    result.error = "invalid offset";
+    return result;
+  }
+  if (offset > kMaxBlobBytes ||
+      chunk.size() > static_cast<std::size_t>(kMaxBlobBytes - offset)) {
+    result.error = "payload too large";
+    return result;
+  }
+  if (claims.expected_size != 0 &&
+      chunk.size() > static_cast<std::size_t>(claims.expected_size - offset)) {
+    result.error = "payload too large";
+    return result;
+  }
+
+  CleanupExpiredBlobArtifacts();
+
+  std::string budget_err;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = blob_uploads_.find(file_id);
-    if (it == blob_uploads_.end()) {
-      result.error = "upload session not found";
+    if (!CheckBlobTempStorageBudget(base_dir_, blob_upload_temp_budget_bytes_,
+                                    static_cast<std::uint64_t>(chunk.size()),
+                                    budget_err)) {
+      result.error = budget_err.empty() ? "upload temp storage exhausted"
+                                        : budget_err;
       return result;
     }
-    if (it->second.upload_id != upload_id || it->second.owner != owner) {
-      result.error = "unauthorized";
-      return result;
-    }
-    if (offset != it->second.bytes_received) {
+  }
+
+  const auto temp_path = ResolveUploadTempPath(file_id);
+
+  pfs::FileLock upload_lock{};
+  std::string lock_err;
+  if (!AcquireUploadLock(temp_path, upload_lock, lock_err)) {
+    result.error = lock_err;
+    return result;
+  }
+
+  std::error_code ec;
+  if (!std::filesystem::exists(temp_path, ec) || ec) {
+    if (offset != 0) {
+      pfs::ReleaseFileLock(upload_lock);
       result.error = "invalid offset";
       return result;
     }
-    if (it->second.expected_size > 0) {
-      expected = it->second.expected_size;
-    }
-    if (it->second.bytes_received + chunk.size() > kMaxBlobBytes) {
-      result.error = "payload too large";
+    std::string write_err;
+    if (!AtomicWriteOwnerOnly(temp_path, nullptr, 0, write_err)) {
+      pfs::ReleaseFileLock(upload_lock);
+      result.error = write_err.empty() ? "open file failed" : write_err;
       return result;
     }
-    if (expected > 0 &&
-        it->second.bytes_received + chunk.size() > expected) {
-      result.error = "payload too large";
+    std::array<std::uint8_t, 32> initial_tag{};
+    if (!PersistBlobUploadIntegrityTag(temp_path, 0, initial_tag, write_err)) {
+      pfs::ReleaseFileLock(upload_lock);
+      WipeFile(temp_path);
+      RemoveUploadSidecars(temp_path);
+      result.error = write_err.empty() ? "write file failed" : write_err;
       return result;
     }
-    temp_path = it->second.temp_path;
-    received = it->second.bytes_received;
+  }
+
+  {
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(temp_path, perm_err)) {
+      pfs::ReleaseFileLock(upload_lock);
+      WipeFile(temp_path);
+      RemoveUploadSidecars(temp_path);
+      result.error =
+          perm_err.empty() ? "upload file permissions insecure" : perm_err;
+      return result;
+    }
+  }
+
+  std::uint64_t received = 0;
+  std::array<std::uint8_t, 32> integrity_tag{};
+  std::string tag_err;
+  if (!LoadBlobUploadIntegrityTag(temp_path, received, integrity_tag, tag_err)) {
+    pfs::ReleaseFileLock(upload_lock);
+    WipeFile(temp_path);
+    RemoveUploadSidecars(temp_path);
+    result.error = "upload integrity mismatch";
+    return result;
+  }
+  if (received != offset) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "invalid offset";
+    return result;
+  }
+  if (claims.expected_size != 0 &&
+      chunk.size() >
+          static_cast<std::size_t>(claims.expected_size - received)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "payload too large";
+    return result;
+  }
+  if (received > kMaxBlobBytes ||
+      chunk.size() > static_cast<std::size_t>(kMaxBlobBytes - received)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "payload too large";
+    return result;
   }
 
   std::ofstream ofs(temp_path, std::ios::binary | std::ios::app);
   if (!ofs) {
+    pfs::ReleaseFileLock(upload_lock);
     result.error = "open file failed";
     return result;
   }
@@ -1144,28 +1832,44 @@ BlobUploadChunkResult OfflineStorage::AppendBlobUploadChunk(
             static_cast<std::streamsize>(chunk.size()));
   ofs.close();
   if (!ofs.good()) {
+    pfs::ReleaseFileLock(upload_lock);
     result.error = "write failed";
     return result;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = blob_uploads_.find(file_id);
-    if (it == blob_uploads_.end()) {
-      result.error = "upload session not found";
-      return result;
-    }
-    if (it->second.upload_id != upload_id || it->second.owner != owner) {
-      result.error = "unauthorized";
-      return result;
-    }
-    it->second.bytes_received += static_cast<std::uint64_t>(chunk.size());
-    it->second.last_activity = std::chrono::steady_clock::now();
-    received = it->second.bytes_received;
+  std::array<std::uint8_t, 32> integrity_key{};
+  if (!DeriveBlobUploadIntegrityKey(claims, owner, file_id, integrity_key)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "session subsystem unavailable";
+    return result;
+  }
+  std::uint64_t verified_bytes = 0;
+  std::string verify_err;
+  if (!ComputeBlobUploadIntegrityTagFromFile(temp_path, integrity_key,
+                                             integrity_tag, verified_bytes,
+                                             verify_err) ||
+      verified_bytes != received + static_cast<std::uint64_t>(chunk.size())) {
+    pfs::ReleaseFileLock(upload_lock);
+    WipeFile(temp_path);
+    RemoveUploadSidecars(temp_path);
+    result.error = "upload integrity mismatch";
+    return result;
+  }
+  std::string tag_write_err;
+  if (!PersistBlobUploadIntegrityTag(
+          temp_path, verified_bytes, integrity_tag,
+          tag_write_err)) {
+    pfs::ReleaseFileLock(upload_lock);
+    WipeFile(temp_path);
+    RemoveUploadSidecars(temp_path);
+    result.error =
+        tag_write_err.empty() ? "upload integrity persist failed" : tag_write_err;
+    return result;
   }
 
+  pfs::ReleaseFileLock(upload_lock);
   result.success = true;
-  result.bytes_received = received;
+  result.bytes_received = verified_bytes;
   return result;
 }
 
@@ -1185,6 +1889,16 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
     result.error = "payload too large";
     return result;
   }
+  BlobUploadTokenClaims claims;
+  std::string token_err;
+  if (!DecodeBlobUploadToken(upload_id, owner, file_id, claims, token_err)) {
+    result.error = token_err.empty() ? "invalid session" : token_err;
+    return result;
+  }
+  if (claims.expected_size != 0 && total_size != claims.expected_size) {
+    result.error = "size mismatch";
+    return result;
+  }
   if (state_store_) {
     if (!LoadMetadataFromStore()) {
       result.error = "metadata store load failed";
@@ -1192,31 +1906,75 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
     }
   }
 
-  BlobUploadSession sess;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = blob_uploads_.find(file_id);
-    if (it == blob_uploads_.end()) {
-      result.error = "upload session not found";
-      return result;
-    }
-    if (it->second.upload_id != upload_id || it->second.owner != owner) {
-      result.error = "unauthorized";
-      return result;
-    }
-    if (it->second.bytes_received != total_size) {
-      result.error = "size mismatch";
-      return result;
-    }
-    sess = it->second;
-    blob_uploads_.erase(it);
+  const auto temp_path = ResolveUploadTempPath(file_id);
+
+  pfs::FileLock upload_lock{};
+  std::string lock_err;
+  if (!AcquireUploadLock(temp_path, upload_lock, lock_err)) {
+    result.error = lock_err;
+    return result;
   }
 
   const auto final_path = ResolvePath(file_id);
   std::error_code ec;
-  std::filesystem::rename(sess.temp_path, final_path, ec);
-  if (ec) {
+  std::string perm_err;
+  if (!std::filesystem::exists(temp_path, ec) || ec) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "upload session not found";
+    return result;
+  }
+  if (!mi::shard::security::CheckPathNotWorldWritable(temp_path,
+                                                       perm_err)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error =
+        perm_err.empty() ? "upload file permissions insecure" : perm_err;
+    return result;
+  }
+
+  std::uint64_t tagged_bytes = 0;
+  std::array<std::uint8_t, 32> tagged_digest{};
+  std::string tag_err;
+  if (!LoadBlobUploadIntegrityTag(temp_path, tagged_bytes, tagged_digest,
+                                  tag_err) ||
+      tagged_bytes != total_size) {
+    pfs::ReleaseFileLock(upload_lock);
+    WipeFile(temp_path);
+    RemoveUploadSidecars(temp_path);
+    result.error = "upload integrity mismatch";
+    return result;
+  }
+
+  std::array<std::uint8_t, 32> integrity_key{};
+  if (!DeriveBlobUploadIntegrityKey(claims, owner, file_id, integrity_key)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = "session subsystem unavailable";
+    return result;
+  }
+  std::array<std::uint8_t, 32> computed_tag{};
+  std::uint64_t computed_bytes = 0;
+  std::string verify_err;
+  if (!ComputeBlobUploadIntegrityTagFromFile(temp_path, integrity_key,
+                                             computed_tag, computed_bytes,
+                                             verify_err) ||
+      computed_bytes != total_size ||
+      crypto_verify32(computed_tag.data(), tagged_digest.data()) != 0) {
+    pfs::ReleaseFileLock(upload_lock);
+    WipeFile(temp_path);
+    RemoveUploadSidecars(temp_path);
+    result.error = "upload integrity mismatch";
+    return result;
+  }
+
+  if (!pfs::Rename(temp_path, final_path, ec) || ec) {
+    pfs::ReleaseFileLock(upload_lock);
     result.error = "finalize failed";
+    return result;
+  }
+  if (!EnforceOwnerOnlyPermissions(final_path, perm_err)) {
+    pfs::ReleaseFileLock(upload_lock);
+    result.error = perm_err.empty() ? "file permissions insecure" : perm_err;
+    std::filesystem::remove(final_path, ec);
+    RemoveUploadSidecars(temp_path);
     return result;
   }
 
@@ -1224,7 +1982,7 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
   meta.id = file_id;
   meta.owner = owner;
   meta.size = total_size;
-  meta.created_at = sess.created_at;
+  meta.created_at = std::chrono::steady_clock::now();
 
   std::string meta_err;
   if (state_store_) {
@@ -1245,8 +2003,10 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
     }
   } else {
     if (!PersistMetadata(meta, meta_err)) {
+      pfs::ReleaseFileLock(upload_lock);
       result.error = meta_err.empty() ? "metadata write failed" : meta_err;
       WipeFile(final_path);
+      RemoveUploadSidecars(temp_path);
       return result;
     }
     {
@@ -1255,11 +2015,15 @@ BlobUploadFinishResult OfflineStorage::FinishBlobUpload(
     }
   }
   if (!meta_err.empty()) {
+    pfs::ReleaseFileLock(upload_lock);
     result.error = meta_err;
     WipeFile(final_path);
+    RemoveUploadSidecars(temp_path);
     return result;
   }
 
+  pfs::ReleaseFileLock(upload_lock);
+  RemoveUploadSidecars(temp_path);
   result.success = true;
   result.meta = meta;
   return result;
@@ -1298,17 +2062,6 @@ BlobDownloadStartResult OfflineStorage::BeginBlobDownload(
     }
   }
 
-  const std::string download_id = GenerateSessionId();
-  BlobDownloadSession sess;
-  sess.download_id = download_id;
-  sess.file_id = file_id;
-  sess.owner = owner;
-  sess.total_size = size;
-  sess.next_offset = 0;
-  sess.wipe_after_read = wipe_after_read;
-  sess.created_at = std::chrono::steady_clock::now();
-  sess.last_activity = sess.created_at;
-
   StoredFileMeta meta;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1321,7 +2074,14 @@ BlobDownloadStartResult OfflineStorage::BeginBlobDownload(
       meta.owner.clear();
       meta.created_at = std::chrono::steady_clock::now();
     }
-    blob_downloads_[download_id] = std::move(sess);
+  }
+
+  std::string token_err;
+  const std::string download_id =
+      EncodeBlobDownloadToken(owner, file_id, wipe_after_read, token_err);
+  if (download_id.empty()) {
+    result.error = token_err.empty() ? "session issue failed" : token_err;
+    return result;
   }
 
   result.success = true;
@@ -1351,31 +2111,21 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
     max_len = kMaxBlobChunkBytes;
   }
 
-  BlobDownloadSession sess;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = blob_downloads_.find(download_id);
-    if (it == blob_downloads_.end()) {
-      result.error = "download session not found";
-      return result;
-    }
-    if (it->second.owner != owner || it->second.file_id != file_id) {
-      result.error = "unauthorized";
-      return result;
-    }
-    if (offset != it->second.next_offset) {
-      result.error = "invalid offset";
-      return result;
-    }
-    sess = it->second;
-  }
-
-  if (sess.total_size == 0 || offset >= sess.total_size) {
-    result.error = "invalid offset";
+  BlobDownloadTokenClaims claims;
+  std::string token_err;
+  if (!DecodeBlobDownloadToken(download_id, owner, file_id, claims, token_err)) {
+    result.error = token_err.empty() ? "invalid session" : token_err;
     return result;
   }
 
   const auto path = ResolvePath(file_id);
+  std::error_code size_ec;
+  const std::uint64_t total_size = std::filesystem::file_size(path, size_ec);
+  if (size_ec || total_size == 0 || offset >= total_size) {
+    result.error = "invalid offset";
+    return result;
+  }
+
   std::vector<std::uint8_t> buf;
   {
     std::ifstream ifs(path, std::ios::binary);
@@ -1384,7 +2134,7 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
       return result;
     }
     ifs.seekg(static_cast<std::streamoff>(offset));
-    const std::uint64_t remaining64 = sess.total_size - offset;
+    const std::uint64_t remaining64 = total_size - offset;
     const std::size_t to_read =
         static_cast<std::size_t>(std::min<std::uint64_t>(remaining64, max_len));
     auto& pool = OfflineStorageBufferPool();
@@ -1399,44 +2149,22 @@ BlobDownloadChunkResult OfflineStorage::ReadBlobDownloadChunk(
   }
 
   const std::uint64_t next_off = offset + static_cast<std::uint64_t>(buf.size());
-  const bool eof = (next_off >= sess.total_size);
+  const bool eof = (next_off >= total_size);
 
-  bool wipe = false;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = blob_downloads_.find(download_id);
-    if (it == blob_downloads_.end()) {
-      result.error = "download session not found";
-      return result;
-    }
-    if (it->second.owner != owner || it->second.file_id != file_id) {
-      result.error = "unauthorized";
-      return result;
-    }
-    it->second.next_offset = next_off;
-    it->second.last_activity = std::chrono::steady_clock::now();
-    if (eof) {
-      wipe = it->second.wipe_after_read;
-      blob_downloads_.erase(it);
-      if (wipe) {
-        if (state_store_) {
-          std::string lock_err;
-          StateStoreLock store_lock(state_store_, "offline_storage_meta",
-                                    std::chrono::milliseconds(5000),
-                                    lock_err);
-          if (store_lock.locked()) {
-            if (LoadMetadataFromStoreLocked()) {
-              metadata_.erase(file_id);
-              (void)SaveMetadataToStoreLockedUnlocked();
-            }
-          }
-        } else {
-          metadata_.erase(file_id);
-        }
+  if (claims.wipe_after_read && eof) {
+    if (state_store_) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (store_lock.locked() && LoadMetadataFromStoreLocked()) {
+        metadata_.erase(file_id);
+        (void)SaveMetadataToStoreLockedUnlocked();
       }
+    } else {
+      std::lock_guard<std::mutex> lock(mutex_);
+      metadata_.erase(file_id);
     }
-  }
-  if (wipe) {
     WipeFile(path);
   }
 
@@ -1880,53 +2608,80 @@ OfflineStorageStats OfflineStorage::GetStats() {
 
 void OfflineStorage::CleanupExpired() {
   const auto now = std::chrono::steady_clock::now();
-  std::lock_guard<std::mutex> lock(mutex_);
-  bool removed = false;
-  if (state_store_) {
-    std::string lock_err;
-    StateStoreLock store_lock(state_store_, "offline_storage_meta",
-                              std::chrono::milliseconds(5000), lock_err);
-    if (store_lock.locked() && LoadMetadataFromStoreLocked()) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    bool removed = false;
+    if (state_store_) {
+      std::string lock_err;
+      StateStoreLock store_lock(state_store_, "offline_storage_meta",
+                                std::chrono::milliseconds(5000), lock_err);
+      if (store_lock.locked() && LoadMetadataFromStoreLocked()) {
+        for (auto it = metadata_.begin(); it != metadata_.end();) {
+          if (now - it->second.created_at > ttl_) {
+            const auto path = ResolvePath(it->first);
+            WipeFile(path);
+            it = metadata_.erase(it);
+            removed = true;
+          } else {
+            ++it;
+          }
+        }
+        if (removed) {
+          (void)SaveMetadataToStoreLockedUnlocked();
+        }
+      }
+    } else {
       for (auto it = metadata_.begin(); it != metadata_.end();) {
         if (now - it->second.created_at > ttl_) {
           const auto path = ResolvePath(it->first);
           WipeFile(path);
           it = metadata_.erase(it);
-          removed = true;
         } else {
           ++it;
         }
       }
-      if (removed) {
-        (void)SaveMetadataToStoreLockedUnlocked();
-      }
-    }
-  } else {
-    for (auto it = metadata_.begin(); it != metadata_.end();) {
-      if (now - it->second.created_at > ttl_) {
-        const auto path = ResolvePath(it->first);
-        WipeFile(path);
-        it = metadata_.erase(it);
-      } else {
-        ++it;
-      }
     }
   }
+  CleanupExpiredBlobArtifacts();
+}
 
-  const auto sess_ttl = std::chrono::minutes(15);
-  for (auto it = blob_uploads_.begin(); it != blob_uploads_.end();) {
-    if (now - it->second.last_activity > sess_ttl) {
-      WipeFile(it->second.temp_path);
-      it = blob_uploads_.erase(it);
-    } else {
-      ++it;
-    }
+void OfflineStorage::CleanupExpiredBlobArtifacts() {
+  if (base_dir_.empty()) {
+    return;
   }
-  for (auto it = blob_downloads_.begin(); it != blob_downloads_.end();) {
-    if (now - it->second.last_activity > sess_ttl) {
-      it = blob_downloads_.erase(it);
+  std::error_code ec;
+  std::filesystem::directory_iterator it(base_dir_, ec);
+  if (ec) {
+    return;
+  }
+  const auto now = std::filesystem::file_time_type::clock::now();
+  const auto expire_before = now - kBlobSessionTtl;
+  const std::filesystem::directory_iterator end;
+  for (; it != end; it.increment(ec)) {
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (!it->is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    const auto path = it->path();
+    const auto ext = path.extension();
+    if (ext != ".part" && ext != ".itag" && ext != ".lock") {
+      continue;
+    }
+    const auto mtime = std::filesystem::last_write_time(path, ec);
+    if (ec || mtime > expire_before) {
+      ec.clear();
+      continue;
+    }
+    if (ext == ".part") {
+      WipeFile(path);
+      RemoveUploadSidecars(path);
     } else {
-      ++it;
+      std::filesystem::remove(path, ec);
+      ec.clear();
     }
   }
 }
@@ -2006,25 +2761,15 @@ bool OfflineStorage::SaveEraseKey(const std::filesystem::path& data_path,
     error = "key path invalid";
     return false;
   }
-  const auto tmp = key_path->string() + ".tmp";
-  {
-    std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-    if (!ofs) {
-      error = "key write failed";
-      return false;
-    }
-    ofs.write(reinterpret_cast<const char*>(erase_key.data()),
-              static_cast<std::streamsize>(erase_key.size()));
-    if (!ofs) {
-      error = "key write failed";
-      return false;
-    }
-  }
   std::error_code ec;
-  std::filesystem::rename(tmp, *key_path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
+  if (!pfs::AtomicWrite(*key_path, erase_key.data(), erase_key.size(), ec)) {
     error = "key write failed";
+    return false;
+  }
+  std::string perm_err;
+  if (!EnforceOwnerOnlyPermissions(*key_path, perm_err)) {
+    std::filesystem::remove(*key_path, ec);
+    error = perm_err.empty() ? "key permissions insecure" : perm_err;
     return false;
   }
   return true;
@@ -2369,6 +3114,10 @@ bool OfflineQueue::PersistMessage(
     if (ec) {
       return false;
     }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(dir, perm_err)) {
+      return false;
+    }
   }
 
   if (stored.msg.recipient.size() >
@@ -2457,26 +3206,11 @@ bool OfflineQueue::PersistMessage(
     return false;
   }
 
-  const std::filesystem::path tmp = path.string() + ".tmp";
-  std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-  if (!ofs) {
+  std::string write_err;
+  if (!AtomicWriteOwnerOnly(path, protected_bytes.data(),
+                            protected_bytes.size(), write_err)) {
     return false;
   }
-  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
-            static_cast<std::streamsize>(protected_bytes.size()));
-  ofs.close();
-  if (!ofs.good()) {
-    std::filesystem::remove(tmp, ec);
-    return false;
-  }
-
-  std::filesystem::remove(path, ec);
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
-    return false;
-  }
-  SetOwnerOnlyPermissions(path);
   return true;
 }
 
@@ -2517,6 +3251,11 @@ bool OfflineQueue::LoadFromDisk() {
       continue;
     }
     if (ext != ".msg") {
+      continue;
+    }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+      purge(path);
       continue;
     }
     const auto size = std::filesystem::file_size(path, ec);

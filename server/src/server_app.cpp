@@ -8,6 +8,7 @@
 #include "metadata_protector.h"
 #include "opaque_pake.h"
 #include "path_security.h"
+#include "platform_fs.h"
 #include "platform_log.h"
 #include "protected_store.h"
 #include "state_store_mysql.h"
@@ -24,6 +25,8 @@
 namespace mi::server {
 
 namespace {
+
+namespace pfs = mi::platform::fs;
 
 struct RustBuf {
   std::uint8_t* ptr{nullptr};
@@ -272,42 +275,21 @@ bool LoadOrCreateOpaqueServerSetup(const std::filesystem::path& dir,
     return true;
   }
 
-  // Write atomically.
-  const auto tmp = path.string() + ".tmp";
-  {
-    std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-    if (!ofs) {
-      error = "opaque setup write failed";
-      out_setup.clear();
-      return false;
-    }
-    ofs.write(reinterpret_cast<const char*>(kOpaqueSetupMagic),
-              sizeof(kOpaqueSetupMagic));
-    const std::uint32_t out_len = static_cast<std::uint32_t>(out_setup.size());
-    const std::uint8_t len_le[4] = {
-        static_cast<std::uint8_t>(out_len & 0xFF),
-        static_cast<std::uint8_t>((out_len >> 8) & 0xFF),
-        static_cast<std::uint8_t>((out_len >> 16) & 0xFF),
-        static_cast<std::uint8_t>((out_len >> 24) & 0xFF),
-    };
-    ofs.write(reinterpret_cast<const char*>(len_le), sizeof(len_le));
-    ofs.write(reinterpret_cast<const char*>(out_setup.data()),
-              static_cast<std::streamsize>(out_setup.size()));
-    if (!ofs) {
-      error = "opaque setup write failed";
-      out_setup.clear();
-      std::filesystem::remove(tmp, ec);
-      return false;
-    }
-  }
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    error = "opaque setup rename failed";
-    out_setup.clear();
-    std::filesystem::remove(tmp, ec);
-    return false;
-  }
-  if (!SetOwnerOnlyPermissions(path, error)) {
+  std::vector<std::uint8_t> plain_bytes;
+  plain_bytes.reserve(12 + out_setup.size());
+  plain_bytes.insert(plain_bytes.end(), std::begin(kOpaqueSetupMagic),
+                     std::end(kOpaqueSetupMagic));
+  const std::uint32_t out_len = static_cast<std::uint32_t>(out_setup.size());
+  const std::uint8_t len_le[4] = {
+      static_cast<std::uint8_t>(out_len & 0xFF),
+      static_cast<std::uint8_t>((out_len >> 8) & 0xFF),
+      static_cast<std::uint8_t>((out_len >> 16) & 0xFF),
+      static_cast<std::uint8_t>((out_len >> 24) & 0xFF),
+  };
+  plain_bytes.insert(plain_bytes.end(), std::begin(len_le), std::end(len_le));
+  plain_bytes.insert(plain_bytes.end(), out_setup.begin(), out_setup.end());
+  if (!WriteFileAtomic(path, plain_bytes.data(), plain_bytes.size(), false,
+                       true, error)) {
     out_setup.clear();
     return false;
   }
@@ -329,50 +311,33 @@ bool WriteFileAtomic(const std::filesystem::path& path,
   std::error_code ec;
   const auto parent = path.parent_path();
   if (!parent.empty()) {
-    std::filesystem::create_directories(parent, ec);
+    pfs::CreateDirectories(parent, ec);
     if (ec) {
       error = "kt key dir create failed";
       return false;
     }
   }
-  if (!overwrite && std::filesystem::exists(path, ec)) {
-    if (ec) {
-      error = "kt key path error";
-      return false;
-    }
+  const bool exists = pfs::Exists(path, ec);
+  if (ec) {
+    error = "kt key path error";
+    return false;
+  }
+  if (!overwrite && exists) {
     error = "kt key exists";
     return false;
   }
-  const auto tmp = path.string() + ".tmp";
-  {
-    std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-    if (!ofs) {
-      error = "kt key write failed";
-      return false;
-    }
-    ofs.write(reinterpret_cast<const char*>(data),
-              static_cast<std::streamsize>(len));
-    if (!ofs) {
-      error = "kt key write failed";
-      std::filesystem::remove(tmp, ec);
-      return false;
-    }
-  }
-  if (overwrite) {
-    std::filesystem::remove(path, ec);
-    if (ec) {
-      std::filesystem::remove(tmp, ec);
-      error = "kt key remove failed";
-      return false;
-    }
-  }
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
-    error = "kt key rename failed";
+  if (!pfs::AtomicWrite(path, data, len, ec) || ec) {
+    error = "kt key write failed";
     return false;
   }
   if (owner_only && !SetOwnerOnlyPermissions(path, error)) {
+    std::error_code rm_ec;
+    std::filesystem::remove(path, rm_ec);
+    return false;
+  }
+  if (!CheckPathNotWorldWritable(path, error)) {
+    std::error_code rm_ec;
+    std::filesystem::remove(path, rm_ec);
     return false;
   }
   return true;
@@ -653,6 +618,9 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
       error = "secure_delete_plugin not found";
       return false;
     }
+    if (!CheckPathNotWorldWritable(secure_delete.plugin_path, error)) {
+      return false;
+    }
     if (!VerifyFileSha256(secure_delete.plugin_path,
                           config_.server.secure_delete_plugin_sha256,
                           error)) {
@@ -693,7 +661,8 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                                 state_store_.get());
   offline_storage_ = std::make_unique<OfflineStorage>(
       storage_dir, std::chrono::hours(12), secure_delete,
-      config_.server.state_protection, state_store_.get());
+      config_.server.state_protection, state_store_.get(),
+      config_.server.offline_blob_temp_budget_bytes);
   if ((secure_delete.enabled || require_secure_delete) &&
       !offline_storage_->SecureDeleteReady()) {
     error = offline_storage_->SecureDeleteError().empty()
@@ -723,6 +692,12 @@ bool ServerApp::Init(const std::string& config_path, std::string& error) {
                                       config_.server.root_auth_enable,
                                       config_.server.root_auth_step_sec,
                                       config_.server.root_auth_window);
+  if (api_->init_failed()) {
+    error = api_->init_error().empty() ? "api service init failed"
+                                       : api_->init_error();
+    api_.reset();
+    return false;
+  }
   router_ = std::make_unique<FrameRouter>(api_.get());
   last_cleanup_ = std::chrono::steady_clock::now();
   return true;

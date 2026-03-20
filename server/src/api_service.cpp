@@ -14,8 +14,11 @@
 
 #include "crypto.h"
 #include "hex_utils.h"
+#include "path_security.h"
 #include "protocol.h"
 #include "protected_store.h"
+#include "mysql_tls_policy.h"
+#include "platform_fs.h"
 #include "platform_time.h"
 #include "ed25519.h"
 
@@ -46,10 +49,13 @@ int PQCLEAN_MLDSA65_CLEAN_crypto_sign_signature(std::uint8_t* sig,
 
 namespace {
 
+namespace pfs = mi::platform::fs;
+
 #ifdef MI_E2EE_ENABLE_MYSQL
 MYSQL* ConnectMysql(const mi::server::MySqlConfig& cfg, std::string& error) {
   error.clear();
   constexpr int kMaxAttempts = 2;
+  const auto ssl_mode = mi::server::mysql_tls::ParseSslModeFromEnv();
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
     MYSQL* conn = mysql_init(nullptr);
     if (!conn) {
@@ -64,11 +70,23 @@ MYSQL* ConnectMysql(const mi::server::MySqlConfig& cfg, std::string& error) {
     bool reconnect = true;
     mysql_options(conn, MYSQL_OPT_RECONNECT, &reconnect);
 #endif
+    mi::server::mysql_tls::ApplySslModeOption(conn, ssl_mode);
+    const unsigned long connect_flags =
+        mi::server::mysql_tls::ConnectFlagsForSslMode(ssl_mode);
     MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(),
                                     cfg.username.c_str(),
                                     cfg.password.get().c_str(),
-                                    cfg.database.c_str(), cfg.port, nullptr, 0);
+                                    cfg.database.c_str(), cfg.port, nullptr,
+                                    connect_flags);
     if (res) {
+      if (!mi::server::mysql_tls::VerifyNegotiatedSsl(conn, ssl_mode)) {
+        error = "mysql tls required";
+        mysql_close(conn);
+        if (attempt + 1 < kMaxAttempts) {
+          mi::platform::SleepMs(200);
+        }
+        continue;
+      }
       return conn;
     }
     error = "mysql_connect failed";
@@ -80,6 +98,34 @@ MYSQL* ConnectMysql(const mi::server::MySqlConfig& cfg, std::string& error) {
   return nullptr;
 }
 #endif
+
+bool EnforceOwnerOnlyPermissions(const std::filesystem::path& path,
+                                 std::string& error) {
+  error.clear();
+#ifdef _WIN32
+  std::string acl_err;
+  if (!mi::shard::security::HardenPathAcl(path, acl_err)) {
+    error = acl_err.empty() ? "root auth permissions set failed" : acl_err;
+    return false;
+  }
+#else
+  std::error_code ec;
+  std::filesystem::permissions(
+      path, std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::replace, ec);
+  if (ec) {
+    error = "root auth permissions set failed";
+    return false;
+  }
+#endif
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+    error = perm_err.empty() ? "root auth permissions insecure" : perm_err;
+    return false;
+  }
+  return true;
+}
 
 }  // namespace
 
@@ -324,11 +370,11 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
     kt_log_ = std::make_unique<KeyTransparencyLog>(path);
     std::string err;
     if (!kt_log_->Load(err)) {
-      // Best effort recovery: start a new log if the on-disk log is missing/corrupt.
-      std::error_code ec;
-      std::filesystem::remove(path, ec);
-      kt_log_ = std::make_unique<KeyTransparencyLog>(path);
-      kt_log_->Load(err);
+      init_failed_ = true;
+      init_error_ = err.empty() ? "kt log load failed"
+                                : "kt log load failed: " + err;
+      kt_log_.reset();
+      return;
     }
   }
   if (kt_log_) {
@@ -396,7 +442,7 @@ bool ApiService::RateLimiter::AllowAt(const std::string& key,
       std::chrono::duration_cast<std::chrono::duration<double>>(now - bucket.last)
           .count();
   if (dt > 0.0) {
-    bucket.tokens = std::min(capacity_, bucket.tokens + dt * refill_per_sec_);
+    bucket.tokens = (std::min)(capacity_, bucket.tokens + dt * refill_per_sec_);
     bucket.last = now;
   }
   bucket.last_seen = now;
@@ -585,6 +631,11 @@ bool ApiService::LoadRootAuthRecord(const std::string& username,
     if (!std::filesystem::exists(path, ec) || ec) {
       return true;
     }
+    std::string perm_err;
+    if (!mi::shard::security::CheckPathNotWorldWritable(path, perm_err)) {
+      out_error = perm_err.empty() ? "root auth permissions insecure" : perm_err;
+      return false;
+    }
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
       out_error = "root auth read failed";
@@ -743,27 +794,15 @@ bool ApiService::SaveRootAuthRecord(const std::string& username,
       return false;
     }
     const auto path = root_auth_dir_ / (user_hex + ".bin");
-    const auto tmp = root_auth_dir_ / (user_hex + ".tmp");
-    {
-      std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-      if (!ofs) {
-        out_error = "root auth write failed";
-        return false;
-      }
-      if (!out_bytes.empty()) {
-        ofs.write(reinterpret_cast<const char*>(out_bytes.data()),
-                  static_cast<std::streamsize>(out_bytes.size()));
-        if (!ofs) {
-          out_error = "root auth write failed";
-          return false;
-        }
-      }
-      ofs.flush();
-    }
     std::error_code ec;
-    std::filesystem::rename(tmp, path, ec);
-    if (ec) {
+    if (!pfs::AtomicWrite(path, out_bytes.data(), out_bytes.size(), ec) || ec) {
       out_error = "root auth write failed";
+      return false;
+    }
+    std::string perm_err;
+    if (!EnforceOwnerOnlyPermissions(path, perm_err)) {
+      std::filesystem::remove(path, ec);
+      out_error = perm_err.empty() ? "root auth permissions insecure" : perm_err;
       return false;
     }
   }
@@ -1893,19 +1932,10 @@ FriendListResponse ApiService::ListFriendsInternal(const Session& sess) {
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -2181,19 +2211,10 @@ FriendAddResponse ApiService::AddFriend(const std::string& token,
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -2312,19 +2333,10 @@ FriendRemarkResponse ApiService::SetFriendRemark(const std::string& token,
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -2611,19 +2623,10 @@ FriendRequestSendResponse ApiService::SendFriendRequest(
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -2724,19 +2727,10 @@ FriendRequestListResponse ApiService::ListFriendRequests(const std::string& toke
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -2962,19 +2956,10 @@ FriendRequestRespondResponse ApiService::RespondFriendRequest(
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -3178,19 +3163,10 @@ FriendDeleteResponse ApiService::DeleteFriend(const std::string& token,
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -3320,19 +3296,10 @@ UserBlockSetResponse ApiService::SetUserBlocked(const std::string& token,
 
 #ifdef MI_E2EE_ENABLE_MYSQL
   if (friend_mysql_.has_value()) {
-    MYSQL* conn = mysql_init(nullptr);
+    std::string connect_err;
+    MYSQL* conn = ConnectMysql(*friend_mysql_, connect_err);
     if (!conn) {
-      resp.error = "mysql_init failed";
-      return resp;
-    }
-    MYSQL* res = mysql_real_connect(conn, friend_mysql_->host.c_str(),
-                                    friend_mysql_->username.c_str(),
-                                    friend_mysql_->password.get().c_str(),
-                                    friend_mysql_->database.c_str(),
-                                    friend_mysql_->port, nullptr, 0);
-    if (!res) {
-      resp.error = "mysql_connect failed";
-      mysql_close(conn);
+      resp.error = connect_err.empty() ? "mysql_connect failed" : connect_err;
       return resp;
     }
 
@@ -5001,8 +4968,8 @@ DeviceListResponse ApiService::ListDevices(const std::string& token,
         const auto age = now - seen;
         const auto sec = std::chrono::duration_cast<std::chrono::seconds>(age).count();
         e.last_seen_sec =
-            sec < 0 ? 0 : (sec > std::numeric_limits<std::uint32_t>::max()
-                                ? std::numeric_limits<std::uint32_t>::max()
+            sec < 0 ? 0 : (sec > (std::numeric_limits<std::uint32_t>::max)()
+                                ? (std::numeric_limits<std::uint32_t>::max)()
                                 : static_cast<std::uint32_t>(sec));
       } else {
         e.last_seen_sec = 0;

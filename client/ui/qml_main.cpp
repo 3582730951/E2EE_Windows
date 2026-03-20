@@ -1,7 +1,9 @@
 #include <QCoreApplication>
+#include <QDir>
 #include <QGuiApplication>
 #include <QEvent>
 #include <QFile>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlApplicationEngine>
@@ -38,6 +40,22 @@ int SmokeDurationMs() {
         return value;
     }
     return 2000;
+}
+
+QString SmokeCaptureDir() {
+    return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CAPTURE_DIR")).trimmed();
+}
+
+bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QString& name) {
+    if (!window || captureDir.isEmpty()) {
+        return false;
+    }
+    QDir dir;
+    if (!dir.mkpath(captureDir)) {
+        return false;
+    }
+    const QString fileName = QFileInfo(name).completeBaseName() + QStringLiteral(".png");
+    return window->grabWindow().save(QDir(captureDir).filePath(fileName));
 }
 
 class AuthWindowDragFilter : public QObject {
@@ -313,6 +331,7 @@ int main(int argc, char* argv[]) {
     const QString smokeUser = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_USER"));
     const QString smokePass = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_PASS"));
     const QString smokeConfig = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CONFIG"));
+    const QString smokeCaptureDir = SmokeCaptureDir();
     QTimer smokeTimer;
 
     QQmlApplicationEngine engine;
@@ -345,21 +364,50 @@ int main(int argc, char* argv[]) {
     app.installEventFilter(imeBlocker);
     imeBlocker->refresh();
     if (smokeMode) {
+        const int smokeDuration = SmokeDurationMs();
         smokeTimer.setSingleShot(true);
-        smokeTimer.start(SmokeDurationMs());
+        smokeTimer.start(smokeDuration);
         QObject::connect(&smokeTimer, &QTimer::timeout, &app, &QCoreApplication::quit);
         if (!smokeUser.isEmpty() && !smokePass.isEmpty()) {
-            QTimer::singleShot(0, &app, [&client, &smokeTimer, smokeUser, smokePass, smokeConfig]() {
+            const int loginDelayMs = smokeCaptureDir.isEmpty()
+                ? 0
+                : qMin(400, qMax(120, smokeDuration / 5));
+            const int preCaptureDelayMs = qMin(250, qMax(80, smokeDuration / 10));
+            const int latestCaptureMs = qMax(600, smokeDuration - 150);
+            const int postCaptureDelayMs = qMin(latestCaptureMs, qMax(900, smokeDuration / 2));
+            QTimer::singleShot(0, &app, [&client, &smokeTimer, smokeUser, smokePass,
+                                         smokeConfig, smokeCaptureDir, window,
+                                         loginDelayMs, preCaptureDelayMs,
+                                         postCaptureDelayMs]() {
                 if (!client.init(smokeConfig)) {
                     smokeTimer.stop();
                     QCoreApplication::exit(2);
                     return;
                 }
-                if (!client.login(smokeUser, smokePass)) {
-                    smokeTimer.stop();
-                    QCoreApplication::exit(3);
-                    return;
+                if (!smokeCaptureDir.isEmpty() && window) {
+                    QTimer::singleShot(preCaptureDelayMs, window, [window, smokeCaptureDir]() {
+                        SaveSmokeCapture(window, smokeCaptureDir, QStringLiteral("login"));
+                    });
                 }
+                QTimer::singleShot(loginDelayMs, &client, [&client, &smokeTimer, smokeUser,
+                                                           smokePass, smokeCaptureDir, window,
+                                                           postCaptureDelayMs]() {
+                    if (!client.login(smokeUser, smokePass)) {
+                        smokeTimer.stop();
+                        QCoreApplication::exit(3);
+                        return;
+                    }
+                    if (!smokeCaptureDir.isEmpty() && window) {
+                        QTimer::singleShot(postCaptureDelayMs, window, [window, smokeCaptureDir]() {
+                            SaveSmokeCapture(window, smokeCaptureDir, QStringLiteral("post-login"));
+                        });
+                    }
+                });
+            });
+        } else if (!smokeCaptureDir.isEmpty() && window) {
+            const int captureDelayMs = qMin(300, qMax(100, smokeDuration / 6));
+            QTimer::singleShot(captureDelayMs, window, [window, smokeCaptureDir]() {
+                SaveSmokeCapture(window, smokeCaptureDir, QStringLiteral("window"));
             });
         }
     }

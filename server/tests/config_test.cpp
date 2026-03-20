@@ -45,6 +45,7 @@ int main() {
     WriteFile(path,
               "[mode]  # auth mode\nmode=1  # demo\n"
               "[server]\nlist_port=8000  # listen port\n"
+              "offline_blob_temp_budget_bytes=536870912\n"
               "kt_signing_key=kt_signing_key.bin\n");
     ServerConfig cfg;
     std::string err;
@@ -52,8 +53,21 @@ int main() {
     assert(ok);
     assert(cfg.mode == AuthMode::kDemo);
     assert(cfg.server.listen_port == 8000);
+    assert(cfg.server.offline_blob_temp_budget_bytes == 536870912ull);
     assert(cfg.server.tls_enable);
     assert(cfg.server.require_tls);
+  }
+
+  {
+    const std::string path = "tmp_config_blob_budget_too_small.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\noffline_blob_temp_budget_bytes=1024\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
   }
 
   {

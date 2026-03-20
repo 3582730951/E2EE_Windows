@@ -21,6 +21,9 @@ val miOpenSslRoot = (project.findProperty("miE2eeAndroidOpenSslRoot") as? String
 val miOpaqueLib = (project.findProperty("miE2eeOpaqueLib") as? String)
     ?.takeIf { it.isNotBlank() }
     ?: System.getenv("MI_E2EE_OPAQUE_LIB")?.takeIf { it.isNotBlank() }
+val miOpaqueLibRoot = (project.findProperty("miE2eeOpaqueLibRoot") as? String)
+    ?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MI_E2EE_OPAQUE_LIB_ROOT")?.takeIf { it.isNotBlank() }
 val miOllvmEnabled = (project.findProperty("miE2eeOllvm") as? String)
     ?.equals("true", ignoreCase = true) ?: false
 val miOllvmClang = project.findProperty("miE2eeOllvmClang") as? String
@@ -36,6 +39,15 @@ fun parseAbis(value: String): List<String> =
         .map { it.trim() }
         .filter { it.isNotEmpty() }
 val miAbis = miAbiRaw?.let { parseAbis(it) }
+
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { it.name.contains("Release", ignoreCase = true) }
+    if (releaseRequested && miAllowTlsStub) {
+        throw GradleException(
+            "MI_E2EE_ANDROID_ALLOW_TLS_STUB cannot be enabled for release builds."
+        )
+    }
+}
 
 android {
     namespace = "mi.e2ee.android"
@@ -61,6 +73,9 @@ android {
                     if (miOpaqueEnabled) "ON" else "OFF"
                 if (!miOpaqueLib.isNullOrBlank()) {
                     arguments += "-DMI_E2EE_OPAQUE_LIB=$miOpaqueLib"
+                }
+                if (!miOpaqueLibRoot.isNullOrBlank()) {
+                    arguments += "-DMI_E2EE_OPAQUE_LIB_ROOT=$miOpaqueLibRoot"
                 }
                 arguments += "-DMI_E2EE_ANDROID_USE_OPENSSL=" +
                     if (miOpenSslEnabled) "ON" else "OFF"
@@ -159,6 +174,9 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.02"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }

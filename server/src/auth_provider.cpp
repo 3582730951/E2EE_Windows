@@ -31,6 +31,7 @@
 #include "crypto.h"
 #include "hex_utils.h"
 #include "monocypher.h"
+#include "mysql_tls_policy.h"
 #include "opaque_pake.h"
 #include "platform_time.h"
 
@@ -249,6 +250,10 @@ bool VerifyPassword(const std::string& input, const std::string& stored) {
   if (VerifyPasswordArgon2id(input, stored)) {
     return true;
   }
+#if defined(MI_E2EE_SECURE_RELEASE)
+  // Secure/release profile forbids weak legacy password formats.
+  return false;
+#else
   if (stored == input) {
     return true;
   }
@@ -266,6 +271,7 @@ bool VerifyPassword(const std::string& input, const std::string& stored) {
   const std::string hashed = mi::common::Sha256Hex(
       reinterpret_cast<const std::uint8_t*>(input.data()), input.size());
   return ConstantTimeEqualString(stored, hashed);
+#endif
 }
 
 struct RustBuf {
@@ -400,6 +406,7 @@ std::atomic<bool> g_mysql_user_auth_ready{false};
 MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
   error.clear();
   constexpr int kMaxAttempts = 2;
+  const auto ssl_mode = mi::server::mysql_tls::ParseSslModeFromEnv();
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
     MYSQL* conn = mysql_init(nullptr);
     if (!conn) {
@@ -414,11 +421,23 @@ MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
     bool reconnect = true;
     mysql_options(conn, MYSQL_OPT_RECONNECT, &reconnect);
 #endif
+    mi::server::mysql_tls::ApplySslModeOption(conn, ssl_mode);
+    const unsigned long connect_flags =
+        mi::server::mysql_tls::ConnectFlagsForSslMode(ssl_mode);
     MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(),
                                     cfg.username.c_str(),
                                     cfg.password.get().c_str(),
-                                    cfg.database.c_str(), cfg.port, nullptr, 0);
+                                    cfg.database.c_str(), cfg.port, nullptr,
+                                    connect_flags);
     if (res) {
+      if (!mi::server::mysql_tls::VerifyNegotiatedSsl(conn, ssl_mode)) {
+        error = "mysql tls required";
+        mysql_close(conn);
+        if (attempt + 1 < kMaxAttempts) {
+          mi::platform::SleepMs(200);
+        }
+        continue;
+      }
       return conn;
     }
     error = "mysql_connect failed";

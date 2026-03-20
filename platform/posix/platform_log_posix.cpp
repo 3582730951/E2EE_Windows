@@ -107,8 +107,9 @@ void DefaultLog(Level level,
 }  // namespace
 
 void SetLogCallback(LogCallback cb, void* user_data) {
-  (void)cb;
-  (void)user_data;
+  std::lock_guard<std::mutex> lock(g_log_mutex);
+  g_log_cb = cb;
+  g_log_user = user_data;
 }
 
 void Log(Level level, std::string_view tag, std::string_view message) {
@@ -119,10 +120,18 @@ void Log(Level level,
          std::string_view tag,
          std::string_view message,
          std::initializer_list<Field> fields) {
-  (void)level;
-  (void)tag;
-  (void)message;
-  (void)fields;
+  std::lock_guard<std::mutex> lock(g_log_mutex);
+  if (g_log_cb) {
+    const std::string safe_message = RedactInline(message);
+    g_log_cb(level,
+             tag.empty() ? nullptr : tag.data(),
+             safe_message.c_str(),
+             fields.begin(),
+             fields.size(),
+             g_log_user);
+    return;
+  }
+  DefaultLog(level, tag, message, fields.begin(), fields.size());
 }
 
 bool IsSensitiveKey(std::string_view key) {

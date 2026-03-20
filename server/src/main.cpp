@@ -13,6 +13,7 @@
 #include "network_server.h"
 #include "kcp_server.h"
 #include "platform_log.h"
+#include "platform_security.h"
 #include "platform_time.h"
 
 namespace {
@@ -97,6 +98,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
   ApplyDllSearchHardening();
 #endif
+  mi::platform::StartEndpointHardening();
   std::string config_path;
   if (argc > 1) {
     config_path = argv[1];

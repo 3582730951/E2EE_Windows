@@ -4,6 +4,8 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: package_posix.sh [--platform linux|macos] [--workspace PATH] [--dist PATH] [--openssl PATH]
+                        [--client-build PATH] [--server-build PATH]
+                        [--server-mode demo|mysql] [--mysql-username USER] [--mysql-password PASS]
                         [--codesign-id ID] [--codesign-entitlements PATH]
                         [--notary-profile PROFILE] [--notary-bundle-id ID] [--notary-wait]
 
@@ -31,6 +33,11 @@ platform=""
 workspace=""
 dist_root=""
 openssl_bin=""
+client_build=""
+server_build=""
+server_mode="demo"
+mysql_username=""
+mysql_password=""
 codesign_id=""
 codesign_entitlements=""
 notary_profile=""
@@ -53,6 +60,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --openssl)
       openssl_bin="${2:-}"
+      shift 2
+      ;;
+    --client-build)
+      client_build="${2:-}"
+      shift 2
+      ;;
+    --server-build)
+      server_build="${2:-}"
+      shift 2
+      ;;
+    --server-mode)
+      server_mode="${2:-}"
+      shift 2
+      ;;
+    --mysql-username)
+      mysql_username="${2:-}"
+      shift 2
+      ;;
+    --mysql-password)
+      mysql_password="${2:-}"
       shift 2
       ;;
     --codesign-id)
@@ -139,8 +166,39 @@ case "$platform" in
     ;;
 esac
 
-client_build="$workspace/build/client"
-server_build="$workspace/build/server"
+case "$server_mode" in
+  demo|mysql)
+    ;;
+  *)
+    echo "unsupported --server-mode: $server_mode" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -z "$mysql_username" ]]; then
+  mysql_username="${MI_E2EE_MYSQL_USERNAME:-}"
+fi
+if [[ -z "$mysql_password" ]]; then
+  mysql_password="${MI_E2EE_MYSQL_PASSWORD:-}"
+fi
+if [[ "$server_mode" == "mysql" ]]; then
+  if [[ -z "$mysql_username" || -z "$mysql_password" ]]; then
+    echo "mysql credentials required for --server-mode mysql (use --mysql-username/--mysql-password or MI_E2EE_MYSQL_USERNAME/MI_E2EE_MYSQL_PASSWORD)" >&2
+    exit 1
+  fi
+  if [[ "$mysql_username" == "root" &&
+        ( "$mysql_password" == "123456" || "$mysql_password" == "pass" ) ]]; then
+    echo "weak mysql credentials are forbidden in package config" >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "$client_build" ]]; then
+  client_build="${MI_E2EE_CLIENT_BUILD_DIR:-$workspace/build/client}"
+fi
+if [[ -z "$server_build" ]]; then
+  server_build="${MI_E2EE_SERVER_BUILD_DIR:-$workspace/build/server}"
+fi
 if [[ ! -d "$client_build" || ! -d "$server_build" ]]; then
   echo "build output missing: $client_build or $server_build" >&2
   exit 1
@@ -150,10 +208,21 @@ client_root="$dist_root/mi_e2ee_client"
 server_root="$dist_root/mi_e2ee_server"
 client_lib="$client_root/lib"
 server_lib="$server_root/lib"
+keys_dir="$dist_root/keys"
 
+rm -rf "$client_root" "$server_root" "$keys_dir"
 mkdir -p "$client_lib" "$client_root/config" "$client_root/database" \
          "$client_root/bindings/python" "$client_root/bindings/rust" "$client_root/sdk" \
          "$server_lib" "$server_root/config" "$server_root/database/offline_store" "$server_root/tools"
+
+for forbidden in \
+  "$client_root/mi_e2ee_client" \
+  "$client_root/e2ee_login" \
+  "$client_root/e2ee_main_list" \
+  "$client_root/e2ee_group_chat" \
+  "$client_root/e2ee_chat_empty"; do
+  rm -f "$forbidden"
+done
 
 sdk_lib="$(find "$client_build" -type f -name "libmi_e2ee_client_sdk.${sdk_ext}" | head -n 1 || true)"
 if [[ -z "$sdk_lib" ]]; then
@@ -177,6 +246,8 @@ cp "$server_bin" "$server_root/mi_e2ee_server"
 demo_users="$(find "$server_build" -type f -name "test_user.txt" | head -n 1 || true)"
 if [[ -n "$demo_users" ]]; then
   cp "$demo_users" "$server_root/"
+else
+  printf "u:p\n" > "$server_root/test_user.txt"
 fi
 
 for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit; do
@@ -198,6 +269,7 @@ mkdir -p "$keys_dir"
 cert_dir="$server_root/config"
 "$openssl_bin" req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
   -subj "/CN=MI_E2EE_Server" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
   -keyout "$cert_dir/mi_e2ee_server.key" \
   -out "$cert_dir/mi_e2ee_server.crt"
 cat "$cert_dir/mi_e2ee_server.key" "$cert_dir/mi_e2ee_server.crt" > "$cert_dir/mi_e2ee_server.pem"
@@ -214,6 +286,32 @@ cp "$keys_dir/kt_root_pub.bin" "$server_root/config/"
 cp "$keys_dir/kt_root_pub.bin" "$client_root/config/"
 : > "$client_root/database/server_trust.ini"
 
+if [[ "$server_mode" == "mysql" ]]; then
+cat > "$server_root/config/config.ini" <<EOF
+[mode]
+mode=0
+[mysql]
+mysql_ip=localhost
+mysql_port=3306
+mysql_database=mi_e2ee
+mysql_username=$mysql_username
+mysql_password=$mysql_password
+[server]
+list_port=9000
+rotation_threshold=10000
+offline_dir=database/offline_store
+debug_log=0
+offline_blob_temp_budget_bytes=4294967296
+tls_enable=1
+require_tls=1
+tls_cert=config/mi_e2ee_server.pem
+kt_signing_key=kt_signing_key.bin
+state_protection=none
+[kcp]
+enable=0
+allow_insecure=0
+EOF
+else
 cat > "$server_root/config/config.ini" <<EOF
 [mode]
 mode=1
@@ -222,12 +320,17 @@ list_port=9000
 rotation_threshold=10000
 offline_dir=database/offline_store
 debug_log=0
+offline_blob_temp_budget_bytes=4294967296
 tls_enable=1
 require_tls=1
 tls_cert=config/mi_e2ee_server.pem
 kt_signing_key=kt_signing_key.bin
 state_protection=none
+[kcp]
+enable=0
+allow_insecure=0
 EOF
+fi
 
 cat > "$client_root/config/client_config.ini" <<EOF
 [client]

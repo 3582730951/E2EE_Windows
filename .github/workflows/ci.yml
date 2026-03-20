@@ -16,19 +16,19 @@ on:
         required: false
         default: "0"
       skip_e2e:
-        description: "Skip client e2e tests (default 1)"
+        description: "Skip client e2e tests (default 0)"
         required: false
-        default: "1"
+        default: "0"
       skip_android_tests:
-        description: "Skip Android instrumentation tests (default 1)"
+        description: "Skip Android instrumentation tests (default 0)"
         required: false
-        default: "1"
+        default: "0"
 
 env:
   MI_E2EE_CI_SERVER_HOST: ${{ github.event.inputs.server_host || '127.0.0.1' }}
   MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
-  MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '1' }}
-  MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '1' }}
+  MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '0' }}
+  MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '0' }}
   MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS: "10000"
   MI_E2EE_PERF_MIN_FRAME_DECODE_OPS: "10000"
   MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS: "1.0"
@@ -205,7 +205,8 @@ jobs:
           cmake -S client -B build/client
           -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
           -DMI_E2EE_BUILD_UI=ON
-          -DMI_E2EE_BUILD_DEMO_CLIENT=ON
+          -DMI_E2EE_BUILD_DEMO_CLIENT=OFF
+          -DMI_E2EE_BUILD_LEGACY_UI=OFF
           -DMI_E2EE_BUILD_FUZZERS=OFF
           -DMI_E2EE_ENABLE_MYSQL=OFF
           -DMI_UI_RIME_DOWNLOAD=OFF
@@ -248,7 +249,7 @@ jobs:
           }
 
       - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
+        run: cmake --build build/client --config Release --target mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
 
       - name: Build client e2e test
         if: env.MI_E2EE_CI_SKIP_E2E != '1'
@@ -268,7 +269,7 @@ jobs:
       - name: Python binding smoke
         run: |
           $env:MI_E2EE_CLIENT_DLL = Join-Path $env:GITHUB_WORKSPACE "build\\client\\Release\\mi_e2ee_client_sdk.dll"
-          python bindings\\python\\smoke_quiet.py
+          python bindings\\python\\test_smoke.py
 
       - name: Rust binding smoke
         env:
@@ -313,10 +314,23 @@ jobs:
           New-Item -ItemType Directory -Force -Path $offline | Out-Null
           $testUsers = Join-Path $work "test_user.txt"
           "u:p" | Out-File -FilePath $testUsers -Encoding ascii
+          $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
+          if (-not $ktKeygen) {
+            throw "mi_e2ee_kt_keygen.exe not found"
+          }
+          & $ktKeygen.FullName --out-dir $work --force | Out-Null
           $ktKey = Join-Path $work "kt_signing_key.bin"
-          $bytes = New-Object byte[] 4032
-          [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-          [System.IO.File]::WriteAllBytes($ktKey, $bytes)
+          $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
+          $cert = New-SelfSignedCertificate `
+            -DnsName @("localhost") `
+            -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
+            -CertStoreLocation "Cert:\\CurrentUser\\My"
+          $pwd = New-Object System.Security.SecureString
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
+          $cert = Get-PfxCertificate -FilePath $pfxPath
+          $serverFingerprint = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash($cert.Export("Cert"))
+          ).Replace("-", "").ToLower()
           $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
@@ -331,8 +345,9 @@ jobs:
             "ops_enable=1"
             "ops_allow_remote=0"
             "ops_token=$token"
-            "tls_enable=0"
-            "require_tls=0"
+            "tls_enable=1"
+            "require_tls=1"
+            "tls_cert=$pfxPath"
             "key_protection=none"
             "kt_signing_key=$ktKey"
             "allow_legacy_login=0"
@@ -352,7 +367,7 @@ jobs:
           try {
             $ok = $false
             for ($i = 0; $i -lt 20; $i++) {
-              & $toolExe.FullName --host 127.0.0.1 --port $port --token $token 2>$null | Out-Null
+              & $toolExe.FullName --host 127.0.0.1 --port $port --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
               if ($LASTEXITCODE -eq 0) {
                 $ok = $true
                 break
@@ -406,6 +421,7 @@ jobs:
           MI_E2EE_UI_SMOKE_MS: "4000"
           MI_E2EE_UI_SMOKE_USER: "ui_smoke"
           MI_E2EE_UI_SMOKE_PASS: "ui_smoke_pass"
+          MI_E2EE_UI_SMOKE_CAPTURE_DIR: ${{ github.workspace }}\build\ui_smoke_artifacts\build
           MI_E2EE_HARDENING: off
           QT_LOGGING_RULES: "*.debug=false;*.info=false;*.warning=false"
         run: |
@@ -416,10 +432,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path $offline | Out-Null
           $testUsers = Join-Path $work "test_user.txt"
           "ui_smoke:ui_smoke_pass" | Out-File -FilePath $testUsers -Encoding ascii
+          $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
+          if (-not $ktKeygen) {
+            throw "mi_e2ee_kt_keygen.exe not found"
+          }
+          & $ktKeygen.FullName --out-dir $work --force | Out-Null
           $ktKey = Join-Path $work "kt_signing_key.bin"
-          $bytes = New-Object byte[] 4032
-          [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-          [System.IO.File]::WriteAllBytes($ktKey, $bytes)
+          $rootPub = Join-Path $work "kt_root_pub.bin"
+          $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
+          $cert = New-SelfSignedCertificate `
+            -DnsName @("localhost") `
+            -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
+            -CertStoreLocation "Cert:\\CurrentUser\\My"
+          $pwd = New-Object System.Security.SecureString
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
+          $cert = Get-PfxCertificate -FilePath $pfxPath
+          $serverFingerprint = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash($cert.Export("Cert"))
+          ).Replace("-", "").ToLower()
           $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
@@ -431,8 +461,9 @@ jobs:
             "list_port=$port"
             "offline_dir=$offline"
             "debug_log=0"
-            "tls_enable=0"
-            "require_tls=0"
+            "tls_enable=1"
+            "require_tls=1"
+            "tls_cert=$pfxPath"
             "key_protection=none"
             "kt_signing_key=$ktKey"
             "allow_legacy_login=0"
@@ -443,15 +474,21 @@ jobs:
             "[client]"
             "server_ip=127.0.0.1"
             "server_port=$port"
-            "use_tls=0"
-            "require_tls=0"
-            "tls_verify_mode=ca"
+            "use_tls=1"
+            "require_tls=1"
+            "trust_store=server_trust.ini"
+            "require_pinned_fingerprint=1"
+            "pinned_fingerprint=$serverFingerprint"
+            "tls_verify_mode=pin"
+            "tls_ca_bundle_path="
+            "tls_verify_hostname=1"
             "auth_mode=opaque"
             "allow_legacy_login=0"
             "[traffic]"
             "cover_traffic_enabled=0"
             "[kt]"
-            "require_signature=0"
+            "require_signature=1"
+            "root_pubkey_path=kt_root_pub.bin"
             "[device_sync]"
             "enabled=0"
             "role=primary"
@@ -459,6 +496,7 @@ jobs:
           ) -join "`n"
           $clientConfigPath = Join-Path $work "client_config.ini"
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
+          "" | Out-File -FilePath (Join-Path $work "server_trust.ini") -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
           if (-not $serverExe) {
@@ -501,10 +539,175 @@ jobs:
           }
 
       - name: Package artifacts
-        run: .\\tools\\package_windows.ps1
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MI_E2EE_MYSQL_USERNAME)) {
+            $env:MI_E2EE_MYSQL_USERNAME = "ci_pkg_" + [guid]::NewGuid().ToString("N").Substring(0, 12)
+          }
+          if ([string]::IsNullOrWhiteSpace($env:MI_E2EE_MYSQL_PASSWORD)) {
+            $env:MI_E2EE_MYSQL_PASSWORD = "ci_pkg_pw_" + [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+          }
+          Write-Output "::add-mask::$($env:MI_E2EE_MYSQL_USERNAME)"
+          Write-Output "::add-mask::$($env:MI_E2EE_MYSQL_PASSWORD)"
+          try {
+            .\\tools\\package_windows.ps1 -BuildConfig Release
+          } finally {
+            Remove-Item Env:MI_E2EE_MYSQL_USERNAME -ErrorAction SilentlyContinue
+            Remove-Item Env:MI_E2EE_MYSQL_PASSWORD -ErrorAction SilentlyContinue
+          }
 
       - name: Verify package
         run: .\\tools\\verify_package_windows.ps1
+
+      - name: Ops health end-to-end (dist TLS)
+        env:
+          MI_E2EE_HARDENING: off
+        run: |
+          $ErrorActionPreference = "Stop"
+          $serverRoot = Join-Path $env:GITHUB_WORKSPACE "dist\\mi_e2ee_server"
+          $configDir = Join-Path $serverRoot "config"
+          $offline = Join-Path $serverRoot "database\\offline_store"
+          New-Item -ItemType Directory -Force -Path $offline | Out-Null
+          "u:p" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
+          $token = "abcdefghijklmnop"
+          $serverConfig = @(
+            "[mode]"
+            "mode=1"
+            "[server]"
+            "list_port=9000"
+            "offline_dir=database/offline_store"
+            "debug_log=0"
+            "ops_enable=1"
+            "ops_allow_remote=0"
+            "ops_token=$token"
+            "tls_enable=1"
+            "require_tls=1"
+            "tls_cert=config/mi_e2ee_server.pfx"
+            "key_protection=none"
+            "kt_signing_key=kt_signing_key.bin"
+            "allow_legacy_login=0"
+            "[kcp]"
+            "enable=0"
+            "allow_insecure=0"
+          ) -join "`n"
+          $serverConfig | Out-File -FilePath (Join-Path $configDir "config.ini") -Encoding ascii
+          $serverFingerprint = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+              (Get-PfxCertificate -FilePath (Join-Path $configDir "mi_e2ee_server.pfx")).Export("Cert")
+            )
+          ).Replace("-", "").ToLower()
+          $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
+          $toolExe = Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe"
+          if (-not (Test-Path $serverLauncher)) {
+            throw "dist server launcher missing: $serverLauncher"
+          }
+          if (-not (Test-Path $toolExe)) {
+            throw "dist ops health tool missing: $toolExe"
+          }
+          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 25; $i++) {
+              & $toolExe --host 127.0.0.1 --port 9000 --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
+              if ($LASTEXITCODE -eq 0) {
+                $ok = $true
+                break
+              }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ok) {
+              throw "dist ops health e2e failed"
+            }
+          } finally {
+            $child = Get-CimInstance Win32_Process -Filter "Name='mi_e2ee_server_app.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ParentProcessId -eq $proc.Id } | Select-Object -First 1
+            if ($child) {
+              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+            if ($proc -and !$proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: UI smoke regression (dist launcher TLS)
+        env:
+          MI_E2EE_UI_SMOKE: "1"
+          MI_E2EE_UI_SMOKE_MS: "4000"
+          MI_E2EE_UI_SMOKE_USER: "ui_smoke"
+          MI_E2EE_UI_SMOKE_PASS: "ui_smoke_pass"
+          MI_E2EE_UI_SMOKE_CAPTURE_DIR: ${{ github.workspace }}\build\ui_smoke_artifacts\dist
+          MI_E2EE_HARDENING: off
+          QT_LOGGING_RULES: "*.debug=false;*.info=false;*.warning=false"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $serverRoot = Join-Path $env:GITHUB_WORKSPACE "dist\\mi_e2ee_server"
+          $clientRoot = Join-Path $env:GITHUB_WORKSPACE "dist\\mi_e2ee_client"
+          $serverConfigPath = Join-Path $serverRoot "config\\config.ini"
+          $clientConfigPath = Join-Path $clientRoot "config\\client_config.ini"
+          if (-not (Test-Path $clientConfigPath)) {
+            throw "dist client config missing: $clientConfigPath"
+          }
+          "ui_smoke:ui_smoke_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
+          $serverConfig = @(
+            "[mode]"
+            "mode=1"
+            "[server]"
+            "list_port=9000"
+            "offline_dir=database/offline_store"
+            "debug_log=0"
+            "tls_enable=1"
+            "require_tls=1"
+            "tls_cert=config/mi_e2ee_server.pfx"
+            "key_protection=none"
+            "kt_signing_key=kt_signing_key.bin"
+            "allow_legacy_login=0"
+            "[kcp]"
+            "enable=0"
+            "allow_insecure=0"
+          ) -join "`n"
+          $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
+          $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
+          $clientLauncher = Join-Path $clientRoot "mi_e2ee.exe"
+          if (-not (Test-Path $serverLauncher)) {
+            throw "dist server launcher missing: $serverLauncher"
+          }
+          if (-not (Test-Path $clientLauncher)) {
+            throw "dist client launcher missing: $clientLauncher"
+          }
+          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 25; $i++) {
+              try {
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $tcp.Connect("127.0.0.1", 9000)
+                $tcp.Close()
+                $ready = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 200
+              }
+            }
+            if (-not $ready) {
+              throw "dist server not ready"
+            }
+            Push-Location $clientRoot
+            try {
+              & $clientLauncher | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw "dist UI smoke failed with exit code $LASTEXITCODE"
+              }
+            } finally {
+              Pop-Location
+            }
+          } finally {
+            $child = Get-CimInstance Win32_Process -Filter "Name='mi_e2ee_server_app.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ParentProcessId -eq $proc.Id } | Select-Object -First 1
+            if ($child) {
+              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+            if ($proc -and !$proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
 
       - name: Perf baseline (dist)
         run: >
@@ -513,6 +716,13 @@ jobs:
           --min-frame-decode-ops $env:MI_E2EE_PERF_MIN_FRAME_DECODE_OPS
           --min-offline-put-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS
           --min-offline-fetch-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS
+
+      - name: Upload UI smoke captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_windows_ui_smoke
+          path: build/ui_smoke_artifacts/**/*.png
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -549,10 +759,20 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release
 
+      - name: Build server tools
+        run: >
+          cmake --build build/server --config Release --target
+          mi_e2ee_server
+          mi_e2ee_kt_keygen
+          mi_e2ee_kt_pubinfo
+          mi_e2ee_perf_baseline
+          mi_e2ee_ops_health_view
+          mi_e2ee_third_party_audit
+
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_third_party_audit not found" >&2
             exit 1
@@ -601,67 +821,7 @@ jobs:
             echo "mi_e2ee_server not found" >&2
             exit 1
           fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
-          if [ -z "$tool" ]; then
-            echo "mi_e2ee_ops_health_view not found" >&2
-            exit 1
-          fi
-          cd "$work"
-          "$server" config.ini >/dev/null 2>&1 &
-          pid=$!
-          ok=0
-          for _ in $(seq 1 20); do
-            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
-              ok=1
-              break
-            fi
-            sleep 0.5
-          done
-          kill "$pid" >/dev/null 2>&1 || true
-          wait "$pid" >/dev/null 2>&1 || true
-          if [ "$ok" -ne 1 ]; then
-            echo "ops health e2e failed" >&2
-            exit 1
-          fi
-
-      - name: Ops health end-to-end
-        env:
-          MI_E2EE_HARDENING: off
-        run: |
-          set -euo pipefail
-          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
-          rm -rf "$work"
-          mkdir -p "$work/offline"
-          printf "u:p\n" > "$work/test_user.txt"
-          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
-          py="python3"
-          if ! command -v "$py" >/dev/null 2>&1; then
-            py="python"
-          fi
-          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
-          token="abcdefghijklmnop"
-          printf '%s\n' \
-            "[mode]" \
-            "mode=1" \
-            "[server]" \
-            "list_port=$port" \
-            "offline_dir=$work/offline" \
-            "ops_enable=1" \
-            "ops_allow_remote=0" \
-            "ops_token=$token" \
-            "debug_log=0" \
-            "tls_enable=0" \
-            "require_tls=0" \
-            "key_protection=none" \
-            "kt_signing_key=$work/kt_signing_key.bin" \
-            "allow_legacy_login=0" \
-            > "$work/config.ini"
-          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
-          if [ -z "$server" ]; then
-            echo "mi_e2ee_server not found" >&2
-            exit 1
-          fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_ops_health_view not found" >&2
             exit 1
@@ -685,7 +845,7 @@ jobs:
           fi
 
       - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
 
       - name: Build client core
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
@@ -709,15 +869,27 @@ jobs:
         run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
 
       - name: Python binding smoke
-        env:
-          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.so
-        run: python bindings/python/smoke_quiet.py
+        run: |
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
+            exit 1
+          fi
+          export MI_E2EE_CLIENT_DLL="$lib_path"
+          python3 bindings/python/test_smoke.py
 
       - name: Rust binding smoke
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
         run: |
-          export LD_LIBRARY_PATH="${{ github.workspace }}/build/client:${LD_LIBRARY_PATH:-}"
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
+            exit 1
+          fi
+          lib_dir=$(dirname "$lib_path")
+          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
+          export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
           cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Package artifacts
@@ -725,6 +897,34 @@ jobs:
 
       - name: Verify package
         run: bash tools/verify_package_posix.sh --platform linux
+
+      - name: Perf baseline
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_perf_baseline" | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_perf_baseline not found under build/server" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
+
+      - name: Perf baseline (dist)
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
+          if [ ! -x "$tool" ]; then
+            echo "dist perf baseline missing: $tool" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -776,10 +976,20 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release
 
+      - name: Build server tools
+        run: >
+          cmake --build build/server --config Release --target
+          mi_e2ee_server
+          mi_e2ee_kt_keygen
+          mi_e2ee_kt_pubinfo
+          mi_e2ee_perf_baseline
+          mi_e2ee_ops_health_view
+          mi_e2ee_third_party_audit
+
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_third_party_audit not found" >&2
             exit 1
@@ -828,7 +1038,7 @@ jobs:
             echo "mi_e2ee_server not found" >&2
             exit 1
           fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_ops_health_view not found" >&2
             exit 1
@@ -852,7 +1062,7 @@ jobs:
           fi
 
       - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
 
       - name: Build client core
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
@@ -890,7 +1100,7 @@ jobs:
             exit 1
           fi
           export MI_E2EE_CLIENT_DLL="$lib_path"
-          python3 bindings/python/smoke_quiet.py
+          python3 bindings/python/test_smoke.py
 
       - name: Rust binding smoke
         run: |
@@ -910,6 +1120,34 @@ jobs:
 
       - name: Verify package
         run: bash tools/verify_package_posix.sh --platform linux
+
+      - name: Perf baseline
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_perf_baseline" | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_perf_baseline not found under build/server" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
+
+      - name: Perf baseline (dist)
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
+          if [ ! -x "$tool" ]; then
+            echo "dist perf baseline missing: $tool" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
   build-macos:
     runs-on: macos-latest
@@ -932,10 +1170,20 @@ jobs:
       - name: Build server
         run: cmake --build build/server --config Release
 
+      - name: Build server tools
+        run: >
+          cmake --build build/server --config Release --target
+          mi_e2ee_server
+          mi_e2ee_kt_keygen
+          mi_e2ee_kt_pubinfo
+          mi_e2ee_perf_baseline
+          mi_e2ee_ops_health_view
+          mi_e2ee_third_party_audit
+
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_third_party_audit not found" >&2
             exit 1
@@ -984,7 +1232,7 @@ jobs:
             echo "mi_e2ee_server not found" >&2
             exit 1
           fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" -perm -111 | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_ops_health_view not found" >&2
             exit 1
@@ -1008,7 +1256,7 @@ jobs:
           fi
 
       - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
 
       - name: Build client core
         run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
@@ -1032,15 +1280,27 @@ jobs:
         run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
 
       - name: Python binding smoke
-        env:
-          MI_E2EE_CLIENT_DLL: ${{ github.workspace }}/build/client/libmi_e2ee_client_sdk.dylib
-        run: python bindings/python/smoke_quiet.py
+        run: |
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.dylib" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.dylib not found under build/client" >&2
+            exit 1
+          fi
+          export MI_E2EE_CLIENT_DLL="$lib_path"
+          python3 bindings/python/test_smoke.py
 
       - name: Rust binding smoke
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
         run: |
-          export DYLD_LIBRARY_PATH="${{ github.workspace }}/build/client:${DYLD_LIBRARY_PATH:-}"
+          set -euo pipefail
+          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.dylib" -print -quit)
+          if [ -z "$lib_path" ]; then
+            echo "libmi_e2ee_client_sdk.dylib not found under build/client" >&2
+            exit 1
+          fi
+          lib_dir=$(dirname "$lib_path")
+          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
+          export DYLD_LIBRARY_PATH="$lib_dir:${DYLD_LIBRARY_PATH:-}"
           cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
 
       - name: Package artifacts
@@ -1048,6 +1308,34 @@ jobs:
 
       - name: Verify package
         run: bash tools/verify_package_posix.sh --platform macos
+
+      - name: Perf baseline
+        run: |
+          set -euo pipefail
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_perf_baseline" | head -n 1)
+          if [ -z "$tool" ]; then
+            echo "mi_e2ee_perf_baseline not found under build/server" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
+
+      - name: Perf baseline (dist)
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
+          if [ ! -x "$tool" ]; then
+            echo "dist perf baseline missing: $tool" >&2
+            exit 1
+          fi
+          "$tool" --quick \
+            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
+            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
+            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
+            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -1061,8 +1349,106 @@ jobs:
           name: mi_e2ee_server_macos
           path: dist/mi_e2ee_server_macos.tar.gz
 
+  build-ios-rootauth:
+    runs-on: macos-latest
+    outputs:
+      app_bundle_verified: ${{ steps.ios_bundle.outputs.app_bundle_verified }}
+      smoke_verified: ${{ steps.ios_smoke.outputs.smoke_verified }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate RootAuth Xcode project
+        run: |
+          set -euo pipefail
+          cd ios_root_app
+          xcodegen generate
+          test -f RootAuthApp.xcodeproj/project.pbxproj
+
+      - name: Build RootAuth for iOS Simulator
+        run: |
+          set -euo pipefail
+          cd ios_root_app
+          DERIVED_DATA="$GITHUB_WORKSPACE/build/ios_rootauth_derived"
+          mkdir -p "$GITHUB_WORKSPACE/build"
+          xcodebuild \
+            -project RootAuthApp.xcodeproj \
+            -scheme RootAuthApp \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log"
+
+      - name: Validate RootAuth iOS bundle
+        id: ios_bundle
+        run: |
+          set -euo pipefail
+          app_path=$(find "$GITHUB_WORKSPACE/build/ios_rootauth_derived/Build/Products" -type d -name 'RootAuthApp.app' | head -n 1)
+          if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
+            echo "RootAuth simulator app bundle missing" >&2
+            exit 1
+          fi
+          mkdir -p build/ios_rootauth_artifacts
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" build/ios_rootauth_artifacts/RootAuthApp-sim.zip
+          echo "app_bundle_verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run RootAuth iOS smoke
+        id: ios_smoke
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcrun swiftc \
+            ios_root_app/RootAuthApp/RootAuthNetwork.swift \
+            tools/ios_rootauth_smoke.swift \
+            -o build/ios_rootauth_smoke
+          build/ios_rootauth_smoke | tee build/ios_rootauth_smoke.log
+          echo "smoke_verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Archive xcodebuild log
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios_rootauth_artifacts
+          if [ -f "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log" ]; then
+            cp "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log" build/ios_rootauth_artifacts/
+          fi
+          if [ -f "$GITHUB_WORKSPACE/build/ios_rootauth_smoke.log" ]; then
+            cp "$GITHUB_WORKSPACE/build/ios_rootauth_smoke.log" build/ios_rootauth_artifacts/
+          fi
+          if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
+            while IFS= read -r -d '' file; do
+              cp "$file" build/ios_rootauth_artifacts/
+            done < <(
+              find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 4 -type f \
+                \( -name "*.log" -o -name "*.xcactivitylog" \) -print0
+            )
+          fi
+
+      - name: Upload RootAuth iOS build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_ios_rootauth_logs
+          path: build/ios_rootauth_artifacts/*
+          if-no-files-found: ignore
+
   build-android:
     runs-on: ubuntu-latest
+    outputs:
+      emulator_validated: ${{ steps.android_emulator_validation.outputs.validated }}
+      arm64_validated: ${{ steps.android_arm64_validation.outputs.validated }}
     defaults:
       run:
         shell: bash
@@ -1075,6 +1461,7 @@ jobs:
       MI_E2EE_ANDROID_USE_OPENSSL: "1"
       MI_E2EE_ANDROID_ALLOW_TLS_STUB: "0"
       MI_E2EE_OPAQUE_LIB: ${{ vars.MI_E2EE_OPAQUE_LIB || '' }}
+      MI_E2EE_OPAQUE_LIB_ROOT: ${{ vars.MI_E2EE_OPAQUE_LIB_ROOT || '' }}
       MI_E2EE_ANDROID_OPENSSL_VERSION: ${{ vars.MI_E2EE_ANDROID_OPENSSL_VERSION || '3.3.2' }}
       GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -1086,27 +1473,14 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
 
-      - name: Precheck Android OPAQUE dependency
-        run: |
-          set -euo pipefail
-          if [ -z "${MI_E2EE_OPAQUE_LIB:-}" ]; then
-            echo "::error::MI_E2EE_OPAQUE_LIB is empty. Android secure build requires a prebuilt Rust OPAQUE static library."
-            echo "::error::Set repository variable MI_E2EE_OPAQUE_LIB to an absolute path available on the runner, or mount/copy the library before Gradle build."
-            echo "::error::Expected file name examples: libmi_opaque_pake.a (Linux/Android), mi_opaque_pake.lib (Windows)."
-            exit 1
-          fi
-          if [ ! -f "${MI_E2EE_OPAQUE_LIB}" ]; then
-            echo "::error::MI_E2EE_OPAQUE_LIB points to a missing file: ${MI_E2EE_OPAQUE_LIB}"
-            echo "::error::Fix the variable value or add a prior step that downloads/copies the library to this path."
-            exit 1
-          fi
-          echo "Using OPAQUE library: ${MI_E2EE_OPAQUE_LIB}"
-
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -1145,6 +1519,35 @@ jobs:
           fi
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> $GITHUB_ENV
+
+      - name: Prepare Android OPAQUE libraries
+        run: |
+          set -euo pipefail
+          if [ -n "${MI_E2EE_OPAQUE_LIB:-}" ]; then
+            if [ ! -f "${MI_E2EE_OPAQUE_LIB}" ]; then
+              echo "::error::MI_E2EE_OPAQUE_LIB points to a missing file: ${MI_E2EE_OPAQUE_LIB}"
+              exit 1
+            fi
+            echo "Using single OPAQUE library: ${MI_E2EE_OPAQUE_LIB}"
+            exit 0
+          fi
+          OPAQUE_ROOT="${MI_E2EE_OPAQUE_LIB_ROOT:-$GITHUB_WORKSPACE/build/opaque/android}"
+          if [ ! -d "$OPAQUE_ROOT" ]; then
+            chmod +x tools/build_android_opaque.sh
+            tools/build_android_opaque.sh \
+              --out "$OPAQUE_ROOT" \
+              --abis "$MI_E2EE_ANDROID_ABIS" \
+              --profile release
+          fi
+          abis=$(echo "${MI_E2EE_ANDROID_ABIS}" | tr ',;' ' ')
+          for abi in $abis; do
+            lib="$OPAQUE_ROOT/$abi/libmi_opaque_pake.a"
+            if [ ! -f "$lib" ]; then
+              echo "::error::Missing Android OPAQUE static lib for $abi: $lib"
+              exit 1
+            fi
+          done
+          echo "MI_E2EE_OPAQUE_LIB_ROOT=$OPAQUE_ROOT" >> $GITHUB_ENV
 
       - name: Build OpenSSL for Android
         run: |
@@ -1300,14 +1703,19 @@ jobs:
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew :app:assembleDebug -PmiE2eeOpaque=true --no-daemon
+          ./gradlew :app:assembleDebug :rootapp:assembleDebug -PmiE2eeOpaque=true --no-daemon
 
-      - name: Verify Android ABI artifacts
+      - name: Verify Android artifacts
         run: |
           set -euo pipefail
           apk="android/app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$apk" ]; then
             echo "debug apk missing: $apk" >&2
+            exit 1
+          fi
+          root_apk="android/rootapp/build/outputs/apk/debug/rootapp-debug.apk"
+          if [ ! -f "$root_apk" ]; then
+            echo "rootapp debug apk missing: $root_apk" >&2
             exit 1
           fi
           abis="${MI_E2EE_ANDROID_ABIS:-armeabi-v7a arm64-v8a x86 x86_64}"
@@ -1332,7 +1740,7 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest :rootapp:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
 
       - name: Cleanup Android emulator image (api34)
         if: always()
@@ -1350,12 +1758,18 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest :rootapp:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
 
       - name: Cleanup Android emulator image (api33)
         if: always()
         run: |
           sdkmanager --uninstall "system-images;android-33;google_apis;x86_64" || true
+
+      - name: Mark Android emulator validation
+        id: android_emulator_validation
+        if: env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1'
+        run: |
+          echo "validated=true" >> "$GITHUB_OUTPUT"
 
       - name: Auth to Google Cloud
         if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
@@ -1403,6 +1817,12 @@ jobs:
           fi
           gcloud "${args[@]}"
 
+      - name: Mark Android arm64 validation
+        id: android_arm64_validation
+        if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
+        run: |
+          echo "validated=true" >> "$GITHUB_OUTPUT"
+
       - name: Build Android release
         run: |
           chmod +x android/gradlew
@@ -1413,7 +1833,7 @@ jobs:
             OLLVM_ARGS+=("-PmiE2eeOllvmClang=${MI_E2EE_OLLVM_CLANG}")
             OLLVM_ARGS+=("-PmiE2eeOllvmClangxx=${MI_E2EE_OLLVM_CLANGXX}")
           fi
-          ./gradlew :app:assembleRelease -PmiE2eeOpaque=true "${OLLVM_ARGS[@]}" --no-daemon
+          ./gradlew :app:assembleRelease :rootapp:assembleRelease -PmiE2eeOpaque=true "${OLLVM_ARGS[@]}" --no-daemon
 
       - name: Upload Android debug artifact
         uses: actions/upload-artifact@v4
@@ -1421,8 +1841,96 @@ jobs:
           name: mi_e2ee_android_debug
           path: android/app/build/outputs/apk/debug/*.apk
 
+      - name: Upload Android rootauth debug artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_android_rootauth_debug
+          path: android/rootapp/build/outputs/apk/debug/*.apk
+
       - name: Upload Android release artifact
         uses: actions/upload-artifact@v4
         with:
           name: mi_e2ee_android_release
           path: android/app/build/outputs/apk/release/*.apk
+
+      - name: Upload Android rootauth release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_android_rootauth_release
+          path: android/rootapp/build/outputs/apk/release/*.apk
+
+  final-acceptance:
+    if: always()
+    needs:
+      - build-package
+      - build-linux
+      - build-linux-debian
+      - build-macos
+      - build-ios-rootauth
+      - build-android
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify final acceptance gates
+        env:
+          BUILD_PACKAGE_RESULT: ${{ needs.build-package.result }}
+          BUILD_LINUX_RESULT: ${{ needs.build-linux.result }}
+          BUILD_LINUX_DEBIAN_RESULT: ${{ needs.build-linux-debian.result }}
+          BUILD_MACOS_RESULT: ${{ needs.build-macos.result }}
+          BUILD_IOS_RESULT: ${{ needs.build-ios-rootauth.result }}
+          BUILD_ANDROID_RESULT: ${{ needs.build-android.result }}
+          IOS_APP_BUNDLE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.app_bundle_verified }}
+          IOS_SMOKE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.smoke_verified }}
+          ANDROID_EMULATOR_VALIDATED: ${{ needs.build-android.outputs.emulator_validated }}
+          ANDROID_ARM64_VALIDATED: ${{ needs.build-android.outputs.arm64_validated }}
+        run: |
+          set -euo pipefail
+          fail=0
+          check_job() {
+            local name="$1"
+            local value="$2"
+            if [ "$value" != "success" ]; then
+              echo "$name did not succeed: $value" >&2
+              fail=1
+            fi
+          }
+          check_flag() {
+            local name="$1"
+            local value="$2"
+            if [ "$value" != "true" ]; then
+              echo "$name missing: $value" >&2
+              fail=1
+            fi
+          }
+          check_job "build-package" "$BUILD_PACKAGE_RESULT"
+          check_job "build-linux" "$BUILD_LINUX_RESULT"
+          check_job "build-linux-debian" "$BUILD_LINUX_DEBIAN_RESULT"
+          check_job "build-macos" "$BUILD_MACOS_RESULT"
+          check_job "build-ios-rootauth" "$BUILD_IOS_RESULT"
+          check_job "build-android" "$BUILD_ANDROID_RESULT"
+          check_flag "ios app bundle evidence" "$IOS_APP_BUNDLE_VERIFIED"
+          check_flag "ios smoke evidence" "$IOS_SMOKE_VERIFIED"
+          check_flag "android emulator evidence" "$ANDROID_EMULATOR_VALIDATED"
+          check_flag "android arm64 evidence" "$ANDROID_ARM64_VALIDATED"
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Publish final acceptance summary
+        env:
+          IOS_APP_BUNDLE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.app_bundle_verified }}
+          IOS_SMOKE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.smoke_verified }}
+          ANDROID_EMULATOR_VALIDATED: ${{ needs.build-android.outputs.emulator_validated }}
+          ANDROID_ARM64_VALIDATED: ${{ needs.build-android.outputs.arm64_validated }}
+        run: |
+          {
+            echo "## Final Acceptance"
+            echo
+            echo "- Windows/Linux/macOS packaging jobs: success"
+            echo "- iOS app bundle evidence: ${IOS_APP_BUNDLE_VERIFIED}"
+            echo "- iOS smoke evidence: ${IOS_SMOKE_VERIFIED}"
+            echo "- Android emulator evidence: ${ANDROID_EMULATOR_VALIDATED}"
+            echo "- Android arm64 evidence: ${ANDROID_ARM64_VALIDATED}"
+          } >> "$GITHUB_STEP_SUMMARY"

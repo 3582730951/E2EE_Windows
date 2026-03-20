@@ -246,6 +246,12 @@ function(mi_copy_msvc_runtime target_name)
               ${MI_MSVC_REDIST_DLLS}
               $<TARGET_FILE_DIR:${target_name}>)
   endif()
+  if(WIN32 AND MI_MYSQL_RUNTIME_DLLS)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              ${MI_MYSQL_RUNTIME_DLLS}
+              $<TARGET_FILE_DIR:${target_name}>)
+  endif()
   if(MSVC AND MI_E2EE_ENABLE_ASAN AND MI_MSVC_ASAN_DLLS)
     add_custom_command(TARGET ${target_name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -288,6 +294,7 @@ if(WIN32)
       ../platform/win/platform_time_win.cpp
       ../platform/win/platform_fs_win.cpp
       ../platform/win/platform_identity_win.cpp
+      ../platform/win/platform_security_win.cpp
       ../platform/win/platform_sys_win.cpp
       ../platform/win/platform_tls_win.cpp
       ../platform/win/platform_secure_store_win.cpp
@@ -302,6 +309,7 @@ else()
       ../platform/posix/platform_time_posix.cpp
       ../platform/posix/platform_fs_posix.cpp
       ../platform/posix/platform_identity_posix.cpp
+      ../platform/posix/platform_security_posix.cpp
       ../platform/posix/platform_sys_posix.cpp
       ../platform/posix/platform_tls_posix.cpp
       ../platform/posix/platform_secure_store_posix.cpp
@@ -445,6 +453,7 @@ if(MI_E2EE_ENABLE_MYSQL)
   target_link_libraries(mi_e2ee_server PRIVATE ${MYSQL_CLIENT_LIB})
 
   if(WIN32)
+    set(MI_MYSQL_RUNTIME_DLLS "" CACHE INTERNAL "MySQL runtime DLLs")
     get_filename_component(_mysql_lib_dir "${MYSQL_CLIENT_LIB}" DIRECTORY)
     set(_mysql_runtime_candidates
       "${_mysql_lib_dir}/libmysql.dll"
@@ -454,6 +463,7 @@ if(MI_E2EE_ENABLE_MYSQL)
     )
     foreach(_mysql_dll IN LISTS _mysql_runtime_candidates)
       if(EXISTS "${_mysql_dll}")
+        set(MI_MYSQL_RUNTIME_DLLS "${_mysql_dll}" CACHE INTERNAL "MySQL runtime DLLs")
         add_custom_command(TARGET mi_e2ee_server POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
                   "${_mysql_dll}"

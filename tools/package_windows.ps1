@@ -1,6 +1,9 @@
 param(
   [string]$Workspace,
-  [string]$Dist
+  [string]$Dist,
+  [string]$BuildConfig = "Release",
+  [string]$MysqlUsername,
+  [string]$MysqlPassword
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,8 +36,56 @@ function Find-File([string]$root, [string]$pattern) {
   return $null
 }
 
+function Normalize-BuildConfig([string]$value) {
+  switch -Regex ($value) {
+    '^(?i)release$' { return "Release" }
+    '^(?i)relwithdebinfo$' { return "RelWithDebInfo" }
+    '^(?i)minsizerel$' { return "MinSizeRel" }
+    default { throw "unsupported BuildConfig: $value (allowed: Release, RelWithDebInfo, MinSizeRel)" }
+  }
+}
+
+function Assert-NotDebugPath([string]$path, [string]$label) {
+  if ($path -match '(?i)(^|[\\/])debug([\\/]|$)') {
+    throw "$label must not come from Debug: $path"
+  }
+}
+
+function Assert-BuildConfigPath([string]$path, [string]$config, [string]$label) {
+  Assert-NotDebugPath $path $label
+  $segment = [Regex]::Escape($config)
+  if ($path -notmatch "(?i)(^|[\\/])$segment([\\/]|$)") {
+    throw "$label must come from $config: $path"
+  }
+}
+
+function Find-ConfigFile([string]$root, [string]$pattern, [string]$config, [string]$label) {
+  $configRoot = Join-Path $root $config
+  if (-not (Test-Path $configRoot)) {
+    throw "$label config directory not found: $configRoot"
+  }
+  $item = Get-ChildItem -Path $configRoot -Recurse -Filter $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $item) {
+    throw "$label not found under $configRoot"
+  }
+  Assert-BuildConfigPath $item.FullName $config $label
+  return $item.FullName
+}
+
+function Require-Dir([string]$path) {
+  if (-not (Test-Path $path)) {
+    throw "missing dir: $path"
+  }
+}
+
 function Ensure-Dir([string]$path) {
   New-Item -ItemType Directory -Force -Path $path | Out-Null
+}
+
+function Remove-IfExists([string]$path) {
+  if (Test-Path $path) {
+    Remove-Item -Path $path -Recurse -Force
+  }
 }
 
 function Write-Manifest([string]$root) {
@@ -55,6 +106,31 @@ if ($Dist) {
 } else {
   $distRoot = Join-Path $workspace "dist"
 }
+$BuildConfig = Normalize-BuildConfig $BuildConfig
+$packageSources = [ordered]@{}
+
+$mysqlUsernameValue = if ($MysqlUsername) {
+  $MysqlUsername
+} elseif ($env:MI_E2EE_MYSQL_USERNAME) {
+  $env:MI_E2EE_MYSQL_USERNAME
+} else {
+  ""
+}
+$mysqlPasswordValue = if ($MysqlPassword) {
+  $MysqlPassword
+} elseif ($env:MI_E2EE_MYSQL_PASSWORD) {
+  $env:MI_E2EE_MYSQL_PASSWORD
+} else {
+  ""
+}
+if ([string]::IsNullOrWhiteSpace($mysqlUsernameValue) -or
+    [string]::IsNullOrWhiteSpace($mysqlPasswordValue)) {
+  throw "mysql credentials required: pass -MysqlUsername/-MysqlPassword or set MI_E2EE_MYSQL_USERNAME and MI_E2EE_MYSQL_PASSWORD"
+}
+if (($mysqlUsernameValue -ieq "root") -and
+    ($mysqlPasswordValue -eq "123456" -or $mysqlPasswordValue -ieq "pass")) {
+  throw "weak mysql credentials are forbidden in package config"
+}
 
 $clientRoot = Join-Path $distRoot "mi_e2ee_client"
 $serverRoot = Join-Path $distRoot "mi_e2ee_server"
@@ -69,7 +145,11 @@ $serverDll = Join-Path $serverRoot "dll"
 $serverConfig = Join-Path $serverRoot "config"
 $serverDb = Join-Path $serverRoot "database"
 $serverTools = Join-Path $serverRoot "tools"
+$keysDir = Join-Path $distRoot "keys"
 
+Remove-IfExists $clientRoot
+Remove-IfExists $serverRoot
+Remove-IfExists $keysDir
 Ensure-Dir $clientDll
 Ensure-Dir $clientConfig
 Ensure-Dir $clientDb
@@ -81,6 +161,17 @@ Ensure-Dir $serverConfig
 Ensure-Dir $serverDb
 Ensure-Dir $serverTools
 Ensure-Dir (Join-Path $serverDb "offline_store")
+
+$forbiddenClientArtifacts = @(
+  "mi_e2ee_client.exe",
+  "e2ee_login.exe",
+  "e2ee_main_list.exe",
+  "e2ee_group_chat.exe",
+  "e2ee_chat_empty.exe"
+)
+foreach ($name in $forbiddenClientArtifacts) {
+  Remove-IfExists (Join-Path $clientRoot $name)
+}
 
 $prebuiltSrc = Join-Path $workspace "build\\rime_prebuilt\\user"
 $prebuiltDst = Join-Path $clientDb "rime\\prebuilt"
@@ -95,27 +186,26 @@ if (Test-Path $overlayShare) {
   Copy-Item (Join-Path $overlayShare "*") $overlayDst -Recurse -Force
 }
 
-$keysDir = Join-Path $distRoot "keys"
 Ensure-Dir $keysDir
-$ktKeygen = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_kt_keygen.exe"
-if (-not $ktKeygen) {
-  throw "mi_e2ee_kt_keygen.exe not found under build/server"
-}
+$ktKeygen = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_kt_keygen.exe" $BuildConfig "kt_keygen"
+$packageSources["kt_keygen"] = $ktKeygen
 & $ktKeygen --out-dir $keysDir --force
 
 $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
-$cert = New-SelfSignedCertificate -DnsName "MI_E2EE_Server" -CertStoreLocation "Cert:\\CurrentUser\\My"
+$cert = New-SelfSignedCertificate `
+  -DnsName @("MI_E2EE_Server", "localhost") `
+  -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
+  -CertStoreLocation "Cert:\\CurrentUser\\My"
 $pwd = New-Object System.Security.SecureString
 Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
 $cert = Get-PfxCertificate -FilePath $pfxPath
 $der = $cert.Export("Cert")
 $hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace("-", "").ToLower()
 
-$serverExe = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_server.exe"
-$serverLauncher = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_server_launcher.exe"
-if (-not $serverExe -or -not $serverLauncher) {
-  throw "server executables not found under build/server"
-}
+$serverExe = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_server.exe" $BuildConfig "server app"
+$serverLauncher = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_server_launcher.exe" $BuildConfig "server launcher"
+$packageSources["server_exe"] = $serverExe
+$packageSources["server_launcher"] = $serverLauncher
 Copy-Item $serverExe (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
 Copy-Item $serverLauncher (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
 Copy-Item (Join-Path (Split-Path $serverExe -Parent) "*.dll") $serverDll -Force
@@ -140,27 +230,22 @@ foreach ($name in $crtNames) {
 }
 Copy-Item (Join-Path $workspace "tools\\mi_e2ee_harden_acl.cmd") (Join-Path $serverRoot "mi_e2ee_harden_acl.cmd") -Force
 $demoUsers = Find-File (Join-Path $workspace "build\\server") "test_user.txt"
-if (-not $demoUsers) {
-  throw "test_user.txt not found under build/server"
+if ($demoUsers) {
+  Assert-NotDebugPath $demoUsers "test_user"
+  $packageSources["test_user"] = $demoUsers
+  Copy-Item $demoUsers $serverRoot -Force
+} else {
+  "u:p" | Set-Content -Path (Join-Path $serverRoot "test_user.txt") -Encoding ASCII
 }
-Copy-Item $demoUsers $serverRoot -Force
 
-$ktPubinfo = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_kt_pubinfo.exe"
-$perfBaseline = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_perf_baseline.exe"
-$opsHealth = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_ops_health_view.exe"
-$thirdPartyAudit = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_third_party_audit.exe"
-if (-not $ktPubinfo) {
-  throw "mi_e2ee_kt_pubinfo.exe not found under build/server"
-}
-if (-not $perfBaseline) {
-  throw "mi_e2ee_perf_baseline.exe not found under build/server"
-}
-if (-not $opsHealth) {
-  throw "mi_e2ee_ops_health_view.exe not found under build/server"
-}
-if (-not $thirdPartyAudit) {
-  throw "mi_e2ee_third_party_audit.exe not found under build/server"
-}
+$ktPubinfo = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_kt_pubinfo.exe" $BuildConfig "kt_pubinfo"
+$perfBaseline = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_perf_baseline.exe" $BuildConfig "perf_baseline"
+$opsHealth = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_ops_health_view.exe" $BuildConfig "ops_health_view"
+$thirdPartyAudit = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_third_party_audit.exe" $BuildConfig "third_party_audit"
+$packageSources["kt_pubinfo"] = $ktPubinfo
+$packageSources["perf_baseline"] = $perfBaseline
+$packageSources["ops_health_view"] = $opsHealth
+$packageSources["third_party_audit"] = $thirdPartyAudit
 Copy-Item $ktKeygen $serverTools -Force
 Copy-Item $ktPubinfo $serverTools -Force
 Copy-Item $perfBaseline $serverTools -Force
@@ -179,17 +264,21 @@ $serverConfigLines = @(
   "mysql_ip=localhost",
   "mysql_port=3306",
   "mysql_database=mi_e2ee",
-  "mysql_username=root",
-  "mysql_password=123456",
+  "mysql_username=$mysqlUsernameValue",
+  "mysql_password=$mysqlPasswordValue",
   "[server]",
   "list_port=9000",
   "rotation_threshold=10000",
   "offline_dir=database/offline_store",
   "debug_log=0",
+  "offline_blob_temp_budget_bytes=4294967296",
   "tls_enable=1",
   "require_tls=1",
   "tls_cert=config/mi_e2ee_server.pfx",
-  "kt_signing_key=kt_signing_key.bin"
+  "kt_signing_key=kt_signing_key.bin",
+  "[kcp]",
+  "enable=0",
+  "allow_insecure=0"
 )
 $serverConfigLines | Set-Content -Path (Join-Path $serverConfig "config.ini") -Encoding ASCII
 
@@ -226,16 +315,18 @@ $clientConfigLines = @(
 $clientConfigLines | Set-Content -Path (Join-Path $clientConfig "client_config.ini") -Encoding ASCII
 "" | Set-Content -Path (Join-Path $clientDb "server_trust.ini") -Encoding ASCII
 
-$uiRoot = Join-Path $workspace "build\\client\\ui\\Release"
+$uiRoot = Join-Path $workspace "build\\client\\ui\\$BuildConfig"
+Require-Dir $uiRoot
+Assert-BuildConfigPath $uiRoot $BuildConfig "ui root"
+$packageSources["ui_root"] = $uiRoot
 Copy-Item (Join-Path $uiRoot "mi_e2ee_client_ui_app.exe") $clientRoot -Force
 Copy-Item (Join-Path $uiRoot "mi_e2ee_client_ui.exe") $clientRoot -Force
 Copy-Item (Join-Path $uiRoot "mi_e2ee.exe") $clientRoot -Force
 
-$sdkDll = Find-File (Join-Path $workspace "build\\client") "mi_e2ee_client_sdk.dll"
-if ($sdkDll) {
-  Copy-Item $sdkDll $clientRoot -Force
-  Copy-Item $sdkDll $clientDll -Force
-}
+$sdkDll = Find-ConfigFile (Join-Path $workspace "build\\client") "mi_e2ee_client_sdk.dll" $BuildConfig "sdk dll"
+$packageSources["sdk_dll"] = $sdkDll
+Copy-Item $sdkDll $clientRoot -Force
+Copy-Item $sdkDll $clientDll -Force
 
 $uiRcc = Join-Path $uiRoot "ui_resources.rcc"
 if (Test-Path $uiRcc) {
@@ -330,28 +421,33 @@ if (Test-Path (Join-Path $uiRoot "runtime")) {
   }
 }
 
-$imeRoot = Join-Path $workspace "build\\client\\ui\\ime_rime\\Release"
+$imeRoot = Join-Path $workspace "build\\client\\ui\\ime_rime\\$BuildConfig"
+if (Test-Path $imeRoot) {
+  Assert-BuildConfigPath $imeRoot $BuildConfig "ime root"
+  $packageSources["ime_root"] = $imeRoot
+}
 $imeCandidates = @(
-  (Join-Path $workspace "build\\client\\ui\\Release\\mi_ime_rime.dll"),
-  (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\mi_ime_rime.dll"),
-  (Join-Path $workspace "build\\client\\ui\\ime_rime\\Release\\mi_ime_rime.dll"),
-  (Join-Path $workspace "build\\client\\ime_rime\\Release\\mi_ime_rime.dll")
+  (Join-Path $workspace "build\\client\\ui\\$BuildConfig\\mi_ime_rime.dll"),
+  (Join-Path $workspace "build\\client\\ui\\$BuildConfig\\runtime\\mi_ime_rime.dll"),
+  (Join-Path $workspace "build\\client\\ui\\ime_rime\\$BuildConfig\\mi_ime_rime.dll"),
+  (Join-Path $workspace "build\\client\\ime_rime\\$BuildConfig\\mi_ime_rime.dll")
 )
 $imeDllPath = $imeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $imeDllPath) {
-  $imeDllPath = Find-File (Join-Path $workspace "build\\client") "mi_ime_rime.dll"
-}
 if ($imeDllPath) {
+  Assert-BuildConfigPath $imeDllPath $BuildConfig "mi_ime_rime"
+  $packageSources["ime_dll"] = $imeDllPath
   Copy-Item $imeDllPath $clientDll -Force
   Copy-Item $imeDllPath $clientRoot -Force
 }
 
 $rimeCandidates = @(
   (Join-Path $imeRoot "rime.dll"),
-  (Join-Path $workspace "build\\client\\ui\\Release\\runtime\\rime.dll")
+  (Join-Path $workspace "build\\client\\ui\\$BuildConfig\\runtime\\rime.dll")
 )
 $rimeDllPath = $rimeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($rimeDllPath) {
+  Assert-BuildConfigPath $rimeDllPath $BuildConfig "rime runtime dll"
+  $packageSources["rime_dll"] = $rimeDllPath
   Copy-Item $rimeDllPath $clientDll -Force
 }
 if (Test-Path (Join-Path $imeRoot "opencc")) {
@@ -374,6 +470,27 @@ if (Test-Path (Join-Path $workspace "bindings\\README.md")) {
 
 Write-Manifest $clientRoot
 Write-Manifest $serverRoot
+
+$normalizedSources = [ordered]@{}
+foreach ($entry in $packageSources.GetEnumerator()) {
+  $sourcePath = [string]$entry.Value
+  Assert-NotDebugPath $sourcePath "source $($entry.Key)"
+  $resolvedSource = $sourcePath
+  try {
+    $resolvedSource = (Resolve-Path $sourcePath).Path
+  } catch {
+    # Keep original path in metadata if source has already been cleaned.
+  }
+  $normalizedSources[$entry.Key] = $resolvedSource
+}
+
+$meta = [ordered]@{
+  build_config = $BuildConfig
+  generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+  sources = $normalizedSources
+}
+$metaPath = Join-Path $distRoot "package_build_meta.windows.json"
+$meta | ConvertTo-Json -Depth 6 | Set-Content -Path $metaPath -Encoding UTF8
 
 $clientZip = Join-Path $distRoot "mi_e2ee_client.zip"
 $serverZip = Join-Path $distRoot "mi_e2ee_server.zip"

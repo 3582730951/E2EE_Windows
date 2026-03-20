@@ -73,6 +73,19 @@ bool ParseUint32(const std::string& text, std::uint32_t& out) {
   return true;
 }
 
+bool ParseUint64(const std::string& text, std::uint64_t& out) {
+  if (text.empty()) {
+    return false;
+  }
+  char* end_ptr = nullptr;
+  const unsigned long long value = std::strtoull(text.c_str(), &end_ptr, 10);
+  if (end_ptr == text.c_str() || *end_ptr != '\0') {
+    return false;
+  }
+  out = static_cast<std::uint64_t>(value);
+  return true;
+}
+
 bool ParseBool(const std::string& text, bool& out) {
   if (text == "1" || text == "true" || text == "on") {
     out = true;
@@ -214,6 +227,8 @@ void ApplyKV(IniState& state, const std::string& key,
       ParseUint32(value, state.cfg->server.max_io_threads);
     } else if (key == "max_pending_tasks") {
       ParseUint32(value, state.cfg->server.max_pending_tasks);
+    } else if (key == "offline_blob_temp_budget_bytes") {
+      ParseUint64(value, state.cfg->server.offline_blob_temp_budget_bytes);
 #ifdef _WIN32
     } else if (key == "iocp_enable") {
       ParseBool(value, state.cfg->server.iocp_enable);
@@ -449,6 +464,11 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
   }
   if (out_config.server.max_connection_bytes < 4096) {
     error = "max_connection_bytes too small";
+    return false;
+  }
+  if (out_config.server.offline_blob_temp_budget_bytes < 64ull * 1024ull *
+                                                             1024ull) {
+    error = "offline_blob_temp_budget_bytes too small";
     return false;
   }
   if (out_config.server.key_protection != KeyProtectionMode::kNone &&

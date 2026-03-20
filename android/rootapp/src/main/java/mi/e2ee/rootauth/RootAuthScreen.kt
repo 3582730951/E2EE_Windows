@@ -236,9 +236,9 @@ fun RootAuthScreen() {
 
         scanInfo?.let { info ->
             val codeValue = if (code == "------") "" else code
-            val context = buildQrContext(info.qrId, info.secretHex)
+            val qrContext = buildQrContext(info.qrId, info.secretHex)
             val authString = if (!info.deviceId.isNullOrBlank()) {
-                store.currentAuthString(info.deviceId!!, context)
+                store.currentAuthString(info.deviceId!!, qrContext)
             } else {
                 null
             }

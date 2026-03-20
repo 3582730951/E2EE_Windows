@@ -45,7 +45,7 @@ struct ContentView: View {
                 .font(.headline)
             Text(store.currentCode)
                 .font(.system(size: 40, weight: .bold, design: .monospaced))
-            Text("Refresh in %d seconds".formatted(store.secondsRemaining))
+            Text("Refresh in \(store.secondsRemaining) seconds")
                 .font(.footnote)
                 .foregroundColor(.secondary)
             Divider()
@@ -142,24 +142,24 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundColor(.red)
             } else {
-                Text("QR ID: %s".formatted(result.qrId))
+                Text("QR ID: \(result.qrId)")
                     .font(.footnote)
                 if let username = result.username {
-                    Text("Account: %s".formatted(username))
+                    Text("Account: \(username)")
                         .font(.footnote)
                 }
                 if let device = result.deviceId {
-                    Text("Device: %s".formatted(device))
+                    Text("Device: \(device)")
                         .font(.footnote)
                 }
                 if let host = result.host, let port = result.port {
-                    Text("Server: %s:%d".formatted(host, port))
+                    Text("Server: \(host):\(port)")
                         .font(.footnote)
                     Text(result.useTls ? "TLS: enabled" : "TLS: disabled")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                     if let fingerprint = result.fingerprint {
-                        Text("Fingerprint: %s".formatted(fingerprint))
+                        Text("Fingerprint: \(fingerprint)")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
@@ -175,7 +175,7 @@ struct ContentView: View {
                     Label("Copy auth code", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
-                let context = "qr:%s:%s".formatted(result.qrId, result.secretHex.lowercased())
+                let context = "qr:\(result.qrId):\(result.secretHex.lowercased())"
                 let authString = result.deviceId.flatMap { store.authString(deviceId: $0, context: context) } ?? ""
                 if !authString.isEmpty {
                     Button(action: {

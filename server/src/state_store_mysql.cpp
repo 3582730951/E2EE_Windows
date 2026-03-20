@@ -10,6 +10,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "mysql_tls_policy.h"
+
 #ifdef MI_E2EE_ENABLE_MYSQL
 #include <mysql.h>
 #endif
@@ -376,6 +378,7 @@ class MysqlStateStore final : public StateStore {
 MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
   error.clear();
   constexpr int kMaxAttempts = 2;
+  const auto ssl_mode = mi::server::mysql_tls::ParseSslModeFromEnv();
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
     MYSQL* conn = mysql_init(nullptr);
     if (!conn) {
@@ -390,11 +393,23 @@ MYSQL* ConnectMysql(const MySqlConfig& cfg, std::string& error) {
     bool reconnect = true;
     mysql_options(conn, MYSQL_OPT_RECONNECT, &reconnect);
 #endif
+    mi::server::mysql_tls::ApplySslModeOption(conn, ssl_mode);
+    const unsigned long connect_flags =
+        mi::server::mysql_tls::ConnectFlagsForSslMode(ssl_mode);
     MYSQL* res = mysql_real_connect(conn, cfg.host.c_str(),
                                     cfg.username.c_str(),
                                     cfg.password.get().c_str(),
-                                    cfg.database.c_str(), cfg.port, nullptr, 0);
+                                    cfg.database.c_str(), cfg.port, nullptr,
+                                    connect_flags);
     if (res) {
+      if (!mi::server::mysql_tls::VerifyNegotiatedSsl(conn, ssl_mode)) {
+        error = "mysql tls required";
+        mysql_close(conn);
+        if (attempt + 1 < kMaxAttempts) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        continue;
+      }
       return conn;
     }
     error = "mysql_connect failed";

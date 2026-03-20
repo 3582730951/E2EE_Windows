@@ -1,169 +1,58 @@
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-#else
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
-
+#include "../common/constant_time.h"
+#include "../common/hex_utils.h"
+#include "../platform/include/platform_net.h"
+#include "../platform/include/platform_tls.h"
 #include "../server/include/frame.h"
 #include "../server/include/protocol.h"
 
 namespace {
 
-#ifdef _WIN32
-using SocketHandle = SOCKET;
-constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
-#else
-using SocketHandle = int;
-constexpr SocketHandle kInvalidSocket = -1;
-#endif
+constexpr std::uint32_t kSocketTimeoutMs = 5000;
 
-struct SocketInit {
-  SocketInit() {
-#ifdef _WIN32
-    WSADATA wsa{};
-    ok = (WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
-#else
-    ok = true;
-#endif
+struct ConnectionState {
+  mi::platform::net::Socket sock{mi::platform::net::kInvalidSocket};
+  mi::platform::tls::ClientContext tls_ctx;
+  std::vector<std::uint8_t> enc_buf;
+  std::vector<std::uint8_t> plain_buf;
+  std::size_t plain_off{0};
+
+  ~ConnectionState() {
+    mi::platform::tls::Close(tls_ctx);
+    mi::platform::net::CloseSocket(sock);
   }
-  ~SocketInit() {
-#ifdef _WIN32
-    if (ok) {
-      WSACleanup();
-    }
-#endif
-  }
-  bool ok{false};
 };
-
-void CloseSocket(SocketHandle sock) {
-  if (sock == kInvalidSocket) {
-    return;
-  }
-#ifdef _WIN32
-  closesocket(sock);
-#else
-  close(sock);
-#endif
-}
-
-bool SendAll(SocketHandle sock, const std::uint8_t* data, std::size_t len) {
-  if (!data || len == 0) {
-    return true;
-  }
-  std::size_t sent = 0;
-  while (sent < len) {
-    const std::size_t remaining = len - sent;
-    const std::size_t chunk = std::min<std::size_t>(
-        remaining, static_cast<std::size_t>((std::numeric_limits<int>::max)()));
-#ifdef _WIN32
-    const int n = ::send(sock, reinterpret_cast<const char*>(data + sent),
-                         static_cast<int>(chunk), 0);
-#else
-    const ssize_t n =
-        ::send(sock, data + sent, static_cast<std::size_t>(chunk), 0);
-#endif
-    if (n <= 0) {
-      return false;
-    }
-    sent += static_cast<std::size_t>(n);
-  }
-  return true;
-}
-
-bool RecvExact(SocketHandle sock, std::uint8_t* data, std::size_t len) {
-  if (!data && len != 0) {
-    return false;
-  }
-  std::size_t got = 0;
-  while (got < len) {
-    const std::size_t remaining = len - got;
-    const std::size_t chunk = std::min<std::size_t>(
-        remaining, static_cast<std::size_t>((std::numeric_limits<int>::max)()));
-#ifdef _WIN32
-    const int n = ::recv(sock, reinterpret_cast<char*>(data + got),
-                         static_cast<int>(chunk), 0);
-#else
-    const ssize_t n =
-        ::recv(sock, data + got, static_cast<std::size_t>(chunk), 0);
-#endif
-    if (n <= 0) {
-      return false;
-    }
-    got += static_cast<std::size_t>(n);
-  }
-  return true;
-}
-
-bool ConnectTcp(const std::string& host, std::uint16_t port, SocketHandle& out,
-                std::string& error) {
-  error.clear();
-  out = kInvalidSocket;
-  const std::string port_str = std::to_string(port);
-
-  addrinfo hints{};
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  addrinfo* result = nullptr;
-  const int rc = getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result);
-  if (rc != 0 || !result) {
-    error = "resolve failed";
-    return false;
-  }
-
-  for (addrinfo* it = result; it != nullptr; it = it->ai_next) {
-    SocketHandle sock = static_cast<SocketHandle>(
-        ::socket(it->ai_family, it->ai_socktype, it->ai_protocol));
-    if (sock == kInvalidSocket) {
-      continue;
-    }
-    if (::connect(sock, it->ai_addr, static_cast<int>(it->ai_addrlen)) == 0) {
-      out = sock;
-      break;
-    }
-    CloseSocket(sock);
-  }
-  freeaddrinfo(result);
-
-  if (out == kInvalidSocket) {
-    error = "connect failed";
-    return false;
-  }
-  return true;
-}
 
 struct Options {
   std::string host{"127.0.0.1"};
   std::uint16_t port{9000};
   std::string token;
   std::size_t width{48};
+  bool use_tls{false};
+  bool tls_verify_peer{true};
+  bool tls_verify_hostname{true};
+  std::string tls_ca_bundle;
+  std::string tls_pinned_fingerprint;
   bool help{false};
 };
 
 void PrintUsage() {
   std::cout << "usage: mi_e2ee_ops_health_view --token <ops_token> "
-               "[--host 127.0.0.1] [--port 9000] [--width 48]\n";
-  std::cout << "note: no TLS support; ops_enable must be on and allow loopback\n";
+               "[--host 127.0.0.1] [--port 9000] [--width 48] [--tls]\n";
+  std::cout << "       [--ca-bundle <path>] [--tls-pinned-fingerprint <sha256_hex>]\n";
+  std::cout << "       [--tls-no-verify-hostname] [--tls-no-verify-peer]\n";
+  std::cout << "default path is plaintext loopback; enable --tls for verified TLS.\n";
+  std::cout << "--tls-no-verify-peer is only allowed together with "
+               "--tls-pinned-fingerprint.\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& out) {
@@ -189,6 +78,26 @@ bool ParseArgs(int argc, char** argv, Options& out) {
       out.token = argv[++i];
       continue;
     }
+    if (arg == "--tls") {
+      out.use_tls = true;
+      continue;
+    }
+    if (arg == "--ca-bundle" && i + 1 < argc) {
+      out.tls_ca_bundle = argv[++i];
+      continue;
+    }
+    if (arg == "--tls-pinned-fingerprint" && i + 1 < argc) {
+      out.tls_pinned_fingerprint = argv[++i];
+      continue;
+    }
+    if (arg == "--tls-no-verify-hostname") {
+      out.tls_verify_hostname = false;
+      continue;
+    }
+    if (arg == "--tls-no-verify-peer") {
+      out.tls_verify_peer = false;
+      continue;
+    }
     if (arg == "--width" && i + 1 < argc) {
       const int v = std::stoi(argv[++i]);
       if (v < 8) {
@@ -198,6 +107,199 @@ bool ParseArgs(int argc, char** argv, Options& out) {
       continue;
     }
     return false;
+  }
+  return true;
+}
+
+std::string NormalizeSha256Hex(std::string_view value) {
+  std::string normalized;
+  normalized.reserve(value.size());
+  for (char ch : value) {
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    if (std::isxdigit(uch) != 0) {
+      normalized.push_back(
+          static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+      continue;
+    }
+    if (ch == ':' || ch == '-' || std::isspace(uch) != 0) {
+      continue;
+    }
+    return {};
+  }
+  return normalized;
+}
+
+bool ValidateOptions(Options& options, std::string& error) {
+  error.clear();
+  const bool has_tls_overrides =
+      !options.tls_ca_bundle.empty() ||
+      !options.tls_pinned_fingerprint.empty() ||
+      !options.tls_verify_peer || !options.tls_verify_hostname;
+  if (!options.use_tls && has_tls_overrides) {
+    error = "tls options require --tls";
+    return false;
+  }
+  if (!options.use_tls) {
+    return true;
+  }
+  if (!options.tls_pinned_fingerprint.empty()) {
+    options.tls_pinned_fingerprint =
+        NormalizeSha256Hex(options.tls_pinned_fingerprint);
+    std::vector<std::uint8_t> fp_bytes;
+    if (options.tls_pinned_fingerprint.size() != 64 ||
+        !mi::common::HexToBytes(options.tls_pinned_fingerprint, fp_bytes) ||
+        fp_bytes.size() != 32) {
+      error = "tls pinned fingerprint must be a SHA-256 hex digest";
+      return false;
+    }
+  }
+  if (!options.tls_verify_peer && options.tls_pinned_fingerprint.empty()) {
+    error =
+        "--tls-no-verify-peer requires --tls-pinned-fingerprint for fail-close pinning";
+    return false;
+  }
+  return true;
+}
+
+bool ReadFramePlain(mi::platform::net::Socket sock,
+                    std::vector<std::uint8_t>& out_frame,
+                    std::string& error) {
+  error.clear();
+  std::vector<std::uint8_t> header(mi::server::kFrameHeaderSize);
+  if (!mi::platform::net::RecvExact(sock, header.data(), header.size())) {
+    error = "recv header failed";
+    return false;
+  }
+  mi::server::FrameType type{};
+  std::uint32_t payload_len = 0;
+  if (!mi::server::DecodeFrameHeader(header.data(), header.size(), type,
+                                     payload_len)) {
+    error = "invalid frame header";
+    return false;
+  }
+  if (payload_len > mi::server::kMaxFramePayloadBytes) {
+    error = "payload too large";
+    return false;
+  }
+  out_frame = std::move(header);
+  if (payload_len == 0) {
+    return true;
+  }
+  const std::size_t old_size = out_frame.size();
+  out_frame.resize(old_size + payload_len);
+  if (!mi::platform::net::RecvExact(sock, out_frame.data() + old_size,
+                                    payload_len)) {
+    error = "recv payload failed";
+    out_frame.clear();
+    return false;
+  }
+  return true;
+}
+
+bool ReadFrameTlsBuffered(mi::platform::net::Socket sock,
+                          mi::platform::tls::ClientContext& tls_ctx,
+                          std::vector<std::uint8_t>& enc_buf,
+                          std::vector<std::uint8_t>& plain_buf,
+                          std::size_t& plain_off,
+                          std::vector<std::uint8_t>& out_frame,
+                          std::string& error) {
+  error.clear();
+  out_frame.clear();
+  if (plain_off > plain_buf.size()) {
+    plain_buf.clear();
+    plain_off = 0;
+  }
+
+  while (true) {
+    const std::size_t avail =
+        plain_buf.size() >= plain_off ? (plain_buf.size() - plain_off) : 0;
+    if (avail >= mi::server::kFrameHeaderSize) {
+      mi::server::FrameType type{};
+      std::uint32_t payload_len = 0;
+      if (!mi::server::DecodeFrameHeader(plain_buf.data() + plain_off, avail,
+                                         type, payload_len)) {
+        error = "invalid frame header";
+        return false;
+      }
+      const std::size_t total =
+          mi::server::kFrameHeaderSize + static_cast<std::size_t>(payload_len);
+      if (payload_len > mi::server::kMaxFramePayloadBytes) {
+        error = "payload too large";
+        return false;
+      }
+      if (avail >= total) {
+        out_frame.assign(
+            plain_buf.begin() + static_cast<std::ptrdiff_t>(plain_off),
+            plain_buf.begin() + static_cast<std::ptrdiff_t>(plain_off + total));
+        plain_off += total;
+        if (plain_off >= plain_buf.size()) {
+          plain_buf.clear();
+          plain_off = 0;
+        }
+        return true;
+      }
+    }
+
+    std::vector<std::uint8_t> plain_chunk;
+    if (!mi::platform::tls::DecryptToPlain(sock, tls_ctx, enc_buf,
+                                           plain_chunk)) {
+      error = "tls receive failed";
+      return false;
+    }
+    if (!plain_chunk.empty()) {
+      plain_buf.insert(plain_buf.end(), plain_chunk.begin(), plain_chunk.end());
+    }
+  }
+}
+
+bool Connect(ConnectionState& state, const Options& options,
+             std::string& error) {
+  error.clear();
+  if (!mi::platform::net::EnsureInitialized()) {
+    error = "socket init failed";
+    return false;
+  }
+  if (!mi::platform::net::ConnectTcp(options.host, options.port, state.sock,
+                                     error)) {
+    return false;
+  }
+  mi::platform::net::SetRecvTimeout(state.sock, kSocketTimeoutMs);
+  mi::platform::net::SetSendTimeout(state.sock, kSocketTimeoutMs);
+  if (!options.use_tls) {
+    return true;
+  }
+  if (mi::platform::tls::IsStubbed()) {
+    error = "tls stub build";
+    return false;
+  }
+  if (!mi::platform::tls::IsSupported()) {
+    error = "tls unsupported";
+    return false;
+  }
+
+  mi::platform::tls::ClientVerifyConfig verify{};
+  verify.verify_peer = options.tls_verify_peer;
+  verify.verify_hostname = options.tls_verify_hostname;
+  verify.ca_bundle_path = options.tls_ca_bundle;
+
+  std::vector<std::uint8_t> cert_der;
+  if (!mi::platform::tls::ClientHandshake(state.sock, options.host, verify,
+                                          state.tls_ctx, cert_der, state.enc_buf,
+                                          error)) {
+    return false;
+  }
+  if (!options.tls_pinned_fingerprint.empty()) {
+    const std::string actual_fp =
+        mi::common::Sha256Hex(cert_der.data(), cert_der.size());
+    if (actual_fp.empty()) {
+      error = "server fingerprint failed";
+      return false;
+    }
+    if (!mi::common::ConstantTimeEqual(options.tls_pinned_fingerprint,
+                                       actual_fp)) {
+      error = "server fingerprint changed";
+      return false;
+    }
   }
   return true;
 }
@@ -463,6 +565,7 @@ void PrintReport(const HealthReport& report, std::size_t width) {
 
 int main(int argc, char** argv) {
   Options options;
+  std::string err;
   if (!ParseArgs(argc, argv, options) || options.help) {
     PrintUsage();
     return options.help ? 0 : 1;
@@ -471,15 +574,13 @@ int main(int argc, char** argv) {
     PrintUsage();
     return 1;
   }
-  SocketInit init;
-  if (!init.ok) {
-    std::cerr << "winsock init failed\n";
+  if (!ValidateOptions(options, err)) {
+    std::cerr << err << "\n";
     return 1;
   }
 
-  SocketHandle sock = kInvalidSocket;
-  std::string err;
-  if (!ConnectTcp(options.host, options.port, sock, err)) {
+  ConnectionState state;
+  if (!Connect(state, options, err)) {
     std::cerr << "connect failed: " << err << "\n";
     return 1;
   }
@@ -488,52 +589,35 @@ int main(int argc, char** argv) {
   req.type = mi::server::FrameType::kHealthCheck;
   mi::server::proto::WriteString(options.token, req.payload);
   std::vector<std::uint8_t> frame = mi::server::EncodeFrame(req);
-  if (!SendAll(sock, frame.data(), frame.size())) {
-    CloseSocket(sock);
+  if (options.use_tls) {
+    if (!mi::platform::tls::EncryptAndSend(state.sock, state.tls_ctx, frame)) {
+      std::cerr << "send failed\n";
+      return 1;
+    }
+  } else if (!mi::platform::net::SendAll(state.sock, frame.data(), frame.size())) {
     std::cerr << "send failed\n";
     return 1;
   }
 
-  std::vector<std::uint8_t> header(mi::server::kFrameHeaderSize);
-  if (!RecvExact(sock, header.data(), header.size())) {
-    CloseSocket(sock);
-    std::cerr << "recv header failed\n";
-    return 1;
-  }
-  mi::server::FrameType type{};
-  std::uint32_t payload_len = 0;
-  if (!mi::server::DecodeFrameHeader(header.data(), header.size(), type,
-                                     payload_len)) {
-    CloseSocket(sock);
-    std::cerr << "invalid frame header\n";
-    return 1;
-  }
-  if (payload_len > mi::server::kMaxFramePayloadBytes) {
-    CloseSocket(sock);
-    std::cerr << "payload too large\n";
-    return 1;
-  }
-  if (type != mi::server::FrameType::kHealthCheck) {
-    CloseSocket(sock);
-    std::cerr << "unexpected response type\n";
-    return 1;
-  }
-  std::vector<std::uint8_t> body(payload_len);
-  if (payload_len > 0 && !RecvExact(sock, body.data(), body.size())) {
-    CloseSocket(sock);
-    std::cerr << "recv payload failed\n";
-    return 1;
-  }
-  CloseSocket(sock);
-
   std::vector<std::uint8_t> full;
-  full.reserve(header.size() + body.size());
-  full.insert(full.end(), header.begin(), header.end());
-  full.insert(full.end(), body.begin(), body.end());
+  if (options.use_tls) {
+    if (!ReadFrameTlsBuffered(state.sock, state.tls_ctx, state.enc_buf,
+                              state.plain_buf, state.plain_off, full, err)) {
+      std::cerr << err << "\n";
+      return 1;
+    }
+  } else if (!ReadFramePlain(state.sock, full, err)) {
+    std::cerr << err << "\n";
+    return 1;
+  }
 
   mi::server::Frame resp;
   if (!mi::server::DecodeFrame(full.data(), full.size(), resp)) {
     std::cerr << "decode response failed\n";
+    return 1;
+  }
+  if (resp.type != mi::server::FrameType::kHealthCheck) {
+    std::cerr << "unexpected response type\n";
     return 1;
   }
   HealthReport report;

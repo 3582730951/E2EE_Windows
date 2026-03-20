@@ -107,7 +107,9 @@ class OfflineStorage {
                  std::chrono::seconds ttl = std::chrono::hours(12),
                  SecureDeleteConfig secure_delete = {},
                  KeyProtectionMode state_protection = KeyProtectionMode::kNone,
-                 StateStore* state_store = nullptr);
+                 StateStore* state_store = nullptr,
+                 std::uint64_t blob_upload_temp_budget_bytes =
+                     4ull * 1024ull * 1024ull * 1024ull);
   ~OfflineStorage();
 
   PutResult Put(const std::string& owner,
@@ -208,6 +210,7 @@ class OfflineStorage {
   bool LoadSecureDeletePlugin(const std::filesystem::path& path,
                               std::string& error);
   bool CallSecureDeletePlugin(const std::filesystem::path& path) const;
+  void CleanupExpiredBlobArtifacts();
   void BestEffortWipe(const std::filesystem::path& path) const;
   void WipeFile(const std::filesystem::path& path) const;
 
@@ -222,28 +225,8 @@ class OfflineStorage {
   std::string secure_delete_error_;
   KeyProtectionMode state_protection_{KeyProtectionMode::kNone};
   StateStore* state_store_{nullptr};
-  struct BlobUploadSession {
-    std::string upload_id;
-    std::string owner;
-    std::uint64_t expected_size{0};
-    std::uint64_t bytes_received{0};
-    std::filesystem::path temp_path;
-    std::chrono::steady_clock::time_point created_at{};
-    std::chrono::steady_clock::time_point last_activity{};
-  };
-
-  struct BlobDownloadSession {
-    std::string download_id;
-    std::string file_id;
-    std::string owner;
-    std::uint64_t total_size{0};
-    std::uint64_t next_offset{0};
-    bool wipe_after_read{false};
-    std::chrono::steady_clock::time_point created_at{};
-    std::chrono::steady_clock::time_point last_activity{};
-  };
-  std::unordered_map<std::string, BlobUploadSession> blob_uploads_;
-  std::unordered_map<std::string, BlobDownloadSession> blob_downloads_;
+  std::uint64_t blob_upload_temp_budget_bytes_{
+      4ull * 1024ull * 1024ull * 1024ull};
 };
 
 struct OfflineMessage {

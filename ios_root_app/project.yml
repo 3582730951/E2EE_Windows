@@ -2,7 +2,7 @@ name: RootAuthApp
 options:
   bundleIdPrefix: mi.e2ee.root
   deploymentTarget:
-    iOS: "14.0"
+    iOS: "15.0"
 targets:
   RootAuthApp:
     type: application

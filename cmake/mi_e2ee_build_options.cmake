@@ -28,6 +28,12 @@ if(NOT TARGET mi_e2ee_build_flags)
   add_library(mi_e2ee_build_flags INTERFACE)
 endif()
 
+target_compile_definitions(mi_e2ee_build_flags INTERFACE
+  $<$<CONFIG:Release>:MI_E2EE_SECURE_RELEASE=1>
+  $<$<CONFIG:RelWithDebInfo>:MI_E2EE_SECURE_RELEASE=1>
+  $<$<CONFIG:MinSizeRel>:MI_E2EE_SECURE_RELEASE=1>
+)
+
 if(MI_E2EE_ENABLE_SYMBOL_HIDE AND NOT MSVC)
   target_compile_options(mi_e2ee_build_flags INTERFACE
     $<$<CONFIG:Release>:-fvisibility=hidden>

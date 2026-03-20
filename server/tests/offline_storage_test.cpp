@@ -393,6 +393,120 @@ int main() {
   }
 
   {
+    const auto dir = TempDir("mi_e2ee_offline_blob_tamper");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+
+    auto started = storage.BeginBlobUpload("alice", 0);
+    if (!Check(started.success && !started.file_id.empty() &&
+               !started.upload_id.empty())) {
+      FAIL();
+    }
+
+    const std::vector<std::uint8_t> chunk = {9, 8, 7, 6};
+    auto a1 = storage.AppendBlobUploadChunk("alice", started.file_id,
+                                            started.upload_id, 0, chunk);
+    if (!a1.success) {
+      FAIL();
+    }
+
+    {
+      std::ofstream ofs(dir / (started.file_id + ".part"),
+                        std::ios::binary | std::ios::app);
+      if (!ofs) {
+        FAIL();
+      }
+      const std::uint8_t tamper = 0xAA;
+      ofs.write(reinterpret_cast<const char*>(&tamper), 1);
+      ofs.close();
+      if (!ofs.good()) {
+        FAIL();
+      }
+    }
+
+    auto finished = storage.FinishBlobUpload(
+        "alice", started.file_id, started.upload_id,
+        static_cast<std::uint64_t>(chunk.size()));
+    if (finished.success || finished.error.empty()) {
+      FAIL();
+    }
+
+    if (!WaitForGone(dir / (started.file_id + ".part"))) {
+      FAIL();
+    }
+    if (!WaitForGone(dir / (started.file_id + ".part.itag"))) {
+      FAIL();
+    }
+    if (!WaitForGone(dir / (started.file_id + ".part.lock"))) {
+      FAIL();
+    }
+    auto retry = storage.AppendBlobUploadChunk("alice", started.file_id,
+                                               started.upload_id, chunk.size(),
+                                               {1});
+    if (retry.success) {
+      FAIL();
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_blob_upload_stateless");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+
+    for (int i = 0; i < 2000; ++i) {
+      auto started = storage.BeginBlobUpload("alice", 0);
+      if (!started.success || started.file_id.empty() || started.upload_id.empty()) {
+        FAIL();
+      }
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_blob_download_stateless");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    auto put = storage.PutBlob("alice", std::vector<std::uint8_t>{1, 2, 3});
+    if (!put.success || put.file_id.empty()) {
+      FAIL();
+    }
+
+    for (int i = 0; i < 3000; ++i) {
+      auto dl = storage.BeginBlobDownload("alice", put.file_id, false);
+      if (!dl.success || dl.download_id.empty()) {
+        FAIL();
+      }
+    }
+  }
+
+  {
+    const auto dir = TempDir("mi_e2ee_offline_blob_token_tamper");
+    mi::server::OfflineStorage storage(dir, std::chrono::seconds(60));
+    auto started = storage.BeginBlobUpload("alice", 0);
+    if (!started.success || started.file_id.empty() || started.upload_id.empty()) {
+      FAIL();
+    }
+    std::string bad = started.upload_id;
+    bad[0] = (bad[0] == '0') ? '1' : '0';
+    auto a = storage.AppendBlobUploadChunk(
+        "alice", started.file_id, bad, 0, std::vector<std::uint8_t>{1, 2});
+    if (a.success) {
+      FAIL();
+    }
+
+    auto put = storage.PutBlob("alice", std::vector<std::uint8_t>{3, 4, 5});
+    if (!put.success || put.file_id.empty()) {
+      FAIL();
+    }
+    auto dl = storage.BeginBlobDownload("alice", put.file_id, false);
+    if (!dl.success || dl.download_id.empty()) {
+      FAIL();
+    }
+    std::string bad_dl = dl.download_id;
+    bad_dl[0] = (bad_dl[0] == '0') ? '1' : '0';
+    auto c = storage.ReadBlobDownloadChunk("alice", put.file_id, bad_dl, 0, 16);
+    if (c.success) {
+      FAIL();
+    }
+  }
+
+  {
     const auto dir = TempDir("mi_e2ee_offline_cleanup");
     mi::server::OfflineStorage storage(dir, std::chrono::seconds(1));
     std::vector<std::uint8_t> payload(64, 0xAB);

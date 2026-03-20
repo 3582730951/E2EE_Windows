@@ -152,7 +152,7 @@ build_one() {
   export ANDROID_NDK_HOME="$ndk_root"
   export ANDROID_NDK_ROOT="$ndk_root"
   export PATH="$toolchain_bin:$PATH"
-  ./Configure "$target" -D__ANDROID_API__="$api" no-shared no-tests --prefix="$prefix"
+  ./Configure "$target" -D__ANDROID_API__="$api" no-shared no-tests no-apps --prefix="$prefix"
   make -j"$jobs"
   make install_sw
   popd >/dev/null

@@ -17,6 +17,7 @@
 #include "hex_utils.h"
 #include "monocypher.h"
 #include "opaque_pake.h"
+#include "platform_fs.h"
 #include "protected_store.h"
 
 extern "C" {
@@ -28,6 +29,8 @@ int PQCLEAN_MLKEM768_CLEAN_crypto_kem_enc(std::uint8_t* ct,
 namespace mi::server {
 
 namespace {
+
+namespace pfs = mi::platform::fs;
 
 constexpr std::array<std::uint8_t, 8> kSessionMagic = {
     'M', 'I', 'S', 'E', 'S', 'S', '0', '1'};
@@ -159,6 +162,10 @@ bool SessionManager::LoadSessionsFromFileLocked() {
   std::error_code ec;
   if (!std::filesystem::exists(persist_path_, ec) || ec) {
     return true;
+  }
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(persist_path_, perm_err)) {
+    return false;
   }
   const auto size = std::filesystem::file_size(persist_path_, ec);
   if (ec || size < kSessionHeaderBytes ||
@@ -420,27 +427,19 @@ bool SessionManager::SaveSessionsLocked() {
     return false;
   }
 
-  const std::filesystem::path tmp = persist_path_.string() + ".tmp";
-  std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
-  if (!ofs) {
-    return false;
-  }
-  ofs.write(reinterpret_cast<const char*>(protected_bytes.data()),
-            static_cast<std::streamsize>(protected_bytes.size()));
-  ofs.close();
-  if (!ofs.good()) {
-    std::error_code rm_ec;
-    std::filesystem::remove(tmp, rm_ec);
-    return false;
-  }
   std::error_code ec;
-  std::filesystem::remove(persist_path_, ec);
-  std::filesystem::rename(tmp, persist_path_, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
+  if (!pfs::AtomicWrite(persist_path_, protected_bytes.data(),
+                        protected_bytes.size(), ec) ||
+      ec) {
     return false;
   }
   SetOwnerOnlyPermissions(persist_path_);
+  std::string perm_err;
+  if (!mi::shard::security::CheckPathNotWorldWritable(persist_path_, perm_err)) {
+    std::error_code rm_ec;
+    std::filesystem::remove(persist_path_, rm_ec);
+    return false;
+  }
   dirty_ = false;
   return true;
 }

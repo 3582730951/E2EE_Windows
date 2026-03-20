@@ -38,6 +38,8 @@ struct ServerSection {
   std::uint32_t max_worker_threads{0};
   std::uint32_t max_io_threads{0};
   std::uint32_t max_pending_tasks{1024};
+  std::uint64_t offline_blob_temp_budget_bytes{
+      4ull * 1024ull * 1024ull * 1024ull};
 #ifdef _WIN32
   bool iocp_enable{true};
 #endif

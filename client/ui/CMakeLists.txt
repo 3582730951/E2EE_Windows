@@ -149,10 +149,12 @@ function(add_ui_executable target_name)
     endif()
 endfunction()
 
-add_subdirectory(e2ee_login)
-add_subdirectory(e2ee_main_list)
-add_subdirectory(e2ee_group_chat)
-add_subdirectory(e2ee_chat_empty)
+if(MI_E2EE_BUILD_LEGACY_UI)
+    add_subdirectory(e2ee_login)
+    add_subdirectory(e2ee_main_list)
+    add_subdirectory(e2ee_group_chat)
+    add_subdirectory(e2ee_chat_empty)
+endif()
 
 add_executable(mi_e2ee_client_ui_app
     qml_main.cpp

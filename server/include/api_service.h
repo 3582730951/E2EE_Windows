@@ -444,6 +444,8 @@ class ApiService {
              bool root_auth_enable = false,
              std::uint32_t root_auth_step_sec = 5,
              std::uint32_t root_auth_window = 1);
+  bool init_failed() const { return init_failed_; }
+  const std::string& init_error() const { return init_error_; }
 
   LoginResponse Login(const LoginRequest& req, TransportKind transport);
   OpaqueRegisterStartResponse OpaqueRegisterStart(
@@ -825,6 +827,8 @@ class ApiService {
   std::array<std::uint8_t, kKtSthSigSecretKeyBytes> kt_signing_sk_{};
   bool kt_signing_ready_{false};
   std::string kt_signing_error_;
+  bool init_failed_{false};
+  std::string init_error_;
 };
 
 }  // namespace mi::server

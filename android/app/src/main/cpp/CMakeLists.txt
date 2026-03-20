@@ -23,9 +23,22 @@ option(MI_E2EE_ANDROID_USE_OPENSSL "Use OpenSSL TLS implementation" ON)
 option(MI_E2EE_ANDROID_ALLOW_TLS_STUB "Allow TLS stub (debug/testing only)" OFF)
 option(MI_E2EE_ANDROID_OLLVM "Use OLLVM for backend library" OFF)
 set(MI_E2EE_OPAQUE_LIB "" CACHE FILEPATH "Path to mi_opaque_pake static lib")
+set(MI_E2EE_OPAQUE_LIB_ROOT "" CACHE PATH "Root directory containing <abi>/libmi_opaque_pake.a")
 set(MI_E2EE_ANDROID_OPENSSL_ROOT "" CACHE PATH "OpenSSL root with ABI subdirs")
 set(MI_E2EE_OLLVM_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub" CACHE STRING "OLLVM flags")
 separate_arguments(MI_E2EE_OLLVM_FLAGS)
+
+string(TOUPPER "${CMAKE_BUILD_TYPE}" MI_E2EE_ANDROID_BUILD_TYPE_UPPER)
+set(MI_E2EE_ANDROID_RELEASE_BUILD OFF)
+if(MI_E2EE_ANDROID_BUILD_TYPE_UPPER STREQUAL "RELEASE" OR
+   MI_E2EE_ANDROID_BUILD_TYPE_UPPER STREQUAL "RELWITHDEBINFO" OR
+   MI_E2EE_ANDROID_BUILD_TYPE_UPPER STREQUAL "MINSIZEREL")
+  set(MI_E2EE_ANDROID_RELEASE_BUILD ON)
+endif()
+if(MI_E2EE_ANDROID_RELEASE_BUILD AND MI_E2EE_ANDROID_ALLOW_TLS_STUB)
+  message(FATAL_ERROR
+    "MI_E2EE_ANDROID_ALLOW_TLS_STUB must be OFF for release builds.")
+endif()
 
 if(NOT MI_E2EE_ANDROID_USE_RUST_OPAQUE)
   message(FATAL_ERROR "MI_E2EE_ANDROID_USE_RUST_OPAQUE must be ON (OPAQUE stub fallback is disallowed).")
@@ -33,9 +46,27 @@ endif()
 
 find_program(MI_E2EE_CARGO_EXECUTABLE cargo)
 if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND
+   NOT MI_E2EE_OPAQUE_LIB AND
+   MI_E2EE_OPAQUE_LIB_ROOT)
+  if(NOT ANDROID_ABI)
+    message(FATAL_ERROR "ANDROID_ABI is empty; cannot resolve MI_E2EE_OPAQUE_LIB_ROOT.")
+  endif()
+  set(_MI_E2EE_OPAQUE_LIB_CANDIDATE
+      "${MI_E2EE_OPAQUE_LIB_ROOT}/${ANDROID_ABI}/libmi_opaque_pake.a")
+  if(EXISTS "${_MI_E2EE_OPAQUE_LIB_CANDIDATE}")
+    set(MI_E2EE_OPAQUE_LIB "${_MI_E2EE_OPAQUE_LIB_CANDIDATE}")
+  else()
+    message(FATAL_ERROR
+      "MI_E2EE_OPAQUE_LIB_ROOT does not contain ${ANDROID_ABI}/libmi_opaque_pake.a: "
+      "${_MI_E2EE_OPAQUE_LIB_CANDIDATE}")
+  endif()
+endif()
+if(MI_E2EE_ANDROID_USE_RUST_OPAQUE AND
    NOT MI_E2EE_CARGO_EXECUTABLE AND
    NOT MI_E2EE_OPAQUE_LIB)
-  message(FATAL_ERROR "cargo not found and MI_E2EE_OPAQUE_LIB is empty; secure OPAQUE build cannot proceed.")
+  message(FATAL_ERROR
+    "cargo not found and neither MI_E2EE_OPAQUE_LIB nor MI_E2EE_OPAQUE_LIB_ROOT is set; "
+    "secure OPAQUE build cannot proceed.")
 endif()
 if(MI_E2EE_OPAQUE_LIB AND NOT EXISTS "${MI_E2EE_OPAQUE_LIB}")
   message(FATAL_ERROR "MI_E2EE_OPAQUE_LIB does not exist: ${MI_E2EE_OPAQUE_LIB}")
@@ -131,6 +162,22 @@ add_library(kcp STATIC
 )
 target_include_directories(kcp PUBLIC
   "${MI_E2EE_ROOT}/third_party/kcp"
+)
+
+add_library(ed25519 STATIC
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/add_scalar.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/fe.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/ge.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/key_exchange.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/keypair.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/sc.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/seed.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/sha512.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/sign.c"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src/verify.c"
+)
+target_include_directories(ed25519 PUBLIC
+  "${MI_E2EE_ROOT}/third_party/ed25519/src"
 )
 
 add_library(pqclean_mlkem768_clean STATIC
@@ -293,6 +340,7 @@ target_include_directories(mi_e2ee_backend PRIVATE
   "${MI_E2EE_ROOT}/runtime"
   "${MI_E2EE_ROOT}/shard"
   "${MI_E2EE_ROOT}/platform/include"
+  "${MI_E2EE_ROOT}/third_party/ed25519/src"
 )
 
 target_include_directories(mi_e2ee_jni PRIVATE
@@ -310,6 +358,7 @@ target_link_libraries(mi_e2ee_backend PRIVATE
   monocypher
   miniz
   kcp
+  ed25519
   pqclean_mlkem768_clean
   pqclean_mldsa65_clean
   mi_e2ee_build_flags
