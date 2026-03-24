@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 private struct SecureNavigationRow<Destination: View>: View {
@@ -204,81 +205,292 @@ struct ClientLoginCard: View {
     }
 }
 
-struct ClientConversationStrip: View {
+private struct ClientSecuritySummaryCard: View {
     @ObservedObject var store: ClientWorkspaceStore
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SecureSectionHeader(
-                eyebrow: "Recents",
-                title: "Active chats",
-                detail: "Prioritize the current secure thread and keep switching friction low."
-            )
+    private var statusText: String {
+        if !store.lastError.isEmpty {
+            return store.lastError
+        }
+        return store.remoteOK ? "End-to-end secure session active." : "Session validation in progress."
+    }
 
-            if store.conversations.isEmpty {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: store.remoteOK ? "lock.shield.fill" : "wave.3.right.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(store.remoteOK ? SecurePalette.success : SecurePalette.warning)
+                .frame(width: 34, height: 34)
+                .background(
+                    Circle()
+                        .fill(SecurePalette.surfaceRaised)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(store.remoteOK ? "Secure transport healthy" : "Secure transport checking")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textPrimary)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: { store.refreshNow() }) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.footnote.weight(.semibold))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(SecureSecondaryButtonStyle())
+            .accessibilityLabel("Refresh secure session status")
+        }
+        .secureCard(padding: 14)
+    }
+}
+
+private struct ClientConversationRow: View {
+    let conversation: ClientConversation
+    let preview: String
+    let timestampMS: UInt64
+    let isSelected: Bool
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    private var timestampLabel: String {
+        guard timestampMS > 0 else {
+            return ""
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(timestampMS) / 1000.0)
+        if Calendar.current.isDateInToday(date) {
+            return Self.timeFormatter.string(from: date)
+        }
+        if Calendar.current.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        return Self.dayFormatter.string(from: date)
+    }
+
+    private var avatarText: String {
+        let trimmed = conversation.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else {
+            return "#"
+        }
+        return String(first).uppercased()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(
+                        LinearGradient(colors: [
+                            SecurePalette.accent.opacity(0.88),
+                            SecurePalette.accent.opacity(0.58)
+                        ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .frame(width: 48, height: 48)
+                Text(avatarText)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.white)
+
+                if conversation.isGroup {
+                    Image(systemName: "person.3.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .padding(4)
+                        .background(
+                            Circle()
+                                .fill(SecurePalette.surface)
+                        )
+                        .offset(x: 2, y: 2)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(conversation.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(SecurePalette.textPrimary)
+                        .lineLimit(1)
+
+                    if isSelected {
+                        Text("ACTIVE")
+                            .font(.caption2.weight(.bold))
+                            .tracking(0.9)
+                            .foregroundStyle(SecurePalette.accent)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if !timestampLabel.isEmpty {
+                        Text(timestampLabel)
+                            .font(.caption)
+                            .foregroundStyle(SecurePalette.textMuted)
+                    }
+                }
+
+                Text(preview)
+                    .font(.footnote)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(isSelected ? SecurePalette.surfaceRaised.opacity(0.95) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isSelected ? SecurePalette.borderStrong : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+    }
+}
+
+private struct ClientConversationListCard: View {
+    @ObservedObject var store: ClientWorkspaceStore
+    @State private var query: String = ""
+
+    private var orderedConversations: [ClientConversation] {
+        store.conversations.sorted { lhs, rhs in
+            let lhsTime = store.latestMessage(for: lhs.id)?.timestampMS ?? 0
+            let rhsTime = store.latestMessage(for: rhs.id)?.timestampMS ?? 0
+            if lhsTime == rhsTime {
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+            return lhsTime > rhsTime
+        }
+    }
+
+    private var filteredConversations: [ClientConversation] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return orderedConversations
+        }
+        return orderedConversations.filter { conversation in
+            if conversation.title.localizedCaseInsensitiveContains(trimmed) {
+                return true
+            }
+            let preview = store.latestMessage(for: conversation.id)?.text ?? conversation.subtitle
+            return preview.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CHATS")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SecurePalette.textMuted)
+                    Text("Conversation list")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(SecurePalette.textPrimary)
+                }
+
+                Spacer(minLength: 12)
+
+                Text("\(store.conversations.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule()
+                            .fill(SecurePalette.surfaceRaised)
+                    )
+            }
+
+            TextField("Search conversations", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .secureInput()
+
+            if filteredConversations.isEmpty {
                 SecureStatusBanner(
-                    title: "No chats yet",
-                    detail: "Create an account, add a contact, or wait for incoming encrypted events to populate the list.",
+                    title: store.conversations.isEmpty ? "No chats yet" : "No matching chats",
+                    detail: store.conversations.isEmpty
+                        ? "Start a secure conversation once contacts or incoming events are available."
+                        : "Try a different keyword.",
                     tone: .neutral,
                     systemImage: "bubble.left.and.text.bubble.right"
                 )
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(store.conversations) { conversation in
-                            Button {
-                                store.selectConversation(conversation.id)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack {
-                                        Image(systemName: conversation.isGroup ? "person.3.fill" : "message.fill")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(store.selectedConversationID == conversation.id ? Color.white : SecurePalette.accent)
-                                        Spacer(minLength: 8)
-                                        Text(conversation.isGroup ? "GROUP" : "DM")
-                                            .font(.caption2.weight(.semibold))
-                                            .tracking(1.0)
-                                            .foregroundStyle(store.selectedConversationID == conversation.id ? Color.white.opacity(0.82) : SecurePalette.textMuted)
-                                    }
+                VStack(spacing: 8) {
+                    ForEach(filteredConversations) { conversation in
+                        let preview = store.latestMessage(for: conversation.id)?.text ?? conversation.subtitle
+                        let timestamp = store.latestMessage(for: conversation.id)?.timestampMS ?? 0
 
-                                    Text(conversation.title)
-                                        .font(.headline)
-                                        .foregroundStyle(store.selectedConversationID == conversation.id ? Color.white : SecurePalette.textPrimary)
-                                        .lineLimit(1)
-
-                                    Text(conversation.subtitle)
-                                        .font(.footnote)
-                                        .foregroundStyle(store.selectedConversationID == conversation.id ? Color.white.opacity(0.78) : SecurePalette.textSecondary)
-                                        .lineLimit(2)
+                        NavigationLink {
+                            ClientConversationDetailView(store: store, conversation: conversation)
+                                .onAppear {
+                                    store.selectConversation(conversation.id)
                                 }
-                                .frame(width: 220, alignment: .leading)
-                                .padding(16)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .fill(
-                                            store.selectedConversationID == conversation.id
-                                                ? SecurePalette.accent
-                                                : SecurePalette.surfaceRaised
-                                        )
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .stroke(
-                                            store.selectedConversationID == conversation.id
-                                                ? Color.white.opacity(0.18)
-                                                : SecurePalette.border,
-                                            lineWidth: 1
-                                        )
-                                )
-                            }
-                            .buttonStyle(.plain)
+                        } label: {
+                            ClientConversationRow(
+                                conversation: conversation,
+                                preview: preview,
+                                timestampMS: timestamp,
+                                isSelected: store.selectedConversationID == conversation.id
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 2)
                 }
             }
         }
         .secureCard()
+    }
+}
+
+struct ClientConversationDetailView: View {
+    @ObservedObject var store: ClientWorkspaceStore
+    let conversation: ClientConversation
+
+    var body: some View {
+        ZStack {
+            SecureSceneBackground()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    ClientSecuritySummaryCard(store: store)
+                    ClientMessagesCard(store: store)
+                    ClientComposerCard(store: store)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 18)
+            }
+        }
+        .navigationTitle(conversation.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { store.refreshNow() }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Refresh conversation")
+            }
+        }
+        .onAppear {
+            store.selectConversation(conversation.id)
+            store.refreshNow()
+        }
     }
 }
 
@@ -464,13 +676,11 @@ struct ClientWorkspaceView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
-                    ClientStatusCard(store: store)
                     if store.isLoggedIn {
-                        ClientConversationStrip(store: store)
-                        ClientMessagesCard(store: store)
-                        ClientComposerCard(store: store)
-                        ClientDevicesCard(store: store)
+                        ClientSecuritySummaryCard(store: store)
+                        ClientConversationListCard(store: store)
                     } else {
+                        ClientSecuritySummaryCard(store: store)
                         ClientLoginCard(store: store)
                     }
                 }
@@ -479,7 +689,17 @@ struct ClientWorkspaceView: View {
             }
         }
         .navigationTitle("Chats")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            if store.isLoggedIn {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { store.signOut() }) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                    }
+                    .accessibilityLabel("Sign out")
+                }
+            }
+        }
     }
 }
 

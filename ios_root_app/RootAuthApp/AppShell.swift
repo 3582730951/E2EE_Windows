@@ -169,6 +169,12 @@ final class ClientWorkspaceStore: ObservableObject {
         conversations.filter { !$0.isGroup }
     }
 
+    func latestMessage(for conversationID: String) -> ClientMessage? {
+        messagesByConversation[conversationID]?.max(by: { lhs, rhs in
+            lhs.timestampMS < rhs.timestampMS
+        })
+    }
+
     func configureClient(resetSelection: Bool) {
         do {
             configPath = try ClientConfigBootstrap.ensure(serverHost: serverHost,
