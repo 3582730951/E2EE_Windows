@@ -426,6 +426,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           $work = Join-Path $env:GITHUB_WORKSPACE "build\\ui_smoke_runtime"
           New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $dataDir = Join-Path $work "database"
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
           $offline = Join-Path $work "offline"
           New-Item -ItemType Directory -Force -Path $offline | Out-Null
           $testUsers = Join-Path $work "test_user.txt"
@@ -496,6 +498,7 @@ jobs:
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           "" | Out-File -FilePath $trustStorePath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          $env:MI_E2EE_DATA_DIR = $dataDir
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
           $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
           $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"

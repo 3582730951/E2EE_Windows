@@ -57,6 +57,7 @@
 #include "common/ImePluginLoader.h"
 #include "common/QrCodeGenerator.h"
 #include "common/UiRuntimePaths.h"
+#include "path_security.h"
 #include "platform_time.h"
 #include "protocol.h"
 
@@ -2181,8 +2182,22 @@ bool QuickClient::init(const QString& configPath) {
   const QString appRoot = UiRuntimePaths::AppRootDir();
   const QString baseDir =
       appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
-  const QString dataDir = QDir(baseDir).filePath(QStringLiteral("database"));
+  QString dataDir = ResolveUiDataDir();
+  if (dataDir.isEmpty()) {
+    dataDir = QDir(baseDir).filePath(QStringLiteral("database"));
+  }
   QDir().mkpath(dataDir);
+#ifdef _WIN32
+  std::string aclError;
+  if (!mi::shard::security::HardenPathAcl(ToFsPath(QDir::cleanPath(dataDir)),
+                                          aclError)) {
+    const QString msg = QString::fromStdString(
+        aclError.empty() ? "data dir acl harden failed" : aclError);
+    UpdateLastError(msg);
+    emit status(msg);
+    return false;
+  }
+#endif
   qputenv("MI_E2EE_DATA_DIR",
           QDir::toNativeSeparators(dataDir).toUtf8());
   ai_gpu_name_ = QueryGpuName();
