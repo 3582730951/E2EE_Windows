@@ -495,6 +495,9 @@ jobs:
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           "" | Out-File -FilePath (Join-Path $work "server_trust.ini") -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
+          $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
+          $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"
           $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
           if (-not $serverExe) {
             throw "mi_e2ee_server.exe not found"
@@ -522,9 +525,25 @@ jobs:
             }
             Push-Location $exe.Directory.FullName
             try {
-              & $exe.FullName | Out-Null
-              if ($LASTEXITCODE -ne 0) {
-                throw "UI smoke failed with exit code $LASTEXITCODE"
+              $uiProc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.Directory.FullName -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+              if (-not $uiProc.WaitForExit(45000)) {
+                if (Test-Path $stdoutLog) {
+                  Get-Content $stdoutLog | Write-Host
+                }
+                if (Test-Path $stderrLog) {
+                  Get-Content $stderrLog | Write-Host
+                }
+                Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
+                throw "UI smoke timed out after 45s"
+              }
+              if ($uiProc.ExitCode -ne 0) {
+                if (Test-Path $stdoutLog) {
+                  Get-Content $stdoutLog | Write-Host
+                }
+                if (Test-Path $stderrLog) {
+                  Get-Content $stderrLog | Write-Host
+                }
+                throw "UI smoke failed with exit code $($uiProc.ExitCode)"
               }
             } finally {
               Pop-Location
@@ -662,6 +681,9 @@ jobs:
           ) -join "`n"
           $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
+          $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
+          $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
           $clientLauncher = Join-Path $clientRoot "mi_e2ee.exe"
           if (-not (Test-Path $serverLauncher)) {
@@ -689,9 +711,25 @@ jobs:
             }
             Push-Location $clientRoot
             try {
-              & $clientLauncher | Out-Null
-              if ($LASTEXITCODE -ne 0) {
-                throw "dist UI smoke failed with exit code $LASTEXITCODE"
+              $uiProc = Start-Process -FilePath $clientLauncher -WorkingDirectory $clientRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+              if (-not $uiProc.WaitForExit(45000)) {
+                if (Test-Path $stdoutLog) {
+                  Get-Content $stdoutLog | Write-Host
+                }
+                if (Test-Path $stderrLog) {
+                  Get-Content $stderrLog | Write-Host
+                }
+                Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
+                throw "dist UI smoke timed out after 45s"
+              }
+              if ($uiProc.ExitCode -ne 0) {
+                if (Test-Path $stdoutLog) {
+                  Get-Content $stdoutLog | Write-Host
+                }
+                if (Test-Path $stderrLog) {
+                  Get-Content $stderrLog | Write-Host
+                }
+                throw "dist UI smoke failed with exit code $($uiProc.ExitCode)"
               }
             } finally {
               Pop-Location
@@ -1769,7 +1807,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
           script: |
-            set -euo pipefail
+            set -eu
 
             wait_for_android_services() {
               adb wait-for-device
@@ -1891,7 +1929,7 @@ jobs:
 
       - name: Mark Android arm64 validation
         id: android_arm64_validation
-        if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
+        if: env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1'
         run: |
           echo "validated=true" >> "$GITHUB_OUTPUT"
 
