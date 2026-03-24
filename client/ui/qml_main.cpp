@@ -1,16 +1,19 @@
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
-#include <QGuiApplication>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QPointer>
+#include <QQmlError>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QTextStream>
 #include <QTimer>
 
 #include <cmath>
@@ -44,6 +47,23 @@ int SmokeDurationMs() {
 
 QString SmokeCaptureDir() {
     return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CAPTURE_DIR")).trimmed();
+}
+
+void AppendSmokeLog(const QString& captureDir, const QString& message) {
+    qCritical().noquote() << message;
+    if (captureDir.isEmpty()) {
+        return;
+    }
+    QDir dir;
+    if (!dir.mkpath(captureDir)) {
+        return;
+    }
+    QFile file(QDir(captureDir).filePath(QStringLiteral("ui-smoke.log")));
+    if (!file.open(QIODevice::Append | QIODevice::Text)) {
+        return;
+    }
+    QTextStream stream(&file);
+    stream << message << Qt::endl;
 }
 
 bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QString& name) {
@@ -335,22 +355,35 @@ int main(int argc, char* argv[]) {
     QTimer smokeTimer;
 
     QQmlApplicationEngine engine;
+    engine.setOutputWarningsToStandardError(true);
     mi::client::ui::QuickClient client;
     engine.rootContext()->setContextProperty("clientBridge", &client);
+    QObject::connect(&engine, &QQmlEngine::warnings, &app,
+                     [smokeCaptureDir](const QList<QQmlError>& warnings) {
+                         for (const auto& warning : warnings) {
+                             AppendSmokeLog(smokeCaptureDir, warning.toString());
+                         }
+                     });
     if (!QFile::exists(QStringLiteral(":/mi/e2ee/ui/qml/Main.qml"))) {
+        AppendSmokeLog(smokeCaptureDir,
+                       QStringLiteral("Missing QML resource: qrc:/mi/e2ee/ui/qml/Main.qml"));
         return -1;
     }
 
     const QUrl url(QStringLiteral("qrc:/mi/e2ee/ui/qml/Main.qml"));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
-                     &app, [url](QObject* obj, const QUrl& objUrl) {
+                     &app, [url, smokeCaptureDir](QObject* obj, const QUrl& objUrl) {
                          if (!obj && url == objUrl) {
+                             AppendSmokeLog(smokeCaptureDir,
+                                            QStringLiteral("Failed to create root object for %1")
+                                                .arg(objUrl.toString()));
                              QCoreApplication::exit(-1);
                          }
                      }, Qt::QueuedConnection);
     engine.load(url);
 
     if (engine.rootObjects().isEmpty()) {
+        AppendSmokeLog(smokeCaptureDir, QStringLiteral("QML rootObjects is empty after load"));
         return -1;
     }
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
@@ -380,6 +413,7 @@ int main(int argc, char* argv[]) {
                                          loginDelayMs, preCaptureDelayMs,
                                          postCaptureDelayMs]() {
                 if (!client.init(smokeConfig)) {
+                    AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke client init failed"));
                     smokeTimer.stop();
                     QCoreApplication::exit(2);
                     return;
@@ -393,6 +427,7 @@ int main(int argc, char* argv[]) {
                                                            smokePass, smokeCaptureDir, window,
                                                            postCaptureDelayMs]() {
                     if (!client.login(smokeUser, smokePass)) {
+                        AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login failed"));
                         smokeTimer.stop();
                         QCoreApplication::exit(3);
                         return;
