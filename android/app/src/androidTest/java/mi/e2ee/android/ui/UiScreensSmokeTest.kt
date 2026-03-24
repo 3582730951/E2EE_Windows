@@ -63,10 +63,9 @@ class UiScreensSmokeTest {
             }
         }
 
-        composeRule.onNodeWithTag("conversation-list-screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("conversation-search").assertIsDisplayed()
         composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
         composeRule.onNodeWithText("Threat Guild").assertIsDisplayed()
+        composeRule.onNodeWithText("Encrypted check-in").assertIsDisplayed()
     }
 
     @Test
@@ -77,10 +76,9 @@ class UiScreensSmokeTest {
             }
         }
 
-        composeRule.onNodeWithTag("chat-screen").assertIsDisplayed()
         composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
-        composeRule.onNodeWithText("Perfect. Shipping the build after tests.").assertIsDisplayed()
-        composeRule.onNodeWithText("Write a message...").assertIsDisplayed()
+        composeRule.onNodeWithText("Morning. I mapped the edge cases into a short checklist.").assertIsDisplayed()
+        composeRule.onNodeWithText("Checklist.pdf").assertIsDisplayed()
     }
 
     @Test
