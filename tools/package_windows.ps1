@@ -60,13 +60,19 @@ function Assert-BuildConfigPath([string]$path, [string]$config, [string]$label) 
 }
 
 function Find-ConfigFile([string]$root, [string]$pattern, [string]$config, [string]$label) {
-  $configRoot = Join-Path $root $config
-  if (-not (Test-Path $configRoot)) {
-    throw "$label config directory not found: $configRoot"
+  if (-not (Test-Path $root)) {
+    throw "$label search root not found: $root"
   }
-  $item = Get-ChildItem -Path $configRoot -Recurse -Filter $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+  $segment = [Regex]::Escape($config)
+  $item = Get-ChildItem -Path $root -Recurse -Filter $pattern -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.FullName -notmatch '(?i)(^|[\\/])debug([\\/]|$)' -and
+      $_.FullName -match "(?i)(^|[\\/])$segment([\\/]|$)"
+    } |
+    Sort-Object FullName |
+    Select-Object -First 1
   if (-not $item) {
-    throw "$label not found under $configRoot"
+    throw "$label not found under $root for config $config"
   }
   Assert-BuildConfigPath $item.FullName $config $label
   return $item.FullName
