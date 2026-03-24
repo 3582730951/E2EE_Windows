@@ -55,7 +55,7 @@ function Assert-BuildConfigPath([string]$path, [string]$config, [string]$label) 
   Assert-NotDebugPath $path $label
   $segment = [Regex]::Escape($config)
   if ($path -notmatch "(?i)(^|[\\/])$segment([\\/]|$)") {
-    throw "$label must come from $config: $path"
+    throw "$label must come from ${config}: $path"
   }
 }
 
