@@ -428,13 +428,19 @@ int main(int argc, char* argv[]) {
             QCoreApplication::quit();
         });
         if (!smokeUser.isEmpty() && !smokePass.isEmpty()) {
+            const int preCaptureDelayMs = smokeCaptureDir.isEmpty()
+                ? 0
+                : qMin(1200, qMax(450, smokeDuration / 4));
             const int loginDelayMs = smokeCaptureDir.isEmpty()
                 ? 0
-                : qMin(400, qMax(120, smokeDuration / 5));
-            const int preCaptureDelayMs = qMin(250, qMax(80, smokeDuration / 10));
+                : preCaptureDelayMs + qMin(600, qMax(220, smokeDuration / 8));
+            const int postLoginCaptureDelayMs = smokeCaptureDir.isEmpty()
+                ? 0
+                : qMin(1200, qMax(500, smokeDuration / 4));
             QTimer::singleShot(0, &app, [&client, &smokeTimer, smokeUser, smokePass,
                                          smokeConfig, smokeCaptureDir, window,
-                                         loginDelayMs, preCaptureDelayMs]() {
+                                         loginDelayMs, preCaptureDelayMs,
+                                         postLoginCaptureDelayMs]() {
                 AppendSmokeLog(smokeCaptureDir,
                                QStringLiteral("UI smoke config: %1 (exists=%2)")
                                    .arg(smokeConfig,
@@ -466,7 +472,8 @@ int main(int argc, char* argv[]) {
                     });
                 }
                 QTimer::singleShot(loginDelayMs, &client, [&client, &smokeTimer, smokeUser,
-                                                           smokePass, smokeCaptureDir, window]() {
+                                                           smokePass, smokeCaptureDir, window,
+                                                           postLoginCaptureDelayMs]() {
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login begin"));
                     if (!client.login(smokeUser, smokePass)) {
                         const QString loginError = client.lastError().trimmed();
@@ -481,15 +488,23 @@ int main(int argc, char* argv[]) {
                     }
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login ok"));
                     if (!smokeCaptureDir.isEmpty() && window) {
-                        QCoreApplication::processEvents();
-                        AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login capture begin"));
-                        const bool saved = SaveSmokeCapture(
-                            window, smokeCaptureDir, QStringLiteral("post-login"));
-                        AppendSmokeLog(smokeCaptureDir,
-                                       saved
-                                           ? QStringLiteral("UI smoke post-login capture ok")
-                                           : QStringLiteral("UI smoke post-login capture failed"));
+                        QTimer::singleShot(postLoginCaptureDelayMs, window,
+                                           [window, smokeCaptureDir, &smokeTimer]() {
+                            QCoreApplication::processEvents();
+                            AppendSmokeLog(smokeCaptureDir,
+                                           QStringLiteral("UI smoke post-login capture begin"));
+                            const bool saved = SaveSmokeCapture(
+                                window, smokeCaptureDir, QStringLiteral("post-login"));
+                            AppendSmokeLog(smokeCaptureDir,
+                                           saved
+                                               ? QStringLiteral("UI smoke post-login capture ok")
+                                               : QStringLiteral("UI smoke post-login capture failed"));
+                            smokeTimer.stop();
+                            AppendSmokeLog(smokeCaptureDir,
+                                           QStringLiteral("UI smoke login success; quitting"));
+                            QCoreApplication::exit(0);
+                        });
+                        return;
                     }
                     smokeTimer.stop();
                     AppendSmokeLog(smokeCaptureDir,
