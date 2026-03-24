@@ -380,14 +380,24 @@ ApplicationWindow {
         id: aiX4Dialog
         modal: true
         title: Ui.I18n.t("settings.privacy.aiEnhanceX4Title")
+        width: 360
+        implicitWidth: 360
+        contentWidth: 320
         standardButtons: Dialog.NoButton
-        contentItem: Text {
+        contentItem: Item {
+            implicitWidth: 320
+            implicitHeight: aiX4Message.implicitHeight
             width: 320
-            wrapMode: Text.WordWrap
-            color: Ui.Style.textPrimary
-            text: Ui.AppStore.aiEnhanceGpuAvailable
-                  ? Ui.I18n.t("settings.privacy.aiEnhanceX4MessageGpu")
-                  : Ui.I18n.t("settings.privacy.aiEnhanceX4MessageCpu")
+            Text {
+                id: aiX4Message
+                anchors.left: parent.left
+                anchors.right: parent.right
+                wrapMode: Text.WordWrap
+                color: Ui.Style.textPrimary
+                text: Ui.AppStore.aiEnhanceGpuAvailable
+                      ? Ui.I18n.t("settings.privacy.aiEnhanceX4MessageGpu")
+                      : Ui.I18n.t("settings.privacy.aiEnhanceX4MessageCpu")
+            }
         }
         footer: DialogButtonBox {
             Button {

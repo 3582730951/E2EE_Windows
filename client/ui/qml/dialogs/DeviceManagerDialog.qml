@@ -244,6 +244,9 @@ ApplicationWindow {
         modal: true
         focus: true
         title: Ui.I18n.t("dialog.deviceManager.kickTitle")
+        width: 360
+        implicitWidth: 360
+        contentWidth: 320
         standardButtons: Dialog.Cancel | Dialog.Ok
         onAccepted: {
             var target = pendingKickId
@@ -264,9 +267,14 @@ ApplicationWindow {
             color: Ui.Style.panelBgAlt
             border.color: Ui.Style.borderSubtle
         }
-        contentItem: ColumnLayout {
-            spacing: Ui.Style.paddingS
+        contentItem: Item {
+            implicitWidth: 320
+            implicitHeight: kickConfirmText.implicitHeight
+            width: 320
             Text {
+                id: kickConfirmText
+                anchors.left: parent.left
+                anchors.right: parent.right
                 text: Ui.I18n.format("dialog.deviceManager.kickConfirm",
                                      pendingKickDisplayId.length > 0
                                      ? pendingKickDisplayId
@@ -274,7 +282,6 @@ ApplicationWindow {
                 color: Ui.Style.textPrimary
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
-                Layout.fillWidth: true
             }
         }
     }
