@@ -669,6 +669,12 @@ jobs:
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
+          $token = "abcdefghijklmnop"
+          $serverFingerprint = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+              (Get-PfxCertificate -FilePath (Join-Path $serverRoot "config\\mi_e2ee_server.pfx")).Export("Cert")
+            )
+          ).Replace("-", "").ToLower()
           "ui_smoke:ui_smoke_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
           $serverConfig = @(
             "[mode]"
@@ -677,6 +683,9 @@ jobs:
             "list_port=$port"
             "offline_dir=database/offline_store"
             "debug_log=0"
+            "ops_enable=1"
+            "ops_allow_remote=0"
+            "ops_token=$token"
             "tls_enable=1"
             "require_tls=1"
             "tls_cert=config/mi_e2ee_server.pfx"
@@ -703,29 +712,41 @@ jobs:
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
           $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
           $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"
+          $serverStdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stdout.log"
+          $serverStderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stderr.log"
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
+          $toolExe = Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe"
           $clientLauncher = Join-Path $clientRoot "mi_e2ee.exe"
           if (-not (Test-Path $serverLauncher)) {
             throw "dist server launcher missing: $serverLauncher"
           }
+          if (-not (Test-Path $toolExe)) {
+            throw "dist ops health tool missing: $toolExe"
+          }
           if (-not (Test-Path $clientLauncher)) {
             throw "dist client launcher missing: $clientLauncher"
           }
-          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden
+          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverStdoutLog -RedirectStandardError $serverStderrLog
           try {
             $ready = $false
             for ($i = 0; $i -lt 60; $i++) {
-              try {
-                $tcp = New-Object System.Net.Sockets.TcpClient
-                $tcp.Connect("127.0.0.1", $port)
-                $tcp.Close()
+              & $toolExe --host 127.0.0.1 --port $port --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
+              if ($LASTEXITCODE -eq 0) {
                 $ready = $true
                 break
-              } catch {
-                Start-Sleep -Milliseconds 500
               }
+              if ($proc.HasExited) {
+                break
+              }
+              Start-Sleep -Milliseconds 500
             }
             if (-not $ready) {
+              if (Test-Path $serverStdoutLog) {
+                Get-Content $serverStdoutLog | Write-Host
+              }
+              if (Test-Path $serverStderrLog) {
+                Get-Content $serverStderrLog | Write-Host
+              }
               throw "dist server not ready"
             }
             Push-Location $clientRoot
