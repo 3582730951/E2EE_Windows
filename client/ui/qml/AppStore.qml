@@ -61,6 +61,42 @@ QtObject {
     property var knownFriendIds: ({})
     property bool friendIdsInitialized: false
 
+    function refreshClientPreferences() {
+        if (!clientBridge) {
+            return
+        }
+        if (clientBridge.setClipboardIsolation) {
+            clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
+        }
+        if (clientBridge.setInternalImeEnabled) {
+            clientBridge.setInternalImeEnabled(internalImeEnabled)
+        }
+        if (clientBridge.historySaveEnabled) {
+            historySaveEnabled = clientBridge.historySaveEnabled()
+        }
+        if (clientBridge.aiEnhanceRecommendations) {
+            var rec = clientBridge.aiEnhanceRecommendations()
+            if (rec) {
+                aiEnhanceGpuAvailable = rec.gpuAvailable === true
+                aiEnhanceGpuName = rec.gpuName || ""
+                aiEnhanceGpuSeries = rec.gpuSeries || 0
+                aiEnhancePerfScale = rec.perfScale || 2
+                aiEnhanceQualityScale = rec.qualityScale || 2
+            }
+        } else if (clientBridge.aiEnhanceGpuAvailable) {
+            aiEnhanceGpuAvailable = clientBridge.aiEnhanceGpuAvailable()
+        }
+        if (clientBridge.aiEnhanceEnabled) {
+            aiEnhanceEnabled = clientBridge.aiEnhanceEnabled()
+        }
+        if (clientBridge.aiEnhanceQualityLevel) {
+            aiEnhanceQualityLevel = clientBridge.aiEnhanceQualityLevel()
+        }
+        if (clientBridge.aiEnhanceX4Confirmed) {
+            aiEnhanceX4Confirmed = clientBridge.aiEnhanceX4Confirmed()
+        }
+    }
+
     function syncDomainStores() {
         Ui.SessionStore.applyFromApp(currentPage, initialized, statusMessage)
         Ui.ConversationStore.applyFromApp(searchQuery, currentLeftTab, rightPaneVisible, notificationCount)
@@ -85,39 +121,7 @@ QtObject {
             return
         }
         initialized = true
-        if (clientBridge) {
-            clientBridge.init("")
-            if (clientBridge.setClipboardIsolation) {
-                clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
-            }
-            if (clientBridge.setInternalImeEnabled) {
-                clientBridge.setInternalImeEnabled(internalImeEnabled)
-            }
-            if (clientBridge.historySaveEnabled) {
-                historySaveEnabled = clientBridge.historySaveEnabled()
-            }
-            if (clientBridge.aiEnhanceRecommendations) {
-                var rec = clientBridge.aiEnhanceRecommendations()
-                if (rec) {
-                    aiEnhanceGpuAvailable = rec.gpuAvailable === true
-                    aiEnhanceGpuName = rec.gpuName || ""
-                    aiEnhanceGpuSeries = rec.gpuSeries || 0
-                    aiEnhancePerfScale = rec.perfScale || 2
-                    aiEnhanceQualityScale = rec.qualityScale || 2
-                }
-            } else if (clientBridge.aiEnhanceGpuAvailable) {
-                aiEnhanceGpuAvailable = clientBridge.aiEnhanceGpuAvailable()
-            }
-            if (clientBridge.aiEnhanceEnabled) {
-                aiEnhanceEnabled = clientBridge.aiEnhanceEnabled()
-            }
-            if (clientBridge.aiEnhanceQualityLevel) {
-                aiEnhanceQualityLevel = clientBridge.aiEnhanceQualityLevel()
-            }
-            if (clientBridge.aiEnhanceX4Confirmed) {
-                aiEnhanceX4Confirmed = clientBridge.aiEnhanceX4Confirmed()
-            }
-        }
+        refreshClientPreferences()
         rebuildFiltered()
         syncDomainStores()
     }
@@ -343,6 +347,7 @@ QtObject {
     }
 
     function bootstrapAfterLogin() {
+        refreshClientPreferences()
         rebuildDialogs()
         refreshFriendRequests()
         rebuildFiltered()

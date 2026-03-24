@@ -387,12 +387,16 @@ int main(int argc, char* argv[]) {
                      &app, [url, smokeCaptureDir](QObject* obj, const QUrl& objUrl) {
                          if (!obj && url == objUrl) {
                              AppendSmokeLog(smokeCaptureDir,
-                                            QStringLiteral("Failed to create root object for %1")
+                                             QStringLiteral("Failed to create root object for %1")
                                                 .arg(objUrl.toString()));
                              QCoreApplication::exit(-1);
                          }
                      }, Qt::QueuedConnection);
+    AppendSmokeLog(smokeCaptureDir,
+                   QStringLiteral("About to load QML root: %1").arg(url.toString()));
     engine.load(url);
+    AppendSmokeLog(smokeCaptureDir,
+                   QStringLiteral("QML root load returned for %1").arg(url.toString()));
 
     if (engine.rootObjects().isEmpty()) {
         AppendSmokeLog(smokeCaptureDir, QStringLiteral("QML rootObjects is empty after load"));
