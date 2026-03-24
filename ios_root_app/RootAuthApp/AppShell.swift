@@ -195,7 +195,7 @@ final class ClientWorkspaceStore: ObservableObject {
 
     func registerAccount() {
         configureClient(resetSelection: false)
-        guard bridge.ready else {
+        guard bridge.isReady else {
             statusText = "Client bridge unavailable."
             return
         }
@@ -211,7 +211,7 @@ final class ClientWorkspaceStore: ObservableObject {
 
     func signIn() {
         configureClient(resetSelection: false)
-        guard bridge.ready else {
+        guard bridge.isReady else {
             statusText = "Client bridge unavailable."
             return
         }
@@ -312,7 +312,7 @@ final class ClientWorkspaceStore: ObservableObject {
     }
 
     private func tick() {
-        guard bridge.ready else {
+        guard bridge.isReady else {
             refreshBridgeState()
             return
         }
@@ -326,7 +326,7 @@ final class ClientWorkspaceStore: ObservableObject {
     }
 
     private func refreshBridgeState() {
-        isReady = bridge.ready
+        isReady = bridge.isReady
         isLoggedIn = !bridge.token.isEmpty
         remoteOK = bridge.remoteOK
         deviceDisplayID = bridge.deviceDisplayID
