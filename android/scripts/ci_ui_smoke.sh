@@ -27,6 +27,42 @@ wait_for_android_services() {
   return 1
 }
 
+wait_for_stable_android_properties() {
+  local sdk=""
+  local bootanim=""
+  local devcomplete=""
+  local stable=0
+  for _ in $(seq 1 60); do
+    sdk="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+    bootanim="$(adb shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r')"
+    devcomplete="$(adb shell getprop dev.bootcomplete 2>/dev/null | tr -d '\r')"
+    if [[ "$sdk" =~ ^[0-9]+$ ]] &&
+       { [ -z "$bootanim" ] || [ "$bootanim" = "stopped" ]; } &&
+       { [ -z "$devcomplete" ] || [ "$devcomplete" = "1" ]; }; then
+      stable=$((stable + 1))
+      if [ "$stable" -ge 5 ]; then
+        return 0
+      fi
+    else
+      stable=0
+    fi
+    sleep 2
+  done
+  echo "Android device properties never stabilized" >&2
+  return 1
+}
+
+prime_android_device() {
+  wait_for_android_services
+  wait_for_stable_android_properties
+  adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
+  adb shell input keyevent 82 >/dev/null 2>&1 || true
+  adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+  adb reconnect >/dev/null 2>&1 || true
+  adb wait-for-device
+  sleep 15
+}
+
 install_apk_with_retry() {
   local apk="$1"
   local package_name="$2"
@@ -49,8 +85,7 @@ install_apk_with_retry() {
 capture_ui_artifacts() {
   local workspace="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}"
   mkdir -p "$workspace/build/android_ui_artifacts"
-  wait_for_android_services
-  adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
+  prime_android_device
   install_apk_with_retry "$workspace/android/app/build/outputs/apk/debug/app-debug.apk" mi.e2ee.android.ui
   install_apk_with_retry "$workspace/android/rootapp/build/outputs/apk/debug/rootapp-debug.apk" mi.e2ee.rootauth
   adb shell am start -W -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity || true
@@ -63,7 +98,7 @@ capture_ui_artifacts() {
 }
 
 main() {
-  wait_for_android_services
+  prime_android_device
   cd "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}/android"
   ./gradlew :app:connectedDebugAndroidTest :rootapp:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
 }
