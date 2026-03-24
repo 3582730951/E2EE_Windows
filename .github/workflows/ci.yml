@@ -1479,12 +1479,21 @@ jobs:
             echo "Simulator install failed; skip screenshot" >&2
             exit 0
           }
-          xcrun simctl launch "$udid" mi.e2ee.root.RootAuthApp >/tmp/ios_rootauth_launch.log 2>&1 || true
-          sleep 5
-          xcrun simctl io "$udid" screenshot "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
+          capture_screenshot() {
+            local mode="$1"
+            local output="$2"
+            xcrun simctl terminate "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
+            SIMCTL_CHILD_MI_E2EE_IOS_SCREENSHOT_MODE="$mode" \
+              xcrun simctl launch "$udid" mi.e2ee.root.RootAuthApp >/tmp/ios_rootauth_launch.log 2>&1 || true
+            sleep 5
+            xcrun simctl io "$udid" screenshot "$output"
+          }
+          capture_screenshot "chats" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
             echo "Simulator screenshot failed; skip artifact" >&2
             exit 0
           }
+          capture_screenshot "detail" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || true
+          capture_screenshot "security" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || true
 
       - name: Archive xcodebuild log
         if: always()

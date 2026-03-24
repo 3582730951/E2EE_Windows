@@ -1,6 +1,20 @@
 import Foundation
 import SwiftUI
 
+private enum ScreenshotScenario: String {
+    case none
+    case chats
+    case detail
+    case security
+
+    static var current: ScreenshotScenario {
+        let raw = ProcessInfo.processInfo.environment["MI_E2EE_IOS_SCREENSHOT_MODE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        return ScreenshotScenario(rawValue: raw) ?? .none
+    }
+}
+
 struct ClientConversation: Identifiable, Hashable {
     let id: String
     let title: String
@@ -149,6 +163,10 @@ final class ClientWorkspaceStore: ObservableObject {
     private var pollTimer: Timer?
 
     init() {
+        if ScreenshotScenario.current != .none {
+            loadScreenshotFixture()
+            return
+        }
         configureClient(resetSelection: true)
     }
 
@@ -167,6 +185,14 @@ final class ClientWorkspaceStore: ObservableObject {
 
     var contactConversations: [ClientConversation] {
         conversations.filter { !$0.isGroup }
+    }
+
+    var primaryConversation: ClientConversation? {
+        let preferredID = selectedConversationID.isEmpty ? conversations.first?.id : selectedConversationID
+        if let preferredID {
+            return conversations.first(where: { $0.id == preferredID })
+        }
+        return conversations.first
     }
 
     func latestMessage(for conversationID: String) -> ClientMessage? {
@@ -499,6 +525,95 @@ final class ClientWorkspaceStore: ObservableObject {
         let messageType = stringValue(dict["type"])
         return messageType.isEmpty ? "Event received" : "Event \(messageType)"
     }
+
+    private func loadScreenshotFixture() {
+        isReady = true
+        isLoggedIn = true
+        remoteOK = true
+        deviceDisplayID = "ios-sim-01"
+        serverHost = "secure-gateway.internal"
+        serverPort = "9000"
+        username = "aster"
+        draft = "Meeting notes are encrypted and ready to send."
+        statusText = "Screenshot fixture loaded."
+        lastError = ""
+        configPath = "screenshot://fixture"
+        let now = UInt64(Date().timeIntervalSince1970 * 1000)
+        let fixtureConversations = [
+            ClientConversation(
+                id: "c-aster",
+                title: "Aster Stone",
+                subtitle: "Security review at 10:30",
+                isGroup: false
+            ),
+            ClientConversation(
+                id: "g-threat",
+                title: "Threat Guild",
+                subtitle: "Rotation completed for 12 members",
+                isGroup: true
+            ),
+            ClientConversation(
+                id: "c-mira",
+                title: "Mira Chen",
+                subtitle: "Uploaded the audit package",
+                isGroup: false
+            )
+        ]
+        conversations = fixtureConversations
+        messagesByConversation = [
+            "c-aster": [
+                ClientMessage(
+                    id: "m1",
+                    conversationID: "c-aster",
+                    sender: "Aster Stone",
+                    text: "The secure handoff build is ready for review.",
+                    outgoing: false,
+                    timestampMS: now - 600_000
+                ),
+                ClientMessage(
+                    id: "m2",
+                    conversationID: "c-aster",
+                    sender: "You",
+                    text: "Send me the final screenshot bundle after CI passes.",
+                    outgoing: true,
+                    timestampMS: now - 420_000
+                ),
+                ClientMessage(
+                    id: "m3",
+                    conversationID: "c-aster",
+                    sender: "Aster Stone",
+                    text: "Accepted. I will keep the screenshots attached to the release.",
+                    outgoing: false,
+                    timestampMS: now - 180_000
+                )
+            ],
+            "g-threat": [
+                ClientMessage(
+                    id: "g1",
+                    conversationID: "g-threat",
+                    sender: "System",
+                    text: "Sender key rotation completed successfully.",
+                    outgoing: false,
+                    timestampMS: now - 1_200_000
+                )
+            ],
+            "c-mira": [
+                ClientMessage(
+                    id: "m4",
+                    conversationID: "c-mira",
+                    sender: "Mira Chen",
+                    text: "Uploaded the audit package and linked device report.",
+                    outgoing: false,
+                    timestampMS: now - 900_000
+                )
+            ]
+        ]
+        deviceSummaries = [
+            "iPhone 15 Pro · Secure session active",
+            "Windows Workstation · Last seen 2m ago"
+        ]
+        selectedConversationID = "c-aster"
+    }
 }
 
 private enum AppTab: Hashable {
@@ -509,14 +624,26 @@ private enum AppTab: Hashable {
 }
 
 struct AppShell: View {
+    private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
     @StateObject private var clientStore = ClientWorkspaceStore()
-    @State private var selectedTab: AppTab = .chats
+    @State private var selectedTab: AppTab
+
+    init() {
+        let scenario = ScreenshotScenario.current
+        screenshotScenario = scenario
+        _selectedTab = State(initialValue: scenario == .security ? .settings : .chats)
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
-                ClientWorkspaceView(store: clientStore)
+                if screenshotScenario == .detail,
+                   let conversation = clientStore.primaryConversation {
+                    ClientConversationDetailView(store: clientStore, conversation: conversation)
+                } else {
+                    ClientWorkspaceView(store: clientStore)
+                }
             }
             .tabItem {
                 Label("Chats", systemImage: "message.fill")
@@ -540,7 +667,11 @@ struct AppShell: View {
             .tag(AppTab.calls)
 
             NavigationStack {
-                SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                if screenshotScenario == .security {
+                    SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                } else {
+                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                }
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape.fill")
