@@ -287,7 +287,7 @@ $serverConfigLines = @(
   "tls_cert=config/mi_e2ee_server.pfx",
   "kt_signing_key=kt_signing_key.bin",
   "metadata_protection=none",
-  "metadata_key_path=config/metadata_key.bin",
+  "metadata_key_path=metadata_key.bin",
   "[kcp]",
   "enable=0",
   "allow_insecure=0"
