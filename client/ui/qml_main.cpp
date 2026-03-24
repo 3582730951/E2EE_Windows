@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QImage>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
@@ -83,11 +84,16 @@ bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QSt
     if (!screen) {
         return false;
     }
-    const QPixmap capture = screen->grabWindow(window->winId());
-    if (capture.isNull()) {
+    const QString path = QDir(captureDir).filePath(fileName);
+    const QImage windowCapture = window->grabWindow();
+    if (!windowCapture.isNull() && windowCapture.save(path)) {
+        return true;
+    }
+    const QPixmap screenCapture = screen->grabWindow(window->winId());
+    if (screenCapture.isNull()) {
         return false;
     }
-    return capture.save(QDir(captureDir).filePath(fileName));
+    return screenCapture.save(path);
 }
 
 class AuthWindowDragFilter : public QObject {
