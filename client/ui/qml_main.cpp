@@ -442,7 +442,7 @@ int main(int argc, char* argv[]) {
             const int postLoginCaptureDelayMs = smokeCaptureDir.isEmpty()
                 ? 0
                 : qMin(1200, qMax(500, smokeDuration / 4));
-            QTimer::singleShot(0, &app, [&client, &smokeTimer, smokeUser, smokePass,
+            QTimer::singleShot(0, &app, [&app, &client, &smokeTimer, smokeUser, smokePass,
                                          smokeConfig, smokeCaptureDir, window,
                                          loginDelayMs, preCaptureDelayMs,
                                          postLoginCaptureDelayMs]() {
