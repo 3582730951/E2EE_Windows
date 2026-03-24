@@ -19,6 +19,7 @@
 #include <QTimer>
 
 #include <cmath>
+#include <memory>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -496,23 +497,55 @@ int main(int argc, char* argv[]) {
                         QPointer<QQuickWindow> smokeWindow(window);
                         const bool authMode =
                             smokeWindow ? smokeWindow->property("authMode").toBool() : true;
+                        const int fallbackCaptureDelayMs =
+                            qMin(1500, qMax(250, postLoginCaptureDelayMs));
+                        auto postLoginDone = std::make_shared<bool>(false);
+                        auto finishPostLoginCapture =
+                            [smokeWindow, smokeCaptureDir, &smokeTimer, postLoginDone](
+                                const QString& trigger) {
+                                if (*postLoginDone) {
+                                    return;
+                                }
+                                *postLoginDone = true;
+                                AppendSmokeLog(smokeCaptureDir,
+                                               QStringLiteral("UI smoke post-login capture begin "
+                                                              "(trigger=%1)")
+                                                   .arg(trigger));
+                                const bool saved = SaveSmokeCapture(
+                                    smokeWindow.data(), smokeCaptureDir,
+                                    QStringLiteral("post-login"));
+                                AppendSmokeLog(smokeCaptureDir,
+                                               saved
+                                                   ? QStringLiteral("UI smoke post-login capture ok")
+                                                   : QStringLiteral("UI smoke post-login capture failed"));
+                                smokeTimer.stop();
+                                AppendSmokeLog(smokeCaptureDir,
+                                               QStringLiteral("UI smoke login success; quitting"));
+                                QCoreApplication::exit(0);
+                            };
                         AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login capture begin "
-                                                      "(authMode=%1, settleMs=%2)")
+                                       QStringLiteral("UI smoke post-login render wait "
+                                                      "(authMode=%1, fallbackMs=%2)")
                                            .arg(authMode ? QStringLiteral("true")
                                                          : QStringLiteral("false"))
-                                           .arg(postLoginCaptureDelayMs));
-                        const bool saved = SaveSmokeCapture(
-                            smokeWindow.data(), smokeCaptureDir,
-                            QStringLiteral("post-login"));
-                        AppendSmokeLog(smokeCaptureDir,
-                                       saved
-                                           ? QStringLiteral("UI smoke post-login capture ok")
-                                           : QStringLiteral("UI smoke post-login capture failed"));
-                        smokeTimer.stop();
-                        AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke login success; quitting"));
-                        QCoreApplication::exit(0);
+                                           .arg(fallbackCaptureDelayMs));
+                        QMetaObject::Connection frameConnection;
+                        frameConnection = QObject::connect(
+                            window, &QQuickWindow::frameSwapped, &app,
+                            [finishPostLoginCapture, &frameConnection]() mutable {
+                                QObject::disconnect(frameConnection);
+                                finishPostLoginCapture(QStringLiteral("frameSwapped"));
+                            },
+                            Qt::QueuedConnection);
+                        QTimer::singleShot(fallbackCaptureDelayMs, &app,
+                                           [finishPostLoginCapture, &frameConnection, postLoginDone]() mutable {
+                            if (*postLoginDone) {
+                                return;
+                            }
+                            QObject::disconnect(frameConnection);
+                            finishPostLoginCapture(QStringLiteral("fallback"));
+                        });
+                        window->update();
                         return;
                     }
                     smokeTimer.stop();
