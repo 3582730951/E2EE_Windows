@@ -1414,6 +1414,37 @@ jobs:
           build/ios_rootauth_smoke | tee build/ios_rootauth_smoke.log
           echo "smoke_verified=true" >> "$GITHUB_OUTPUT"
 
+      - name: Capture RootAuth iOS screenshot
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios_rootauth_artifacts
+          app_path=$(find "$GITHUB_WORKSPACE/build/ios_rootauth_derived/Build/Products" -type d -name 'RootAuthApp.app' | head -n 1)
+          if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
+            echo "RootAuth simulator app bundle missing; skip screenshot" >&2
+            exit 0
+          fi
+          udid=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')
+          if [ -z "$udid" ]; then
+            echo "No available iPhone simulator found; skip screenshot" >&2
+            exit 0
+          fi
+          xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$udid" -b || {
+            echo "Simulator boot failed; skip screenshot" >&2
+            exit 0
+          }
+          xcrun simctl install "$udid" "$app_path" || {
+            echo "Simulator install failed; skip screenshot" >&2
+            exit 0
+          }
+          xcrun simctl launch "$udid" mi.e2ee.root.RootAuthApp >/tmp/ios_rootauth_launch.log 2>&1 || true
+          sleep 5
+          xcrun simctl io "$udid" screenshot "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
+            echo "Simulator screenshot failed; skip artifact" >&2
+            exit 0
+          }
+
       - name: Archive xcodebuild log
         if: always()
         run: |
@@ -1756,7 +1787,22 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -accel off
           emulator-boot-timeout: 600
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest :rootapp:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
+          script: |
+            set -euo pipefail
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest :rootapp:connectedDebugAndroidTest -PmiE2eeOpaque=true --no-daemon
+            cd "$GITHUB_WORKSPACE"
+            mkdir -p build/android_ui_artifacts
+            adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r android/rootapp/build/outputs/apk/debug/rootapp-debug.apk
+            adb shell am start -W -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity || true
+            sleep 5
+            adb exec-out screencap -p > build/android_ui_artifacts/android-main.png
+            adb shell input keyevent KEYCODE_HOME
+            adb shell am start -W -n mi.e2ee.rootauth/mi.e2ee.rootauth.RootAuthActivity || true
+            sleep 5
+            adb exec-out screencap -p > build/android_ui_artifacts/android-rootauth.png
 
       - name: Cleanup Android emulator image (api33)
         if: always()
@@ -1856,6 +1902,14 @@ jobs:
         with:
           name: mi_e2ee_android_rootauth_release
           path: android/rootapp/build/outputs/apk/release/*.apk
+
+      - name: Upload Android UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_android_ui_smoke
+          path: build/android_ui_artifacts/*.png
+          if-no-files-found: ignore
 
   final-acceptance:
     if: always()
