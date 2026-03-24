@@ -1,7 +1,6 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
-#include <QEventLoop>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
@@ -495,21 +494,14 @@ int main(int argc, char* argv[]) {
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login ok"));
                     if (!smokeCaptureDir.isEmpty() && window) {
                         QPointer<QQuickWindow> smokeWindow(window);
+                        const bool authMode =
+                            smokeWindow ? smokeWindow->property("authMode").toBool() : true;
                         AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login settle begin"));
-                        if (postLoginCaptureDelayMs > 0) {
-                            QEventLoop settleLoop;
-                            QTimer settleTimer;
-                            settleTimer.setSingleShot(true);
-                            QObject::connect(&settleTimer, &QTimer::timeout,
-                                             &settleLoop, &QEventLoop::quit);
-                            settleTimer.start(postLoginCaptureDelayMs);
-                            settleLoop.exec();
-                        } else {
-                            QCoreApplication::processEvents();
-                        }
-                        AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login capture begin"));
+                                       QStringLiteral("UI smoke post-login capture begin "
+                                                      "(authMode=%1, settleMs=%2)")
+                                           .arg(authMode ? QStringLiteral("true")
+                                                         : QStringLiteral("false"))
+                                           .arg(postLoginCaptureDelayMs));
                         const bool saved = SaveSmokeCapture(
                             smokeWindow.data(), smokeCaptureDir,
                             QStringLiteral("post-login"));
