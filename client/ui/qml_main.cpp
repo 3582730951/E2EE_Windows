@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QEventLoop>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
@@ -493,26 +494,33 @@ int main(int argc, char* argv[]) {
                     }
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login ok"));
                     if (!smokeCaptureDir.isEmpty() && window) {
-                        AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login capture scheduled"));
                         QPointer<QQuickWindow> smokeWindow(window);
-                        QTimer::singleShot(postLoginCaptureDelayMs, &app,
-                                           [smokeWindow, smokeCaptureDir, &smokeTimer]() {
+                        AppendSmokeLog(smokeCaptureDir,
+                                       QStringLiteral("UI smoke post-login settle begin"));
+                        if (postLoginCaptureDelayMs > 0) {
+                            QEventLoop settleLoop;
+                            QTimer settleTimer;
+                            settleTimer.setSingleShot(true);
+                            QObject::connect(&settleTimer, &QTimer::timeout,
+                                             &settleLoop, &QEventLoop::quit);
+                            settleTimer.start(postLoginCaptureDelayMs);
+                            settleLoop.exec();
+                        } else {
                             QCoreApplication::processEvents();
-                            AppendSmokeLog(smokeCaptureDir,
-                                           QStringLiteral("UI smoke post-login capture begin"));
-                            const bool saved = SaveSmokeCapture(
-                                smokeWindow.data(), smokeCaptureDir,
-                                QStringLiteral("post-login"));
-                            AppendSmokeLog(smokeCaptureDir,
-                                           saved
-                                               ? QStringLiteral("UI smoke post-login capture ok")
-                                               : QStringLiteral("UI smoke post-login capture failed"));
-                            smokeTimer.stop();
-                            AppendSmokeLog(smokeCaptureDir,
-                                           QStringLiteral("UI smoke login success; quitting"));
-                            QCoreApplication::exit(0);
-                        });
+                        }
+                        AppendSmokeLog(smokeCaptureDir,
+                                       QStringLiteral("UI smoke post-login capture begin"));
+                        const bool saved = SaveSmokeCapture(
+                            smokeWindow.data(), smokeCaptureDir,
+                            QStringLiteral("post-login"));
+                        AppendSmokeLog(smokeCaptureDir,
+                                       saved
+                                           ? QStringLiteral("UI smoke post-login capture ok")
+                                           : QStringLiteral("UI smoke post-login capture failed"));
+                        smokeTimer.stop();
+                        AppendSmokeLog(smokeCaptureDir,
+                                       QStringLiteral("UI smoke login success; quitting"));
+                        QCoreApplication::exit(0);
                         return;
                     }
                     smokeTimer.stop();
