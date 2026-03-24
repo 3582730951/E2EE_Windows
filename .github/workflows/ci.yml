@@ -699,7 +699,7 @@ jobs:
           $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden
           try {
             $ready = $false
-            for ($i = 0; $i -lt 25; $i++) {
+            for ($i = 0; $i -lt 60; $i++) {
               try {
                 $tcp = New-Object System.Net.Sockets.TcpClient
                 $tcp.Connect("127.0.0.1", 9000)
@@ -707,7 +707,7 @@ jobs:
                 $ready = $true
                 break
               } catch {
-                Start-Sleep -Milliseconds 200
+                Start-Sleep -Milliseconds 500
               }
             }
             if (-not $ready) {
