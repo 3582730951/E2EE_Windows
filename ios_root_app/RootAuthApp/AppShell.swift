@@ -667,11 +667,7 @@ struct AppShell: View {
             .tag(AppTab.calls)
 
             NavigationStack {
-                if screenshotScenario == .security {
-                    SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                } else {
-                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                }
+                SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape.fill")
