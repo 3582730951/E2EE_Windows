@@ -199,7 +199,7 @@ $packageSources["kt_keygen"] = $ktKeygen
 
 $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
 $cert = New-SelfSignedCertificate `
-  -DnsName @("MI_E2EE_Server", "localhost") `
+  -Subject "CN=MI_E2EE_Server" `
   -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
   -CertStoreLocation "Cert:\\CurrentUser\\My"
 $pwd = New-Object System.Security.SecureString
