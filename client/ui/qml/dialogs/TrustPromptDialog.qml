@@ -7,9 +7,11 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 ApplicationWindow {
     id: root
+    property var ownerWindow: null
     visible: false
     width: 460
     height: 320
+    transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
     title: "信任确认"
     color: "transparent"

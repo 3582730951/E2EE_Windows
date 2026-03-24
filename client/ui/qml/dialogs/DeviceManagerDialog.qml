@@ -7,9 +7,11 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 ApplicationWindow {
     id: root
+    property var ownerWindow: null
     visible: false
     width: 520
     height: 420
+    transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
     title: Ui.I18n.t("dialog.deviceManager.title")
     color: "transparent"

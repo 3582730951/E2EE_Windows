@@ -7,10 +7,12 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 ApplicationWindow {
     id: root
+    property var ownerWindow: null
     property bool hasRequests: Ui.AppStore.friendRequestsModel.count > 0
     visible: false
     width: 360
     height: hasRequests ? 420 : 320
+    transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
     title: Ui.I18n.t("dialog.addContact.title")
     color: "transparent"

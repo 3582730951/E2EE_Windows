@@ -7,6 +7,7 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Window {
     id: root
+    property var ownerWindow: null
     property var clientBridge
     property var participants: []
     property bool videoEnabled: false
@@ -19,6 +20,7 @@ Window {
     signal cameraToggled(bool enabled)
 
     flags: Qt.Window | Qt.FramelessWindowHint
+    transientParent: ownerWindow
     color: "transparent"
     width: 820
     height: 560
