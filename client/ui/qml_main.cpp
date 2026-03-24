@@ -432,9 +432,20 @@ int main(int argc, char* argv[]) {
                                          smokeConfig, smokeCaptureDir, window,
                                          loginDelayMs, preCaptureDelayMs,
                                          postCaptureDelayMs]() {
+                AppendSmokeLog(smokeCaptureDir,
+                               QStringLiteral("UI smoke config: %1 (exists=%2)")
+                                   .arg(smokeConfig,
+                                        QFileInfo::exists(smokeConfig)
+                                            ? QStringLiteral("yes")
+                                            : QStringLiteral("no")));
                 AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke init begin"));
                 if (!client.init(smokeConfig)) {
-                    AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke client init failed"));
+                    const QString initError = client.lastError().trimmed();
+                    AppendSmokeLog(smokeCaptureDir,
+                                   QStringLiteral("UI smoke client init failed: %1")
+                                       .arg(initError.isEmpty()
+                                                ? QStringLiteral("unknown error")
+                                                : initError));
                     smokeTimer.stop();
                     QCoreApplication::exit(2);
                     return;
@@ -456,7 +467,12 @@ int main(int argc, char* argv[]) {
                                                            postCaptureDelayMs]() {
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login begin"));
                     if (!client.login(smokeUser, smokePass)) {
-                        AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login failed"));
+                        const QString loginError = client.lastError().trimmed();
+                        AppendSmokeLog(smokeCaptureDir,
+                                       QStringLiteral("UI smoke login failed: %1")
+                                           .arg(loginError.isEmpty()
+                                                    ? QStringLiteral("unknown error")
+                                                    : loginError));
                         smokeTimer.stop();
                         QCoreApplication::exit(3);
                         return;

@@ -437,6 +437,7 @@ jobs:
           & $ktKeygen.FullName --out-dir $work --force | Out-Null
           $ktKey = Join-Path $work "kt_signing_key.bin"
           $rootPub = Join-Path $work "kt_root_pub.bin"
+          $trustStorePath = Join-Path $work "server_trust.ini"
           $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
           $cert = New-SelfSignedCertificate `
             -DnsName @("localhost") `
@@ -473,7 +474,7 @@ jobs:
             "server_port=$port"
             "use_tls=1"
             "require_tls=1"
-            "trust_store=server_trust.ini"
+            "trust_store=$trustStorePath"
             "require_pinned_fingerprint=1"
             "pinned_fingerprint=$serverFingerprint"
             "tls_verify_mode=pin"
@@ -485,7 +486,7 @@ jobs:
             "cover_traffic_enabled=0"
             "[kt]"
             "require_signature=1"
-            "root_pubkey_path=kt_root_pub.bin"
+            "root_pubkey_path=$rootPub"
             "[device_sync]"
             "enabled=0"
             "role=primary"
@@ -493,7 +494,7 @@ jobs:
           ) -join "`n"
           $clientConfigPath = Join-Path $work "client_config.ini"
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
-          "" | Out-File -FilePath (Join-Path $work "server_trust.ini") -Encoding ascii
+          "" | Out-File -FilePath $trustStorePath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
           $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
