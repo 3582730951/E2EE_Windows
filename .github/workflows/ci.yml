@@ -595,6 +595,7 @@ jobs:
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
           $token = "abcdefghijklmnop"
+          $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
           $serverConfig = @(
             "[mode]"
             "mode=1"
@@ -611,7 +612,7 @@ jobs:
             "key_protection=none"
             "kt_signing_key=kt_signing_key.bin"
             "metadata_protection=none"
-            "metadata_key_path=metadata_key.bin"
+            "metadata_key_hex=$metadataKeyHex"
             "allow_legacy_login=0"
             "[kcp]"
             "enable=0"
@@ -689,6 +690,7 @@ jobs:
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
           $token = "abcdefghijklmnop"
+          $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
           $serverFingerprint = [System.BitConverter]::ToString(
             [System.Security.Cryptography.SHA256]::Create().ComputeHash(
               (Get-PfxCertificate -FilePath (Join-Path $serverRoot "config\\mi_e2ee_server.pfx")).Export("Cert")
@@ -711,7 +713,7 @@ jobs:
             "key_protection=none"
             "kt_signing_key=kt_signing_key.bin"
             "metadata_protection=none"
-            "metadata_key_path=metadata_key.bin"
+            "metadata_key_hex=$metadataKeyHex"
             "allow_legacy_login=0"
             "[kcp]"
             "enable=0"

@@ -262,10 +262,9 @@ Copy-Item (Join-Path $keysDir "kt_signing_key.bin") $serverConfig -Force
 Copy-Item (Join-Path $keysDir "kt_root_pub.bin") $serverConfig -Force
 Copy-Item $pfxPath $serverConfig -Force
 Copy-Item (Join-Path $keysDir "kt_root_pub.bin") $clientConfig -Force
-$metadataKeyPath = Join-Path $serverConfig "metadata_key.bin"
 $metadataKey = New-Object byte[] 32
 [System.Security.Cryptography.RandomNumberGenerator]::Fill($metadataKey)
-[System.IO.File]::WriteAllBytes($metadataKeyPath, $metadataKey)
+$metadataKeyHex = [System.BitConverter]::ToString($metadataKey).Replace("-", "").ToLower()
 
 $serverConfigLines = @(
   "[mode]",
@@ -287,7 +286,7 @@ $serverConfigLines = @(
   "tls_cert=config/mi_e2ee_server.pfx",
   "kt_signing_key=kt_signing_key.bin",
   "metadata_protection=none",
-  "metadata_key_path=metadata_key.bin",
+  "metadata_key_hex=$metadataKeyHex",
   "[kcp]",
   "enable=0",
   "allow_insecure=0"
