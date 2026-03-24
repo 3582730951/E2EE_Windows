@@ -54,6 +54,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.02"))

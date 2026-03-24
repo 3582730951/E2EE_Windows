@@ -5,6 +5,8 @@ import android.os.Build
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.GeneralSecurityException
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -85,7 +87,7 @@ class RootAuthStore(context: Context) {
         return try {
             val privBytes = Base64.decode(privB64, Base64.DEFAULT)
             val pubBytes = Base64.decode(pubB64, Base64.DEFAULT)
-            val kf = KeyFactory.getInstance("Ed25519")
+            val kf = ed25519KeyFactory()
             val priv = kf.generatePrivate(PKCS8EncodedKeySpec(privBytes))
             val pub = kf.generatePublic(X509EncodedKeySpec(pubBytes))
             KeyPair(pub, priv)
@@ -104,7 +106,11 @@ class RootAuthStore(context: Context) {
     }
 
     private fun generateKeyPair(): KeyPair {
-        val gen = KeyPairGenerator.getInstance("Ed25519")
+        val gen = try {
+            KeyPairGenerator.getInstance("Ed25519")
+        } catch (_: GeneralSecurityException) {
+            KeyPairGenerator.getInstance("Ed25519", BOUNCY_CASTLE_PROVIDER)
+        }
         return gen.generateKeyPair()
     }
 
@@ -171,11 +177,23 @@ class RootAuthStore(context: Context) {
         counter: Long
     ): String? {
         val msg = buildProofMessage(deviceId, context, counter)
-        val sig = Signature.getInstance("Ed25519")
+        val sig = try {
+            Signature.getInstance("Ed25519")
+        } catch (_: GeneralSecurityException) {
+            Signature.getInstance("Ed25519", BOUNCY_CASTLE_PROVIDER)
+        }
         sig.initSign(keyPair.private)
         sig.update(msg)
         val signature = sig.sign()
         return bytesToHexLower(signature)
+    }
+
+    private fun ed25519KeyFactory(): KeyFactory {
+        return try {
+            KeyFactory.getInstance("Ed25519")
+        } catch (_: GeneralSecurityException) {
+            KeyFactory.getInstance("Ed25519", BOUNCY_CASTLE_PROVIDER)
+        }
     }
 
     private fun bytesToHexLower(bytes: ByteArray): String {
@@ -215,6 +233,7 @@ class RootAuthStore(context: Context) {
         private const val ROOT_CODE_LABEL = "mi_e2ee_root_code_v1"
         private const val ROOT_PROOF_LABEL = "mi_e2ee_root_proof_v2"
         private val HEX = "0123456789abcdef".toCharArray()
+        private val BOUNCY_CASTLE_PROVIDER by lazy { BouncyCastleProvider() }
     }
 
     private fun requestStrongBox(builder: MasterKey.Builder) {

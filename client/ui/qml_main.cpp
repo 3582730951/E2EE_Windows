@@ -460,8 +460,7 @@ int main(int argc, char* argv[]) {
                     });
                 }
                 QTimer::singleShot(loginDelayMs, &client, [&client, &smokeTimer, smokeUser,
-                                                           smokePass, smokeCaptureDir, window,
-                                                           postCaptureDelayMs]() {
+                                                           smokePass, smokeCaptureDir, window]() {
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login begin"));
                     if (!client.login(smokeUser, smokePass)) {
                         const QString loginError = client.lastError().trimmed();
