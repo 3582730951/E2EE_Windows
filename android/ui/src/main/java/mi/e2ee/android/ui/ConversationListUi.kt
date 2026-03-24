@@ -70,6 +70,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -226,6 +227,7 @@ fun ConversationListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .testTag("conversation-list-screen")
         ) {
             Column(
                 modifier = Modifier
@@ -238,7 +240,9 @@ fun ConversationListScreen(
                     onValueChange = { query.value = it },
                     placeholder = tr("conversations_search", "Search chats"),
                     height = searchHeight,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("conversation-search")
                 )
                 if (showSearchNow) {
                     Spacer(modifier = Modifier.height(12.dp))

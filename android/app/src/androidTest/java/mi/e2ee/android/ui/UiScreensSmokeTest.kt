@@ -3,6 +3,7 @@ package mi.e2ee.android.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
@@ -62,8 +63,8 @@ class UiScreensSmokeTest {
             }
         }
 
-        composeRule.onNodeWithText("Chats").assertIsDisplayed()
-        composeRule.onNodeWithText("Search chats").assertIsDisplayed()
+        composeRule.onNodeWithTag("conversation-list-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("conversation-search").assertIsDisplayed()
         composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
         composeRule.onNodeWithText("Threat Guild").assertIsDisplayed()
     }
@@ -76,9 +77,9 @@ class UiScreensSmokeTest {
             }
         }
 
+        composeRule.onNodeWithTag("chat-screen").assertIsDisplayed()
         composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
-        composeRule.onNodeWithText("Messages are end-to-end encrypted.").assertIsDisplayed()
-        composeRule.onNodeWithText("Pinned message").assertIsDisplayed()
+        composeRule.onNodeWithText("Perfect. Shipping the build after tests.").assertIsDisplayed()
         composeRule.onNodeWithText("Write a message...").assertIsDisplayed()
     }
 
@@ -90,7 +91,7 @@ class UiScreensSmokeTest {
             }
         }
 
-        composeRule.onNodeWithText("Create account").assertIsDisplayed()
+        composeRule.onNodeWithTag("register-screen").assertIsDisplayed()
         composeRule.onNodeWithText("Display name").assertIsDisplayed()
         composeRule.onNodeWithText("Confirm password").assertIsDisplayed()
     }
@@ -103,7 +104,7 @@ class UiScreensSmokeTest {
             }
         }
 
-        composeRule.onNodeWithText("Settings").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings-screen").assertIsDisplayed()
         composeRule.onNodeWithText("Account and security").assertIsDisplayed()
         composeRule.onNodeWithText("Privacy").assertIsDisplayed()
     }

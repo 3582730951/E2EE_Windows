@@ -31,6 +31,8 @@ set(UI_COMMON_SOURCES
     common/Toast.cpp
     common/Theme.cpp
     common/UiIcons.cpp
+    common/UiPathSecurity.cpp
+    common/UiPathSecurity.h
     common/UiSettings.cpp
     common/UiStyle.cpp
     common/UiRuntimePaths.cpp

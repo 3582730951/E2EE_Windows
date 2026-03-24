@@ -113,6 +113,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -733,7 +734,11 @@ fun ChatScreen(
         },
         containerColor = Color.Transparent
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("chat-screen")
+        ) {
             ChatBackground()
             if (effectiveState == ChatScreenState.Content || effectiveState == ChatScreenState.Empty ||
                 effectiveState == ChatScreenState.NetworkError

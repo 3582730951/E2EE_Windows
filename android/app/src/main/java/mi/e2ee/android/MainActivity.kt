@@ -4,8 +4,9 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,34 +14,44 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import mi.e2ee.android.ui.ChatTheme
+import mi.e2ee.android.ui.ChatScreen
+import mi.e2ee.android.ui.ConversationListScreen
+import mi.e2ee.android.ui.ConversationPreview
 import mi.e2ee.android.ui.ProvideLocalization
+import mi.e2ee.android.ui.SampleChat
 import mi.e2ee.android.ui.SdkBridge
+import mi.e2ee.android.ui.SettingsScreen
 import mi.e2ee.android.ui.ThemeMode
 import mi.e2ee.android.ui.UiHost
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val screenshotMode = intent?.getStringExtra(EXTRA_SCREENSHOT_MODE)
         setContent {
             val context = LocalContext.current
             var themeMode by rememberSaveable { mutableStateOf(loadThemeMode(context)) }
             LaunchedEffect(themeMode) {
                 saveThemeMode(context, themeMode)
             }
-            val sdk = remember(context) { SdkBridge(context) }
-            LaunchedEffect(Unit) {
-                sdk.init()
-            }
-            DisposableEffect(Unit) {
-                onDispose { sdk.dispose() }
-            }
             ProvideLocalization {
                 ChatTheme(mode = themeMode) {
-                    UiHost(
-                        sdk = sdk,
-                        themeMode = themeMode,
-                        onThemeModeChange = { themeMode = it }
-                    )
+                    if (screenshotMode != null) {
+                        MainScreenshotScene(mode = screenshotMode, context = context)
+                    } else {
+                        val sdk = remember(context) { SdkBridge(context) }
+                        LaunchedEffect(Unit) {
+                            sdk.init()
+                        }
+                        DisposableEffect(Unit) {
+                            onDispose { sdk.dispose() }
+                        }
+                        UiHost(
+                            sdk = sdk,
+                            themeMode = themeMode,
+                            onThemeModeChange = { themeMode = it }
+                        )
+                    }
                 }
             }
         }
@@ -67,5 +78,42 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val PREFS_NAME = "mi_chat_prefs"
         const val KEY_THEME_MODE = "theme_mode"
+        const val EXTRA_SCREENSHOT_MODE = "mi.e2ee.android.extra.SCREENSHOT_MODE"
     }
 }
+
+@Composable
+private fun MainScreenshotScene(mode: String, context: Context) {
+    when (mode.lowercase()) {
+        "detail" -> ChatScreen(items = SampleChat.items)
+        "settings" -> SettingsScreen(sdk = remember(context) { SdkBridge(context) })
+        else -> ConversationListScreen(conversations = previewConversations())
+    }
+}
+
+private fun previewConversations(): List<ConversationPreview> = listOf(
+    ConversationPreview(
+        id = "c1",
+        initials = "AS",
+        name = "Aster Stone",
+        lastMessage = "Encrypted check-in",
+        time = "09:41",
+        unreadCount = 2,
+        isPinned = true,
+        isMuted = false,
+        isGroup = false,
+        isTyping = false
+    ),
+    ConversationPreview(
+        id = "g1",
+        initials = "TG",
+        name = "Threat Guild",
+        lastMessage = "Rotation completed",
+        time = "08:15",
+        unreadCount = 0,
+        isPinned = false,
+        isMuted = true,
+        isGroup = true,
+        isTyping = false
+    )
+)

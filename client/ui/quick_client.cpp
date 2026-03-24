@@ -56,8 +56,8 @@
 #include "common/EmojiPackManager.h"
 #include "common/ImePluginLoader.h"
 #include "common/QrCodeGenerator.h"
+#include "common/UiPathSecurity.h"
 #include "common/UiRuntimePaths.h"
-#include "path_security.h"
 #include "platform_time.h"
 #include "protocol.h"
 
@@ -143,14 +143,6 @@ std::vector<std::string> ReadGroupCallMembers(
     }
   }
   return out;
-}
-
-std::filesystem::path ToFsPath(const QString& path) {
-#ifdef _WIN32
-  return std::filesystem::path(path.toStdWString());
-#else
-  return std::filesystem::path(path.toStdString());
-#endif
 }
 
 QString ResolveLocalFilePath(const QString& urlOrPath) {
@@ -2188,11 +2180,11 @@ bool QuickClient::init(const QString& configPath) {
   }
   QDir().mkpath(dataDir);
 #ifdef _WIN32
-  std::string aclError;
-  if (!mi::shard::security::HardenPathAcl(ToFsPath(QDir::cleanPath(dataDir)),
-                                          aclError)) {
-    const QString msg = QString::fromStdString(
-        aclError.empty() ? "data dir acl harden failed" : aclError);
+  QString aclError;
+  if (!UiPathSecurity::HardenDataDirAcl(dataDir, &aclError)) {
+    const QString msg =
+        aclError.isEmpty() ? QStringLiteral("data dir acl harden failed")
+                           : aclError;
     UpdateLastError(msg);
     emit status(msg);
     return false;

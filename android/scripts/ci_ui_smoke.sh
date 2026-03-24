@@ -88,13 +88,24 @@ capture_ui_artifacts() {
   prime_android_device
   install_apk_with_retry "$workspace/android/app/build/outputs/apk/debug/app-debug.apk" mi.e2ee.android.ui
   install_apk_with_retry "$workspace/android/rootapp/build/outputs/apk/debug/rootapp-debug.apk" mi.e2ee.rootauth
-  adb shell am start -W -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity || true
-  sleep 5
-  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-main.png"
-  adb shell input keyevent KEYCODE_HOME
-  adb shell am start -W -n mi.e2ee.rootauth/mi.e2ee.rootauth.RootAuthActivity || true
-  sleep 5
-  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-rootauth.png"
+  adb shell am force-stop mi.e2ee.android.ui || true
+  adb shell am start -W \
+    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
+    --es mi.e2ee.android.extra.SCREENSHOT_MODE chats || true
+  sleep 3
+  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-chats.png"
+  adb shell am force-stop mi.e2ee.android.ui || true
+  adb shell am start -W \
+    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
+    --es mi.e2ee.android.extra.SCREENSHOT_MODE detail || true
+  sleep 3
+  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-detail.png"
+  adb shell am force-stop mi.e2ee.android.ui || true
+  adb shell am start -W \
+    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
+    --es mi.e2ee.android.extra.SCREENSHOT_MODE settings || true
+  sleep 3
+  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-settings.png"
 }
 
 main() {

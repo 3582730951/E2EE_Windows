@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,7 +56,11 @@ fun RegisterScreen(
     val localError = remember { mutableStateOf<String?>(null) }
     val passwordMismatchText = tr("register_password_mismatch", "Passwords do not match")
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("register-screen")
+    ) {
         RegisterBackground()
         Column(
             modifier = Modifier

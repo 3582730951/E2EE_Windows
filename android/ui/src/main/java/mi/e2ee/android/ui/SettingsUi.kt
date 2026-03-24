@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import mi.e2ee.android.BuildConfig
@@ -226,7 +227,8 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp, vertical = ChatUiTokens.SectionSpacing),
+                .padding(horizontal = 16.dp, vertical = ChatUiTokens.SectionSpacing)
+                .testTag("settings-screen"),
             verticalArrangement = Arrangement.spacedBy(ChatUiTokens.SectionSpacing)
         ) {
             item {
