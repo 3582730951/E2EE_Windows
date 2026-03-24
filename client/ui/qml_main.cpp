@@ -476,7 +476,7 @@ int main(int argc, char* argv[]) {
                                            : QStringLiteral("UI smoke login capture failed"));
                     });
                 }
-                QTimer::singleShot(loginDelayMs, &client, [&client, &smokeTimer, smokeUser,
+                QTimer::singleShot(loginDelayMs, &client, [&app, &client, &smokeTimer, smokeUser,
                                                            smokePass, smokeCaptureDir, window,
                                                            postLoginCaptureDelayMs]() {
                     AppendSmokeLog(smokeCaptureDir, QStringLiteral("UI smoke login begin"));
