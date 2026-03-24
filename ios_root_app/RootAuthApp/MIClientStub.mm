@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-namespace {
-
 struct StubFriend {
   std::string username;
   std::string remark;
@@ -59,6 +57,8 @@ struct mi_client_handle {
   std::deque<StubMessage> pendingEvents;
   std::vector<StubMessage> lastPolledEvents;
 };
+
+namespace {
 
 std::string gLastCreateError;
 
