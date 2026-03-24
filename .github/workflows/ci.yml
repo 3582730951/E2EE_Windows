@@ -323,7 +323,6 @@ jobs:
           $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
           $cert = New-SelfSignedCertificate `
             -DnsName @("localhost") `
-            -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
             -CertStoreLocation "Cert:\\CurrentUser\\My"
           $pwd = New-Object System.Security.SecureString
           Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
@@ -442,7 +441,6 @@ jobs:
           $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
           $cert = New-SelfSignedCertificate `
             -DnsName @("localhost") `
-            -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
             -CertStoreLocation "Cert:\\CurrentUser\\My"
           $pwd = New-Object System.Security.SecureString
           Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
@@ -472,7 +470,7 @@ jobs:
           $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
           $clientConfig = @(
             "[client]"
-            "server_ip=127.0.0.1"
+            "server_ip=localhost"
             "server_port=$port"
             "use_tls=1"
             "require_tls=1"

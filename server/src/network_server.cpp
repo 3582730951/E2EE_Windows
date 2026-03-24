@@ -21,6 +21,8 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #pragma comment(lib, "ws2_32.lib")
+#else
+#include <sys/socket.h>
 #endif
 #endif
 
@@ -1128,6 +1130,11 @@ bool NetworkServer::Start(std::string& error) {
 void NetworkServer::Stop() {
   running_.store(false);
 #ifdef MI_E2EE_ENABLE_TCP_SERVER
+  if (listen_fd_ != -1) {
+#ifndef _WIN32
+    (void)::shutdown(static_cast<int>(listen_fd_), SHUT_RDWR);
+#endif
+  }
   StopSocket();
 #endif
   if (worker_.joinable()) {
@@ -1136,8 +1143,9 @@ void NetworkServer::Stop() {
   StopIocp();
   StopReactors();
   StopWorkers();
-  // Wait until connections drain to avoid use-after-free.
-  while (active_connections_.load(std::memory_order_relaxed) != 0) {
+  const auto drain_deadline = mi::platform::NowSteadyMs() + 5000;
+  while (active_connections_.load(std::memory_order_relaxed) != 0 &&
+         mi::platform::NowSteadyMs() < drain_deadline) {
     mi::platform::SleepMs(50);
   }
 }
@@ -1310,7 +1318,11 @@ bool NetworkServer::TryAcquireConnectionSlot(const std::string& remote_ip) {
 }
 
 void NetworkServer::ReleaseConnectionSlot(const std::string& remote_ip) {
-  active_connections_.fetch_sub(1, std::memory_order_relaxed);
+  auto remaining = active_connections_.load(std::memory_order_relaxed);
+  while (remaining != 0 &&
+         !active_connections_.compare_exchange_weak(
+             remaining, remaining - 1, std::memory_order_relaxed)) {
+  }
   if (remote_ip.empty()) {
     return;
   }

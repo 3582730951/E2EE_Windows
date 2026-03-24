@@ -476,7 +476,7 @@ if(MI_E2EE_ENABLE_MYSQL)
 endif()
 
 if(MI_E2EE_ENABLE_TCP_SERVER)
-  target_compile_definitions(mi_e2ee_core PRIVATE MI_E2EE_ENABLE_TCP_SERVER=1)
+  target_compile_definitions(mi_e2ee_core PUBLIC MI_E2EE_ENABLE_TCP_SERVER=1)
   target_compile_definitions(mi_e2ee_server PRIVATE MI_E2EE_ENABLE_TCP_SERVER=1)
   if(WIN32)
     target_link_libraries(mi_e2ee_core PUBLIC ws2_32 secur32 crypt32 advapi32)

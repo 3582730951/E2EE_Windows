@@ -89,6 +89,16 @@ bool ParseEnvPort(const std::string& text, std::uint16_t& out) {
   return true;
 }
 
+bool IsTcpPortAvailable(std::uint16_t port) {
+  mi::platform::net::Socket sock = mi::platform::net::kInvalidSocket;
+  std::string error;
+  if (!mi::platform::net::CreateTcpListener(port, sock, error)) {
+    return false;
+  }
+  mi::platform::net::CloseSocket(sock);
+  return true;
+}
+
 struct UserFileBackup {
   bool existed{false};
   std::string content;
@@ -388,6 +398,7 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "metadata_key_hex=" << kTestMetadataKeyHex << "\n";
   out << "kt_signing_key=" << (dir / "kt_signing_key.bin").string() << "\n";
   out << "allow_legacy_login=0\n";
+  out << "max_io_threads=1\n";
   out << "[call]\n";
   out << "enable_group_call=0\n";
   out << "[kcp]\n";
@@ -430,7 +441,17 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
                  std::uint16_t& out_port,
                  std::string& error) {
   error.clear();
+#ifdef _WIN32
+  const auto server_exe = FindServerExecutable();
+  if (server_exe.empty()) {
+    error = "server executable not found";
+    return false;
+  }
+#endif
   for (std::uint16_t port = 31000; port < 31100; ++port) {
+    if (!IsTcpPortAvailable(port)) {
+      continue;
+    }
     // Isolate state for each port probe to avoid stale files poisoning retries.
     const auto run_dir = dir / ("port_" + std::to_string(port));
     std::error_code ec;
@@ -446,11 +467,6 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
       LogStep(msg.c_str());
     }
 #ifdef _WIN32
-    const auto server_exe = FindServerExecutable();
-    if (server_exe.empty()) {
-      error = "server executable not found";
-      return false;
-    }
     std::string launch_err;
     if (!LaunchServerProcess(server_exe, cfg_path, port, launch_err)) {
       std::cerr << "[sdk_c_api_e2e_test] external server start failed";
@@ -478,7 +494,7 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     auto listener_try = std::make_unique<mi::server::Listener>(app_try.get());
     mi::server::NetworkServerLimits limits;
     limits.max_worker_threads = 2;
-    limits.max_io_threads = 2;
+    limits.max_io_threads = 1;
     limits.max_pending_tasks = 256;
     auto net_try = std::make_unique<mi::server::NetworkServer>(
         listener_try.get(), port, false, "", true, limits);
@@ -819,6 +835,12 @@ int main() {
       mi_client_free(group_id);
       group_id = nullptr;
     }
+    if (net) {
+      net->Stop();
+    }
+    net.reset();
+    listener.reset();
+    app.reset();
     if (alice_linked) {
       mi_client_destroy(alice_linked);
       alice_linked = nullptr;
@@ -831,12 +853,6 @@ int main() {
       mi_client_destroy(alice);
       alice = nullptr;
     }
-    if (net) {
-      net->Stop();
-    }
-    net.reset();
-    listener.reset();
-    app.reset();
 #ifdef _WIN32
     StopLaunchedServer();
 #endif
@@ -1118,7 +1134,6 @@ int main() {
   mi_client_free(group_id);
   group_id = nullptr;
 
-  LogStep("cleanup");
   cleanup();
   return 0;
 }
