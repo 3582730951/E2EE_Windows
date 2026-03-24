@@ -9,9 +9,10 @@ import "qrc:/mi/e2ee/ui/qml/shell" as Shell
 
 ApplicationWindow {
     id: root
-    property bool authMode: Ui.AppStore.currentPage === 0
-    property int authWidth: 520
-    property int authHeight: 620
+    property bool authMode: Ui.SessionStore.currentPage === 0
+    property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    property int authWidth: 1120
+    property int authHeight: 792
 
     width: authMode ? authWidth : 1200
     height: authMode ? authHeight : 760
@@ -22,7 +23,7 @@ ApplicationWindow {
     flags: Qt.FramelessWindowHint | Qt.Window
     visible: true
     title: Ui.I18n.t("app.title")
-    color: "transparent"
+    color: smokeMode && authMode ? Ui.Style.authBackdropBottom : "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
     palette.base: Ui.Style.panelBgAlt
@@ -126,19 +127,21 @@ ApplicationWindow {
     Rectangle {
         id: windowFrame
         anchors.fill: parent
-        color: authMode ? "transparent" : Ui.Style.windowBg
-        radius: 20
-        border.color: authMode ? "transparent" : Ui.Style.borderSubtle
-        border.width: authMode ? 0 : 1
-        antialiasing: true
+        color: authMode
+               ? (smokeMode ? Ui.Style.authBackdropBottom : "transparent")
+               : Ui.Style.windowBg
+        radius: authMode ? 28 : 20
+        border.color: authMode ? Ui.Style.authCardBorder : Ui.Style.borderSubtle
+        border.width: 1
+        antialiasing: !(smokeMode && authMode)
         clip: true
-        layer.enabled: true
+        layer.enabled: !(smokeMode && authMode)
         layer.smooth: true
 
         StackLayout {
             id: rootStack
             anchors.fill: parent
-            currentIndex: Ui.AppStore.currentPage === 0 ? 0 : 1
+            currentIndex: Ui.SessionStore.currentPage === 0 ? 0 : 1
 
             Auth.AuthFlow {
                 id: authFlow
@@ -333,32 +336,33 @@ ApplicationWindow {
         onActivated: appShell.handleEscape()
     }
     Shortcut {
-        sequence: StandardKey.Copy
+        sequences: [StandardKey.Copy]
         context: Qt.ApplicationShortcut
-        enabled: Ui.AppStore.clipboardIsolationEnabled
+        enabled: Ui.PreferenceStore.clipboardIsolationEnabled
         onActivated: handleSecureCopy(false)
     }
     Shortcut {
-        sequence: StandardKey.Cut
+        sequences: [StandardKey.Cut]
         context: Qt.ApplicationShortcut
-        enabled: Ui.AppStore.clipboardIsolationEnabled
+        enabled: Ui.PreferenceStore.clipboardIsolationEnabled
         onActivated: handleSecureCopy(true)
     }
     Shortcut {
-        sequence: StandardKey.Paste
+        sequences: [StandardKey.Paste]
         context: Qt.ApplicationShortcut
-        enabled: Ui.AppStore.clipboardIsolationEnabled
+        enabled: Ui.PreferenceStore.clipboardIsolationEnabled
         onActivated: handleSecurePaste()
     }
     Shortcut {
-        sequence: StandardKey.SelectAll
+        sequences: [StandardKey.SelectAll]
         context: Qt.ApplicationShortcut
-        enabled: Ui.AppStore.clipboardIsolationEnabled
+        enabled: Ui.PreferenceStore.clipboardIsolationEnabled
         onActivated: handleSecureSelectAll()
     }
 
     Dialogs.TrustPromptDialog {
         id: trustDialog
+        ownerWindow: root
         onAccepted: function(pinText) {
             if (!clientBridge) {
                 return

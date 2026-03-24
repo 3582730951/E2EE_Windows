@@ -1,0 +1,4 @@
+module MIE2EEClientBridge [system] {
+  header "mi_client_ios_bridge.h"
+  export *
+}

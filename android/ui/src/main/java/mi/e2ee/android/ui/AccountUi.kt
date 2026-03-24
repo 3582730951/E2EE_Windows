@@ -57,6 +57,7 @@ import java.util.Locale
 @Composable
 fun AccountScreen(
     sdk: SdkBridge,
+    title: String? = null,
     onBack: () -> Unit = {}
 ) {
     val pairingCode = remember { mutableStateOf<String?>(null) }
@@ -70,6 +71,7 @@ fun AccountScreen(
     val clipboard = LocalClipboardManager.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
+    val screenTitle = title ?: t("account_title", "Account")
     LaunchedEffect(Unit) {
         sdk.refreshDevices()
         sdk.pollDevicePairingRequests()
@@ -87,7 +89,7 @@ fun AccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(tr("account_title", "Account")) },
+                title = { Text(screenTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

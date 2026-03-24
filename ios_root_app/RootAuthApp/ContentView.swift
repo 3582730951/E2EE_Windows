@@ -2,7 +2,7 @@ import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
-    @StateObject private var store = RootAuthStore()
+    @ObservedObject var store: RootAuthStore
     @State private var scanResult: QrLoginPayload?
     @State private var scanError: String?
     @State private var showScanner = false
@@ -11,26 +11,46 @@ struct ContentView: View {
     @State private var approveError: String?
     @State private var isApproving = false
     @State private var manualDeviceId: String = ""
+    var embeddedTitle: String? = nil
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    codeCard
-                    actionRow
-                    manualCard
-                    scanCard
+        ZStack {
+            SecureSceneBackground()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    if let embeddedTitle, !embeddedTitle.isEmpty {
+                        SecureSectionHeader(
+                            eyebrow: "Security Center",
+                            title: embeddedTitle,
+                            detail: "Approve new devices and manage short-lived root authorization codes from the main client shell."
+                        )
+                    }
+
+                    heroCard
+
+                    if let error = scanError {
+                        SecureStatusBanner(
+                            title: "Scan failed",
+                            detail: error,
+                            tone: .danger,
+                            systemImage: "exclamationmark.shield"
+                        )
+                    }
+
+                    manualApprovalCard
+                    scanApprovalCard
+
                     if let result = scanResult {
                         scanResultCard(result)
                     }
-                    if let error = scanError {
-                        errorCard(error)
-                    }
                 }
-                .padding(16)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 20)
             }
-            .navigationTitle("Root Auth")
         }
+        .tint(SecurePalette.accent)
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showScanner) {
             scannerSheet
         }
@@ -39,235 +59,354 @@ struct ContentView: View {
         }
     }
 
-    private var codeCard: some View {
-        VStack(spacing: 10) {
-            Text("Auth code")
-                .font(.headline)
-            Text(store.currentCode)
-                .font(.system(size: 40, weight: .bold, design: .monospaced))
-            Text("Refresh in \(store.secondsRemaining) seconds")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-            Divider()
-            Text("Public key")
-                .font(.headline)
-            Text(store.publicKeyHex.isEmpty ? "Unavailable" : store.publicKeyHex)
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(16)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(16)
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 12) {
-            Button(action: copyCode) {
-                Label("Copy code", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button(action: copyPublicKey) {
-                Label("Copy public key", systemImage: "key")
-            }
-            .buttonStyle(.bordered)
-
-            Button(action: store.regenerateKey) {
-                Label("Regenerate key", systemImage: "arrow.triangle.2.circlepath")
-            }
-            .buttonStyle(.bordered)
-        }
-    }
-
-    private var manualCard: some View {
-        let trimmedId = manualDeviceId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let authString = trimmedId.isEmpty
-            ? ""
-            : (store.authString(deviceId: trimmedId, context: "device_register") ?? "")
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Manual device authorization")
-                .font(.headline)
-            Text("Enter the device ID from the new device login screen to generate an auth string.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-            TextField("Device ID", text: $manualDeviceId)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-                .textFieldStyle(.roundedBorder)
-            if authString.isEmpty {
-                Text("Auth string will appear here.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            } else {
-                Text(authString)
-                    .font(.footnote)
-                Button(action: { UIPasteboard.general.string = authString }) {
-                    Label("Copy auth string", systemImage: "doc.on.doc")
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SECURE ROOT AUTH")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(SecurePalette.textMuted)
+                    Text("Approve new devices with a calmer, verifiable flow.")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(SecurePalette.textPrimary)
+                    Text("This device signs short-lived approvals and exposes only the material an operator needs to verify before accepting a login.")
+                        .font(.footnote)
+                        .foregroundStyle(SecurePalette.textSecondary)
                 }
-                .buttonStyle(.bordered)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.shield.fill")
+                    Text("This iPhone")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(SecurePalette.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(SecurePalette.surfaceRaised)
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Approval code")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(SecurePalette.textSecondary)
+                Text(store.currentCode)
+                    .font(.system(size: 46, weight: .bold, design: .monospaced))
+                    .foregroundStyle(SecurePalette.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Refreshes in \(store.secondsRemaining)s")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(SecurePalette.accent)
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(SecurePalette.surfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(SecurePalette.borderStrong, lineWidth: 1)
+            )
+
+            HStack(spacing: 12) {
+                SecureMetricTile(
+                    label: "Public key",
+                    value: store.publicKeyHex.isEmpty ? "Unavailable" : shortHex(store.publicKeyHex),
+                    icon: "key.horizontal",
+                    monospaced: true
+                )
+                SecureMetricTile(
+                    label: "Rotation",
+                    value: "\(store.secondsRemaining)s left",
+                    icon: "timer",
+                    monospaced: true
+                )
+            }
+
+            HStack(spacing: 12) {
+                Button(action: copyCode) {
+                    Label("Copy code", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(SecurePrimaryButtonStyle())
+
+                Button(action: copyPublicKey) {
+                    Label("Copy key", systemImage: "key")
+                }
+                .buttonStyle(SecureSecondaryButtonStyle())
+
+                Button(action: store.regenerateKey) {
+                    Label("Rotate", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(SecureSecondaryButtonStyle())
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(16)
+        .secureCard(padding: 20)
     }
 
-    private var scanCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Scan login QR")
-                .font(.headline)
-            Text("Scan the login QR, verify device info, then authorize.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-            Button(action: startScan) {
-                Label("Start scan", systemImage: "qrcode.viewfinder")
+    private var manualApprovalCard: some View {
+        let trimmedID = manualDeviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let authString = trimmedID.isEmpty ? "" : (store.authString(deviceId: trimmedID, context: "device_register") ?? "")
+
+        return VStack(alignment: .leading, spacing: 16) {
+            SecureSectionHeader(
+                eyebrow: "Manual fallback",
+                title: "Generate an approval string",
+                detail: "Paste the device ID shown on the login screen when QR exchange is unavailable."
+            )
+
+            TextField("Device ID", text: $manualDeviceId)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .secureInput()
+
+            if authString.isEmpty {
+                SecureStatusBanner(
+                    title: "Waiting for a device identifier",
+                    detail: "Once a valid device ID is present, the signed auth string is generated locally on this phone.",
+                    tone: .neutral,
+                    systemImage: "key.viewfinder"
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Approval string")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(SecurePalette.textSecondary)
+                    Text(authString)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(SecurePalette.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(SecurePalette.surfaceRaised)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(SecurePalette.border, lineWidth: 1)
+                        )
+
+                    Button(action: { UIPasteboard.general.string = authString }) {
+                        Label("Copy approval string", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(SecureSecondaryButtonStyle())
+                }
             }
-            .buttonStyle(.borderedProminent)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(16)
+        .secureCard()
+    }
+
+    private var scanApprovalCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SecureSectionHeader(
+                eyebrow: "Fast lane",
+                title: "Scan and verify a login request",
+                detail: "Use the camera when the requesting device presents a QR payload with host, TLS, and device metadata."
+            )
+
+            if hasCameraPermission {
+                SecureStatusBanner(
+                    title: "Camera ready",
+                    detail: "Open the scanner, inspect the request, then approve only after verifying the account and server fingerprint.",
+                    tone: .success,
+                    systemImage: "camera.metering.center.weighted"
+                )
+            } else {
+                SecureStatusBanner(
+                    title: "Camera permission required",
+                    detail: "Enable camera access in Settings to review login QR requests directly from this device.",
+                    tone: .warning,
+                    systemImage: "camera.badge.ellipsis"
+                )
+            }
+
+            Button(action: startScan) {
+                Label("Open scanner", systemImage: "qrcode.viewfinder")
+            }
+            .buttonStyle(SecurePrimaryButtonStyle())
+            .disabled(!hasCameraPermission)
+        }
+        .secureCard()
     }
 
     private func scanResultCard(_ result: QrLoginPayload) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("New device login request")
-                .font(.headline)
+        let context = "qr:\(result.qrId):\(result.secretHex.lowercased())"
+        let authString = result.deviceId.flatMap { store.authString(deviceId: $0, context: context) } ?? ""
+        let canApprove = !authString.isEmpty &&
+            result.username != nil &&
+            result.deviceId != nil &&
+            result.host != nil &&
+            result.port != nil
+
+        return VStack(alignment: .leading, spacing: 16) {
+            SecureSectionHeader(
+                eyebrow: "Pending request",
+                title: "Review this device before approving",
+                detail: "Treat the QR as untrusted input until account, device, server, and TLS details all match the intended login."
+            )
+
             if result.qrId.isEmpty {
-                Text("QR payload missing login data.")
-                    .font(.footnote)
-                    .foregroundColor(.red)
+                SecureStatusBanner(
+                    title: "Incomplete QR payload",
+                    detail: "The scanned payload does not include a valid login identifier.",
+                    tone: .danger,
+                    systemImage: "exclamationmark.triangle.fill"
+                )
             } else {
-                Text("QR ID: \(result.qrId)")
-                    .font(.footnote)
-                if let username = result.username {
-                    Text("Account: \(username)")
-                        .font(.footnote)
+                HStack(spacing: 12) {
+                    SecureMetricTile(label: "Account", value: result.username ?? "Missing", icon: "person.crop.circle")
+                    SecureMetricTile(label: "Device", value: result.deviceId ?? "Missing", icon: "iphone.gen3")
                 }
-                if let device = result.deviceId {
-                    Text("Device: \(device)")
-                        .font(.footnote)
+
+                HStack(spacing: 12) {
+                    SecureMetricTile(label: "Server", value: serverLabel(for: result), icon: "server.rack")
+                    SecureMetricTile(label: "Transport", value: result.useTls ? "TLS pinned" : "Plain TCP", icon: "lock.shield")
                 }
-                if let host = result.host, let port = result.port {
-                    Text("Server: \(host):\(port)")
-                        .font(.footnote)
-                    Text(result.useTls ? "TLS: enabled" : "TLS: disabled")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                    if let fingerprint = result.fingerprint {
-                        Text("Fingerprint: \(fingerprint)")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+
+                if let fingerprint = result.fingerprint, !fingerprint.isEmpty {
+                    SecureStatusBanner(
+                        title: "Pinned fingerprint present",
+                        detail: shortHex(fingerprint),
+                        tone: .neutral,
+                        systemImage: "lock.doc"
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Approval string")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(SecurePalette.textSecondary)
+
+                    if authString.isEmpty {
+                        SecureStatusBanner(
+                            title: "Root key unavailable",
+                            detail: "This device could not derive a signed approval string for the scanned request.",
+                            tone: .danger,
+                            systemImage: "key.slash"
+                        )
+                    } else {
+                        Text(authString)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(SecurePalette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(SecurePalette.surfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(SecurePalette.border, lineWidth: 1)
+                            )
                     }
-                } else {
-                    Text("Server info missing in QR.")
-                        .font(.footnote)
-                        .foregroundColor(.red)
                 }
-                Text("Enter the auth string (code + signature) on the new device.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                Button(action: copyCode) {
-                    Label("Copy auth code", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(.bordered)
-                let context = "qr:\(result.qrId):\(result.secretHex.lowercased())"
-                let authString = result.deviceId.flatMap { store.authString(deviceId: $0, context: context) } ?? ""
-                if !authString.isEmpty {
-                    Button(action: {
-                        UIPasteboard.general.string = authString
-                    }) {
-                        Label("Copy auth string", systemImage: "doc.on.doc")
+
+                HStack(spacing: 12) {
+                    Button(action: copyCode) {
+                        Label("Copy code", systemImage: "number.square")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SecureSecondaryButtonStyle())
+
+                    if !authString.isEmpty {
+                        Button(action: { UIPasteboard.general.string = authString }) {
+                            Label("Copy auth string", systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(SecureSecondaryButtonStyle())
+                    }
                 }
-                if authString.isEmpty {
-                    Text("Root key unavailable.")
-                        .font(.footnote)
-                        .foregroundColor(.red)
-                }
-                let canApprove = !authString.isEmpty &&
-                    result.username != nil &&
-                    result.deviceId != nil &&
-                    result.host != nil &&
-                    result.port != nil
+
                 Button(action: {
                     approveLogin(result, rootCode: authString)
                 }) {
-                    Label("Authorize login", systemImage: "checkmark.shield")
+                    if isApproving {
+                        Label("Authorizing...", systemImage: "hourglass")
+                    } else {
+                        Label("Approve this login", systemImage: "checkmark.shield")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SecurePrimaryButtonStyle())
                 .disabled(!canApprove || isApproving)
-                if isApproving {
-                    ProgressView("Authorizing...")
-                        .font(.footnote)
-                }
+
                 if let status = approveStatus {
-                    Text(status)
-                        .font(.footnote)
-                        .foregroundColor(.green)
+                    SecureStatusBanner(
+                        title: status,
+                        detail: "The requesting device can now finish its registration flow using the signed response.",
+                        tone: .success,
+                        systemImage: "checkmark.circle.fill"
+                    )
                 }
+
                 if let err = approveError {
-                    Text(err)
-                        .font(.footnote)
-                        .foregroundColor(.red)
+                    SecureStatusBanner(
+                        title: "Approval failed",
+                        detail: err,
+                        tone: .danger,
+                        systemImage: "xmark.circle.fill"
+                    )
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(16)
-    }
-
-    private func errorCard(_ message: String) -> some View {
-        Text(message)
-            .font(.footnote)
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Color.red.opacity(0.1))
-            .cornerRadius(12)
+        .secureCard()
     }
 
     private var scannerSheet: some View {
-        NavigationView {
-            VStack(spacing: 12) {
-                if hasCameraPermission {
-                    QrScannerView { code in
-                    if let payload = QrLoginPayload.parse(code) {
-                        scanResult = payload
-                        scanError = nil
-                        approveStatus = nil
-                        approveError = nil
-                        isApproving = false
+        NavigationStack {
+            ZStack {
+                SecureSceneBackground()
+
+                VStack(spacing: 16) {
+                    if hasCameraPermission {
+                        QrScannerView { code in
+                            if let payload = QrLoginPayload.parse(code) {
+                                scanResult = payload
+                                scanError = nil
+                                approveStatus = nil
+                                approveError = nil
+                                isApproving = false
+                            } else {
+                                scanError = "QR code not recognized."
+                                approveStatus = nil
+                                approveError = nil
+                            }
+                            showScanner = false
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(SecurePalette.borderStrong, lineWidth: 1)
+                        )
                     } else {
-                        scanError = "QR code not recognized"
-                        approveStatus = nil
-                        approveError = nil
+                        SecureStatusBanner(
+                            title: "Camera unavailable",
+                            detail: "Allow camera access in Settings, then reopen the scanner.",
+                            tone: .warning,
+                            systemImage: "camera.aperture"
+                        )
                     }
-                    showScanner = false
+
+                    SecureStatusBanner(
+                        title: "Verify before approving",
+                        detail: "Match account, device, host, port, and TLS fingerprint before you authorize a new device.",
+                        tone: .neutral,
+                        systemImage: "shield.lefthalf.filled"
+                    )
                 }
-                .cornerRadius(12)
-                } else {
-                    Text("Allow camera access in system settings.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
+                .padding(18)
             }
-            .padding(16)
-            .navigationTitle("Scan")
+            .navigationTitle("Scan Request")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Close") { showScanner = false }
                 }
             }
         }
+        .tint(SecurePalette.accent)
+        .preferredColorScheme(.dark)
     }
 
     private func copyCode() {
@@ -340,5 +479,19 @@ struct ContentView: View {
         default:
             hasCameraPermission = false
         }
+    }
+
+    private func shortHex(_ value: String) -> String {
+        guard value.count > 20 else {
+            return value
+        }
+        return "\(value.prefix(10))...\(value.suffix(8))"
+    }
+
+    private func serverLabel(for result: QrLoginPayload) -> String {
+        guard let host = result.host, let port = result.port else {
+            return "Missing"
+        }
+        return "\(host):\(port)"
     }
 }

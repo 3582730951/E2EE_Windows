@@ -74,6 +74,7 @@ fun AddFriendScreen(
     requests: List<FriendRequestUi> = emptyList(),
     onBack: () -> Unit = {},
     onOpenRequests: () -> Unit = {},
+    onScanQr: () -> Unit = {},
     onContactSelected: (FriendUi) -> Unit = {},
     onOpenChats: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -109,7 +110,7 @@ fun AddFriendScreen(
                     IconButton(onClick = onOpenRequests) {
                         Icon(Icons.Filled.Notifications, contentDescription = tr("contacts_requests_title", "Requests"))
                     }
-                    IconButton(onClick = {}) {
+                    IconButton(onClick = onScanQr) {
                         Icon(Icons.Filled.QrCode, contentDescription = tr("contacts_scan", "Scan"))
                     }
                 }
@@ -142,11 +143,8 @@ fun AddFriendScreen(
                 },
                 shape = RoundedCornerShape(16.dp)
             )
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            SurfaceSectionCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(text = tr("contacts_add_friend_title", "Add friend"), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -203,11 +201,8 @@ fun AddFriendScreen(
                     }
                 }
             }
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            SurfaceSectionCard {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(text = tr("contacts_join_group", "Join group"), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -345,11 +340,8 @@ fun FriendRequestsScreen(
 
 @Composable
 private fun RequestRow(request: FriendRequestUi, onAccept: () -> Unit, onDecline: () -> Unit) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    SurfaceSectionCard {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AvatarBadge(
                     initials = friendInitials(FriendUi(request.username, request.remark, "")),

@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,8 +39,27 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
         text = text.uppercase(),
         modifier = modifier,
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
     )
+}
+
+@Composable
+fun SurfaceSectionCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(ChatUiTokens.CornerLarge),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            content = content
+        )
+    }
 }
 
 @Composable
@@ -51,8 +74,8 @@ fun PrimaryButton(
     Button(
         modifier = modifier
             .then(widthModifier)
-            .height(48.dp),
-        shape = RoundedCornerShape(16.dp),
+            .height(52.dp),
+        shape = RoundedCornerShape(ChatUiTokens.CornerMedium),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = Color.White,
@@ -62,7 +85,11 @@ fun PrimaryButton(
         enabled = enabled,
         onClick = onClick
     ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -77,11 +104,15 @@ fun SecondaryButton(
     OutlinedButton(
         modifier = modifier
             .then(widthModifier)
-            .height(48.dp),
-        shape = RoundedCornerShape(16.dp),
+            .height(52.dp),
+        shape = RoundedCornerShape(ChatUiTokens.CornerMedium),
         onClick = onClick
     ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -120,7 +151,7 @@ fun StatusDot(color: Color, size: Dp = 8.dp) {
 fun LabeledChip(label: String, tint: Color, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(ChatUiTokens.CornerSmall))
             .background(tint.copy(alpha = 0.15f))
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -159,12 +190,12 @@ fun AuthFooterRow(
         ) {
             Text(
                 text = rightPrefix,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = rightLink,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 textDecoration = TextDecoration.Underline,
                 modifier = Modifier.clickable { onRightClick() }

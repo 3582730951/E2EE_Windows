@@ -4,7 +4,7 @@ import SwiftUI
 struct RootAuthAppApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppShell()
         }
     }
 }

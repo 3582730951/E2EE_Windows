@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +82,7 @@ fun SettingsScreen(
     themeMode: Int = ThemeMode.ForceDark,
     onThemeModeChange: (Int) -> Unit = {},
     onBack: () -> Unit = {},
+    onOpenSecurityCenter: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onOpenPrivacy: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
@@ -91,7 +90,21 @@ fun SettingsScreen(
     onOpenContacts: () -> Unit = {}
 ) {
     val languageController = LocalLanguageController.current
+    var notificationsEnabled by remember { mutableStateOf(true) }
+    val themeSummary = when (themeMode) {
+        ThemeMode.FollowSystem -> tr("settings_theme_system", "System")
+        ThemeMode.ForceLight -> tr("settings_theme_light", "Light")
+        ThemeMode.ForceDark -> tr("settings_theme_dark", "Dark")
+        else -> tr("settings_theme_dark", "Dark")
+    }
     val accountSettings = listOf(
+        SettingEntry(
+            title = tr("settings_security_center", "Security Center"),
+            subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
+            icon = { Icon(Icons.Filled.Security, contentDescription = "Security Center") },
+            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+            onClick = onOpenSecurityCenter
+        ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
@@ -110,7 +123,12 @@ fun SettingsScreen(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
             icon = { Icon(Icons.Filled.Notifications, contentDescription = "Notifications") },
-            trailing = { Switch(checked = true, onCheckedChange = {}) }
+            trailing = {
+                Switch(
+                    checked = notificationsEnabled,
+                    onCheckedChange = { notificationsEnabled = it }
+                )
+            }
         )
     )
 
@@ -120,7 +138,8 @@ fun SettingsScreen(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
                 icon = { Icon(Icons.Filled.Storage, contentDescription = "Storage") },
-                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                onClick = onOpenChats
             )
         )
         add(
@@ -128,7 +147,8 @@ fun SettingsScreen(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
                 icon = { Icon(Icons.Filled.Devices, contentDescription = "Devices") },
-                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                onClick = onOpenSecurityCenter
             )
         )
         add(
@@ -136,7 +156,13 @@ fun SettingsScreen(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
                 icon = { Icon(Icons.Filled.Tune, contentDescription = "Appearance") },
-                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+                trailing = {
+                    Text(
+                        text = themeSummary,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             )
         )
         if (BuildConfig.DEBUG) {
@@ -200,8 +226,8 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp, vertical = ChatUiTokens.SectionSpacing),
+            verticalArrangement = Arrangement.spacedBy(ChatUiTokens.SectionSpacing)
         ) {
             item {
                 SettingsHeader(
@@ -213,27 +239,27 @@ fun SettingsScreen(
             }
             item {
                 SectionHeader(text = tr("settings_account_section", "Account"))
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
                 SettingsSection(entries = accountSettings)
             }
             item {
                 SectionHeader(text = tr("settings_preferences_section", "Preferences"))
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
                 ThemeModeSection(
                     mode = themeMode,
                     onModeChange = onThemeModeChange
                 )
                 if (languageController != null && languageController.packs.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
                     LanguageSection(
                         controller = languageController
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
                 SettingsSection(entries = appSettings)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
                 SectionHeader(text = tr("settings_connection", "Connection"))
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
                 SettingsSection(entries = connectionEntries)
             }
         }
@@ -247,14 +273,10 @@ private fun SettingsHeader(
     deviceId: String,
     remoteOk: Boolean
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
+    SurfaceSectionCard {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AvatarBadge(initials = displayName.take(2).uppercase(), tint = MaterialTheme.colorScheme.primary, size = 54.dp)
@@ -299,11 +321,8 @@ private fun ThemeModeSection(
         else -> tr("settings_theme_dark", "Dark")
     }
 
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    SurfaceSectionCard {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -327,8 +346,8 @@ private fun ThemeModeSection(
                 }
                 LabeledChip(label = activeLabel, tint = MaterialTheme.colorScheme.primary)
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+            Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
                 options.forEach { option ->
                     val selected = option.mode == mode
                     Box(
@@ -362,11 +381,8 @@ private data class ThemeModeOption(
 
 @Composable
 private fun LanguageSection(controller: LanguageController) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    SurfaceSectionCard {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -390,8 +406,8 @@ private fun LanguageSection(controller: LanguageController) {
                 }
                 LabeledChip(label = controller.current.label, tint = MaterialTheme.colorScheme.primary)
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+            Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
                 controller.packs.forEach { pack ->
                     val selected = pack.code == controller.current.code
                     Box(
@@ -420,10 +436,7 @@ private fun LanguageSection(controller: LanguageController) {
 
 @Composable
 private fun SettingsSection(entries: List<SettingEntry>) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
+    SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             entries.forEachIndexed { index, entry ->
                 SettingsRow(entry)

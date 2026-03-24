@@ -1,9 +1,13 @@
 package mi.e2ee.android.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -16,6 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -23,55 +30,46 @@ import java.io.File
 import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupMemberRole
 
-private sealed interface FlowScreen {
-    data object Login : FlowScreen
-    data object Register : FlowScreen
-    data class QrLoginDisplay(val username: String) : FlowScreen
-    data object QrLoginScan : FlowScreen
-    data object Conversations : FlowScreen
-    data class Chat(val conversationId: String) : FlowScreen
-    data class GroupChat(val groupId: String) : FlowScreen
-    data object Settings : FlowScreen
-    data object Account : FlowScreen
-    data object Privacy : FlowScreen
-    data object Diagnostics : FlowScreen
-    data object AddFriend : FlowScreen
-    data object FriendRequests : FlowScreen
-    data class ContactDetail(val username: String) : FlowScreen
-    data class GroupDetail(val groupId: String) : FlowScreen
-    data class AddGroupMembers(val groupId: String) : FlowScreen
-    data class PeerCall(val callIdHex: String) : FlowScreen
-    data class GroupCall(val groupId: String, val callIdHex: String) : FlowScreen
-    data object BlockedUsers : FlowScreen
-}
-
 @Composable
 fun UiHost(
     sdk: SdkBridge,
     themeMode: Int = ThemeMode.ForceDark,
     onThemeModeChange: (Int) -> Unit = {}
 ) {
-    var stack by remember { mutableStateOf(listOf<FlowScreen>(FlowScreen.Login)) }
-    val current = stack.last()
+    val facade = remember(sdk) { SdkUiBridgeFacade(sdk) }
+    UiHost(
+        facade = facade,
+        themeMode = themeMode,
+        onThemeModeChange = onThemeModeChange
+    )
+}
+
+@Composable
+private fun UiHost(
+    facade: UiBridgeFacade,
+    themeMode: Int = ThemeMode.ForceDark,
+    onThemeModeChange: (Int) -> Unit = {}
+) {
+    val sdk = facade.sdk
+    val navState = rememberUiNavigationState()
+    val current = navState.current
     val context = LocalContext.current
     val callController = remember(context, sdk) { CallMediaController(context, sdk) }
 
     fun navigate(screen: FlowScreen) {
-        stack = stack + screen
+        navState.navigate(screen)
     }
 
     fun resetTo(screen: FlowScreen) {
-        stack = listOf(screen)
+        navState.resetTo(screen)
     }
 
     fun goBack() {
-        if (stack.size > 1) {
-            stack = stack.dropLast(1)
-        }
+        navState.goBack()
     }
 
-    LaunchedEffect(sdk.loggedIn) {
-        if (sdk.loggedIn) {
+    LaunchedEffect(facade.loggedIn) {
+        if (facade.loggedIn) {
             resetTo(FlowScreen.Conversations)
         } else {
             callController.stop()
@@ -95,11 +93,12 @@ fun UiHost(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        AppBackdrop()
         when (current) {
         FlowScreen.Login -> LoginScreen(
             onRegister = { navigate(FlowScreen.Register) },
             onLogin = { username, password, rootCode ->
-                if (sdk.login(username, password, rootCode)) {
+                if (facade.login(username, password, rootCode)) {
                     resetTo(FlowScreen.Conversations)
                 }
             },
@@ -112,9 +111,9 @@ fun UiHost(
         FlowScreen.Register -> RegisterScreen(
             onLogin = { goBack() },
             onCreateAccount = { username, password ->
-                val ok = sdk.register(username, password)
+                val ok = facade.register(username, password)
                 if (ok) {
-                    sdk.login(username, password)
+                    facade.login(username, password, "")
                     resetTo(FlowScreen.Conversations)
                 }
             },
@@ -133,28 +132,17 @@ fun UiHost(
         )
         FlowScreen.Conversations -> ConversationListScreen(
             conversations = sdk.conversations,
-            onTogglePin = { sdk.togglePin(it.id) },
-            onToggleRead = { sdk.markRead(it.id) },
-            onToggleMute = { sdk.toggleMute(it.id) },
-            onDeleteConversation = { conversation ->
-                sdk.deleteChatHistory(conversation.id, conversation.isGroup, deleteAttachments = true, secureWipe = false)
-            },
-            onOpenConversation = { conversation ->
-                sdk.setActiveConversation(conversation.id, conversation.isGroup)
-                sdk.loadHistory(conversation.id, conversation.isGroup)
-                if (conversation.isGroup) {
-                    sdk.refreshGroupMembers(conversation.id)
-                    navigate(FlowScreen.GroupChat(conversation.id))
-                } else {
-                    navigate(FlowScreen.Chat(conversation.id))
-                }
-            },
+            onTogglePin = { facade.togglePinned(it.id) },
+            onToggleRead = { facade.markConversationRead(it.id) },
+            onToggleMute = { facade.toggleConversationMute(it.id) },
+            onDeleteConversation = { conversation -> facade.deleteConversation(conversation) },
+            onOpenConversation = { conversation -> navigate(facade.openConversationRoute(conversation)) },
             onOpenSettings = { navigate(FlowScreen.Settings) },
             onOpenContacts = { navigate(FlowScreen.AddFriend) },
             onOpenNewGroup = {
-                val groupId = sdk.createGroup()
-                if (groupId != null) {
-                    navigate(FlowScreen.AddGroupMembers(groupId))
+                val route = facade.createGroupAndRoute()
+                if (route != null) {
+                    navigate(route)
                 }
             }
         )
@@ -322,11 +310,17 @@ fun UiHost(
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             onBack = { goBack() },
+            onOpenSecurityCenter = { navigate(FlowScreen.SecurityCenter) },
             onOpenAccount = { navigate(FlowScreen.Account) },
             onOpenPrivacy = { navigate(FlowScreen.Privacy) },
             onOpenDiagnostics = { navigate(FlowScreen.Diagnostics) },
             onOpenChats = { navigate(FlowScreen.Conversations) },
             onOpenContacts = { navigate(FlowScreen.AddFriend) }
+        )
+        FlowScreen.SecurityCenter -> AccountScreen(
+            sdk = sdk,
+            title = tr("security_center_title", "Security Center"),
+            onBack = { goBack() }
         )
         FlowScreen.Account -> AccountScreen(sdk = sdk, onBack = { goBack() })
         FlowScreen.Privacy -> PrivacyScreen(
@@ -353,6 +347,7 @@ fun UiHost(
             requests = sdk.friendRequests,
             onBack = { goBack() },
             onOpenRequests = { navigate(FlowScreen.FriendRequests) },
+            onScanQr = { navigate(FlowScreen.QrLoginScan) },
             onContactSelected = { friend -> navigate(FlowScreen.ContactDetail(friend.username)) },
             onOpenChats = { navigate(FlowScreen.Conversations) },
             onOpenSettings = { navigate(FlowScreen.Settings) },
@@ -435,7 +430,7 @@ fun UiHost(
         val incoming = sdk.pendingCall
         if (incoming != null) {
             AlertDialog(
-                onDismissRequest = { sdk.declineIncomingCall() },
+                onDismissRequest = { facade.declineIncomingCall() },
                 title = { Text(tr("call_incoming_title", "Incoming call")) },
                 text = {
                     Text(
@@ -444,7 +439,7 @@ fun UiHost(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val state = sdk.acceptIncomingCall()
+                        val state = facade.acceptIncomingCall()
                         if (state != null) {
                             navigate(FlowScreen.PeerCall(state.callIdHex))
                         }
@@ -453,7 +448,7 @@ fun UiHost(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { sdk.declineIncomingCall() }) {
+                    TextButton(onClick = { facade.declineIncomingCall() }) {
                         Text(tr("call_decline", "Decline"))
                     }
                 }
@@ -464,7 +459,7 @@ fun UiHost(
                 title = tr("trust_server_title", "Server trust required"),
                 fingerprint = sdk.pendingServerFingerprint,
                 pinHint = sdk.pendingServerPin,
-                onConfirm = { pin -> sdk.trustPendingServer(pin) },
+                onConfirm = { pin -> facade.trustPendingServer(pin) },
                 onDismiss = {}
             )
         }
@@ -474,10 +469,46 @@ fun UiHost(
                 fingerprint = sdk.pendingPeerFingerprint,
                 pinHint = sdk.pendingPeerPin,
                 subtitle = tr("trust_peer_subtitle", "Verify %s").format(sdk.pendingPeerUsername),
-                onConfirm = { pin -> sdk.trustPendingPeer(pin) },
+                onConfirm = { pin -> facade.trustPendingPeer(pin) },
                 onDismiss = {}
             )
         }
+    }
+}
+
+@Composable
+private fun AppBackdrop() {
+    val background = MaterialTheme.colorScheme.background
+    val isDark = background.luminance() < 0.3f
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        background,
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.86f else 0.68f),
+                        background
+                    ),
+                    startY = 0f,
+                    endY = 1800f
+                )
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .size(240.dp)
+                .offset(x = 220.dp, y = (-48).dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.14f else 0.12f))
+        )
+        Box(
+            modifier = Modifier
+                .size(190.dp)
+                .offset(x = (-36).dp, y = 560.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.09f else 0.08f))
+        )
     }
 }
 

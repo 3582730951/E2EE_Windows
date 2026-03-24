@@ -81,4 +81,60 @@ class UiScreensSmokeTest {
         composeRule.onNodeWithText("Pinned message").assertIsDisplayed()
         composeRule.onNodeWithText("Write a message...").assertIsDisplayed()
     }
+
+    @Test
+    fun registerScreenShowsIdentityInputs() {
+        composeRule.setContent {
+            ChatTheme {
+                RegisterScreen()
+            }
+        }
+
+        composeRule.onNodeWithText("Create account").assertIsDisplayed()
+        composeRule.onNodeWithText("Display name").assertIsDisplayed()
+        composeRule.onNodeWithText("Confirm password").assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsScreenShowsAccountAndPrivacySections() {
+        composeRule.setContent {
+            ChatTheme {
+                SettingsScreen(sdk = SdkBridge(composeRule.activity))
+            }
+        }
+
+        composeRule.onNodeWithText("Settings").assertIsDisplayed()
+        composeRule.onNodeWithText("Account and security").assertIsDisplayed()
+        composeRule.onNodeWithText("Privacy").assertIsDisplayed()
+    }
+
+    @Test
+    fun groupChatScreenShowsTitleAndMessages() {
+        composeRule.setContent {
+            ChatTheme {
+                GroupChatScreen(items = SampleGroupChat.items)
+            }
+        }
+
+        composeRule.onNodeWithText("Design Ops").assertIsDisplayed()
+        composeRule.onNodeWithText("12 members / Secure group").assertIsDisplayed()
+        composeRule.onNodeWithText("Aster joined the group").assertIsDisplayed()
+    }
+
+    @Test
+    fun friendRequestsScreenShowsActions() {
+        val requests = listOf(
+            FriendRequestUi(username = "mina", remark = "Hi, let's connect")
+        )
+        composeRule.setContent {
+            ChatTheme {
+                FriendRequestsScreen(requests = requests)
+            }
+        }
+
+        composeRule.onNodeWithText("Friend requests").assertIsDisplayed()
+        composeRule.onNodeWithText("mina").assertIsDisplayed()
+        composeRule.onNodeWithText("Accept").assertIsDisplayed()
+        composeRule.onNodeWithText("Decline").assertIsDisplayed()
+    }
 }

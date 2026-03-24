@@ -11,10 +11,12 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Item {
     id: root
+    property var bridge: typeof clientBridge === "undefined" ? null : clientBridge
+    readonly property Window hostWindow: root.Window.window
 
     property bool chatSearchVisible: false
     property bool stickToBottom: true
-    property bool hasChat: Ui.AppStore.currentChatId.length > 0
+    property bool hasChat: Ui.ChatStore.currentChatId.length > 0
     property real actionScale: 1.32
     property real topBarScale: 0.72
     property int actionButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
@@ -44,7 +46,7 @@ Item {
     property var imeCandidates: []
     property int imeCandidateIndex: 0
     property string imePreedit: ""
-    property bool internalImeReady: Ui.AppStore.internalImeEnabled &&
+    property bool internalImeReady: Ui.PreferenceStore.internalImeEnabled &&
                                     clientBridge && clientBridge.imeAvailable &&
                                     clientBridge.imeAvailable()
     property bool imePopupVisible: internalImeReady && imeComposing &&
@@ -192,25 +194,33 @@ Item {
             return
         }
         emojiLoaded = true
+        emojiModel.clear()
         var request = new XMLHttpRequest()
-        request.open("GET", "qrc:/mi/e2ee/ui/emoji/emoji.json", false)
-        request.send()
-        if (request.status === 0 || request.status === 200) {
-            try {
-                var codes = JSON.parse(request.responseText)
-                var limit = Math.min(codes.length, 160)
-                for (var i = 0; i < limit; ++i) {
-                    var code = parseInt(codes[i], 16)
-                    if (!isNaN(code)) {
-                        emojiModel.append({ value: String.fromCodePoint(code) })
-                    }
-                }
-            } catch (err) {
-                emojiLoaded = false
+        request.onreadystatechange = function() {
+            if (request.readyState !== XMLHttpRequest.DONE) {
+                return
             }
-        } else {
-            emojiLoaded = false
+            if (request.status === 0 || request.status === 200) {
+                try {
+                    var codes = JSON.parse(request.responseText)
+                    var limit = Math.min(codes.length, 160)
+                    for (var i = 0; i < limit; ++i) {
+                        var code = parseInt(codes[i], 16)
+                        if (!isNaN(code)) {
+                            emojiModel.append({ value: String.fromCodePoint(code) })
+                        }
+                    }
+                } catch (err) {
+                    emojiLoaded = false
+                    emojiModel.clear()
+                }
+            } else {
+                emojiLoaded = false
+                emojiModel.clear()
+            }
         }
+        request.open("GET", "qrc:/mi/e2ee/ui/emoji/emoji.json")
+        request.send()
     }
     function loadStickers() {
         stickerModel.clear()
@@ -295,7 +305,7 @@ Item {
         if (selected.length === 0) {
             return
         }
-        if (Ui.AppStore.clipboardIsolationEnabled) {
+        if (Ui.PreferenceStore.clipboardIsolationEnabled) {
             Ui.AppStore.setInternalClipboard(selected)
             if (cut) {
                 var range = selectedRange()
@@ -316,7 +326,7 @@ Item {
         if (!messageInput) {
             return
         }
-        if (!Ui.AppStore.clipboardIsolationEnabled) {
+        if (!Ui.PreferenceStore.clipboardIsolationEnabled) {
             messageInput.paste()
             return
         }
@@ -339,7 +349,7 @@ Item {
         }
     }
     function contextCanPaste() {
-        if (!Ui.AppStore.clipboardIsolationEnabled) {
+        if (!Ui.PreferenceStore.clipboardIsolationEnabled) {
             return true
         }
         var internalText = Ui.AppStore.internalClipboardText || ""
@@ -561,7 +571,7 @@ Item {
     Connections {
         target: Ui.AppStore
         function onInternalImeEnabledChanged() {
-            if (!Ui.AppStore.internalImeEnabled) {
+            if (!Ui.PreferenceStore.internalImeEnabled) {
                 cancelImeComposition(true)
                 if (clientBridge && clientBridge.imeReset) {
                     clientBridge.imeReset()
@@ -581,33 +591,76 @@ Item {
             Layout.minimumHeight: hasChat ? actionTopBarHeight : 0
             Layout.maximumHeight: hasChat ? actionTopBarHeight : 0
             visible: hasChat
-            color: Ui.Style.panelBg
+            color: Ui.Style.topBarBg
 
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: Ui.Style.paddingS * topBarScale
-                spacing: Ui.Style.paddingS
+                spacing: Ui.Style.paddingM
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: Ui.Style.paddingS
+                    spacing: Ui.Style.paddingM
+
+                    Rectangle {
+                        Layout.preferredWidth: 38
+                        Layout.preferredHeight: 38
+                        radius: 19
+                        color: Ui.Style.avatarColor(Ui.ChatStore.currentChatId)
+                        border.width: 1
+                        border.color: Ui.Style.borderStrong
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: Ui.ChatStore.currentChatTitle.length > 0
+                                  ? Ui.ChatStore.currentChatTitle.charAt(0).toUpperCase()
+                                  : "?"
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                        }
+                    }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 4
                         Text {
-                        text: Ui.AppStore.currentChatTitle.length > 0
-                              ? Ui.AppStore.currentChatTitle
-                              : Ui.I18n.t("chat.selectChat")
+                            text: Ui.ChatStore.currentChatTitle.length > 0
+                                  ? Ui.ChatStore.currentChatTitle
+                                  : Ui.I18n.t("chat.selectChat")
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
                             color: Ui.Style.textPrimary
                             elide: Text.ElideRight
                         }
-                        Text {
-                            text: Ui.AppStore.currentChatSubtitle
-                            font.pixelSize: 11
-                            color: Ui.Style.textMuted
-                            elide: Text.ElideRight
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Rectangle {
+                                Layout.preferredHeight: 22
+                                radius: 11
+                                color: Ui.Style.topBarPillBg
+                                border.width: 1
+                                border.color: Ui.Style.topBarPillBorder
+                                implicitWidth: statusPillText.implicitWidth + 18
+
+                                Text {
+                                    id: statusPillText
+                                    anchors.centerIn: parent
+                                    text: Ui.I18n.t("chat.secureSession")
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.accentSoft
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.ChatStore.currentChatSubtitle
+                                font.pixelSize: 11
+                                color: Ui.Style.textMuted
+                                elide: Text.ElideRight
+                            }
                         }
                     }
                 }
@@ -633,6 +686,9 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
                         visible: !chatSearchVisible
                         onClicked: root.showSearch()
                         ToolTip.visible: hovered
@@ -642,7 +698,10 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
-                        enabled: Ui.AppStore.currentChatId.length > 0
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
+                        enabled: Ui.ChatStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.call")
                         onClicked: Ui.AppStore.handleCallAction(false)
@@ -651,7 +710,10 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
-                        enabled: Ui.AppStore.currentChatId.length > 0
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
+                        enabled: Ui.ChatStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.video")
                         onClicked: Ui.AppStore.handleCallAction(true)
@@ -661,6 +723,9 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/more-vert.svg"
                         buttonSize: actionButtonSize
                         iconSize: actionIconSize
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.more")
                         onClicked: chatMoreMenu.popup(chatMoreButton, 0, chatMoreButton.height + 4)
@@ -689,16 +754,24 @@ Item {
                 MenuItem {
                     text: Ui.I18n.t("chat.stealth")
                     checkable: true
-                    checked: Ui.AppStore.isChatStealth(Ui.AppStore.currentChatId)
-                    enabled: Ui.AppStore.currentChatId.length > 0
-                    onTriggered: Ui.AppStore.toggleChatStealth(Ui.AppStore.currentChatId)
+                    checked: Ui.AppStore.isChatStealth(Ui.ChatStore.currentChatId)
+                    enabled: Ui.ChatStore.currentChatId.length > 0
+                    onTriggered: Ui.AppStore.toggleChatStealth(Ui.ChatStore.currentChatId)
                 }
                 MenuItem {
                     text: Ui.I18n.t("chat.mute")
                     checkable: true
-                    checked: Ui.AppStore.isChatMuted(Ui.AppStore.currentChatId)
-                    enabled: Ui.AppStore.currentChatId.length > 0
-                    onTriggered: Ui.AppStore.toggleChatMuted(Ui.AppStore.currentChatId)
+                    checked: Ui.AppStore.isChatMuted(Ui.ChatStore.currentChatId)
+                    enabled: Ui.ChatStore.currentChatId.length > 0
+                    onTriggered: Ui.AppStore.toggleChatMuted(Ui.ChatStore.currentChatId)
+                }
+                MenuItem {
+                    text: Ui.AppStore.isChatBlocked(Ui.ChatStore.currentChatId)
+                          ? Ui.I18n.t("chat.unblock")
+                          : Ui.I18n.t("right.block")
+                    enabled: Ui.ChatStore.currentChatId.length > 0 &&
+                             Ui.ChatStore.currentChatType === "private"
+                    onTriggered: Ui.AppStore.toggleChatBlocked(Ui.ChatStore.currentChatId)
                 }
             }
 
@@ -746,8 +819,8 @@ Item {
 
             Rectangle {
                 id: groupCallBanner
-                property var callInfo: Ui.AppStore.groupCallInfo(Ui.AppStore.currentChatId)
-                visible: Ui.AppStore.currentChatType === "group" && callInfo
+                property var callInfo: Ui.AppStore.groupCallInfo(Ui.ChatStore.currentChatId)
+                visible: Ui.ChatStore.currentChatType === "group" && callInfo
                 height: visible ? 48 : 0
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -764,7 +837,7 @@ Item {
                     anchors.margins: Ui.Style.paddingS
                     spacing: Ui.Style.paddingS
                     Text {
-                        text: callInfo && callInfo.video
+                        text: groupCallBanner.callInfo && groupCallBanner.callInfo.video
                               ? Ui.I18n.t("chat.groupCallActiveVideo")
                               : Ui.I18n.t("chat.groupCallActiveVoice")
                         color: Ui.Style.textPrimary
@@ -775,13 +848,15 @@ Item {
                     Item { Layout.fillWidth: true }
                     Components.GhostButton {
                         text: Ui.I18n.t("chat.groupCallJoin")
-                        visible: clientBridge && !clientBridge.groupCallActive
-                        onClicked: Ui.AppStore.joinGroupCall(callInfo && callInfo.video)
+                        visible: !!(clientBridge && !clientBridge.groupCallActive)
+                        onClicked: Ui.AppStore.joinGroupCall(
+                                       groupCallBanner.callInfo &&
+                                       groupCallBanner.callInfo.video)
                     }
                     Components.PrimaryButton {
                         text: Ui.I18n.t("chat.groupCallLeave")
-                        visible: clientBridge && clientBridge.groupCallActive &&
-                                 clientBridge.activeGroupCallGroup === Ui.AppStore.currentChatId
+                        visible: !!(clientBridge && clientBridge.groupCallActive &&
+                                 clientBridge.activeGroupCallGroup === Ui.ChatStore.currentChatId)
                         onClicked: Ui.AppStore.leaveGroupCall()
                     }
                 }
@@ -798,8 +873,8 @@ Item {
                                     ? groupCallBanner.height + Ui.Style.paddingS
                                     : 0)
                 clip: true
-                model: Ui.AppStore.currentChatId.length > 0
-                       ? Ui.AppStore.messagesModel(Ui.AppStore.currentChatId)
+                model: Ui.ChatStore.currentChatId.length > 0
+                       ? Ui.AppStore.messagesModel(Ui.ChatStore.currentChatId)
                        : null
                 boundsBehavior: Flickable.StopAtBounds
                 cacheBuffer: 320
@@ -819,23 +894,102 @@ Item {
 
             Item {
                 anchors.fill: parent
-                visible: Ui.AppStore.currentChatId.length === 0
+                visible: Ui.ChatStore.currentChatId.length === 0
 
-                Column {
+                Rectangle {
                     anchors.centerIn: parent
-                    spacing: 10
-                    Rectangle {
-                        radius: 14
-                        color: Qt.rgba(0.28, 0.45, 0.33, 0.35)
-                        border.color: Qt.rgba(1, 1, 1, 0.4)
-                        implicitWidth: emptyText.paintedWidth + 24
-                        implicitHeight: 28
-                        Text {
-                            id: emptyText
-                            anchors.centerIn: parent
-                            text: Ui.I18n.t("chat.empty")
-                            color: "#FFFFFF"
+                    width: Math.min(parent.width - 64, 436)
+                    radius: 28
+                    color: Qt.rgba(12 / 255, 19 / 255, 28 / 255, 0.92)
+                    border.color: Ui.Style.borderStrong
+                    border.width: 1
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 28
+                        spacing: 16
+
+                        Rectangle {
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 64
+                            Layout.alignment: Qt.AlignHCenter
+                            radius: 32
+                            color: Ui.Style.railAccentBg
+                            border.color: Ui.Style.railAccentBorder
+                            border.width: 1
+
+                            Rectangle {
+                                width: 18
+                                height: 18
+                                radius: 9
+                                anchors.centerIn: parent
+                                color: Ui.Style.accent
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            radius: 14
+                            color: Qt.rgba(60 / 255, 207 / 255, 145 / 255, 0.16)
+                            border.color: Qt.rgba(126 / 255, 229 / 255, 176 / 255, 0.22)
+                            implicitWidth: emptyBadgeText.implicitWidth + 20
+                            implicitHeight: 28
+
+                            Text {
+                                id: emptyBadgeText
+                                anchors.centerIn: parent
+                                text: Ui.I18n.t("chat.secureSession")
+                            color: Ui.Style.success
                             font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                            text: Ui.I18n.t("left.emptyTitle")
+                            color: Ui.Style.textPrimary
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            font.pixelSize: 28
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: Ui.I18n.t("left.emptyBody")
+                            color: Ui.Style.textSecondary
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            lineHeight: 1.35
+                            font.pixelSize: 14
+                        }
+
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 8
+
+                            Repeater {
+                                model: ["OPAQUE", "Ratchet", "Sender Key"]
+
+                                delegate: Rectangle {
+                                    radius: 14
+                                    color: Ui.Style.authSurfaceStrong
+                                    border.width: 1
+                                    border.color: Ui.Style.borderSubtle
+                                    implicitWidth: chipText.implicitWidth + 20
+                                    implicitHeight: 28
+
+                                    Text {
+                                        id: chipText
+                                        anchors.centerIn: parent
+                                        text: modelData
+                                        color: Ui.Style.textSecondary
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -862,9 +1016,9 @@ Item {
                 id: callOverlay
                 anchors.fill: parent
                 z: 5
-                visible: Ui.AppStore.incomingCallActive &&
+                visible: Ui.CallStore.incomingCallActive &&
                          (!clientBridge || clientBridge.activeCallId.length === 0)
-                property bool callVideo: clientBridge && clientBridge.activeCallVideo
+                property bool callVideo: !!(clientBridge && clientBridge.activeCallVideo)
                 property string callPeer: clientBridge ? clientBridge.activeCallPeer : ""
 
                 Rectangle {
@@ -878,7 +1032,7 @@ Item {
 
                 Rectangle {
                     id: incomingPanel
-                    visible: Ui.AppStore.incomingCallActive &&
+                    visible: Ui.CallStore.incomingCallActive &&
                              (!clientBridge || clientBridge.activeCallId.length === 0)
                     width: 320
                     height: 210
@@ -892,7 +1046,7 @@ Item {
                         anchors.margins: Ui.Style.paddingM
                         spacing: Ui.Style.paddingS
                         Text {
-                            text: Ui.AppStore.incomingCallVideo
+                            text: Ui.CallStore.incomingCallVideo
                                   ? Ui.I18n.t("chat.callIncomingVideo")
                                   : Ui.I18n.t("chat.callIncomingVoice")
                             font.pixelSize: 13
@@ -900,7 +1054,7 @@ Item {
                             color: Ui.Style.textPrimary
                         }
                         Text {
-                            text: Ui.AppStore.resolveTitle(Ui.AppStore.incomingCallPeer)
+                            text: Ui.AppStore.resolveTitle(Ui.CallStore.incomingCallPeer)
                             font.pixelSize: 12
                             color: Ui.Style.textSecondary
                             elide: Text.ElideRight
@@ -964,11 +1118,21 @@ Item {
             visible: clientBridge && clientBridge.activeCallId.length > 0 &&
                      !clientBridge.activeCallVideo
             flags: Qt.Window | Qt.FramelessWindowHint
+            transientParent: root.hostWindow
             color: "transparent"
             width: 520
             height: 360
+            minimumWidth: 520
+            maximumWidth: 520
+            minimumHeight: 360
+            maximumHeight: 360
 
             function centerWindow() {
+                if (root.hostWindow) {
+                    x = Math.round(root.hostWindow.x + (root.hostWindow.width - width) / 2)
+                    y = Math.round(root.hostWindow.y + (root.hostWindow.height - height) / 2)
+                    return
+                }
                 x = Screen.virtualX + (Screen.width - width) / 2
                 y = Screen.virtualY + (Screen.height - height) / 2
             }
@@ -1053,11 +1217,21 @@ Item {
             visible: clientBridge && clientBridge.activeCallId.length > 0 &&
                      clientBridge.activeCallVideo
             flags: Qt.Window | Qt.FramelessWindowHint
+            transientParent: root.hostWindow
             color: "transparent"
             width: 760
             height: 520
+            minimumWidth: 760
+            maximumWidth: 760
+            minimumHeight: 520
+            maximumHeight: 520
 
             function centerWindow() {
+                if (root.hostWindow) {
+                    x = Math.round(root.hostWindow.x + (root.hostWindow.width - width) / 2)
+                    y = Math.round(root.hostWindow.y + (root.hostWindow.height - height) / 2)
+                    return
+                }
                 x = Screen.virtualX + (Screen.width - width) / 2
                 y = Screen.virtualY + (Screen.height - height) / 2
             }
@@ -1221,10 +1395,11 @@ Item {
 
         GroupCallWindow {
             id: groupCallWindow
-            visible: clientBridge && clientBridge.groupCallActive
-            clientBridge: clientBridge
-            participants: clientBridge ? clientBridge.groupCallParticipants : []
-            videoEnabled: clientBridge && clientBridge.activeGroupCallVideo
+            visible: !!(root.bridge && root.bridge.groupCallActive)
+            ownerWindow: root.hostWindow
+            clientBridge: root.bridge
+            participants: root.bridge ? root.bridge.groupCallParticipants : []
+            videoEnabled: !!(root.bridge && root.bridge.activeGroupCallVideo)
             durationSec: callDurationSec
             micEnabled: callMicEnabled
             cameraEnabled: callCameraEnabled
@@ -1319,7 +1494,7 @@ Item {
                                     color: Ui.Style.accent
                                 }
                                 background: Rectangle { color: "transparent" }
-                                enabled: Ui.AppStore.currentChatId.length > 0
+                                enabled: Ui.ChatStore.currentChatId.length > 0
                                 Keys.onPressed: function(event) {
                                     var allowInternalIme = internalImeReady && !externalImeActive()
                                     if (allowInternalIme) {
@@ -1383,19 +1558,19 @@ Item {
                                                     : Qt.ImhNone
                             }
                         }
-                    }
 
-                    MouseArea {
-                        id: inputContextArea
-                        anchors.fill: inputField
-                        acceptedButtons: Qt.RightButton
-                        hoverEnabled: true
-                        onPressed: {
-                            if (!hasChat) {
-                                return
+                        MouseArea {
+                            id: inputContextArea
+                            anchors.fill: parent
+                            acceptedButtons: Qt.RightButton
+                            hoverEnabled: true
+                            onPressed: {
+                                if (!hasChat) {
+                                    return
+                                }
+                                messageInput.forceActiveFocus()
+                                inputContextMenu.popup()
                             }
-                            messageInput.forceActiveFocus()
-                            inputContextMenu.popup()
                         }
                     }
 
@@ -1421,7 +1596,7 @@ Item {
                         baseColor: Ui.Style.textPrimary
                         hoverColor: Ui.Style.textPrimary
                         pressColor: Ui.Style.textPrimary
-                        enabled: Ui.AppStore.currentChatId.length > 0 &&
+                        enabled: Ui.ChatStore.currentChatId.length > 0 &&
                                  messageInput.text.trim().length > 0
                         onClicked: inputBar.sendMessage()
                         ToolTip.visible: hovered
@@ -1436,9 +1611,8 @@ Item {
                 radius: 8
                 color: Ui.Style.panelBgRaised
                 border.color: Ui.Style.borderSubtle
-                anchors.left: inputField.left
-                anchors.bottom: inputField.top
-                anchors.bottomMargin: 6
+                x: inputField.x
+                y: inputField.y - height - 6
                 width: Math.min(inputField.width, 420)
                 implicitHeight: imePopupColumn.implicitHeight + Ui.Style.paddingS * 2
                 z: 4
@@ -1759,7 +1933,11 @@ Item {
         onHeightChanged: updateBaseSize()
         onZoomChanged: clampPan()
 
-        Keys.onEscapePressed: closeViewer()
+        Shortcut {
+            sequence: "Esc"
+            context: Qt.WindowShortcut
+            onActivated: imageViewer.closeViewer()
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -1912,7 +2090,8 @@ Item {
 
                 GridView {
                     id: emojiGrid
-                    anchors.fill: parent
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     cellWidth: emojiCellSize
                     cellHeight: emojiCellSize
                     model: emojiModel
@@ -1935,7 +2114,8 @@ Item {
 
                 GridView {
                     id: stickerGrid
-                    anchors.fill: parent
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     cellWidth: stickerCellSize
                     cellHeight: stickerCellSize
                     model: stickerModel
@@ -1992,17 +2172,20 @@ Item {
         property int fontSize: 12
         property string textPhoto: Ui.I18n.t("attach.photoVideo")
         property string textDocument: Ui.I18n.t("attach.document")
+        property string textContact: Ui.I18n.t("attach.contact")
         property string textLocation: Ui.I18n.t("attach.location")
         property var items: [
             { kind: "photo", label: Ui.I18n.t("attach.photoVideo"), iconSource: "qrc:/mi/e2ee/ui/icons/image.svg" },
             { kind: "document", label: Ui.I18n.t("attach.document"), iconSource: "qrc:/mi/e2ee/ui/icons/file.svg" },
+            { kind: "contact", label: Ui.I18n.t("attach.contact"), iconSource: "qrc:/mi/e2ee/ui/icons/info.svg" },
             { kind: "location", label: Ui.I18n.t("attach.location"), iconSource: "qrc:/mi/e2ee/ui/icons/location.svg" }
         ]
         readonly property real maxTextWidth: Math.max(metricsPhoto.width,
                                                      metricsDocument.width,
+                                                     metricsContact.width,
                                                      metricsLocation.width)
         implicitWidth: Math.ceil(contentLeftPadding + contentRightPadding + iconBlockWidth + maxTextWidth + 7)
-        implicitHeight: Math.ceil(itemHeight * 3)
+        implicitHeight: Math.ceil(itemHeight * 4)
 
         background: Rectangle {
             radius: 10
@@ -2064,6 +2247,8 @@ Item {
                                 mediaPicker.open()
                             } else if (modelData.kind === "document") {
                                 filePicker.open()
+                            } else if (modelData.kind === "contact") {
+                                contactDialog.open()
                             } else if (modelData.kind === "location") {
                                 locationDialog.open()
                             }
@@ -2086,10 +2271,179 @@ Item {
             font.family: Ui.Style.fontFamily
         }
         TextMetrics {
+            id: metricsContact
+            text: attachPopup.textContact
+            font.pixelSize: attachPopup.fontSize
+            font.family: Ui.Style.fontFamily
+        }
+        TextMetrics {
             id: metricsLocation
             text: attachPopup.textLocation
             font.pixelSize: attachPopup.fontSize
             font.family: Ui.Style.fontFamily
+        }
+    }
+
+    Popup {
+        id: contactDialog
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        width: 360
+        property string errorText: ""
+
+        onOpened: {
+            errorText = ""
+            contactUsernameField.text = ""
+            contactDisplayField.text = ""
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: Ui.Style.panelBgRaised
+            border.color: Ui.Style.borderSubtle
+        }
+
+        contentItem: ColumnLayout {
+            anchors.margins: Ui.Style.paddingM
+            spacing: Ui.Style.paddingS
+
+            Text {
+                text: Ui.I18n.t("attach.contactTitle")
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                color: Ui.Style.textPrimary
+            }
+            Text {
+                text: Ui.I18n.t("attach.contactHint")
+                color: Ui.Style.textMuted
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Components.SecureTextField {
+                id: contactUsernameField
+                Layout.fillWidth: true
+                placeholderText: Ui.I18n.t("attach.contactUsername")
+                font.pixelSize: 12
+            }
+            Components.SecureTextField {
+                id: contactDisplayField
+                Layout.fillWidth: true
+                placeholderText: Ui.I18n.t("attach.contactDisplay")
+                font.pixelSize: 12
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 140
+                visible: Ui.AppStore.contactsModel.count > 0
+                radius: 10
+                color: Ui.Style.panelBgAlt
+                border.color: Ui.Style.borderSubtle
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingS
+                    spacing: Ui.Style.paddingXS
+
+                    Text {
+                        text: Ui.I18n.t("attach.contactSelect")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 11
+                    }
+
+                    ListView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        model: Ui.AppStore.contactsModel
+                        delegate: Rectangle {
+                            width: ListView.view.width
+                            height: 38
+                            radius: 8
+                            color: pickerArea.containsMouse ? Ui.Style.hoverBg : "transparent"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingS
+                                spacing: Ui.Style.paddingS
+
+                                Rectangle {
+                                    width: 24
+                                    height: 24
+                                    radius: 12
+                                    color: Ui.Style.avatarColor(displayName || contactId || "")
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: (displayName || contactId || "?").charAt(0).toUpperCase()
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text {
+                                        text: displayName || contactId || ""
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        text: contactId || ""
+                                        color: Ui.Style.textMuted
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: pickerArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    contactUsernameField.text = contactId || ""
+                                    contactDisplayField.text = displayName || ""
+                                }
+                            }
+                        }
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
+                    }
+                }
+            }
+            Text {
+                visible: contactDialog.errorText.length > 0
+                text: contactDialog.errorText
+                color: Ui.Style.danger
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Ui.Style.paddingS
+                Components.GhostButton {
+                    text: Ui.I18n.t("attach.contactCancel")
+                    Layout.fillWidth: true
+                    onClicked: contactDialog.close()
+                }
+                Components.PrimaryButton {
+                    text: Ui.I18n.t("attach.contactSend")
+                    Layout.fillWidth: true
+                    onClicked: {
+                        var ok = Ui.AppStore.sendContactCard(contactUsernameField.text,
+                                                             contactDisplayField.text)
+                        if (ok) {
+                            contactDialog.close()
+                        } else {
+                            contactDialog.errorText = Ui.AppStore.sendErrorMessage
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2228,7 +2582,7 @@ Item {
             property bool isSystem: kind === "system"
             property bool isIncoming: kind === "in"
             property bool isOutgoing: kind === "out"
-            property bool showSender: isIncoming && Ui.AppStore.currentChatType === "group"
+            property bool showSender: isIncoming && Ui.ChatStore.currentChatType === "group"
             property string contentKind: model.contentKind || "text"
             property bool isEmoji: contentKind === "emoji"
             property bool isSticker: contentKind === "sticker"
@@ -2237,6 +2591,7 @@ Item {
             property bool isVideo: contentKind === "video"
             property bool isFile: contentKind === "file"
             property bool isLocation: contentKind === "location"
+            property bool isContact: contentKind === "contact"
             property bool isCall: contentKind === "call"
             property string msgId: model.msgId || ""
             property double timestampMs: model.timestampMs || 0
@@ -2245,6 +2600,8 @@ Item {
             property string fileKey: model.fileKey || ""
             property var fileUrl: model.fileUrl || ""
             property int fileSize: model.fileSize || 0
+            property string contactUsername: model.contactUsername || ""
+            property string contactDisplay: model.contactDisplay || ""
             property bool imageEnhanced: model.imageEnhanced === true
             property bool attachmentRequested: false
             property int senderAvatarSize: 26
@@ -2357,6 +2714,7 @@ Item {
                 property bool transparentBubble: isSticker || isEmoji
                 property bool usesFullWidth: !isSticker && !isImage && !isGif &&
                                              !isVideo && !isFile && !isLocation &&
+                                             !isContact &&
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
@@ -2530,10 +2888,10 @@ Item {
                                     color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                                 }
                                 onTriggered: Ui.AppStore.requestRecallMessage(
-                                                 Ui.AppStore.currentChatId,
+                                                 Ui.ChatStore.currentChatId,
                                                  msgId,
                                                  timestampMs,
-                                                 Ui.AppStore.currentChatType === "group")
+                                                 Ui.ChatStore.currentChatType === "group")
                             }
                         }
                         MouseArea {
@@ -2778,10 +3136,10 @@ Item {
                                     color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                                 }
                                 onTriggered: Ui.AppStore.requestRecallMessage(
-                                                 Ui.AppStore.currentChatId,
+                                                 Ui.ChatStore.currentChatId,
                                                  msgId,
                                                  timestampMs,
-                                                 Ui.AppStore.currentChatType === "group")
+                                                 Ui.ChatStore.currentChatType === "group")
                             }
                         }
                         MouseArea {
@@ -2832,6 +3190,90 @@ Item {
                     }
                 }
 
+                Component {
+                    id: contactContent
+                    Item {
+                        implicitWidth: 230
+                        implicitHeight: 108
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 12
+                            color: Ui.Style.panelBgAlt
+                            border.color: Ui.Style.borderSubtle
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 6
+
+                            RowLayout {
+                                spacing: 8
+                                Rectangle {
+                                    width: 38
+                                    height: 38
+                                    radius: 19
+                                    color: Ui.Style.avatarColor(contactDisplay || contactUsername || "")
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: (contactDisplay || contactUsername || "?").charAt(0).toUpperCase()
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text {
+                                        text: contactDisplay.length > 0
+                                              ? contactDisplay
+                                              : (contactUsername.length > 0
+                                                 ? contactUsername
+                                                 : Ui.I18n.t("chat.contact"))
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        color: Ui.Style.textPrimary
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        text: contactUsername
+                                        visible: contactUsername.length > 0
+                                        font.pixelSize: 10
+                                        color: Ui.Style.textMuted
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: model.text || ""
+                                font.pixelSize: 10
+                                color: Ui.Style.textMuted
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Components.GhostButton {
+                                    text: Ui.I18n.t("chat.contactCopy")
+                                    Layout.fillWidth: true
+                                    onClicked: Ui.AppStore.setInternalClipboard(contactUsername)
+                                }
+                                Components.PrimaryButton {
+                                    text: Ui.I18n.t("chat.contactOpen")
+                                    Layout.fillWidth: true
+                                    enabled: contactUsername.length > 0
+                                    onClicked: Ui.AppStore.openChatFromContact(contactUsername)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Menu {
                     id: messageContextMenu
                     property int compactWidth: root.contextMenuWidth([
@@ -2855,10 +3297,10 @@ Item {
                             color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                         }
                         onTriggered: Ui.AppStore.requestRecallMessage(
-                                         Ui.AppStore.currentChatId,
+                                         Ui.ChatStore.currentChatId,
                                          msgId,
                                          timestampMs,
-                                         Ui.AppStore.currentChatType === "group")
+                                         Ui.ChatStore.currentChatType === "group")
                     }
                 }
 
@@ -2912,7 +3354,8 @@ Item {
                                             : (isVideo ? videoContent
                                             : (isFile ? fileContent
                                             : (isLocation ? locationContent
-                                            : (isEmoji ? emojiContent : textContent))))))
+                                            : (isContact ? contactContent
+                                            : (isEmoji ? emojiContent : textContent)))))))
                         }
 
                         Row {

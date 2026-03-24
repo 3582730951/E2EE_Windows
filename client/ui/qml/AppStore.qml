@@ -35,6 +35,7 @@ QtObject {
     property var membersByChatId: ({})
     property var typingByChatId: ({})
     property var presenceByChatId: ({})
+    property var blockedChatIds: ({})
     property var downloadProgressByFileId: ({})
     property bool incomingCallActive: false
     property string incomingCallPeer: ""
@@ -42,7 +43,7 @@ QtObject {
     property bool incomingCallVideo: false
     property string currentChatBackgroundUrl: ""
     property var recalledMessageIdsByChat: ({})
-    property int recallWindowMs: 5 * 60 * 1000
+    property int recallWindowMs: 2 * 60 * 1000
 
     signal currentChatChanged(string chatId)
     signal leftTabChanged(int tab)
@@ -59,6 +60,25 @@ QtObject {
     property int notificationCount: friendRequestsModel.count + groupInvitesModel.count + noticesModel.count
     property var knownFriendIds: ({})
     property bool friendIdsInitialized: false
+
+    function syncDomainStores() {
+        Ui.SessionStore.applyFromApp(currentPage, initialized, statusMessage)
+        Ui.ConversationStore.applyFromApp(searchQuery, currentLeftTab, rightPaneVisible, notificationCount)
+        Ui.ChatStore.applyFromApp(currentChatId,
+                                  currentChatTitle,
+                                  currentChatSubtitle,
+                                  currentChatType,
+                                  currentChatMembers,
+                                  currentChatBackgroundUrl,
+                                  sendErrorMessage)
+        Ui.CallStore.applyFromApp(incomingCallActive, incomingCallPeer, incomingCallId, incomingCallVideo)
+        Ui.PreferenceStore.applyFromApp(clipboardIsolationEnabled,
+                                        internalImeEnabled,
+                                        historySaveEnabled,
+                                        aiEnhanceEnabled,
+                                        aiEnhanceQualityLevel,
+                                        aiEnhanceX4Confirmed)
+    }
 
     function init() {
         if (initialized) {
@@ -99,6 +119,7 @@ QtObject {
             }
         }
         rebuildFiltered()
+        syncDomainStores()
     }
 
     function isEmojiBase(code) {
@@ -172,6 +193,19 @@ QtObject {
             return null
         }
         return { label: label, lat: lat, lon: lon }
+    }
+
+    function parseContactCardText(text) {
+        var value = (text || "").trim()
+        var pattern = /^(?:【名片】|\\[名片\\])\\s*([^\\s(]+)(?:\\s*\\((.*)\\))?$/
+        var match = pattern.exec(value)
+        if (!match || match.length < 2) {
+            return null
+        }
+        return {
+            username: (match[1] || "").trim(),
+            display: (match[2] || "").trim()
+        }
     }
 
     function parseCallInviteText(text) {
@@ -621,6 +655,12 @@ QtObject {
         } else if (kind === "sticker") {
             var sticker = message.stickerId || ""
             text = sticker.length > 0 ? "[贴纸] " + sticker : "[贴纸]"
+        } else if (kind === "contact") {
+            var cardLabel = message.contactUsername || ""
+            var cardDisplay = message.contactDisplay || ""
+            text = cardDisplay.length > 0
+                   ? ("[名片] " + cardDisplay + " @" + cardLabel)
+                   : (cardLabel.length > 0 ? "[名片] " + cardLabel : "[名片]")
         } else if (kind === "location") {
             var label = message.locationLabel || ""
             text = label.length > 0 ? "[位置] " + label : "[位置]"
@@ -635,10 +675,21 @@ QtObject {
         var locationLabel = ""
         var locationLat = 0
         var locationLon = 0
+        var contactUsername = message.contactUsername || ""
+        var contactDisplay = message.contactDisplay || ""
         var callId = message.callId || ""
         var callVideo = message.video === true
         var parsedCallInvite = null
-        if (kind === "location") {
+        if (kind === "contact") {
+            contentKind = "contact"
+            if ((!contactUsername || contactUsername.length === 0) && text.length > 0) {
+                var parsedCardDirect = parseContactCardText(text)
+                if (parsedCardDirect) {
+                    contactUsername = parsedCardDirect.username || ""
+                    contactDisplay = parsedCardDirect.display || ""
+                }
+            }
+        } else if (kind === "location") {
             contentKind = "location"
             locationLabel = message.locationLabel || ""
             locationLat = message.locationLat || 0
@@ -670,8 +721,15 @@ QtObject {
                     locationLabel = loc.label
                     locationLat = loc.lat
                     locationLon = loc.lon
-                } else if (isSingleEmoji(text)) {
-                    contentKind = "emoji"
+                } else {
+                    var parsedCard = parseContactCardText(text)
+                    if (parsedCard) {
+                        contentKind = "contact"
+                        contactUsername = parsedCard.username || ""
+                        contactDisplay = parsedCard.display || ""
+                    } else if (isSingleEmoji(text)) {
+                        contentKind = "emoji"
+                    }
                 }
             }
         }
@@ -727,6 +785,8 @@ QtObject {
             stickerUrl: message.stickerUrl || "",
             stickerAnimated: message.stickerAnimated || false,
             previewUrl: message.previewUrl || "",
+            contactUsername: contactUsername,
+            contactDisplay: contactDisplay,
             locationLabel: locationLabel,
             locationLat: locationLat,
             locationLon: locationLon,
@@ -914,13 +974,30 @@ QtObject {
                 text = h.fileName ? "[文件] " + h.fileName : "[文件]"
             } else if (h.kind === "sticker") {
                 text = h.stickerId ? "[贴纸] " + h.stickerId : "[贴纸]"
+            } else if (h.kind === "contact") {
+                var historyCardUser = h.contactUsername || ""
+                var historyCardDisplay = h.contactDisplay || ""
+                text = historyCardDisplay.length > 0
+                       ? ("[名片] " + historyCardDisplay + " @" + historyCardUser)
+                       : (historyCardUser.length > 0 ? "[名片] " + historyCardUser : "[名片]")
             }
 
             var contentKind = "text"
             var locationLabel = ""
             var locationLat = 0
             var locationLon = 0
-            if (h.kind === "sticker") {
+            var contactUsername = h.contactUsername || ""
+            var contactDisplay = h.contactDisplay || ""
+            if (h.kind === "contact") {
+                contentKind = "contact"
+                if ((!contactUsername || contactUsername.length === 0) && text.length > 0) {
+                    var parsedHistoryCardDirect = parseContactCardText(text)
+                    if (parsedHistoryCardDirect) {
+                        contactUsername = parsedHistoryCardDirect.username || ""
+                        contactDisplay = parsedHistoryCardDirect.display || ""
+                    }
+                }
+            } else if (h.kind === "sticker") {
                 contentKind = "sticker"
             } else if (h.kind === "file") {
                 contentKind = detectFileKind(h.fileName || "")
@@ -934,8 +1011,15 @@ QtObject {
                     locationLabel = loc.label
                     locationLat = loc.lat
                     locationLon = loc.lon
-                } else if (isSingleEmoji(text)) {
-                    contentKind = "emoji"
+                } else {
+                    var parsedHistoryCard = parseContactCardText(text)
+                    if (parsedHistoryCard) {
+                        contentKind = "contact"
+                        contactUsername = parsedHistoryCard.username || ""
+                        contactDisplay = parsedHistoryCard.display || ""
+                    } else if (isSingleEmoji(text)) {
+                        contentKind = "emoji"
+                    }
                 }
             }
 
@@ -990,6 +1074,8 @@ QtObject {
                 stickerUrl: h.stickerUrl || "",
                 stickerAnimated: h.stickerAnimated || false,
                 previewUrl: h.previewUrl || "",
+                contactUsername: contactUsername,
+                contactDisplay: contactDisplay,
                 locationLabel: locationLabel,
                 locationLat: locationLat,
                 locationLon: locationLon,
@@ -1116,6 +1202,30 @@ QtObject {
         }
         var ok = clientBridge.sendLocation(currentChatId, latNum, lonNum, label || "",
                                            currentChatType === "group")
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+        }
+        return ok
+    }
+
+    function sendContactCard(cardUsername, cardDisplay) {
+        sendErrorMessage = ""
+        if (!currentChatId || !clientBridge) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        if (currentChatType === "group") {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var username = (cardUsername || "").trim()
+        var display = (cardDisplay || "").trim()
+        if (username.length === 0) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var ok = clientBridge.sendContactCard(currentChatId, username, display)
         if (!ok) {
             var err = clientBridge.lastError || ""
             sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
@@ -1348,6 +1458,40 @@ QtObject {
 
     function toggleChatStealth(chatId) {
         setChatStealth(chatId, !isChatStealth(chatId))
+    }
+
+    function isChatBlocked(chatId) {
+        return blockedChatIds[chatId] === true
+    }
+
+    function setChatBlocked(chatId, blocked) {
+        sendErrorMessage = ""
+        if (!chatId || !clientBridge || !clientBridge.setUserBlocked) {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var target = (chatId || "").trim()
+        if (target.length === 0 || currentChatType === "group") {
+            sendErrorMessage = Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        var ok = clientBridge.setUserBlocked(target, blocked === true)
+        if (!ok) {
+            var err = clientBridge.lastError || ""
+            sendErrorMessage = err.length > 0 ? err : Ui.I18n.t("chat.sendFailed")
+            return false
+        }
+        if (blocked === true) {
+            blockedChatIds[target] = true
+        } else {
+            delete blockedChatIds[target]
+        }
+        blockedChatIds = Object.assign({}, blockedChatIds)
+        return true
+    }
+
+    function toggleChatBlocked(chatId) {
+        return setChatBlocked(chatId, !isChatBlocked(chatId))
     }
 
     function setClipboardIsolationEnabled(enabled) {
@@ -1755,6 +1899,9 @@ QtObject {
         function onTokenChanged() {
             if (clientBridge && clientBridge.loggedIn) {
                 bootstrapAfterLogin()
+                currentPage = 1
+            } else {
+                currentPage = 0
             }
         }
         function onConnectionChanged() {
@@ -1791,6 +1938,7 @@ QtObject {
     }
 
     onSendErrorMessageChanged: {
+        Ui.ChatStore.sendErrorMessage = sendErrorMessage
         if (sendErrorMessage.length > 0) {
             sendErrorTimer.restart()
         } else {
@@ -1798,12 +1946,42 @@ QtObject {
         }
     }
 
-    Timer {
-        id: sendErrorTimer
+    onCurrentPageChanged: Ui.SessionStore.currentPage = currentPage
+    onInitializedChanged: Ui.SessionStore.initialized = initialized
+    onStatusMessageChanged: Ui.SessionStore.statusMessage = statusMessage
+
+    onSearchQueryChanged: Ui.ConversationStore.searchQuery = searchQuery
+    onCurrentLeftTabChanged: Ui.ConversationStore.currentLeftTab = currentLeftTab
+    onRightPaneVisibleChanged: Ui.ConversationStore.rightPaneVisible = rightPaneVisible
+    onNotificationCountChanged: Ui.ConversationStore.notificationCount = notificationCount
+
+    onCurrentChatIdChanged: Ui.ChatStore.currentChatId = currentChatId
+    onCurrentChatTitleChanged: Ui.ChatStore.currentChatTitle = currentChatTitle
+    onCurrentChatSubtitleChanged: Ui.ChatStore.currentChatSubtitle = currentChatSubtitle
+    onCurrentChatTypeChanged: Ui.ChatStore.currentChatType = currentChatType
+    onCurrentChatMembersChanged: Ui.ChatStore.currentChatMembers = currentChatMembers
+    onCurrentChatBackgroundUrlChanged: Ui.ChatStore.currentChatBackgroundUrl = currentChatBackgroundUrl
+
+    onIncomingCallActiveChanged: Ui.CallStore.incomingCallActive = incomingCallActive
+    onIncomingCallPeerChanged: Ui.CallStore.incomingCallPeer = incomingCallPeer
+    onIncomingCallIdChanged: Ui.CallStore.incomingCallId = incomingCallId
+    onIncomingCallVideoChanged: Ui.CallStore.incomingCallVideo = incomingCallVideo
+
+    onClipboardIsolationEnabledChanged: Ui.PreferenceStore.clipboardIsolationEnabled = clipboardIsolationEnabled
+    onInternalImeEnabledChanged: Ui.PreferenceStore.internalImeEnabled = internalImeEnabled
+    onHistorySaveEnabledChanged: Ui.PreferenceStore.historySaveEnabled = historySaveEnabled
+    onAiEnhanceEnabledChanged: Ui.PreferenceStore.aiEnhanceEnabled = aiEnhanceEnabled
+    onAiEnhanceQualityLevelChanged: Ui.PreferenceStore.aiEnhanceQualityLevel = aiEnhanceQualityLevel
+    onAiEnhanceX4ConfirmedChanged: Ui.PreferenceStore.aiEnhanceX4Confirmed = aiEnhanceX4Confirmed
+
+    property var sendErrorTimer: Timer {
         interval: sendErrorTimeoutMs
         repeat: false
         onTriggered: sendErrorMessage = ""
     }
 
-    Component.onCompleted: init()
+    Component.onCompleted: {
+        init()
+        syncDomainStores()
+    }
 }

@@ -40,6 +40,12 @@
         <file alias="qml/I18n.qml">../qml/I18n.qml</file>
         <file alias="qml/qmldir">../qml/qmldir</file>
         <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
+        <file alias="qml/stores/qmldir">../qml/stores/qmldir</file>
+        <file alias="qml/stores/SessionStore.qml">../qml/stores/SessionStore.qml</file>
+        <file alias="qml/stores/ConversationStore.qml">../qml/stores/ConversationStore.qml</file>
+        <file alias="qml/stores/ChatStore.qml">../qml/stores/ChatStore.qml</file>
+        <file alias="qml/stores/CallStore.qml">../qml/stores/CallStore.qml</file>
+        <file alias="qml/stores/PreferenceStore.qml">../qml/stores/PreferenceStore.qml</file>
         <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
         <file alias="qml/i18n/zh-CN.json">../qml/i18n/zh-CN.json</file>
         <file alias="qml/i18n/en-US.json">../qml/i18n/en-US.json</file>

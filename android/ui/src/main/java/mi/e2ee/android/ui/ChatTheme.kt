@@ -1,42 +1,43 @@
 package mi.e2ee.android.ui
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mi.e2ee.android.R
 
-private val Primary = Color(0xFF2AABEE)
-private val PrimaryDark = Color(0xFF1E84BA)
-private val Accent = Color(0xFF28C76F)
-private val Warning = Color(0xFFFF9F1C)
-private val Danger = Color(0xFFFF4D4F)
-private val Background = Color(0xFFF5F7FA)
-private val Surface = Color(0xFFFFFFFF)
-private val SurfaceVariant = Color(0xFFF0F2F5)
-private val TextPrimary = Color(0xFF1C1C1E)
-private val TextSecondary = Color(0xFF6B7280)
-private val Divider = Color(0xFFE5E7EB)
+private val Primary = Color(0xFF2F67E8)
+private val PrimaryDark = Color(0xFF2249A9)
+private val Accent = Color(0xFF1D9771)
+private val Warning = Color(0xFFC88A3A)
+private val Danger = Color(0xFFD35C61)
+private val Background = Color(0xFFF4EFE8)
+private val Surface = Color(0xFFFCFAF7)
+private val SurfaceVariant = Color(0xFFEAE3D9)
+private val TextPrimary = Color(0xFF1F242C)
+private val TextSecondary = Color(0xFF6A6F79)
+private val Divider = Color(0xFFD9D2C8)
 
-private val DarkPrimary = Color(0xFF5BA7FF)
-private val DarkPrimaryContainer = Color(0xFF123A5A)
-private val DarkAccent = Color(0xFF2ED47A)
-private val DarkWarning = Color(0xFFFFB547)
-private val DarkDanger = Color(0xFFFF6B6B)
-private val DarkBackground = Color(0xFF0E141B)
-private val DarkSurface = Color(0xFF151C25)
-private val DarkSurfaceVariant = Color(0xFF1D2633)
-private val DarkTextPrimary = Color(0xFFE7ECF2)
-private val DarkTextSecondary = Color(0xFF9CB0C7)
-private val DarkDivider = Color(0xFF2B3646)
+private val DarkPrimary = Color(0xFF4E7FFF)
+private val DarkPrimaryContainer = Color(0xFF1B3569)
+private val DarkAccent = Color(0xFF35B38A)
+private val DarkWarning = Color(0xFFD9A25A)
+private val DarkDanger = Color(0xFFF07C7C)
+private val DarkBackground = Color(0xFF091117)
+private val DarkSurface = Color(0xFF101922)
+private val DarkSurfaceVariant = Color(0xFF182431)
+private val DarkTextPrimary = Color(0xFFE8EDF4)
+private val DarkTextSecondary = Color(0xFF9DAEBC)
+private val DarkDivider = Color(0xFF2B3846)
 
 private val Sans = FontFamily(
     Font(R.font.source_sans_3_regular, FontWeight.Normal),
@@ -55,52 +56,84 @@ private val ChatTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
+        fontSize = 30.sp,
+        lineHeight = 34.sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 26.sp,
+        lineHeight = 32.sp
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp,
         lineHeight = 28.sp
     ),
     titleLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 24.sp
+        fontSize = 21.sp,
+        lineHeight = 27.sp
     ),
     titleMedium = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 22.sp
+        fontSize = 17.sp,
+        lineHeight = 23.sp
+    ),
+    titleSmall = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 18.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 22.sp
+        fontSize = 16.sp,
+        lineHeight = 24.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
+    labelLarge = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.Medium,
         fontSize = 13.sp,
-        lineHeight = 18.sp
+        lineHeight = 16.sp,
+        letterSpacing = 0.3.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 0.4.sp
     ),
     labelSmall = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.6.sp
+        letterSpacing = 0.8.sp
     ),
     bodySmall = TextStyle(
         fontFamily = Mono,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.sp,
-        lineHeight = 18.sp
+        fontSize = 12.sp,
+        lineHeight = 17.sp
     )
 )
 
 private val ChatColorScheme = lightColorScheme(
     primary = Primary,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD7F1FE),
+    primaryContainer = Color(0xFFDDE7FF),
     onPrimaryContainer = PrimaryDark,
     secondary = Accent,
     onSecondary = Color.White,
@@ -119,9 +152,9 @@ private val ChatDarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
     onPrimary = Color.White,
     primaryContainer = DarkPrimaryContainer,
-    onPrimaryContainer = Color(0xFFBEE3FF),
+    onPrimaryContainer = Color(0xFFD9E6FF),
     secondary = DarkAccent,
-    onSecondary = Color(0xFF0B2C1E),
+    onSecondary = Color(0xFF07271C),
     tertiary = DarkWarning,
     error = DarkDanger,
     background = DarkBackground,
@@ -137,6 +170,16 @@ object ThemeMode {
     const val FollowSystem = 0
     const val ForceDark = 1
     const val ForceLight = 2
+}
+
+object ChatUiTokens {
+    val CornerSmall = 14.dp
+    val CornerMedium = 18.dp
+    val CornerLarge = 22.dp
+    val SectionSpacing = 12.dp
+    val ItemSpacing = 8.dp
+    const val MotionFastMs = 160
+    const val MotionStandardMs = 220
 }
 
 @Composable

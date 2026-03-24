@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/dialogs" as Dialogs
 import "qrc:/mi/e2ee/ui/qml/shell" as Shell
@@ -10,46 +11,94 @@ Item {
 
     property int windowWidth: 0
     property int leftWidth: Ui.Style.leftPaneWidthDefault
+    readonly property Window hostWindow: root.Window.window
 
-    SplitView {
-        id: split
+    Rectangle {
         anchors.fill: parent
-        orientation: Qt.Horizontal
-        handle: Rectangle {
-            implicitWidth: 1
-            color: Ui.Style.borderSubtle
-            z: 5
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Ui.Style.tgCloudTop }
+            GradientStop { position: 1.0; color: Ui.Style.tgCloudBottom }
         }
 
-        Shell.LeftPane {
-            id: leftPane
-            SplitView.preferredWidth: root.leftWidth
-            SplitView.minimumWidth: Ui.Style.leftPaneWidthMin
-            onWidthChanged: {
-                if (width > 80) {
-                    root.leftWidth = width
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 10
+            radius: 24
+            color: Ui.Style.tgGlassSurface
+            border.width: 1
+            border.color: Ui.Style.tgCardBorder
+            clip: true
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                width: parent.width * 0.44
+                height: 120
+                color: Ui.Style.tgCardHighlight
+                radius: 60
+                x: -24
+                y: -42
+            }
+
+            SplitView {
+                id: split
+                anchors.fill: parent
+                orientation: Qt.Horizontal
+                handle: Rectangle {
+                    implicitWidth: 1
+                    color: Ui.Style.borderSubtle
+                    z: 5
+                }
+
+                Shell.LeftPane {
+                    id: leftPane
+                    SplitView.preferredWidth: root.leftWidth
+                    SplitView.minimumWidth: Ui.Style.leftPaneWidthMin
+                    onWidthChanged: {
+                        if (width > 80) {
+                            root.leftWidth = width
+                        }
+                    }
+                    onRequestNewChat: newChatDialog.open()
+                    onRequestAddContact: addContactDialog.open()
+                    onRequestCreateGroup: createGroupWizard.open()
+                    onRequestNotifications: notificationDialog.open()
+                    onRequestSettings: settingsDialog.open()
+                    onRequestDeviceManager: deviceManagerDialog.open()
+                }
+
+                Shell.CenterPane {
+                    id: centerPane
+                    SplitView.fillWidth: true
                 }
             }
-            onRequestNewChat: newChatDialog.open()
-            onRequestAddContact: addContactDialog.open()
-            onRequestCreateGroup: createGroupWizard.open()
-            onRequestNotifications: notificationDialog.open()
-            onRequestSettings: settingsDialog.open()
-            onRequestDeviceManager: deviceManagerDialog.open()
-        }
-
-        Shell.CenterPane {
-            id: centerPane
-            SplitView.fillWidth: true
         }
     }
 
-    Dialogs.NewChatDialog { id: newChatDialog }
-    Dialogs.AddContactDialog { id: addContactDialog }
-    Dialogs.CreateGroupWizard { id: createGroupWizard }
-    Dialogs.NotificationCenterDialog { id: notificationDialog }
-    Dialogs.SettingsDialog { id: settingsDialog }
-    Dialogs.DeviceManagerDialog { id: deviceManagerDialog }
+    Dialogs.NewChatDialog {
+        id: newChatDialog
+        ownerWindow: root.hostWindow
+    }
+    Dialogs.AddContactDialog {
+        id: addContactDialog
+        ownerWindow: root.hostWindow
+    }
+    Dialogs.CreateGroupWizard {
+        id: createGroupWizard
+        ownerWindow: root.hostWindow
+    }
+    Dialogs.NotificationCenterDialog {
+        id: notificationDialog
+        ownerWindow: root.hostWindow
+    }
+    Dialogs.SettingsDialog {
+        id: settingsDialog
+        ownerWindow: root.hostWindow
+    }
+    Dialogs.DeviceManagerDialog {
+        id: deviceManagerDialog
+        ownerWindow: root.hostWindow
+    }
 
     function focusSearch() {
         leftPane.focusSearch()
@@ -87,7 +136,7 @@ Item {
         if (centerPane.clearChatSearch()) {
             return
         }
-        if (Ui.AppStore.searchQuery.length > 0) {
+        if (Ui.ConversationStore.searchQuery.length > 0) {
             leftPane.clearSearch()
             return
         }
