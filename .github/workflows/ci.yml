@@ -665,12 +665,16 @@ jobs:
           if (-not (Test-Path $clientConfigPath)) {
             throw "dist client config missing: $clientConfigPath"
           }
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
           "ui_smoke:ui_smoke_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
           $serverConfig = @(
             "[mode]"
             "mode=1"
             "[server]"
-            "list_port=9000"
+            "list_port=$port"
             "offline_dir=database/offline_store"
             "debug_log=0"
             "tls_enable=1"
@@ -684,6 +688,17 @@ jobs:
             "allow_insecure=0"
           ) -join "`n"
           $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
+          $clientConfig = Get-Content $clientConfigPath
+          $clientConfig = $clientConfig | ForEach-Object {
+            if ($_ -match '^server_ip=') {
+              "server_ip=127.0.0.1"
+            } elseif ($_ -match '^server_port=') {
+              "server_port=$port"
+            } else {
+              $_
+            }
+          }
+          $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
           $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
@@ -702,7 +717,7 @@ jobs:
             for ($i = 0; $i -lt 60; $i++) {
               try {
                 $tcp = New-Object System.Net.Sockets.TcpClient
-                $tcp.Connect("127.0.0.1", 9000)
+                $tcp.Connect("127.0.0.1", $port)
                 $tcp.Close()
                 $ready = $true
                 break
