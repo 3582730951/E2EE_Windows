@@ -1502,6 +1502,7 @@ Item {
                                 height: Math.max(inputFlick.height, implicitHeight)
                                 wrapMode: TextEdit.Wrap
                                 placeholderText: Ui.I18n.t("chat.writeMessage")
+                                placeholderTextColor: Ui.Style.textSecondary
                                 color: Ui.Style.textPrimary
                                 selectByMouse: true
                                 cursorVisible: true
@@ -2747,7 +2748,12 @@ Item {
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
-                property real maxBubbleWidth: Math.max(260, (ListView.view ? ListView.view.width : root.width) * 0.62)
+                property real bubbleEdgeInset: Ui.Style.paddingL + (transparentBubble ? 0 : 8)
+                property real availableBubbleWidth: Math.max(220,
+                                                             (ListView.view ? ListView.view.width : root.width)
+                                                             - bubbleEdgeInset * 2)
+                property real maxBubbleWidth: Math.min(Math.max(260, availableBubbleWidth * 0.62),
+                                                       availableBubbleWidth)
                 property real contentWidth: contentLoader.item
                                              ? Math.min(maxBubbleWidth - hPadding * 2,
                                                         contentLoader.item.implicitWidth)
@@ -2760,7 +2766,10 @@ Item {
 
                 width: bubbleWidth
                 height: bubbleHeight
-                x: isOutgoing ? parent.width - bubbleWidth - Ui.Style.paddingL : senderLeftInset
+                x: isOutgoing
+                   ? Math.max(Ui.Style.paddingL,
+                              parent.width - bubbleWidth - bubbleEdgeInset)
+                   : senderLeftInset
                 y: 4
 
                 Component {

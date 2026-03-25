@@ -115,5 +115,55 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         isMuted = true,
         isGroup = true,
         isTyping = false
+    ),
+    ConversationPreview(
+        id = "c2",
+        initials = "LN",
+        name = "Lena North",
+        lastMessage = "Screenshot pass is green.",
+        time = "07:52",
+        unreadCount = 0,
+        isPinned = false,
+        isMuted = false,
+        isGroup = false,
+        isTyping = false
+    ),
+    ConversationPreview(
+        id = "c3",
+        initials = "OS",
+        name = "Ops Sync",
+        lastMessage = "Queue cap increased to 512.",
+        time = "Yesterday",
+        unreadCount = 5,
+        isPinned = false,
+        isMuted = false,
+        isGroup = true,
+        isTyping = false,
+        mentionCount = 2
+    ),
+    ConversationPreview(
+        id = "c4",
+        initials = "RH",
+        name = "Rhea",
+        lastMessage = "Can we move this after lunch?",
+        time = "Mon",
+        unreadCount = 0,
+        isPinned = false,
+        isMuted = false,
+        isGroup = false,
+        isTyping = true
+    ),
+    ConversationPreview(
+        id = "c5",
+        initials = "PT",
+        name = "Platform",
+        lastMessage = "Draft: verify API33 smoke gate",
+        time = "10:03",
+        unreadCount = 0,
+        isPinned = true,
+        isMuted = false,
+        isGroup = true,
+        isTyping = false,
+        draft = "verify API33 smoke gate"
     )
 )

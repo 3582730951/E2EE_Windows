@@ -295,7 +295,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -310,7 +310,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -325,7 +325,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -409,7 +409,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.register.placeholder.account")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -424,7 +424,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.register.placeholder.password")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
@@ -439,7 +439,7 @@ Item {
                             placeholderText: Ui.I18n.t("auth.register.placeholder.confirm")
                             font.pixelSize: 14
                             color: "#FFFFFF"
-                            placeholderTextColor: Qt.rgba(1, 1, 1, 0.55)
+                            placeholderTextColor: Ui.Style.textSecondary
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Qt.rgba(0.08, 0.1, 0.14, 0.9)

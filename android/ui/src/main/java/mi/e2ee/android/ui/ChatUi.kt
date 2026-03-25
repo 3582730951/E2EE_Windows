@@ -90,6 +90,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -678,6 +679,15 @@ fun ChatScreen(
     }
 
     val unreadCount = visibleMessages.filterIsInstance<UnreadMarker>().firstOrNull()?.count ?: 0
+    val showJumpToBottom by remember(listState, unreadCount) {
+        derivedStateOf {
+            if (unreadCount <= 0) return@derivedStateOf false
+            val total = listState.layoutInfo.totalItemsCount
+            if (total <= 0) return@derivedStateOf false
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible < total - 2
+        }
+    }
     val effectiveState = when {
         screenState != ChatScreenState.Content -> screenState
         visibleMessages.filterIsInstance<ChatMessage>().isEmpty() -> ChatScreenState.Empty
@@ -784,12 +794,12 @@ fun ChatScreen(
                         end = 16.dp
                     )
                 )
-                if (unreadCount > 0) {
+                if (showJumpToBottom) {
                     JumpToBottomButton(
                         count = unreadCount,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 18.dp, bottom = composerInset + 16.dp)
+                            .padding(end = 12.dp, bottom = composerInset + 10.dp)
                     )
                 }
             }
@@ -1546,6 +1556,7 @@ private fun SwipeReplyRow(
     val maxReveal = 72.dp
     val maxRevealPx = with(LocalDensity.current) { maxReveal.toPx() }
     val offset = remember { Animatable(0f) }
+    val revealProgress = ((-offset.value) / maxRevealPx).coerceIn(0f, 1f)
     val dragState = rememberDraggableState { delta ->
         if (!enabled) {
             return@rememberDraggableState
@@ -1555,7 +1566,7 @@ private fun SwipeReplyRow(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        if (enabled) {
+        if (enabled && revealProgress > 0.02f) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1563,7 +1574,7 @@ private fun SwipeReplyRow(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ReplySwipeAction()
+                ReplySwipeAction(revealProgress = revealProgress)
             }
         }
         val dragModifier = if (enabled) {
@@ -1589,18 +1600,20 @@ private fun SwipeReplyRow(
 }
 
 @Composable
-private fun ReplySwipeAction() {
+private fun ReplySwipeAction(revealProgress: Float) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(36.dp)
+            .alpha(0.5f + revealProgress * 0.4f)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f + revealProgress * 0.11f)),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.Reply,
             contentDescription = tr("chat_quick_reply", "Quick reply"),
-            tint = MaterialTheme.colorScheme.primary
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
@@ -2446,25 +2459,26 @@ private fun TypingIndicator() {
 @Composable
 private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.shadow(6.dp, CircleShape),
+        modifier = modifier.shadow(4.dp, CircleShape),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     ) {
         Box(
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(38.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = tr("chat_jump_to_bottom", "Jump to bottom"),
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                modifier = Modifier.size(20.dp)
             )
             if (count > 0) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 4.dp, end = 4.dp)
-                        .size(16.dp)
+                        .padding(top = 2.dp, end = 2.dp)
+                        .size(14.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.error),
                     contentAlignment = Alignment.Center

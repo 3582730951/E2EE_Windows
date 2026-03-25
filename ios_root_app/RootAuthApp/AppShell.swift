@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 private enum ScreenshotScenario: String {
     case none
@@ -633,6 +634,7 @@ struct AppShell: View {
         let scenario = ScreenshotScenario.current
         screenshotScenario = scenario
         _selectedTab = State(initialValue: scenario == .security ? .settings : .chats)
+        Self.configureTabBarAppearance()
     }
 
     var body: some View {
@@ -677,7 +679,13 @@ struct AppShell: View {
                 }
                 .tag(AppTab.settings)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            SecurePalette.backgroundBottom
+                .ignoresSafeArea()
+        )
         .toolbarBackground(SecurePalette.surface.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
@@ -686,5 +694,33 @@ struct AppShell: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .tint(SecurePalette.accent)
         .preferredColorScheme(.dark)
+    }
+
+    private static func configureTabBarAppearance() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor(SecurePalette.surface.opacity(0.98))
+        appearance.shadowColor = UIColor(SecurePalette.borderStrong)
+
+        let selectedColor = UIColor(SecurePalette.accent)
+        let normalColor = UIColor.white.withAlphaComponent(0.72)
+        let selectedTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: selectedColor]
+        let normalTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: normalColor]
+
+        for layout in [appearance.stackedLayoutAppearance,
+                       appearance.inlineLayoutAppearance,
+                       appearance.compactInlineLayoutAppearance] {
+            layout.selected.iconColor = selectedColor
+            layout.selected.titleTextAttributes = selectedTextAttributes
+            layout.normal.iconColor = normalColor
+            layout.normal.titleTextAttributes = normalTextAttributes
+        }
+
+        let tabBar = UITabBar.appearance()
+        tabBar.standardAppearance = appearance
+        tabBar.unselectedItemTintColor = normalColor
+        if #available(iOS 15.0, *) {
+            tabBar.scrollEdgeAppearance = appearance
+        }
     }
 }

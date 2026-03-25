@@ -48,7 +48,9 @@ struct ContentView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .tint(SecurePalette.accent)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showScanner) {

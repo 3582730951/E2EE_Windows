@@ -476,7 +476,9 @@ struct ClientConversationDetailView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 18)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -687,7 +689,9 @@ struct ClientWorkspaceView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Chats")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -756,7 +760,9 @@ struct ContactsHomeView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Contacts")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -793,7 +799,9 @@ struct CallsHomeView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Calls")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -824,7 +832,9 @@ struct TransportStatusView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Transport Status")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -867,7 +877,9 @@ struct SettingsHomeView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
     }

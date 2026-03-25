@@ -232,7 +232,7 @@ fun ConversationListScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 val showSearchNow = searchHeight > 0.dp
                 CompactSearchField(
@@ -849,7 +849,7 @@ private fun ConversationRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
