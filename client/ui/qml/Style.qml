@@ -16,8 +16,8 @@ QtObject {
     property color borderSubtle: isDark ? "#213140" : "#D7E0E8"
     property color borderStrong: isDark ? "#314657" : "#C6D2DC"
     property color textPrimary: isDark ? "#E8EEF5" : "#25303A"
-    property color textSecondary: isDark ? "#E1E9F0" : "#617180"
-    property color textMuted: isDark ? "#CDD7E0" : "#8D9CAA"
+    property color textSecondary: isDark ? "#E5EDF5" : "#617180"
+    property color textMuted: isDark ? "#D6E0EA" : "#8D9CAA"
     property color iconMuted: isDark ? "#A3B4C6" : "#617180"
     property color iconActive: isDark ? "#F2F6FB" : "#25303A"
     property color accent: "#4B89FF"
@@ -91,8 +91,8 @@ QtObject {
     property color bubbleInFg: isDark ? "#E8EEF5" : "#25303A"
     property color bubbleOutBg: isDark ? "#17352E" : "#DDF5EC"
     property color bubbleOutFg: isDark ? "#E8F7F1" : "#1D352D"
-    property color bubbleMetaInFg: isDark ? "#D8E3ED" : "#90A0AF"
-    property color bubbleMetaOutFg: isDark ? "#E1F5EE" : "#658978"
+    property color bubbleMetaInFg: isDark ? "#E0E9F3" : "#90A0AF"
+    property color bubbleMetaOutFg: isDark ? "#E8FBF3" : "#658978"
 
     property color messageBg: isDark ? "#101821" : "#E8F0F6"
     property color messageGradientStart: isDark ? "#101A24" : "#EFF5FA"
@@ -119,6 +119,7 @@ QtObject {
     property int rightPaneWidth: 360
     property int iconButtonSize: 32
     property int iconButtonSmall: 26
+    property int microTextSize: 12
 
     function avatarColor(key) {
         var palette = ["#3D8AC7", "#5F7EA8", "#2F6EA5", "#3A6B8C", "#2F7A77", "#5B7A64", "#7A6B5B", "#6B5B7A"]

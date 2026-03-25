@@ -488,7 +488,7 @@ struct ClientConversationDetailView: View {
                 ClientSecuritySummaryCard(store: store)
                 ClientMessagesCard(store: store)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                ClientComposerCard(store: store)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
@@ -496,6 +496,13 @@ struct ClientConversationDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ClientComposerCard(store: store)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+                .background(SecurePalette.backgroundBottom.opacity(0.94))
+        }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .tabBar)

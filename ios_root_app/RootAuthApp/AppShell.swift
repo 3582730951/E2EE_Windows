@@ -745,9 +745,11 @@ struct AppShell: View {
                 }
                 .tag(AppTab.settings)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SecureSceneBackground())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SecurePalette.backgroundBottom)
+        .background(SecureSceneBackground())
         .ignoresSafeArea()
         .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
