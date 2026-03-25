@@ -267,6 +267,8 @@ fun ConversationListScreen(
                         compareBy<ConversationPreview> { conversationPriority(it) }
                             .thenByDescending { parseConversationTime(it.time) }
                     )
+                val hasResults = pinned.isNotEmpty() || others.isNotEmpty()
+                val useExtendedFooter = hasResults && searched.size <= 6
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
@@ -325,6 +327,31 @@ fun ConversationListScreen(
                                     }
                                 },
                                 onDelete = { target -> requestDelete(target) }
+                            )
+                        }
+                    }
+                    if (hasResults) {
+                        item(key = "conversation-tail-state") {
+                            val tailModifier = if (useExtendedFooter) {
+                                Modifier.fillParentMaxHeight(0.42f)
+                            } else {
+                                Modifier.height(116.dp)
+                            }
+                            ConversationListTailState(
+                                totalCount = searched.size,
+                                modifier = tailModifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                            )
+                        }
+                    } else {
+                        item(key = "conversation-empty-state") {
+                            ConversationListEmptyState(
+                                query = search,
+                                modifier = Modifier
+                                    .fillParentMaxHeight(0.62f)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
                             )
                         }
                     }
@@ -397,6 +424,94 @@ enum class ConversationTab {
     Contacts,
     Chats,
     Settings
+}
+
+@Composable
+private fun ConversationListTailState(
+    totalCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Filled.DoneAll,
+                contentDescription = tr("conversations_list_end", "End of list"),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = tr("conversations_list_end", "All chats loaded"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = tr("conversations_list_count", "%d encrypted chats").format(totalCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationListEmptyState(
+    query: String,
+    modifier: Modifier = Modifier
+) {
+    val title = if (query.isNotBlank()) {
+        tr("conversations_search_empty_title", "No matching chats")
+    } else {
+        tr("conversations_empty_title", "No chats yet")
+    }
+    val hint = if (query.isNotBlank()) {
+        tr("conversations_search_empty_hint", "Try another keyword or clear search.")
+    } else {
+        tr("conversations_empty_hint", "Start a secure chat from Contacts.")
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = title,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable

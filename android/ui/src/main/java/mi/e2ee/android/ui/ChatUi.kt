@@ -747,7 +747,7 @@ fun ChatScreen(
         containerColor = Color.Transparent
     ) { padding ->
         val composerInset = if (showComposer) {
-            padding.calculateBottomPadding() + 8.dp
+            padding.calculateBottomPadding() + 20.dp
         } else {
             16.dp
         }
@@ -1310,68 +1310,91 @@ private fun ChatTopBar(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
         tonalElevation = 2.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            CompactTopBarIconButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = tr("chat_back", "Back"),
-                onClick = onBack
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactTopBarIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = tr("chat_back", "Back"),
+                    onClick = onBack
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
-                    Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = status,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    LabeledChip(label = tr("chat_encrypted", "Encrypted"), tint = MaterialTheme.colorScheme.primary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        LabeledChip(
+                            label = tr("chat_encrypted", "Encrypted"),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Box(modifier = Modifier.clickable { onSelfClick() }) {
+                    AvatarBadge(
+                        initials = selfInitials,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        size = 24.dp
+                    )
                 }
             }
-            CompactTopBarIconButton(
-                icon = Icons.Filled.Search,
-                contentDescription = tr("chat_search", "Search"),
-                onClick = {}
-            )
-            CompactTopBarIconButton(
-                icon = Icons.Filled.Call,
-                contentDescription = tr("chat_call", "Call"),
-                onClick = onCall
-            )
-            CompactTopBarIconButton(
-                icon = Icons.Filled.Videocam,
-                contentDescription = tr("chat_video_call", "Video call"),
-                onClick = onVideoCall
-            )
-            if (BuildConfig.DEBUG) {
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 CompactTopBarIconButton(
-                    icon = Icons.Filled.BugReport,
-                    contentDescription = tr("chat_tools", "Tools"),
-                    onClick = onTools
+                    icon = Icons.Filled.Search,
+                    contentDescription = tr("chat_search", "Search"),
+                    onClick = {}
                 )
-            }
-            CompactTopBarIconButton(
-                icon = Icons.Filled.Settings,
-                contentDescription = tr("settings_title", "Settings"),
-                onClick = onSettings
-            )
-            Spacer(modifier = Modifier.width(2.dp))
-            Box(modifier = Modifier.clickable { onSelfClick() }) {
-                AvatarBadge(initials = selfInitials, tint = MaterialTheme.colorScheme.secondary, size = 24.dp)
+                CompactTopBarIconButton(
+                    icon = Icons.Filled.Call,
+                    contentDescription = tr("chat_call", "Call"),
+                    onClick = onCall
+                )
+                CompactTopBarIconButton(
+                    icon = Icons.Filled.Videocam,
+                    contentDescription = tr("chat_video_call", "Video call"),
+                    onClick = onVideoCall
+                )
+                if (BuildConfig.DEBUG) {
+                    CompactTopBarIconButton(
+                        icon = Icons.Filled.BugReport,
+                        contentDescription = tr("chat_tools", "Tools"),
+                        onClick = onTools
+                    )
+                }
+                CompactTopBarIconButton(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = tr("settings_title", "Settings"),
+                    onClick = onSettings
+                )
             }
         }
     }
