@@ -1543,101 +1543,101 @@ jobs:
           screenshot_is_windowed() {
             local image_path="$1"
             /usr/bin/python3 - "$image_path" <<'PY'
-import struct
-import sys
-import zlib
-
-path = sys.argv[1]
-data = open(path, "rb").read()
-if data[:8] != b"\x89PNG\r\n\x1a\n":
-    sys.exit(2)
-
-idx = 8
-idat = b""
-width = 0
-height = 0
-bit_depth = 0
-color_type = 0
-interlace = 0
-
-while idx + 8 <= len(data):
-    chunk_len = int.from_bytes(data[idx:idx + 4], "big")
-    idx += 4
-    chunk_type = data[idx:idx + 4]
-    idx += 4
-    chunk_data = data[idx:idx + chunk_len]
-    idx += chunk_len
-    idx += 4  # crc
-    if chunk_type == b"IHDR":
-        width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", chunk_data)
-    elif chunk_type == b"IDAT":
-        idat += chunk_data
-    elif chunk_type == b"IEND":
-        break
-
-if not width or not height or bit_depth != 8 or color_type != 6 or interlace != 0:
-    sys.exit(2)
-
-raw = zlib.decompress(idat)
-bytes_per_pixel = 4
-stride = width * bytes_per_pixel
-
-left_cols = min(48, width)
-right_start = max(0, width - 48)
-left_black = [0] * left_cols
-right_black = [0] * (width - right_start)
-
-def paeth(a: int, b: int, c: int) -> int:
-    p = a + b - c
-    pa = abs(p - a)
-    pb = abs(p - b)
-    pc = abs(p - c)
-    if pa <= pb and pa <= pc:
-        return a
-    if pb <= pc:
-        return b
-    return c
-
-cursor = 0
-prev = bytearray(stride)
-for _ in range(height):
-    f = raw[cursor]
-    cursor += 1
-    row = bytearray(raw[cursor:cursor + stride])
-    cursor += stride
-    if f == 1:
-        for x in range(stride):
-            row[x] = (row[x] + (row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0)) & 0xFF
-    elif f == 2:
-        for x in range(stride):
-            row[x] = (row[x] + prev[x]) & 0xFF
-    elif f == 3:
-        for x in range(stride):
-            left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
-            row[x] = (row[x] + ((left + prev[x]) // 2)) & 0xFF
-    elif f == 4:
-        for x in range(stride):
-            left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
-            up = prev[x]
-            up_left = prev[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
-            row[x] = (row[x] + paeth(left, up, up_left)) & 0xFF
-
-    for x in range(left_cols):
-        o = x * bytes_per_pixel
-        if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
-            left_black[x] += 1
-
-    for i, x in enumerate(range(right_start, width)):
-        o = x * bytes_per_pixel
-        if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
-            right_black[i] += 1
-
-    prev = row
-
-left_ratio = max((value / height for value in left_black), default=0.0)
-right_ratio = max((value / height for value in right_black), default=0.0)
-sys.exit(1 if left_ratio > 0.20 or right_ratio > 0.20 else 0)
-PY
+          import struct
+          import sys
+          import zlib
+          
+          path = sys.argv[1]
+          data = open(path, "rb").read()
+          if data[:8] != b"\x89PNG\r\n\x1a\n":
+              sys.exit(2)
+          
+          idx = 8
+          idat = b""
+          width = 0
+          height = 0
+          bit_depth = 0
+          color_type = 0
+          interlace = 0
+          
+          while idx + 8 <= len(data):
+              chunk_len = int.from_bytes(data[idx:idx + 4], "big")
+              idx += 4
+              chunk_type = data[idx:idx + 4]
+              idx += 4
+              chunk_data = data[idx:idx + chunk_len]
+              idx += chunk_len
+              idx += 4  # crc
+              if chunk_type == b"IHDR":
+                  width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", chunk_data)
+              elif chunk_type == b"IDAT":
+                  idat += chunk_data
+              elif chunk_type == b"IEND":
+                  break
+          
+          if not width or not height or bit_depth != 8 or color_type != 6 or interlace != 0:
+              sys.exit(2)
+          
+          raw = zlib.decompress(idat)
+          bytes_per_pixel = 4
+          stride = width * bytes_per_pixel
+          
+          left_cols = min(48, width)
+          right_start = max(0, width - 48)
+          left_black = [0] * left_cols
+          right_black = [0] * (width - right_start)
+          
+          def paeth(a: int, b: int, c: int) -> int:
+              p = a + b - c
+              pa = abs(p - a)
+              pb = abs(p - b)
+              pc = abs(p - c)
+              if pa <= pb and pa <= pc:
+                  return a
+              if pb <= pc:
+                  return b
+              return c
+          
+          cursor = 0
+          prev = bytearray(stride)
+          for _ in range(height):
+              f = raw[cursor]
+              cursor += 1
+              row = bytearray(raw[cursor:cursor + stride])
+              cursor += stride
+              if f == 1:
+                  for x in range(stride):
+                      row[x] = (row[x] + (row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0)) & 0xFF
+              elif f == 2:
+                  for x in range(stride):
+                      row[x] = (row[x] + prev[x]) & 0xFF
+              elif f == 3:
+                  for x in range(stride):
+                      left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                      row[x] = (row[x] + ((left + prev[x]) // 2)) & 0xFF
+              elif f == 4:
+                  for x in range(stride):
+                      left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                      up = prev[x]
+                      up_left = prev[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                      row[x] = (row[x] + paeth(left, up, up_left)) & 0xFF
+          
+              for x in range(left_cols):
+                  o = x * bytes_per_pixel
+                  if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
+                      left_black[x] += 1
+          
+              for i, x in enumerate(range(right_start, width)):
+                  o = x * bytes_per_pixel
+                  if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
+                      right_black[i] += 1
+          
+              prev = row
+          
+          left_ratio = max((value / height for value in left_black), default=0.0)
+          right_ratio = max((value / height for value in right_black), default=0.0)
+          sys.exit(1 if left_ratio > 0.20 or right_ratio > 0.20 else 0)
+          PY
           }
           capture_screenshot() {
             local mode="$1"
