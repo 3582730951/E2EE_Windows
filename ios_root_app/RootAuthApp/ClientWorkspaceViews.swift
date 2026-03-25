@@ -492,13 +492,12 @@ struct ClientConversationDetailView: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
-            .padding(.bottom, 10)
+            .padding(.bottom, 4)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { store.refreshNow() }) {

@@ -703,56 +703,53 @@ struct AppShell: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                SecureWindowConfigurator()
-                SecureSceneBackground()
+        ZStack {
+            SecureWindowConfigurator()
+            SecureSceneBackground()
 
-                TabView(selection: $selectedTab) {
-                    NavigationStack {
-                        if screenshotScenario == .detail,
-                           let conversation = clientStore.primaryConversation {
-                            ClientConversationDetailView(store: clientStore, conversation: conversation)
-                        } else {
-                            ClientWorkspaceView(store: clientStore)
-                        }
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    if screenshotScenario == .detail,
+                       let conversation = clientStore.primaryConversation {
+                        ClientConversationDetailView(store: clientStore, conversation: conversation)
+                    } else {
+                        ClientWorkspaceView(store: clientStore)
                     }
-                    .tabItem {
-                        Label("Chats", systemImage: "message.fill")
-                    }
-                    .tag(AppTab.chats)
-
-                    NavigationStack {
-                        ContactsHomeView(store: clientStore)
-                    }
-                    .tabItem {
-                        Label("Contacts", systemImage: "person.2.fill")
-                    }
-                    .tag(AppTab.contacts)
-
-                    NavigationStack {
-                        CallsHomeView(store: clientStore)
-                    }
-                    .tabItem {
-                        Label("Calls", systemImage: "phone.fill")
-                    }
-                    .tag(AppTab.calls)
-
-                    NavigationStack {
-                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                    }
-                    .tabItem {
-                        Label("Settings", systemImage: "gearshape.fill")
-                    }
-                    .tag(AppTab.settings)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .background(SecureSceneBackground())
+                .tabItem {
+                    Label("Chats", systemImage: "message.fill")
+                }
+                .tag(AppTab.chats)
+
+                NavigationStack {
+                    ContactsHomeView(store: clientStore)
+                }
+                .tabItem {
+                    Label("Contacts", systemImage: "person.2.fill")
+                }
+                .tag(AppTab.contacts)
+
+                NavigationStack {
+                    CallsHomeView(store: clientStore)
+                }
+                .tabItem {
+                    Label("Calls", systemImage: "phone.fill")
+                }
+                .tag(AppTab.calls)
+
+                NavigationStack {
+                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                }
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
+                .tag(AppTab.settings)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
-        .ignoresSafeArea(.container, edges: .all)
-        .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .tabBar)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SecurePalette.backgroundBottom)
+        .ignoresSafeArea()
+        .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
         .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .navigationBar)
@@ -764,10 +761,10 @@ struct AppShell: View {
 
     private static func configureTabBarAppearance() {
         let appearance = UITabBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundBottom.opacity(0.80))
-        appearance.shadowColor = UIColor(SecurePalette.border)
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundEffect = nil
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundBottom)
+        appearance.shadowColor = UIColor(SecurePalette.border.opacity(0.55))
 
         let selectedColor = UIColor(SecurePalette.accent)
         let normalColor = UIColor.white.withAlphaComponent(0.84)

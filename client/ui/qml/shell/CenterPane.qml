@@ -883,7 +883,7 @@ Item {
                 id: messageList
                 anchors.fill: parent
                 anchors.leftMargin: Ui.Style.paddingL
-                anchors.rightMargin: Ui.Style.paddingL
+                anchors.rightMargin: Ui.Style.paddingXL
                 anchors.bottomMargin: Ui.Style.paddingL
                 anchors.topMargin: Ui.Style.paddingL +
                                    (groupCallBanner.visible
@@ -2748,12 +2748,20 @@ Item {
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
-                property real bubbleEdgeInset: Ui.Style.paddingL + (transparentBubble ? 0 : 20)
+                property real bubbleEdgeInset: transparentBubble
+                                               ? Ui.Style.paddingL
+                                               : (isOutgoing
+                                                  ? Ui.Style.paddingXL + 14
+                                                  : Ui.Style.paddingXL + 4)
                 property real availableBubbleWidth: Math.max(220,
                                                              (ListView.view ? ListView.view.width : root.width)
                                                              - bubbleEdgeInset * 2)
-                property real maxBubbleWidth: Math.min(Math.max(232, availableBubbleWidth * 0.52),
-                                                       Math.max(220, availableBubbleWidth - (transparentBubble ? 0 : 16)))
+                property real maxBubbleWidth: Math.min(Math.max(isOutgoing ? 216 : 224,
+                                                                availableBubbleWidth * (isOutgoing ? 0.48 : 0.52)),
+                                                       Math.max(208,
+                                                                availableBubbleWidth - (transparentBubble
+                                                                                        ? 0
+                                                                                        : (isOutgoing ? 24 : 16))))
                 property real contentWidth: contentLoader.item
                                              ? Math.min(maxBubbleWidth - hPadding * 2,
                                                         contentLoader.item.implicitWidth)
@@ -2770,7 +2778,7 @@ Item {
                 height: bubbleHeight
                 x: isOutgoing
                    ? Math.max(Ui.Style.paddingL,
-                              parent.width - bubbleWidth - bubbleEdgeInset - (transparentBubble ? 0 : 6))
+                              parent.width - bubbleWidth - bubbleEdgeInset - (transparentBubble ? 0 : 12))
                    : senderLeftInset
                 y: 4
 
@@ -3441,7 +3449,7 @@ Item {
                     anchors.bottom: bubble.bottom
                     anchors.bottomMargin: 8
                     anchors.right: bubble.right
-                    anchors.rightMargin: -2
+                    anchors.rightMargin: 1
                     visible: isOutgoing && !bubbleBlock.transparentBubble
                 }
             }
