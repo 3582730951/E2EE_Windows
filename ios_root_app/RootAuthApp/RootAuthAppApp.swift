@@ -4,8 +4,10 @@ import SwiftUI
 struct RootAuthAppApp: App {
     var body: some Scene {
         WindowGroup {
-            AppShell()
-                .background(SecureSceneBackground())
+            ZStack {
+                SecureSceneBackground()
+                AppShell()
+            }
         }
     }
 }
