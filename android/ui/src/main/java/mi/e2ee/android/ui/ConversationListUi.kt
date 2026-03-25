@@ -271,6 +271,8 @@ fun ConversationListScreen(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
                         .fillMaxSize()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
                         .nestedScroll(nestedScrollConnection),
                     state = listState
                 ) {

@@ -698,7 +698,6 @@ fun ChatScreen(
     }
     val showComposer = effectiveState != ChatScreenState.NotFound &&
         effectiveState != ChatScreenState.PermissionDenied
-    val composerInset = 88.dp
     Scaffold(
         topBar = {
             ChatTopBar(
@@ -747,10 +746,14 @@ fun ChatScreen(
         },
         containerColor = Color.Transparent
     ) { padding ->
+        val composerInset = if (showComposer) {
+            padding.calculateBottomPadding() + 8.dp
+        } else {
+            16.dp
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = padding.calculateBottomPadding())
                 .testTag("chat-screen")
         ) {
             ChatBackground()
@@ -1324,7 +1327,8 @@ private fun ChatTopBar(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
