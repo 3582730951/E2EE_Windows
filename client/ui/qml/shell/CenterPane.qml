@@ -1607,15 +1607,21 @@ Item {
 
                     Button {
                         id: sendButton
-                        Layout.preferredWidth: 72
+                        property bool hasDraft: messageInput.text.trim().length > 0
+                        Layout.preferredWidth: 86
                         Layout.preferredHeight: Math.max(34, inputButtonSize)
                         Layout.alignment: Qt.AlignVCenter
-                        enabled: Ui.ChatStore.currentChatId.length > 0 &&
-                                 messageInput.text.trim().length > 0
-                        onClicked: inputBar.sendMessage()
+                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        onClicked: {
+                            if (!hasDraft) {
+                                messageInput.forceActiveFocus()
+                                return
+                            }
+                            inputBar.sendMessage()
+                        }
                         contentItem: Text {
                             text: Ui.I18n.t("chat.send")
-                            color: Ui.Style.textPrimary
+                            color: "#F6FAFF"
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
                             horizontalAlignment: Text.AlignHCenter
@@ -1623,12 +1629,17 @@ Item {
                         }
                         background: Rectangle {
                             radius: Ui.Style.radiusMedium
-                            color: sendButton.enabled
-                                   ? (sendButton.down ? Ui.Style.accentPressed
-                                                      : (sendButton.hovered ? Ui.Style.accentHover : Ui.Style.accent))
-                                   : Ui.Style.pressedBg
-                            border.width: sendButton.enabled ? 0 : 1
-                            border.color: Ui.Style.borderSubtle
+                            color: sendButton.down
+                                   ? Ui.Style.accentPressed
+                                   : (sendButton.hovered
+                                      ? Ui.Style.accentHover
+                                      : (sendButton.hasDraft
+                                         ? Ui.Style.accent
+                                         : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.34)))
+                            border.width: sendButton.hasDraft ? 0 : 1
+                            border.color: sendButton.hasDraft
+                                          ? "transparent"
+                                          : Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.70)
                         }
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.send")

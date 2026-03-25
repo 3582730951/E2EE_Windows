@@ -20,6 +20,10 @@ Item {
     property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
+    readonly property color loginLabelColor: Qt.rgba(0.93, 0.96, 1.0, 0.98)
+    readonly property color loginPlaceholderColor: Qt.rgba(0.83, 0.90, 1.0, 0.90)
+    readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.56)
+    readonly property color loginFieldBackground: Qt.rgba(0.07, 0.11, 0.16, 0.98)
 
     signal authSucceeded()
 
@@ -294,7 +298,7 @@ Item {
                             text: Ui.I18n.t("auth.placeholder.account")
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
-                            color: Ui.Style.textPrimary
+                            color: loginLabelColor
                             Layout.fillWidth: true
                         }
                         Components.SecureTextField {
@@ -303,14 +307,14 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
                             font.pixelSize: 14
                             color: Ui.Style.textPrimary
-                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
+                            placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                color: loginFieldBackground
                                 border.width: 1
                                 border.color: accountField.activeFocus
                                               ? Ui.Style.authFieldFocus
-                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
+                                              : loginFieldBorder
                             }
                             onTextChanged: accountInput = text
                         }
@@ -319,7 +323,7 @@ Item {
                             text: Ui.I18n.t("auth.placeholder.password")
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
-                            color: Ui.Style.textPrimary
+                            color: loginLabelColor
                             Layout.fillWidth: true
                         }
                         Components.SecureTextField {
@@ -329,14 +333,14 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
                             font.pixelSize: 14
                             color: Ui.Style.textPrimary
-                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
+                            placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                color: loginFieldBackground
                                 border.width: 1
                                 border.color: passwordField.activeFocus
                                               ? Ui.Style.authFieldFocus
-                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
+                                              : loginFieldBorder
                             }
                             onTextChanged: passwordInput = text
                         }
@@ -345,7 +349,7 @@ Item {
                             text: Ui.I18n.t("auth.placeholder.rootCode")
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
-                            color: Ui.Style.textPrimary
+                            color: loginLabelColor
                             Layout.fillWidth: true
                         }
                         Components.SecureTextField {
@@ -355,14 +359,14 @@ Item {
                             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
                             font.pixelSize: 14
                             color: Ui.Style.textPrimary
-                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
+                            placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                color: loginFieldBackground
                                 border.width: 1
                                 border.color: rootCodeField.activeFocus
                                               ? Ui.Style.authFieldFocus
-                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
+                                              : loginFieldBorder
                             }
                             onTextChanged: rootCodeInput = text
                         }
@@ -373,16 +377,24 @@ Item {
                         }
 
                         Button {
+                            id: loginButton
                             text: Ui.I18n.t("auth.login")
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 40
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Ui.Style.accent
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: loginButton.down ? Ui.Style.accentPressed : Ui.Style.accentHover }
+                                    GradientStop { position: 1.0; color: loginButton.down ? Ui.Style.accent : Ui.Style.accent }
+                                }
+                                border.width: 1
+                                border.color: Qt.rgba(0.72, 0.84, 1.0, 0.64)
                             }
                             contentItem: Text {
                                 text: Ui.I18n.t("auth.login")
-                                color: Ui.Style.textPrimary
+                                color: "#F6FAFF"
                                 font.pixelSize: 16
+                                font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -451,7 +463,74 @@ Item {
                             }
                             Item { Layout.fillWidth: true }
                         }
-                        Item { Layout.fillHeight: true }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 126
+                            radius: Ui.Style.radiusLarge
+                            color: Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.10)
+                            border.width: 1
+                            border.color: Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.24)
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingM
+                                spacing: Ui.Style.paddingS
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("auth.hero.badge")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    text: Ui.I18n.t("chat.secureSession")
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 12
+                                    lineHeightMode: Text.FixedHeight
+                                    lineHeight: 18
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Repeater {
+                                        model: [
+                                            Ui.I18n.t("settings.privacy.clipboardIsolation"),
+                                            Ui.I18n.t("settings.privacy.internalIme")
+                                        ]
+                                        delegate: Rectangle {
+                                            radius: 10
+                                            color: Qt.rgba(1, 1, 1, 0.08)
+                                            border.width: 1
+                                            border.color: Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.25)
+                                            height: 24
+                                            width: labelMetrics.width + 20
+
+                                            TextMetrics {
+                                                id: labelMetrics
+                                                text: modelData
+                                                font.family: Ui.Style.fontFamily
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                            }
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: modelData
+                                                color: Ui.Style.authBadgeText
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
