@@ -1,6 +1,43 @@
 import Foundation
 import SwiftUI
 
+private struct SecureFullscreenScrollPage<Content: View>: View {
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
+    let showsIndicators: Bool
+    let content: () -> Content
+
+    init(horizontalPadding: CGFloat,
+         verticalPadding: CGFloat,
+         showsIndicators: Bool,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+        self.showsIndicators = showsIndicators
+        self.content = content
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                SecureSceneBackground()
+
+                ScrollView(showsIndicators: showsIndicators) {
+                    content()
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .frame(minHeight: max(proxy.size.height - (verticalPadding * 2), 0), alignment: .top)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.vertical, verticalPadding)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SecurePalette.backgroundBottom)
+    }
+}
+
 private struct SecureNavigationRow<Destination: View>: View {
     let title: String
     let detail: String
@@ -481,21 +518,23 @@ struct ClientConversationDetailView: View {
     let conversation: ClientConversation
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                SecureSceneBackground()
 
-            VStack(spacing: 12) {
-                ClientSecuritySummaryCard(store: store)
-                ClientMessagesCard(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Spacer(minLength: 0)
+                VStack(spacing: 12) {
+                    ClientSecuritySummaryCard(store: store)
+                    ClientMessagesCard(store: store)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 0)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SecurePalette.backgroundBottom)
+        .safeAreaPadding(.top, 8)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ClientComposerCard(store: store)
                 .padding(.horizontal, 14)
@@ -703,25 +742,19 @@ struct ClientWorkspaceView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    if store.isLoggedIn {
-                        ClientSecuritySummaryCard(store: store)
-                        ClientConversationListCard(store: store)
-                    } else {
-                        ClientSecuritySummaryCard(store: store)
-                        ClientLoginCard(store: store)
-                    }
+        SecureFullscreenScrollPage(horizontalPadding: 14,
+                                   verticalPadding: 14,
+                                   showsIndicators: false) {
+            VStack(spacing: 14) {
+                if store.isLoggedIn {
+                    ClientSecuritySummaryCard(store: store)
+                    ClientConversationListCard(store: store)
+                } else {
+                    ClientSecuritySummaryCard(store: store)
+                    ClientLoginCard(store: store)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Chats")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .tabBar)
@@ -742,58 +775,52 @@ struct ContactsHomeView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        SecureFullscreenScrollPage(horizontalPadding: 18,
+                                   verticalPadding: 20,
+                                   showsIndicators: false) {
+            VStack(spacing: 18) {
+                SecureSectionHeader(
+                    eyebrow: "People",
+                    title: "Contacts and direct threads",
+                    detail: "Keep the contact roster close to the active chat shell instead of burying it behind tools."
+                )
+                .secureCard()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    SecureSectionHeader(
-                        eyebrow: "People",
-                        title: "Contacts and direct threads",
-                        detail: "Keep the contact roster close to the active chat shell instead of burying it behind tools."
+                if store.contactConversations.isEmpty {
+                    SecureStatusBanner(
+                        title: "No contacts available",
+                        detail: "Contacts appear here after sign-in and incoming secure activity.",
+                        tone: .neutral,
+                        systemImage: "person.crop.circle.badge.questionmark"
                     )
                     .secureCard()
-
-                    if store.contactConversations.isEmpty {
-                        SecureStatusBanner(
-                            title: "No contacts available",
-                            detail: "Contacts appear here after sign-in and incoming secure activity.",
-                            tone: .neutral,
-                            systemImage: "person.crop.circle.badge.questionmark"
-                        )
-                        .secureCard()
-                    } else {
-                        VStack(spacing: 10) {
-                            ForEach(store.contactConversations) { conversation in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(conversation.title)
-                                        .font(.headline)
-                                        .foregroundStyle(SecurePalette.textPrimary)
-                                    Text(conversation.subtitle)
-                                        .font(.footnote)
-                                        .foregroundStyle(SecurePalette.textSecondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(SecurePalette.surfaceRaised)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .stroke(SecurePalette.border, lineWidth: 1)
-                                )
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(store.contactConversations) { conversation in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(conversation.title)
+                                    .font(.headline)
+                                    .foregroundStyle(SecurePalette.textPrimary)
+                                Text(conversation.subtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(SecurePalette.textSecondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .fill(SecurePalette.surfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(SecurePalette.border, lineWidth: 1)
+                            )
                         }
-                        .secureCard()
                     }
+                    .secureCard()
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Contacts")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -803,36 +830,30 @@ struct CallsHomeView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        SecureFullscreenScrollPage(horizontalPadding: 18,
+                                   verticalPadding: 20,
+                                   showsIndicators: false) {
+            VStack(spacing: 18) {
+                SecureSectionHeader(
+                    eyebrow: "Calls",
+                    title: "Call hub",
+                    detail: "Call state, active rooms, and media-related diagnostics stay visible without leaving the main product shell."
+                )
+                .secureCard()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    SecureSectionHeader(
-                        eyebrow: "Calls",
-                        title: "Call hub",
-                        detail: "Call state, active rooms, and media-related diagnostics stay visible without leaving the main product shell."
-                    )
-                    .secureCard()
+                SecureStatusBanner(
+                    title: store.isLoggedIn ? "Ready for secure calls" : "Sign in required",
+                    detail: store.isLoggedIn
+                        ? "Peer and group call flows are coordinated from the main client workspace."
+                        : "Call controls become available after the secure session is established.",
+                    tone: store.isLoggedIn ? .success : .warning,
+                    systemImage: store.isLoggedIn ? "phone.connection.fill" : "phone.down.waves.left.and.right"
+                )
+                .secureCard()
 
-                    SecureStatusBanner(
-                        title: store.isLoggedIn ? "Ready for secure calls" : "Sign in required",
-                        detail: store.isLoggedIn
-                            ? "Peer and group call flows are coordinated from the main client workspace."
-                            : "Call controls become available after the secure session is established.",
-                        tone: store.isLoggedIn ? .success : .warning,
-                        systemImage: store.isLoggedIn ? "phone.connection.fill" : "phone.down.waves.left.and.right"
-                    )
-                    .secureCard()
-
-                    ClientDevicesCard(store: store)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
+                ClientDevicesCard(store: store)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Calls")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -842,30 +863,24 @@ struct TransportStatusView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        SecureFullscreenScrollPage(horizontalPadding: 18,
+                                   verticalPadding: 20,
+                                   showsIndicators: false) {
+            VStack(spacing: 18) {
+                SecureSectionHeader(
+                    eyebrow: "Transport",
+                    title: "Connection, session, and device status",
+                    detail: "Keep session health visible from Settings without pushing the full chat workspace into the settings stack."
+                )
+                .secureCard()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    SecureSectionHeader(
-                        eyebrow: "Transport",
-                        title: "Connection, session, and device status",
-                        detail: "Keep session health visible from Settings without pushing the full chat workspace into the settings stack."
-                    )
-                    .secureCard()
+                ClientStatusCard(store: store)
 
-                    ClientStatusCard(store: store)
-
-                    if !store.isLoggedIn {
-                        ClientLoginCard(store: store)
-                    }
+                if !store.isLoggedIn {
+                    ClientLoginCard(store: store)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Transport Status")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -876,41 +891,35 @@ struct SettingsHomeView: View {
     @ObservedObject var rootAuthStore: RootAuthStore
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        SecureFullscreenScrollPage(horizontalPadding: 18,
+                                   verticalPadding: 20,
+                                   showsIndicators: false) {
+            VStack(spacing: 18) {
+                SecureSectionHeader(
+                    eyebrow: "Settings",
+                    title: "System, privacy, and trust",
+                    detail: "Move identity, device, and root authorization under one predictable settings hierarchy."
+                )
+                .secureCard()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    SecureSectionHeader(
-                        eyebrow: "Settings",
-                        title: "System, privacy, and trust",
-                        detail: "Move identity, device, and root authorization under one predictable settings hierarchy."
+                VStack(spacing: 12) {
+                    SecureNavigationRow(
+                        title: "Security Center",
+                        detail: "Device trust, root authorization, and linked device state.",
+                        systemImage: "checkmark.shield.fill",
+                        destination: SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
                     )
-                    .secureCard()
 
-                    VStack(spacing: 12) {
-                        SecureNavigationRow(
-                            title: "Security Center",
-                            detail: "Device trust, root authorization, and linked device state.",
-                            systemImage: "checkmark.shield.fill",
-                            destination: SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                        )
-
-                        SecureNavigationRow(
-                            title: "Transport Status",
-                            detail: clientStore.remoteOK ? "Encrypted session healthy." : "Session needs attention.",
-                            systemImage: "lock.shield.fill",
-                            destination: TransportStatusView(store: clientStore)
-                        )
-                    }
-                    .secureCard()
+                    SecureNavigationRow(
+                        title: "Transport Status",
+                        detail: clientStore.remoteOK ? "Encrypted session healthy." : "Session needs attention.",
+                        systemImage: "lock.shield.fill",
+                        destination: TransportStatusView(store: clientStore)
+                    )
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
+                .secureCard()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
     }

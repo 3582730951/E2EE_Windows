@@ -703,63 +703,61 @@ struct AppShell: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                SecureWindowConfigurator()
-                SecureSceneBackground()
+        ZStack(alignment: .top) {
+            SecureWindowConfigurator()
+            SecureSceneBackground()
 
-                TabView(selection: $selectedTab) {
-                    NavigationStack {
-                        if screenshotScenario == .detail,
-                           let conversation = clientStore.primaryConversation {
-                            ClientConversationDetailView(store: clientStore, conversation: conversation)
-                        } else {
-                            ClientWorkspaceView(store: clientStore)
-                        }
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    if screenshotScenario == .detail,
+                       let conversation = clientStore.primaryConversation {
+                        ClientConversationDetailView(store: clientStore, conversation: conversation)
+                    } else {
+                        ClientWorkspaceView(store: clientStore)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .tabItem {
-                        Label("Chats", systemImage: "message.fill")
-                    }
-                    .tag(AppTab.chats)
-
-                    NavigationStack {
-                        ContactsHomeView(store: clientStore)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .tabItem {
-                        Label("Contacts", systemImage: "person.2.fill")
-                    }
-                    .tag(AppTab.contacts)
-
-                    NavigationStack {
-                        CallsHomeView(store: clientStore)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .tabItem {
-                        Label("Calls", systemImage: "phone.fill")
-                    }
-                    .tag(AppTab.calls)
-
-                    NavigationStack {
-                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .tabItem {
-                        Label("Settings", systemImage: "gearshape.fill")
-                    }
-                    .tag(AppTab.settings)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .background(SecureSceneBackground())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem {
+                    Label("Chats", systemImage: "message.fill")
+                }
+                .tag(AppTab.chats)
+
+                NavigationStack {
+                    ContactsHomeView(store: clientStore)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem {
+                    Label("Contacts", systemImage: "person.2.fill")
+                }
+                .tag(AppTab.contacts)
+
+                NavigationStack {
+                    CallsHomeView(store: clientStore)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem {
+                    Label("Calls", systemImage: "phone.fill")
+                }
+                .tag(AppTab.calls)
+
+                NavigationStack {
+                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
+                .tag(AppTab.settings)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(SecurePalette.backgroundBottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SecureSceneBackground())
-        .ignoresSafeArea(.container, edges: .bottom)
+        .background(SecurePalette.backgroundBottom)
         .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .tint(SecurePalette.accent)
         .preferredColorScheme(.dark)
