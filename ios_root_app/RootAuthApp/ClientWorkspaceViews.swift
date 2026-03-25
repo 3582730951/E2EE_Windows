@@ -491,7 +491,7 @@ struct ClientConversationDetailView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.top, 12)
             .padding(.bottom, 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -501,7 +501,7 @@ struct ClientConversationDetailView: View {
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
                 .padding(.bottom, 8)
-                .background(SecurePalette.backgroundBottom.opacity(0.94))
+                .background(SecurePalette.backgroundBottom.opacity(0.98))
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -602,7 +602,7 @@ struct ClientMessagesCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)

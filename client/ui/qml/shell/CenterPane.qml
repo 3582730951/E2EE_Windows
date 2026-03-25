@@ -675,7 +675,8 @@ Item {
                                 Layout.fillWidth: true
                                 text: Ui.ChatStore.currentChatSubtitle
                                 font.pixelSize: Ui.Style.microTextSize
-                                color: Ui.Style.textMuted
+                                font.weight: Font.Medium
+                                color: Ui.Style.textSecondary
                                 elide: Text.ElideRight
                             }
                         }
@@ -757,6 +758,7 @@ Item {
                 text: imeStatusText()
                 color: Ui.Style.textSecondary
                 font.pixelSize: Ui.Style.microTextSize
+                font.weight: Font.Medium
                 elide: Text.ElideRight
                 width: Math.min(parent.width * 0.4, 300)
                 horizontalAlignment: Text.AlignHCenter
@@ -2703,7 +2705,8 @@ Item {
                     anchors.centerIn: parent
                     text: model.text || ""
                     color: Ui.Style.textMuted
-                    font.pixelSize: 10
+                    font.pixelSize: Ui.Style.microTextSize
+                    font.weight: Font.Medium
                 }
             }
 
@@ -2713,7 +2716,8 @@ Item {
                 y: 8
                 text: model.text || ""
                 color: Ui.Style.textMuted
-                font.pixelSize: 10
+                font.pixelSize: Ui.Style.microTextSize
+                font.weight: Font.Medium
             }
 
             Rectangle {
@@ -2748,9 +2752,12 @@ Item {
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
-                property int outgoingMetaSafeInset: isOutgoing ? 8 : 0
-                property int outgoingMetaExtraPad: isOutgoing ? Math.max(0, outgoingMetaSafeInset - hPadding) : 0
-                property int outgoingMetaRightPad: isOutgoing && usesFullWidth ? Math.max(10, outgoingMetaExtraPad) : 0
+                property int outgoingMetaSafeInset: isOutgoing ? 14 : 0
+                property int outgoingMetaBottomInset: isOutgoing ? 12 : 0
+                property int outgoingMetaExtraPad: isOutgoing ? Math.max(0, outgoingMetaSafeInset + 4 - hPadding) : 0
+                property int outgoingMetaRightPad: isOutgoing && usesFullWidth
+                                                   ? Math.max(18, outgoingMetaSafeInset + 6)
+                                                   : 0
                 property real bubbleEdgeInset: transparentBubble
                                                ? Ui.Style.paddingL
                                                : (isOutgoing
@@ -3387,7 +3394,7 @@ Item {
                         anchors.leftMargin: bubbleBlock.hPadding
                         anchors.rightMargin: isOutgoing ? Math.max(bubbleBlock.outgoingMetaSafeInset, bubbleBlock.hPadding) : bubbleBlock.hPadding
                         anchors.topMargin: bubbleBlock.vPadding
-                        anchors.bottomMargin: isOutgoing ? Math.max(bubbleBlock.outgoingMetaSafeInset, bubbleBlock.vPadding) : bubbleBlock.vPadding
+                        anchors.bottomMargin: isOutgoing ? Math.max(bubbleBlock.outgoingMetaBottomInset, bubbleBlock.vPadding) : bubbleBlock.vPadding
                         spacing: 4
 
                         Text {
@@ -3415,18 +3422,20 @@ Item {
 
                         Row {
                             id: metaRow
-                            spacing: 6
+                            spacing: 8
                             anchors.right: parent.right
-                            anchors.rightMargin: isOutgoing ? bubbleBlock.outgoingMetaSafeInset : 0
+                            anchors.rightMargin: isOutgoing ? Math.max(10, bubbleBlock.outgoingMetaSafeInset - 2) : 0
                             Text {
                                 text: timeText || ""
                                 font.pixelSize: Ui.Style.microTextSize
+                                font.weight: Font.Medium
                                 color: isOutgoing ? Ui.Style.bubbleMetaOutFg : Ui.Style.bubbleMetaInFg
                             }
                             Text {
                                 visible: isOutgoing
                                 text: tickText(statusTicks)
                                 font.pixelSize: Ui.Style.microTextSize
+                                font.weight: Font.DemiBold
                                 color: Ui.Style.bubbleMetaOutFg
                             }
                         }

@@ -703,57 +703,61 @@ struct AppShell: View {
     }
 
     var body: some View {
-        ZStack {
-            SecureWindowConfigurator()
-            SecureSceneBackground()
+        GeometryReader { proxy in
+            ZStack {
+                SecureWindowConfigurator()
+                SecureSceneBackground()
 
-            TabView(selection: $selectedTab) {
-                NavigationStack {
-                    if screenshotScenario == .detail,
-                       let conversation = clientStore.primaryConversation {
-                        ClientConversationDetailView(store: clientStore, conversation: conversation)
-                    } else {
-                        ClientWorkspaceView(store: clientStore)
+                TabView(selection: $selectedTab) {
+                    NavigationStack {
+                        if screenshotScenario == .detail,
+                           let conversation = clientStore.primaryConversation {
+                            ClientConversationDetailView(store: clientStore, conversation: conversation)
+                        } else {
+                            ClientWorkspaceView(store: clientStore)
+                        }
                     }
-                }
-                .tabItem {
-                    Label("Chats", systemImage: "message.fill")
-                }
-                .tag(AppTab.chats)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .tabItem {
+                        Label("Chats", systemImage: "message.fill")
+                    }
+                    .tag(AppTab.chats)
 
-                NavigationStack {
-                    ContactsHomeView(store: clientStore)
-                }
-                .tabItem {
-                    Label("Contacts", systemImage: "person.2.fill")
-                }
-                .tag(AppTab.contacts)
+                    NavigationStack {
+                        ContactsHomeView(store: clientStore)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .tabItem {
+                        Label("Contacts", systemImage: "person.2.fill")
+                    }
+                    .tag(AppTab.contacts)
 
-                NavigationStack {
-                    CallsHomeView(store: clientStore)
-                }
-                .tabItem {
-                    Label("Calls", systemImage: "phone.fill")
-                }
-                .tag(AppTab.calls)
+                    NavigationStack {
+                        CallsHomeView(store: clientStore)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .tabItem {
+                        Label("Calls", systemImage: "phone.fill")
+                    }
+                    .tag(AppTab.calls)
 
-                NavigationStack {
-                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    NavigationStack {
+                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape.fill")
+                    }
+                    .tag(AppTab.settings)
                 }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(AppTab.settings)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .background(SecureSceneBackground())
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SecureSceneBackground())
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecureSceneBackground())
-        .ignoresSafeArea()
-        .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .tabBar)
+        .ignoresSafeArea(.container, edges: .bottom)
         .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -793,9 +797,9 @@ struct AppShell: View {
 
     private static func configureNavigationBarAppearance() {
         let appearance = UINavigationBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.72))
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundEffect = nil
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.96))
         appearance.shadowColor = UIColor(SecurePalette.border)
         appearance.titleTextAttributes = [
             .foregroundColor: UIColor(SecurePalette.textPrimary)

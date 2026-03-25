@@ -126,7 +126,7 @@ Item {
                             anchors.centerIn: parent
                             text: Ui.I18n.t("chat.secureSession")
                             color: Ui.Style.accentSoft
-                            font.pixelSize: 11
+                            font.pixelSize: Math.max(12, Ui.Style.microTextSize - 1)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -530,7 +530,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignRight | Qt.AlignTop
                             text: timeText
-                            font.pixelSize: 10
+                            font.pixelSize: Math.max(12, Ui.Style.microTextSize - 1)
                             font.weight: unread > 0 ? Font.DemiBold : Font.Medium
                             color: unread > 0 ? Ui.Style.tgUnreadBadge : (selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted)
                             horizontalAlignment: Text.AlignRight
@@ -563,7 +563,7 @@ Item {
                                 anchors.centerIn: parent
                                 text: unread > 99 ? "99+" : unread
                                 color: muted ? Ui.Style.unreadBadgeMutedFg : Ui.Style.unreadBadgeFg
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
                             }
                         }
