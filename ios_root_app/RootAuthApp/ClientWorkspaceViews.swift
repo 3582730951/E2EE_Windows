@@ -518,20 +518,15 @@ struct ClientConversationDetailView: View {
     let conversation: ClientConversation
 
     var body: some View {
-        ZStack(alignment: .top) {
-            SecureSceneBackground()
-
-            VStack(spacing: 12) {
-                ClientSecuritySummaryCard(store: store)
-                ClientMessagesCard(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        VStack(spacing: 12) {
+            ClientSecuritySummaryCard(store: store)
+            ClientMessagesCard(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .safeAreaPadding(.top, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SecurePalette.backgroundBottom)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ClientComposerCard(store: store)
                 .padding(.horizontal, 14)
