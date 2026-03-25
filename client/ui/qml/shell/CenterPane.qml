@@ -1605,20 +1605,31 @@ Item {
                         ToolTip.text: Ui.I18n.t("chat.emoji")
                     }
 
-                    Components.IconButton {
+                    Button {
                         id: sendButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/send.svg"
-                        buttonSize: 34
-                        iconSize: 18
-                        bgColor: Ui.Style.accent
-                        hoverBg: Ui.Style.accentHover
-                        pressedBg: Ui.Style.accentPressed
-                        baseColor: Ui.Style.textPrimary
-                        hoverColor: Ui.Style.textPrimary
-                        pressColor: Ui.Style.textPrimary
+                        Layout.preferredWidth: 72
+                        Layout.preferredHeight: Math.max(34, inputButtonSize)
+                        Layout.alignment: Qt.AlignVCenter
                         enabled: Ui.ChatStore.currentChatId.length > 0 &&
                                  messageInput.text.trim().length > 0
                         onClicked: inputBar.sendMessage()
+                        contentItem: Text {
+                            text: Ui.I18n.t("chat.send")
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: sendButton.enabled
+                                   ? (sendButton.down ? Ui.Style.accentPressed
+                                                      : (sendButton.hovered ? Ui.Style.accentHover : Ui.Style.accent))
+                                   : Ui.Style.pressedBg
+                            border.width: sendButton.enabled ? 0 : 1
+                            border.color: Ui.Style.borderSubtle
+                        }
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.send")
                     }

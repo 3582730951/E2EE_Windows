@@ -368,28 +368,53 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
                             Item { Layout.fillWidth: true }
                             Button {
+                                id: registerLinkButton
                                 text: Ui.I18n.t("auth.registerAccount")
                                 flat: true
                                 onClicked: loginStack.currentIndex = 1
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.registerAccount")
-                                    color: Ui.Style.link
+                                    color: registerLinkButton.hovered || registerLinkButton.down
+                                           ? Ui.Style.textPrimary
+                                           : Ui.Style.authBadgeText
                                     font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
                                 }
-                                background: Rectangle { color: "transparent" }
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    color: parent.down ? Ui.Style.authInfoBorder
+                                                       : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
+                                    border.width: parent.hovered || parent.down ? 1 : 0
+                                    border.color: Ui.Style.authBadgeBorder
+                                }
                             }
                             Button {
+                                id: qrLinkButton
                                 text: Ui.I18n.t("auth.qrLogin")
                                 flat: true
                                 onClicked: loginStack.currentIndex = 2
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.qrLogin")
-                                    color: Ui.Style.link
+                                    color: qrLinkButton.hovered || qrLinkButton.down
+                                           ? Ui.Style.textPrimary
+                                           : Ui.Style.authBadgeText
                                     font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
                                 }
-                                background: Rectangle { color: "transparent" }
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    color: parent.down ? Ui.Style.authInfoBorder
+                                                       : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
+                                    border.width: parent.hovered || parent.down ? 1 : 0
+                                    border.color: Ui.Style.authBadgeBorder
+                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
