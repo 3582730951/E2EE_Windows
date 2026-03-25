@@ -29,9 +29,9 @@ private struct SecureFullscreenScrollPage<Content: View>: View {
                         .padding(.horizontal, horizontalPadding)
                         .padding(.vertical, verticalPadding)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecurePalette.backgroundBottom)
@@ -518,19 +518,17 @@ struct ClientConversationDetailView: View {
     let conversation: ClientConversation
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .top) {
-                SecureSceneBackground()
+        ZStack(alignment: .top) {
+            SecureSceneBackground()
 
-                VStack(spacing: 12) {
-                    ClientSecuritySummaryCard(store: store)
-                    ClientMessagesCard(store: store)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 20)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            VStack(spacing: 12) {
+                ClientSecuritySummaryCard(store: store)
+                ClientMessagesCard(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecurePalette.backgroundBottom)
