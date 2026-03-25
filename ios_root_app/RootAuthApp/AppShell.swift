@@ -694,6 +694,11 @@ struct AppShell: View {
     @StateObject private var clientStore = ClientWorkspaceStore()
     @State private var selectedTab: AppTab
 
+    private var shellBackground: some View {
+        SecureSceneBackground()
+            .background(SecurePalette.backgroundBottom)
+    }
+
     init() {
         let scenario = ScreenshotScenario.current
         screenshotScenario = scenario
@@ -717,6 +722,7 @@ struct AppShell: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
                 .tabItem {
                     Label("Chats", systemImage: "message.fill")
                 }
@@ -726,6 +732,7 @@ struct AppShell: View {
                     ContactsHomeView(store: clientStore)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
                 .tabItem {
                     Label("Contacts", systemImage: "person.2.fill")
                 }
@@ -735,6 +742,7 @@ struct AppShell: View {
                     CallsHomeView(store: clientStore)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
                 .tabItem {
                     Label("Calls", systemImage: "phone.fill")
                 }
@@ -744,13 +752,14 @@ struct AppShell: View {
                     SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
                 .tabItem {
                     Label("Settings", systemImage: "gearshape.fill")
                 }
                 .tag(AppTab.settings)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(SecurePalette.backgroundBottom)
+            .background(shellBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecurePalette.backgroundBottom)

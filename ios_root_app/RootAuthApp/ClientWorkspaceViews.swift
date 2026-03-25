@@ -528,16 +528,12 @@ struct ClientConversationDetailView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 12)
+                .padding(.top, 20)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecurePalette.backgroundBottom)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear
-                .frame(height: 8)
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ClientComposerCard(store: store)
                 .padding(.horizontal, 14)
