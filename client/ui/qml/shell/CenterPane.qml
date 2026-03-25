@@ -24,6 +24,7 @@ Item {
     property int actionIconSize: Math.round(15 * actionScale)
     property int inputButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
     property int inputIconSize: Math.round(16 * actionScale)
+    property int composerCornerSafeInset: Math.max(Ui.Style.paddingL, Ui.Style.radiusXL + 10)
     property int actionTopBarHeight: Math.round(Math.max(Ui.Style.topBarHeight * topBarScale,
                                                         actionButtonSize + Ui.Style.paddingS * 2 * topBarScale))
     property bool emojiLoaded: false
@@ -1465,8 +1466,8 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.rightMargin: Ui.Style.paddingS
-                    Layout.bottomMargin: 4
+                    Layout.rightMargin: composerCornerSafeInset
+                    Layout.bottomMargin: Ui.Style.paddingS
                     spacing: Ui.Style.paddingS
 
                     Components.IconButton {

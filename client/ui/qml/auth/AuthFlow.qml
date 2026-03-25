@@ -24,6 +24,7 @@ Item {
     readonly property color loginPlaceholderColor: Qt.rgba(0.88, 0.93, 1.0, 0.96)
     readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.74)
     readonly property color loginFieldBackground: Qt.rgba(0.08, 0.12, 0.18, 0.99)
+    readonly property int authContentMaxWidth: 640
 
     signal authSucceeded()
 
@@ -154,8 +155,13 @@ Item {
         clip: true
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: Ui.Style.paddingL
+            id: authColumn
+            width: Math.min(parent.width - Ui.Style.paddingL * 2, authContentMaxWidth)
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Ui.Style.paddingL
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Ui.Style.paddingL
             spacing: Ui.Style.paddingM
 
             Item {
