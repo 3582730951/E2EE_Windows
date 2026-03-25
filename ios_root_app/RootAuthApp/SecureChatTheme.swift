@@ -1,8 +1,9 @@
 import SwiftUI
+import UIKit
 
 enum SecurePalette {
-    static let backgroundTop = Color(red: 0.06, green: 0.10, blue: 0.16)
-    static let backgroundBottom = Color(red: 0.03, green: 0.06, blue: 0.11)
+    static let backgroundTop = Color(red: 0.08, green: 0.13, blue: 0.20)
+    static let backgroundBottom = Color(red: 0.05, green: 0.09, blue: 0.15)
     static let surface = Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.96)
     static let surfaceRaised = Color(red: 0.13, green: 0.18, blue: 0.25).opacity(0.98)
     static let border = Color.white.opacity(0.08)
@@ -61,6 +62,38 @@ struct SecureSceneBackground: View {
                 .offset(x: -160, y: 220)
         }
         .ignoresSafeArea()
+    }
+}
+
+struct SecureWindowConfigurator: UIViewRepresentable {
+    private func applyBackground(from view: UIView?) {
+        let fill = UIColor(SecurePalette.backgroundBottom)
+        var current = view
+        while let node = current {
+            node.backgroundColor = fill
+            current = node.superview
+        }
+        if let window = view?.window {
+            window.backgroundColor = fill
+            window.rootViewController?.view.backgroundColor = fill
+        }
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = UIColor(SecurePalette.backgroundBottom)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            applyBackground(from: view)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        uiView.backgroundColor = UIColor(SecurePalette.backgroundBottom)
+        DispatchQueue.main.async {
+            applyBackground(from: uiView)
+        }
     }
 }
 

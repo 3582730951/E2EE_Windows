@@ -558,6 +558,24 @@ final class ClientWorkspaceStore: ObservableObject {
                 title: "Mira Chen",
                 subtitle: "Uploaded the audit package",
                 isGroup: false
+            ),
+            ClientConversation(
+                id: "c-ops",
+                title: "Ops Sync",
+                subtitle: "Queue cap increased to 512",
+                isGroup: false
+            ),
+            ClientConversation(
+                id: "c-rhea",
+                title: "Rhea North",
+                subtitle: "Typing indicator verified",
+                isGroup: false
+            ),
+            ClientConversation(
+                id: "g-platform",
+                title: "Platform",
+                subtitle: "API33 smoke gate is green",
+                isGroup: true
             )
         ]
         conversations = fixtureConversations
@@ -580,12 +598,58 @@ final class ClientWorkspaceStore: ObservableObject {
                     timestampMS: now - 420_000
                 ),
                 ClientMessage(
+                    id: "m2b",
+                    conversationID: "c-aster",
+                    sender: "You",
+                    text: "I want the desktop, Android, and iOS shells to feel consistent.",
+                    outgoing: true,
+                    timestampMS: now - 360_000
+                ),
+                ClientMessage(
                     id: "m3",
                     conversationID: "c-aster",
                     sender: "Aster Stone",
                     text: "Accepted. I will keep the screenshots attached to the release.",
                     outgoing: false,
                     timestampMS: now - 180_000
+                ),
+                ClientMessage(
+                    id: "m4",
+                    conversationID: "c-aster",
+                    sender: "Aster Stone",
+                    text: "I also tightened the settings hierarchy so Security Center sits under the main product shell.",
+                    outgoing: false,
+                    timestampMS: now - 120_000
+                )
+            ],
+            "c-ops": [
+                ClientMessage(
+                    id: "o1",
+                    conversationID: "c-ops",
+                    sender: "Ops Sync",
+                    text: "Release package uploaded and signed.",
+                    outgoing: false,
+                    timestampMS: now - 300_000
+                )
+            ],
+            "c-rhea": [
+                ClientMessage(
+                    id: "r1",
+                    conversationID: "c-rhea",
+                    sender: "Rhea North",
+                    text: "Screenshot pass is green on Android.",
+                    outgoing: false,
+                    timestampMS: now - 240_000
+                )
+            ],
+            "g-platform": [
+                ClientMessage(
+                    id: "p1",
+                    conversationID: "g-platform",
+                    sender: "Platform",
+                    text: "Smoke gate passed on API33 with the new fixture set.",
+                    outgoing: false,
+                    timestampMS: now - 120_000
                 )
             ],
             "g-threat": [
@@ -639,53 +703,55 @@ struct AppShell: View {
     }
 
     var body: some View {
-        ZStack {
-            SecureSceneBackground()
+        GeometryReader { proxy in
+            ZStack {
+                SecureWindowConfigurator()
+                SecureSceneBackground()
 
-            TabView(selection: $selectedTab) {
-                NavigationStack {
-                    if screenshotScenario == .detail,
-                       let conversation = clientStore.primaryConversation {
-                        ClientConversationDetailView(store: clientStore, conversation: conversation)
-                    } else {
-                        ClientWorkspaceView(store: clientStore)
+                TabView(selection: $selectedTab) {
+                    NavigationStack {
+                        if screenshotScenario == .detail,
+                           let conversation = clientStore.primaryConversation {
+                            ClientConversationDetailView(store: clientStore, conversation: conversation)
+                        } else {
+                            ClientWorkspaceView(store: clientStore)
+                        }
                     }
-                }
-                .tabItem {
-                    Label("Chats", systemImage: "message.fill")
-                }
-                .tag(AppTab.chats)
+                    .tabItem {
+                        Label("Chats", systemImage: "message.fill")
+                    }
+                    .tag(AppTab.chats)
 
-                NavigationStack {
-                    ContactsHomeView(store: clientStore)
-                }
-                .tabItem {
-                    Label("Contacts", systemImage: "person.2.fill")
-                }
-                .tag(AppTab.contacts)
+                    NavigationStack {
+                        ContactsHomeView(store: clientStore)
+                    }
+                    .tabItem {
+                        Label("Contacts", systemImage: "person.2.fill")
+                    }
+                    .tag(AppTab.contacts)
 
-                NavigationStack {
-                    CallsHomeView(store: clientStore)
-                }
-                .tabItem {
-                    Label("Calls", systemImage: "phone.fill")
-                }
-                .tag(AppTab.calls)
+                    NavigationStack {
+                        CallsHomeView(store: clientStore)
+                    }
+                    .tabItem {
+                        Label("Calls", systemImage: "phone.fill")
+                    }
+                    .tag(AppTab.calls)
 
-                NavigationStack {
-                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    NavigationStack {
+                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    }
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape.fill")
+                    }
+                    .tag(AppTab.settings)
                 }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(AppTab.settings)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .background(SecureSceneBackground())
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(
-            SecureSceneBackground()
-        )
+        .ignoresSafeArea(.container, edges: .all)
         .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
@@ -698,12 +764,13 @@ struct AppShell: View {
 
     private static func configureTabBarAppearance() {
         let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.98))
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundBottom.opacity(0.80))
         appearance.shadowColor = UIColor(SecurePalette.border)
 
         let selectedColor = UIColor(SecurePalette.accent)
-        let normalColor = UIColor.white.withAlphaComponent(0.72)
+        let normalColor = UIColor.white.withAlphaComponent(0.84)
         let selectedTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: selectedColor]
         let normalTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: normalColor]
 
@@ -727,8 +794,9 @@ struct AppShell: View {
 
     private static func configureNavigationBarAppearance() {
         let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.98))
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.72))
         appearance.shadowColor = UIColor(SecurePalette.border)
         appearance.titleTextAttributes = [
             .foregroundColor: UIColor(SecurePalette.textPrimary)

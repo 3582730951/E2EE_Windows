@@ -297,7 +297,7 @@ QtObject {
             kind: "out",
             contentKind: "text",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Keep density. Preserve Telegram spacing.",
+            text: "Keep density. Keep Telegram rhythm.",
             timeText: "09:39",
             timestampMs: now - 120000,
             statusTicks: "read",

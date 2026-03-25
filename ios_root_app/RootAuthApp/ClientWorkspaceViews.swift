@@ -218,9 +218,9 @@ private struct ClientSecuritySummaryCard: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: store.remoteOK ? "lock.shield.fill" : "wave.3.right.circle.fill")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(store.remoteOK ? SecurePalette.success : SecurePalette.warning)
-                .frame(width: 34, height: 34)
+                .frame(width: 30, height: 30)
                 .background(
                     Circle()
                         .fill(SecurePalette.surfaceRaised)
@@ -233,7 +233,7 @@ private struct ClientSecuritySummaryCard: View {
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(SecurePalette.textSecondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
@@ -241,12 +241,21 @@ private struct ClientSecuritySummaryCard: View {
             Button(action: { store.refreshNow() }) {
                 Image(systemName: "arrow.clockwise")
                     .font(.footnote.weight(.semibold))
-                    .frame(width: 34, height: 34)
+                    .frame(width: 28, height: 28)
             }
             .buttonStyle(SecureSecondaryButtonStyle())
             .accessibilityLabel("Refresh secure session status")
         }
-        .secureCard(padding: 14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(SecurePalette.surface.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(SecurePalette.border, lineWidth: 1)
+        )
     }
 }
 
@@ -392,15 +401,15 @@ private struct ClientConversationListCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("CHATS")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("INBOX")
                         .font(.caption.weight(.semibold))
                         .tracking(1.1)
                         .foregroundStyle(SecurePalette.textMuted)
-                    Text("Conversation list")
-                        .font(.title3.weight(.semibold))
+                    Text("Chats")
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(SecurePalette.textPrimary)
                 }
 
@@ -455,7 +464,15 @@ private struct ClientConversationListCard: View {
                 }
             }
         }
-        .secureCard()
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(SecurePalette.surface.opacity(0.94))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(SecurePalette.border, lineWidth: 1)
+        )
     }
 }
 
@@ -467,20 +484,21 @@ struct ClientConversationDetailView: View {
         ZStack {
             SecureSceneBackground()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
-                    ClientSecuritySummaryCard(store: store)
-                    ClientMessagesCard(store: store)
-                    ClientComposerCard(store: store)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 18)
+            VStack(spacing: 12) {
+                ClientSecuritySummaryCard(store: store)
+                ClientMessagesCard(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ClientComposerCard(store: store)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { store.refreshNow() }) {
@@ -506,23 +524,17 @@ struct ClientMessagesCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Conversation")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(SecurePalette.textMuted)
-                    Text(store.currentConversationTitle)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(SecurePalette.textPrimary)
-                }
+                Text(store.currentConversationTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textSecondary)
                 Spacer(minLength: 12)
                 Text("\(store.currentMessages.count) msgs")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(SecurePalette.textSecondary)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .background(
                         Capsule()
                             .fill(SecurePalette.surfaceRaised)
@@ -538,11 +550,11 @@ struct ClientMessagesCard: View {
                 )
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 12) {
                         ForEach(store.currentMessages) { message in
                             HStack {
                                 if message.outgoing {
-                                    Spacer(minLength: 56)
+                                    Spacer(minLength: 68)
                                 }
 
                                 VStack(alignment: .leading, spacing: 6) {
@@ -562,7 +574,7 @@ struct ClientMessagesCard: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 12)
-                                .frame(maxWidth: 320, alignment: .leading)
+                                .frame(maxWidth: 340, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                                         .fill(message.outgoing ? SecurePalette.accent : SecurePalette.surfaceRaised)
@@ -573,17 +585,25 @@ struct ClientMessagesCard: View {
                                 )
 
                                 if !message.outgoing {
-                                    Spacer(minLength: 56)
+                                    Spacer(minLength: 68)
                                 }
                             }
                         }
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .frame(minHeight: 240, maxHeight: 360)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .secureCard()
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(SecurePalette.surface.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(SecurePalette.border, lineWidth: 1)
+        )
     }
 }
 
@@ -591,18 +611,10 @@ struct ClientComposerCard: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SecureSectionHeader(
-                eyebrow: "Composer",
-                title: "Send the next encrypted message",
-                detail: store.selectedConversationID.isEmpty
-                    ? "Select a chat first."
-                    : "Draft stays local until you send it."
-            )
-
+        HStack(alignment: .bottom, spacing: 12) {
             TextEditor(text: $store.draft)
-                .frame(minHeight: 88)
-                .padding(8)
+                .frame(minHeight: 48, maxHeight: 72)
+                .padding(6)
                 .background(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(SecurePalette.surfaceRaised)
@@ -614,12 +626,22 @@ struct ClientComposerCard: View {
                 .foregroundStyle(SecurePalette.textPrimary)
 
             Button(action: { store.sendDraft() }) {
-                Label("Send secure message", systemImage: "paperplane.fill")
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 46, height: 46)
             }
             .buttonStyle(SecurePrimaryButtonStyle())
             .disabled(store.selectedConversationID.isEmpty || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .secureCard()
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(SecurePalette.surface.opacity(0.94))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(SecurePalette.border, lineWidth: 1)
+        )
     }
 }
 
@@ -677,7 +699,7 @@ struct ClientWorkspaceView: View {
             SecureSceneBackground()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
+                VStack(spacing: 14) {
                     if store.isLoggedIn {
                         ClientSecuritySummaryCard(store: store)
                         ClientConversationListCard(store: store)
@@ -686,14 +708,14 @@ struct ClientWorkspaceView: View {
                         ClientLoginCard(store: store)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Chats")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if store.isLoggedIn {
                 ToolbarItem(placement: .navigationBarTrailing) {

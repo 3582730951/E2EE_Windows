@@ -2748,19 +2748,21 @@ Item {
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
-                property real bubbleEdgeInset: Ui.Style.paddingL + (transparentBubble ? 0 : 8)
+                property real bubbleEdgeInset: Ui.Style.paddingL + (transparentBubble ? 0 : 20)
                 property real availableBubbleWidth: Math.max(220,
                                                              (ListView.view ? ListView.view.width : root.width)
                                                              - bubbleEdgeInset * 2)
-                property real maxBubbleWidth: Math.min(Math.max(260, availableBubbleWidth * 0.62),
-                                                       availableBubbleWidth)
+                property real maxBubbleWidth: Math.min(Math.max(232, availableBubbleWidth * 0.52),
+                                                       Math.max(220, availableBubbleWidth - (transparentBubble ? 0 : 16)))
                 property real contentWidth: contentLoader.item
                                              ? Math.min(maxBubbleWidth - hPadding * 2,
                                                         contentLoader.item.implicitWidth)
                                              : 0
                 property real contentHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
-                property real bubbleWidth: Math.min(maxBubbleWidth,
-                                                    Math.max(contentWidth, metaRow.implicitWidth) + hPadding * 2)
+                property real bubbleWidth: usesFullWidth
+                                           ? maxBubbleWidth
+                                           : Math.min(maxBubbleWidth,
+                                                      Math.max(contentWidth, metaRow.implicitWidth) + hPadding * 2)
                 property real bubbleHeight: contentHeight + metaRow.implicitHeight +
                                             vPadding * 2 + (senderLabel.visible ? senderLabel.implicitHeight + 4 : 0)
 
@@ -2768,7 +2770,7 @@ Item {
                 height: bubbleHeight
                 x: isOutgoing
                    ? Math.max(Ui.Style.paddingL,
-                              parent.width - bubbleWidth - bubbleEdgeInset)
+                              parent.width - bubbleWidth - bubbleEdgeInset - (transparentBubble ? 0 : 6))
                    : senderLeftInset
                 y: 4
 
@@ -3439,7 +3441,7 @@ Item {
                     anchors.bottom: bubble.bottom
                     anchors.bottomMargin: 8
                     anchors.right: bubble.right
-                    anchors.rightMargin: -4
+                    anchors.rightMargin: -2
                     visible: isOutgoing && !bubbleBlock.transparentBubble
                 }
             }
