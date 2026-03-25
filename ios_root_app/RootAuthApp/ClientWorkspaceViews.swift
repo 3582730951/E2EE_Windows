@@ -501,15 +501,7 @@ private struct ClientConversationListCard: View {
                 }
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.94))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(SecurePalette.border, lineWidth: 1)
-        )
+        .padding(.top, 4)
     }
 }
 
@@ -641,16 +633,7 @@ struct ClientMessagesCard: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.92))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(SecurePalette.border, lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -784,7 +767,6 @@ struct ContactsHomeView: View {
                     title: "Contacts and direct threads",
                     detail: "Keep the contact roster close to the active chat shell instead of burying it behind tools."
                 )
-                .secureCard()
 
                 if store.contactConversations.isEmpty {
                     SecureStatusBanner(
@@ -793,7 +775,6 @@ struct ContactsHomeView: View {
                         tone: .neutral,
                         systemImage: "person.crop.circle.badge.questionmark"
                     )
-                    .secureCard()
                 } else {
                     VStack(spacing: 10) {
                         ForEach(store.contactConversations) { conversation in
@@ -817,7 +798,6 @@ struct ContactsHomeView: View {
                             )
                         }
                     }
-                    .secureCard()
                 }
             }
         }
@@ -839,7 +819,6 @@ struct CallsHomeView: View {
                     title: "Call hub",
                     detail: "Call state, active rooms, and media-related diagnostics stay visible without leaving the main product shell."
                 )
-                .secureCard()
 
                 SecureStatusBanner(
                     title: store.isLoggedIn ? "Ready for secure calls" : "Sign in required",
@@ -849,7 +828,6 @@ struct CallsHomeView: View {
                     tone: store.isLoggedIn ? .success : .warning,
                     systemImage: store.isLoggedIn ? "phone.connection.fill" : "phone.down.waves.left.and.right"
                 )
-                .secureCard()
 
                 ClientDevicesCard(store: store)
             }
@@ -872,7 +850,6 @@ struct TransportStatusView: View {
                     title: "Connection, session, and device status",
                     detail: "Keep session health visible from Settings without pushing the full chat workspace into the settings stack."
                 )
-                .secureCard()
 
                 ClientStatusCard(store: store)
 
@@ -891,7 +868,7 @@ struct SettingsHomeView: View {
     @ObservedObject var rootAuthStore: RootAuthStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 18,
+        SecureFullscreenScrollPage(horizontalPadding: 14,
                                    verticalPadding: 20,
                                    showsIndicators: false) {
             VStack(spacing: 18) {
@@ -900,7 +877,6 @@ struct SettingsHomeView: View {
                     title: "System, privacy, and trust",
                     detail: "Move identity, device, and root authorization under one predictable settings hierarchy."
                 )
-                .secureCard()
 
                 VStack(spacing: 12) {
                     SecureNavigationRow(
@@ -917,7 +893,6 @@ struct SettingsHomeView: View {
                         destination: TransportStatusView(store: clientStore)
                     )
                 }
-                .secureCard()
             }
         }
         .navigationTitle("Settings")
