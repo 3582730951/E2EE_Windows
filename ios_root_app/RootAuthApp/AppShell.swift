@@ -636,44 +636,54 @@ struct AppShell: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            NavigationStack {
-                if screenshotScenario == .detail,
-                   let conversation = clientStore.primaryConversation {
-                    ClientConversationDetailView(store: clientStore, conversation: conversation)
-                } else {
-                    ClientWorkspaceView(store: clientStore)
+        ZStack {
+            SecureSceneBackground()
+
+            TabView(selection: $selectedTab) {
+                NavigationStack {
+                    if screenshotScenario == .detail,
+                       let conversation = clientStore.primaryConversation {
+                        ClientConversationDetailView(store: clientStore, conversation: conversation)
+                    } else {
+                        ClientWorkspaceView(store: clientStore)
+                    }
                 }
-            }
-            .tabItem {
-                Label("Chats", systemImage: "message.fill")
-            }
-            .tag(AppTab.chats)
+                .tabItem {
+                    Label("Chats", systemImage: "message.fill")
+                }
+                .tag(AppTab.chats)
 
-            NavigationStack {
-                ContactsHomeView(store: clientStore)
-            }
-            .tabItem {
-                Label("Contacts", systemImage: "person.2.fill")
-            }
-            .tag(AppTab.contacts)
+                NavigationStack {
+                    ContactsHomeView(store: clientStore)
+                }
+                .tabItem {
+                    Label("Contacts", systemImage: "person.2.fill")
+                }
+                .tag(AppTab.contacts)
 
-            NavigationStack {
-                CallsHomeView(store: clientStore)
-            }
-            .tabItem {
-                Label("Calls", systemImage: "phone.fill")
-            }
-            .tag(AppTab.calls)
+                NavigationStack {
+                    CallsHomeView(store: clientStore)
+                }
+                .tabItem {
+                    Label("Calls", systemImage: "phone.fill")
+                }
+                .tag(AppTab.calls)
 
-            NavigationStack {
-                SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                NavigationStack {
+                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                }
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
+                .tag(AppTab.settings)
             }
-            .tabItem {
-                Label("Settings", systemImage: "gearshape.fill")
-            }
-            .tag(AppTab.settings)
         }
+        .toolbarBackground(SecurePalette.surface.opacity(0.98), for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .toolbarColorScheme(.dark, for: .tabBar)
+        .toolbarBackground(SecurePalette.backgroundTop.opacity(0.94), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .tint(SecurePalette.accent)
         .preferredColorScheme(.dark)
     }

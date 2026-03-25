@@ -297,7 +297,7 @@ QtObject {
             kind: "out",
             contentKind: "text",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Good. Keep the desktop density, but preserve Telegram-like spacing.",
+            text: "Keep the desktop density. Preserve the Telegram-like spacing.",
             timeText: "09:39",
             timestampMs: now - 120000,
             statusTicks: "read",
