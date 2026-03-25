@@ -369,7 +369,7 @@ ApplicationWindow {
                 id: authLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage === 0
-                asynchronous: !smokeMode
+                asynchronous: true
                 visible: status === Loader.Ready
                 sourceComponent: authFlowComponent
             }
@@ -378,7 +378,7 @@ ApplicationWindow {
                 id: shellLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage !== 0
-                asynchronous: !smokeMode
+                asynchronous: true
                 visible: status === Loader.Ready
                 sourceComponent: shellComponent
             }

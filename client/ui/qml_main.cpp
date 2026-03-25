@@ -505,6 +505,7 @@ int main(int argc, char* argv[]) {
                                            kShellReadyPollMs);
                         auto postLoginDone = std::make_shared<bool>(false);
                         auto pollCount = std::make_shared<int>(0);
+                        auto shellReadyObserved = std::make_shared<bool>(false);
                         auto finishPostLoginCapture =
                             [smokeWindow, smokeCaptureDir, &smokeTimer, postLoginDone](
                                 const QString& trigger, const bool shellReady) {
@@ -544,7 +545,8 @@ int main(int argc, char* argv[]) {
                         QObject::connect(
                             postLoginTimer, &QTimer::timeout, &app,
                             [smokeWindow, postLoginTimer, pollCount, maxPostLoginPolls,
-                             finishPostLoginCapture, postLoginDone]() mutable {
+                             finishPostLoginCapture, postLoginDone,
+                             shellReadyObserved, smokeCaptureDir]() mutable {
                                 if (*postLoginDone) {
                                     postLoginTimer->stop();
                                     postLoginTimer->deleteLater();
@@ -553,6 +555,14 @@ int main(int argc, char* argv[]) {
                                 const bool shellReady =
                                     smokeWindow && smokeWindow->property("shellReady").toBool();
                                 *pollCount += 1;
+                                if (shellReady && !*shellReadyObserved &&
+                                    *pollCount < maxPostLoginPolls) {
+                                    *shellReadyObserved = true;
+                                    AppendSmokeLog(
+                                        smokeCaptureDir,
+                                        QStringLiteral("UI smoke post-login shell ready observed"));
+                                    return;
+                                }
                                 if (!shellReady && *pollCount < maxPostLoginPolls) {
                                     return;
                                 }
