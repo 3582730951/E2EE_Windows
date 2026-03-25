@@ -750,6 +750,7 @@ fun ChatScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(bottom = padding.calculateBottomPadding())
                 .testTag("chat-screen")
         ) {
             ChatBackground()
@@ -792,7 +793,7 @@ fun ChatScreen(
                     onAttachmentClick = onDownloadAttachment,
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding() + 12.dp,
-                        bottom = padding.calculateBottomPadding() + composerInset,
+                        bottom = composerInset,
                         start = 16.dp,
                         end = 16.dp
                     )

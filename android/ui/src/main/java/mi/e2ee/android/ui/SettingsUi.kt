@@ -230,8 +230,11 @@ fun SettingsScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
                 .testTag("settings-screen"),
-            contentPadding = PaddingValues(vertical = ChatUiTokens.SectionSpacing),
-            verticalArrangement = Arrangement.spacedBy(ChatUiTokens.SectionSpacing)
+            contentPadding = PaddingValues(
+                top = ChatUiTokens.ItemSpacing,
+                bottom = ChatUiTokens.SectionSpacing
+            ),
+            verticalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
         ) {
             item {
                 SettingsHeader(
@@ -283,8 +286,8 @@ private fun SettingsHeader(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AvatarBadge(initials = displayName.take(2).uppercase(), tint = MaterialTheme.colorScheme.primary, size = 54.dp)
-            Spacer(modifier = Modifier.width(16.dp))
+            AvatarBadge(initials = displayName.take(2).uppercase(), tint = MaterialTheme.colorScheme.primary, size = 48.dp)
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = displayName, style = MaterialTheme.typography.titleLarge)
                 Text(
@@ -469,7 +472,7 @@ private fun SettingsRow(entry: SettingEntry) {
         modifier = Modifier
             .fillMaxWidth()
             .then(clickableModifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
