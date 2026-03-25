@@ -65,23 +65,106 @@ struct SecureSceneBackground: View {
     }
 }
 
+private final class SecureHostBackgroundView: UIView {
+    override class var layerClass: AnyClass {
+        CAGradientLayer.self
+    }
+
+    private var gradientLayer: CAGradientLayer {
+        layer as! CAGradientLayer
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backgroundColor = .clear
+        clipsToBounds = true
+        configureGradient()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func configureGradient() {
+        gradientLayer.colors = [
+            UIColor(SecurePalette.backgroundTop).cgColor,
+            UIColor(SecurePalette.backgroundBottom).cgColor
+        ]
+        gradientLayer.locations = [0.0, 1.0]
+        gradientLayer.startPoint = CGPoint(x: 0.1, y: 0.0)
+        gradientLayer.endPoint = CGPoint(x: 0.9, y: 1.0)
+    }
+}
+
+private final class SecureWindowProbeView: UIView {
+    var onUpdate: ((UIView) -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onUpdate?(self)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onUpdate?(self)
+        }
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        onUpdate?(self)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onUpdate?(self)
+    }
+}
+
 struct SecureWindowConfigurator: UIViewRepresentable {
-    private func applyBackground(from view: UIView?) {
-        let fill = UIColor(SecurePalette.backgroundBottom)
+    private static let hostBackgroundTag = 0xE2EEB001
+
+    private func installHostBackground(in rootView: UIView) {
+        let backgroundView: SecureHostBackgroundView
+        if let existing = rootView.viewWithTag(Self.hostBackgroundTag) as? SecureHostBackgroundView {
+            backgroundView = existing
+        } else {
+            backgroundView = SecureHostBackgroundView(frame: rootView.bounds)
+            backgroundView.tag = Self.hostBackgroundTag
+            rootView.insertSubview(backgroundView, at: 0)
+        }
+
+        backgroundView.frame = rootView.bounds
+        rootView.sendSubviewToBack(backgroundView)
+    }
+
+    private func clearHostChain(from view: UIView?) {
         var current = view
         while let node = current {
-            node.backgroundColor = fill
+            node.backgroundColor = .clear
             current = node.superview
         }
+    }
+
+    private func applyBackground(from view: UIView?) {
+        let fill = UIColor(SecurePalette.backgroundBottom)
+        clearHostChain(from: view)
+
         if let window = view?.window {
             window.backgroundColor = fill
-            window.rootViewController?.view.backgroundColor = fill
+            window.rootViewController?.view.backgroundColor = .clear
+            if let rootView = window.rootViewController?.view {
+                installHostBackground(in: rootView)
+            }
         }
     }
 
     func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
-        view.backgroundColor = UIColor(SecurePalette.backgroundBottom)
+        let view = SecureWindowProbeView(frame: .zero)
+        view.onUpdate = { probe in
+            applyBackground(from: probe)
+        }
+        view.backgroundColor = .clear
         view.isUserInteractionEnabled = false
         DispatchQueue.main.async {
             applyBackground(from: view)
@@ -90,7 +173,7 @@ struct SecureWindowConfigurator: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        uiView.backgroundColor = UIColor(SecurePalette.backgroundBottom)
+        uiView.backgroundColor = .clear
         DispatchQueue.main.async {
             applyBackground(from: uiView)
         }
