@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -695,7 +698,7 @@ fun ChatScreen(
     }
     val showComposer = effectiveState != ChatScreenState.NotFound &&
         effectiveState != ChatScreenState.PermissionDenied
-    val composerInset = 72.dp
+    val composerInset = 88.dp
     Scaffold(
         topBar = {
             ChatTopBar(
@@ -1298,6 +1301,7 @@ private fun ChatTopBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .shadow(8.dp, RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
         tonalElevation = 2.dp
@@ -1305,7 +1309,7 @@ private fun ChatTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             CompactTopBarIconButton(
@@ -3007,6 +3011,8 @@ fun ComposerBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding()
             .shadow(14.dp, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         tonalElevation = 3.dp

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -227,8 +228,9 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp, vertical = ChatUiTokens.SectionSpacing)
+                .padding(horizontal = 16.dp)
                 .testTag("settings-screen"),
+            contentPadding = PaddingValues(vertical = ChatUiTokens.SectionSpacing),
             verticalArrangement = Arrangement.spacedBy(ChatUiTokens.SectionSpacing)
         ) {
             item {
