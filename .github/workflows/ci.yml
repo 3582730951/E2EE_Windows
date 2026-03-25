@@ -1964,84 +1964,118 @@ jobs:
               width, height, rows = decoded
               if width < 64 or height < 64:
                   return False
+              original_width = width
+              original_height = height
+              total_left = 0
+              total_top = 0
+              total_right = 0
+              total_bottom = 0
+              trimmed = False
 
-              def row_black_ratio(y: int) -> float:
-                  row = rows[y]
-                  hits = 0
-                  for x in range(width):
-                      o = x * 4
-                      if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
-                          hits += 1
-                  return hits / width
+              while True:
+                  current_width = width
+                  current_height = height
 
-              def col_black_ratio(x: int) -> float:
-                  hits = 0
-                  o = x * 4
-                  for y in range(height):
+                  def row_black_ratio(y: int) -> float:
                       row = rows[y]
-                      if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
-                          hits += 1
-                  return hits / height
+                      hits = 0
+                      for x in range(current_width):
+                          o = x * 4
+                          if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
+                              hits += 1
+                      return hits / current_width
 
-              def find_near_edge_band_from_top():
-                  limit = min(height - 1, near_edge_search_px)
-                  y = 0
-                  while y <= limit:
-                      if row_black_ratio(y) >= ratio_limit:
-                          start = y
-                          while y + 1 < height and row_black_ratio(y + 1) >= ratio_limit:
-                              y += 1
-                          if (y - start + 1) >= min_band_height_px:
-                              return start, y
-                      y += 1
-                  return None
+                  def col_black_ratio(x: int) -> float:
+                      hits = 0
+                      o = x * 4
+                      for y in range(current_height):
+                          row = rows[y]
+                          if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
+                              hits += 1
+                      return hits / current_height
 
-              def find_near_edge_band_from_bottom():
-                  limit = max(0, height - 1 - near_edge_search_px)
-                  y = height - 1
-                  while y >= limit:
-                      if row_black_ratio(y) >= ratio_limit:
-                          end = y
-                          while y - 1 >= 0 and row_black_ratio(y - 1) >= ratio_limit:
-                              y -= 1
-                          if (end - y + 1) >= min_band_height_px:
-                              return y, end
-                      y -= 1
-                  return None
+                  def find_near_edge_band_from_top():
+                      limit = min(current_height - 1, near_edge_search_px)
+                      y = 0
+                      while y <= limit:
+                          if row_black_ratio(y) >= ratio_limit:
+                              start = y
+                              while y + 1 < current_height and row_black_ratio(y + 1) >= ratio_limit:
+                                  y += 1
+                              if (y - start + 1) >= min_band_height_px:
+                                  return start, y
+                          y += 1
+                      return None
 
-              top = 0
-              while top < height - 1 and row_black_ratio(top) >= ratio_limit:
-                  top += 1
-              bottom = height - 1
-              while bottom > top and row_black_ratio(bottom) >= ratio_limit:
-                  bottom -= 1
-              left = 0
-              while left < width - 1 and col_black_ratio(left) >= ratio_limit:
-                  left += 1
-              right = width - 1
-              while right > left and col_black_ratio(right) >= ratio_limit:
-                  right -= 1
+                  def find_near_edge_band_from_bottom():
+                      limit = max(0, current_height - 1 - near_edge_search_px)
+                      y = current_height - 1
+                      while y >= limit:
+                          if row_black_ratio(y) >= ratio_limit:
+                              end = y
+                              while y - 1 >= 0 and row_black_ratio(y - 1) >= ratio_limit:
+                                  y -= 1
+                              if (end - y + 1) >= min_band_height_px:
+                                  return y, end
+                          y -= 1
+                      return None
 
-              crop_w = right - left + 1
-              crop_h = bottom - top + 1
-              if crop_w >= width and crop_h >= height:
+                  top = 0
+                  while top < current_height - 1 and row_black_ratio(top) >= ratio_limit:
+                      top += 1
+                  bottom = current_height - 1
+                  while bottom > top and row_black_ratio(bottom) >= ratio_limit:
+                      bottom -= 1
+                  left = 0
+                  while left < current_width - 1 and col_black_ratio(left) >= ratio_limit:
+                      left += 1
+                  right = current_width - 1
+                  while right > left and col_black_ratio(right) >= ratio_limit:
+                      right -= 1
+
+                  crop_w = right - left + 1
+                  crop_h = bottom - top + 1
+                  if crop_w < current_width or crop_h < current_height:
+                      if crop_w < int(current_width * 0.70) or crop_h < int(current_height * 0.70):
+                          break
+                      rows = [rows[y][left * 4:(right + 1) * 4] for y in range(top, bottom + 1)]
+                      width = crop_w
+                      height = crop_h
+                      total_left += left
+                      total_top += top
+                      total_right += current_width - right - 1
+                      total_bottom += current_height - bottom - 1
+                      trimmed = True
+                      continue
+
                   top_band = find_near_edge_band_from_top()
                   bottom_band = find_near_edge_band_from_bottom()
                   if top_band is None and bottom_band is None:
-                      return False
-                  if top_band is not None:
-                      top = top_band[1] + 1
-                  if bottom_band is not None:
-                      bottom = bottom_band[0] - 1
+                      break
+
+                  top = top_band[1] + 1 if top_band is not None else 0
+                  bottom = bottom_band[0] - 1 if bottom_band is not None else current_height - 1
                   if top >= bottom:
-                      return False
+                      break
+
                   crop_h = bottom - top + 1
-              if crop_w < int(width * 0.70) or crop_h < int(height * 0.70):
+                  if crop_h < int(current_height * 0.70):
+                      break
+
+                  rows = rows[top:bottom + 1]
+                  height = crop_h
+                  total_top += top
+                  total_bottom += current_height - bottom - 1
+                  trimmed = True
+
+              if not trimmed:
                   return False
 
-              cropped_rows = [rows[y][left * 4:(right + 1) * 4] for y in range(top, bottom + 1)]
-              encode_png_rgba(path, crop_w, crop_h, cropped_rows)
-              print(f"trimmed {path}: {width}x{height} -> {crop_w}x{crop_h} (l={left}, t={top}, r={width-right-1}, b={height-bottom-1})")
+              encode_png_rgba(path, width, height, rows)
+              print(
+                  f"trimmed {path}: {original_width}x{original_height} -> {width}x{height} "
+                  f"(l={total_left}, t={total_top}, r={total_right}, b={total_bottom})"
+              )
               return True
 
           for file_path in sorted(glob.glob("build/ios_rootauth_artifacts/rootauth-ios-*.png")):
