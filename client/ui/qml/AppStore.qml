@@ -5,6 +5,7 @@ import "qrc:/mi/e2ee/ui/qml" as Ui
 QtObject {
     id: store
 
+    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property int currentPage: 0
     property string currentChatId: ""
     property string currentChatTitle: ""
@@ -124,6 +125,237 @@ QtObject {
         refreshClientPreferences()
         rebuildFiltered()
         syncDomainStores()
+    }
+
+    function resetSmokePreviewState() {
+        internalImeEnabled = false
+        currentChatId = ""
+        currentChatTitle = ""
+        currentChatSubtitle = ""
+        currentChatType = "private"
+        currentChatMembers = 0
+        currentLeftTab = 0
+        rightPaneVisible = false
+        searchQuery = ""
+        sendErrorMessage = ""
+        currentChatBackgroundUrl = ""
+        incomingCallActive = false
+        incomingCallPeer = ""
+        incomingCallId = ""
+        incomingCallVideo = false
+        messagesByChatId = ({})
+        membersByChatId = ({})
+        typingByChatId = ({})
+        presenceByChatId = ({})
+        blockedChatIds = ({})
+        downloadProgressByFileId = ({})
+        recalledMessageIdsByChat = ({})
+        dialogsModel.clear()
+        contactsModel.clear()
+        membersModel.clear()
+        filteredDialogsModel.clear()
+        filteredContactsModel.clear()
+        friendRequestsModel.clear()
+        groupInvitesModel.clear()
+        noticesModel.clear()
+    }
+
+    function seedSmokePreview() {
+        resetSmokePreviewState()
+        statusMessage = "Smoke preview ready"
+
+        var primaryChatId = "smoke-design-ops"
+        var secondChatId = "smoke-alex"
+        var now = Date.now()
+
+        dialogsModel.append({
+            chatId: primaryChatId,
+            title: "Design Ops",
+            type: "group",
+            memberCount: 6,
+            avatarKey: "Design Ops",
+            preview: "Windows shell now matches the mobile density pass.",
+            timeText: "09:41",
+            unread: 2,
+            pinned: true,
+            muted: false,
+            stealth: false,
+            lastSenderName: "Mina",
+            lastSenderAvatarKey: "Mina"
+        })
+        dialogsModel.append({
+            chatId: secondChatId,
+            title: "Alex",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Alex",
+            preview: "Android screenshots are queued for upload.",
+            timeText: "08:12",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
+
+        contactsModel.append({
+            contactId: "mina",
+            displayName: "Mina",
+            usernameOrPhone: "@mina",
+            avatarKey: "Mina"
+        })
+        contactsModel.append({
+            contactId: "alex",
+            displayName: "Alex",
+            usernameOrPhone: "@alex",
+            avatarKey: "Alex"
+        })
+        contactsModel.append({
+            contactId: "sophia",
+            displayName: "Sophia",
+            usernameOrPhone: "@sophia",
+            avatarKey: "Sophia"
+        })
+
+        friendRequestsModel.append({ contactId: "nora", displayName: "Nora" })
+
+        var members = [
+            { memberId: "mina", displayName: "Mina", role: Ui.I18n.t("role.owner"), avatarKey: "Mina" },
+            { memberId: "alex", displayName: "Alex", role: Ui.I18n.t("role.admin"), avatarKey: "Alex" },
+            { memberId: "sophia", displayName: "Sophia", role: Ui.I18n.t("role.member"), avatarKey: "Sophia" },
+            { memberId: "jules", displayName: "Jules", role: Ui.I18n.t("role.member"), avatarKey: "Jules" }
+        ]
+        for (var i = 0; i < members.length; ++i) {
+            membersModel.append(members[i])
+        }
+        membersByChatId[primaryChatId] = members
+
+        var model = messagesModel(primaryChatId)
+        model.clear()
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-date-1",
+            kind: "date",
+            contentKind: "text",
+            senderName: "",
+            text: "Today",
+            timeText: "",
+            timestampMs: now - 3600000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-1",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Mina",
+            text: "Windows shell is ready for the final screenshot pass.",
+            timeText: "09:38",
+            timestampMs: now - 180000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-2",
+            kind: "out",
+            contentKind: "text",
+            senderName: Ui.I18n.t("chat.you"),
+            text: "Good. Keep the desktop density, but preserve Telegram-like spacing.",
+            timeText: "09:39",
+            timestampMs: now - 120000,
+            statusTicks: "read",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-3",
+            kind: "in",
+            contentKind: "emoji",
+            senderName: "Alex",
+            text: "👍",
+            timeText: "09:40",
+            timestampMs: now - 90000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: true
+        })
+
+        currentChatId = primaryChatId
+        currentChatTitle = "Design Ops"
+        currentChatSubtitle = Ui.I18n.format("chat.members", 6)
+        currentChatType = "group"
+        currentChatMembers = 6
+        rebuildFiltered()
     }
 
     function isEmojiBase(code) {
@@ -1903,7 +2135,11 @@ QtObject {
         }
         function onTokenChanged() {
             if (clientBridge && clientBridge.loggedIn) {
-                bootstrapAfterLogin()
+                if (smokeMode) {
+                    seedSmokePreview()
+                } else {
+                    bootstrapAfterLogin()
+                }
                 currentPage = 1
             } else {
                 currentPage = 0

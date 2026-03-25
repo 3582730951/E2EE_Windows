@@ -377,6 +377,7 @@ int main(int argc, char* argv[]) {
     engine.setOutputWarningsToStandardError(true);
     mi::client::ui::QuickClient client;
     engine.rootContext()->setContextProperty("clientBridge", &client);
+    engine.rootContext()->setContextProperty("uiSmokeMode", smokeMode);
     QObject::connect(&engine, &QQmlEngine::warnings, &app,
                      [smokeCaptureDir](const QList<QQmlError>& warnings) {
                          for (const auto& warning : warnings) {

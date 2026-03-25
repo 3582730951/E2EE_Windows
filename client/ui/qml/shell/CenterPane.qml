@@ -12,6 +12,7 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 Item {
     id: root
     property var bridge: typeof clientBridge === "undefined" ? null : clientBridge
+    property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     readonly property Window hostWindow: root.Window.window
 
     property bool chatSearchVisible: false
@@ -46,7 +47,8 @@ Item {
     property var imeCandidates: []
     property int imeCandidateIndex: 0
     property string imePreedit: ""
-    property bool internalImeReady: Ui.PreferenceStore.internalImeEnabled &&
+    property bool internalImeReady: !smokeMode &&
+                                    Ui.PreferenceStore.internalImeEnabled &&
                                     clientBridge && clientBridge.imeAvailable &&
                                     clientBridge.imeAvailable()
     property bool imePopupVisible: internalImeReady && imeComposing &&
