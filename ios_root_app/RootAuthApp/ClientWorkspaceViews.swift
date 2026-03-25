@@ -518,19 +518,16 @@ struct ClientConversationDetailView: View {
     let conversation: ClientConversation
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .top) {
-                SecureSceneBackground()
+        ZStack(alignment: .top) {
+            SecureSceneBackground()
 
-                VStack(spacing: 12) {
-                    ClientSecuritySummaryCard(store: store)
-                    ClientMessagesCard(store: store)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, detailTopPadding(for: proxy))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            VStack(spacing: 12) {
+                ClientSecuritySummaryCard(store: store)
+                ClientMessagesCard(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -557,11 +554,6 @@ struct ClientConversationDetailView: View {
             store.selectConversation(conversation.id)
             store.refreshNow()
         }
-    }
-
-    private func detailTopPadding(for proxy: GeometryProxy) -> CGFloat {
-        let safeAreaTop = proxy.safeAreaInsets.top
-        return safeAreaTop > 0 ? safeAreaTop + 8 : 20
     }
 }
 

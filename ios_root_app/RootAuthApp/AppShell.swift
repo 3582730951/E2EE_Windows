@@ -711,6 +711,7 @@ struct AppShell: View {
         ZStack(alignment: .top) {
             SecureWindowConfigurator()
             shellBackground
+                .ignoresSafeArea()
 
             TabView(selection: $selectedTab) {
                 NavigationStack {

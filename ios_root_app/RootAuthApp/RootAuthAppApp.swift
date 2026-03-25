@@ -4,10 +4,12 @@ import SwiftUI
 struct RootAuthAppApp: App {
     var body: some Scene {
         WindowGroup {
-            ZStack {
+            ZStack(alignment: .top) {
                 SecureSceneBackground()
                 AppShell()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(SecurePalette.backgroundBottom)
         }
     }
 }
