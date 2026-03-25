@@ -497,20 +497,28 @@ int main(int argc, char* argv[]) {
                         QPointer<QQuickWindow> smokeWindow(window);
                         const bool authMode =
                             smokeWindow ? smokeWindow->property("authMode").toBool() : true;
-                        const int fallbackCaptureDelayMs =
-                            qMin(1500, qMax(250, postLoginCaptureDelayMs));
+                        const int maxPostLoginWaitMs =
+                            qMin(1800, qMax(350, postLoginCaptureDelayMs + 350));
+                        constexpr int kShellReadyPollMs = 120;
+                        const int maxPostLoginPolls =
+                            qMax(1, (maxPostLoginWaitMs + kShellReadyPollMs - 1) /
+                                           kShellReadyPollMs);
                         auto postLoginDone = std::make_shared<bool>(false);
+                        auto pollCount = std::make_shared<int>(0);
                         auto finishPostLoginCapture =
                             [smokeWindow, smokeCaptureDir, &smokeTimer, postLoginDone](
-                                const QString& trigger) {
+                                const QString& trigger, const bool shellReady) {
                                 if (*postLoginDone) {
                                     return;
                                 }
                                 *postLoginDone = true;
-                                AppendSmokeLog(smokeCaptureDir,
-                                               QStringLiteral("UI smoke post-login capture begin "
-                                                              "(trigger=%1)")
-                                                   .arg(trigger));
+                                AppendSmokeLog(
+                                    smokeCaptureDir,
+                                    QStringLiteral("UI smoke post-login capture begin "
+                                                   "(trigger=%1, shellReady=%2)")
+                                        .arg(trigger,
+                                             shellReady ? QStringLiteral("true")
+                                                        : QStringLiteral("false")));
                                 const bool saved = SaveSmokeCapture(
                                     smokeWindow.data(), smokeCaptureDir,
                                     QStringLiteral("post-login"));
@@ -524,28 +532,41 @@ int main(int argc, char* argv[]) {
                                 QCoreApplication::exit(0);
                             };
                         AppendSmokeLog(smokeCaptureDir,
-                                       QStringLiteral("UI smoke post-login render wait "
-                                                      "(authMode=%1, fallbackMs=%2)")
+                                       QStringLiteral("UI smoke post-login ready wait "
+                                                      "(authMode=%1, pollMs=%2, maxWaitMs=%3)")
                                            .arg(authMode ? QStringLiteral("true")
                                                          : QStringLiteral("false"))
-                                           .arg(fallbackCaptureDelayMs));
-                        QMetaObject::Connection frameConnection;
-                        frameConnection = QObject::connect(
-                            window, &QQuickWindow::frameSwapped, &app,
-                            [finishPostLoginCapture, &frameConnection]() mutable {
-                                QObject::disconnect(frameConnection);
-                                finishPostLoginCapture(QStringLiteral("frameSwapped"));
-                            },
-                            Qt::QueuedConnection);
-                        QTimer::singleShot(fallbackCaptureDelayMs, &app,
-                                           [finishPostLoginCapture, &frameConnection, postLoginDone]() mutable {
-                            if (*postLoginDone) {
-                                return;
-                            }
-                            QObject::disconnect(frameConnection);
-                            finishPostLoginCapture(QStringLiteral("fallback"));
-                        });
-                        window->update();
+                                           .arg(kShellReadyPollMs)
+                                           .arg(maxPostLoginWaitMs));
+                        auto* postLoginTimer = new QTimer(&app);
+                        postLoginTimer->setSingleShot(false);
+                        postLoginTimer->setInterval(kShellReadyPollMs);
+                        QObject::connect(
+                            postLoginTimer, &QTimer::timeout, &app,
+                            [smokeWindow, postLoginTimer, pollCount, maxPostLoginPolls,
+                             finishPostLoginCapture, postLoginDone]() mutable {
+                                if (*postLoginDone) {
+                                    postLoginTimer->stop();
+                                    postLoginTimer->deleteLater();
+                                    return;
+                                }
+                                const bool shellReady =
+                                    smokeWindow && smokeWindow->property("shellReady").toBool();
+                                *pollCount += 1;
+                                if (!shellReady && *pollCount < maxPostLoginPolls) {
+                                    return;
+                                }
+                                postLoginTimer->stop();
+                                postLoginTimer->deleteLater();
+                                finishPostLoginCapture(
+                                    shellReady ? QStringLiteral("shellReady")
+                                               : QStringLiteral("fallback"),
+                                    shellReady);
+                            });
+                        if (smokeWindow) {
+                            smokeWindow->update();
+                        }
+                        postLoginTimer->start();
                         return;
                     }
                     smokeTimer.stop();

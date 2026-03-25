@@ -11,6 +11,8 @@ ApplicationWindow {
     id: root
     property bool authMode: Ui.SessionStore.currentPage === 0
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    property bool authReady: authLoader.active && authLoader.status === Loader.Ready
+    property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
     property int authWidth: 1120
     property int authHeight: 792
 
@@ -23,7 +25,9 @@ ApplicationWindow {
     flags: Qt.FramelessWindowHint | Qt.Window
     visible: true
     title: Ui.I18n.t("app.title")
-    color: smokeMode && authMode ? Ui.Style.authBackdropBottom : "transparent"
+    color: smokeMode
+           ? (authMode ? Ui.Style.authBackdropBottom : Ui.Style.windowBg)
+           : "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
     palette.base: Ui.Style.panelBgAlt
@@ -365,7 +369,7 @@ ApplicationWindow {
                 id: authLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage === 0
-                asynchronous: true
+                asynchronous: !smokeMode
                 visible: status === Loader.Ready
                 sourceComponent: authFlowComponent
             }
@@ -374,7 +378,7 @@ ApplicationWindow {
                 id: shellLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage !== 0
-                asynchronous: true
+                asynchronous: !smokeMode
                 visible: status === Loader.Ready
                 sourceComponent: shellComponent
             }
