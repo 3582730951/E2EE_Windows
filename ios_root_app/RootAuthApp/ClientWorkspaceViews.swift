@@ -534,7 +534,10 @@ struct ClientConversationDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SecurePalette.backgroundBottom)
-        .safeAreaPadding(.top, 8)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear
+                .frame(height: 8)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ClientComposerCard(store: store)
                 .padding(.horizontal, 14)
