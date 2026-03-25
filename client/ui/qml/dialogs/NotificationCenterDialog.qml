@@ -177,10 +177,12 @@ ApplicationWindow {
                                         width: 32
                                         height: 32
                                         radius: 16
-                                        color: Ui.Style.avatarColor(username)
+                                        color: Ui.Style.avatarColor(model.username || "")
                                         Text {
                                             anchors.centerIn: parent
-                                            text: username.length > 0 ? username.charAt(0).toUpperCase() : "?"
+                                            text: (model.username || "").length > 0
+                                                  ? (model.username || "").charAt(0).toUpperCase()
+                                                  : "?"
                                             color: Ui.Style.textPrimary
                                             font.pixelSize: 12
                                             font.weight: Font.DemiBold
@@ -191,14 +193,14 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         spacing: 2
                                         Text {
-                                            text: username
+                                            text: model.username || ""
                                             color: Ui.Style.textPrimary
                                             font.pixelSize: 12
                                             elide: Text.ElideRight
                                         }
                                         Text {
-                                            text: remark
-                                            visible: remark.length > 0
+                                            text: model.remark || ""
+                                            visible: (model.remark || "").length > 0
                                             color: Ui.Style.textMuted
                                             font.pixelSize: 10
                                             elide: Text.ElideRight
@@ -209,13 +211,13 @@ ApplicationWindow {
                                         text: Ui.I18n.t("dialog.notifications.reject")
                                         Layout.preferredWidth: 52
                                         height: 24
-                                        onClicked: Ui.AppStore.respondFriendRequest(username, false)
+                                        onClicked: Ui.AppStore.respondFriendRequest(model.username || "", false)
                                     }
                                     Components.PrimaryButton {
                                         text: Ui.I18n.t("dialog.notifications.accept")
                                         Layout.preferredWidth: 52
                                         height: 24
-                                        onClicked: Ui.AppStore.respondFriendRequest(username, true)
+                                        onClicked: Ui.AppStore.respondFriendRequest(model.username || "", true)
                                     }
                                 }
                                 HoverHandler {
@@ -277,10 +279,12 @@ ApplicationWindow {
                                         width: 32
                                         height: 32
                                         radius: 16
-                                        color: Ui.Style.avatarColor(groupId)
+                                        color: Ui.Style.avatarColor(model.groupId || "")
                                         Text {
                                             anchors.centerIn: parent
-                                            text: groupId.length > 0 ? groupId.charAt(0).toUpperCase() : "G"
+                                            text: (model.groupId || "").length > 0
+                                                  ? (model.groupId || "").charAt(0).toUpperCase()
+                                                  : "G"
                                             color: Ui.Style.textPrimary
                                             font.pixelSize: 12
                                             font.weight: Font.DemiBold
@@ -291,7 +295,7 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         spacing: 2
                                         Text {
-                                            text: Ui.AppStore.resolveTitle(groupId)
+                                            text: Ui.AppStore.resolveTitle(model.groupId || "")
                                             color: Ui.Style.textPrimary
                                             font.pixelSize: 12
                                             elide: Text.ElideRight
@@ -310,7 +314,7 @@ ApplicationWindow {
                                         text: Ui.I18n.t("dialog.notifications.copyId")
                                         Layout.preferredWidth: 60
                                         height: 24
-                                        onClicked: Ui.AppStore.copyGroupInviteId(groupId)
+                                        onClicked: Ui.AppStore.copyGroupInviteId(model.groupId || "")
                                     }
                                     Components.GhostButton {
                                         text: Ui.I18n.t("dialog.notifications.ignore")

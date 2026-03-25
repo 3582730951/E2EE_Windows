@@ -635,6 +635,7 @@ struct AppShell: View {
         screenshotScenario = scenario
         _selectedTab = State(initialValue: scenario == .security ? .settings : .chats)
         Self.configureTabBarAppearance()
+        Self.configureNavigationBarAppearance()
     }
 
     var body: some View {
@@ -683,13 +684,12 @@ struct AppShell: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
-            SecurePalette.backgroundBottom
-                .ignoresSafeArea()
+            SecureSceneBackground()
         )
-        .toolbarBackground(SecurePalette.surface.opacity(0.98), for: .tabBar)
+        .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
-        .toolbarBackground(SecurePalette.backgroundTop.opacity(0.94), for: .navigationBar)
+        .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .tint(SecurePalette.accent)
@@ -699,8 +699,8 @@ struct AppShell: View {
     private static func configureTabBarAppearance() {
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(SecurePalette.surface.opacity(0.98))
-        appearance.shadowColor = UIColor(SecurePalette.borderStrong)
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.98))
+        appearance.shadowColor = UIColor(SecurePalette.border)
 
         let selectedColor = UIColor(SecurePalette.accent)
         let normalColor = UIColor.white.withAlphaComponent(0.72)
@@ -719,8 +719,28 @@ struct AppShell: View {
         let tabBar = UITabBar.appearance()
         tabBar.standardAppearance = appearance
         tabBar.unselectedItemTintColor = normalColor
+        tabBar.isTranslucent = false
         if #available(iOS 15.0, *) {
             tabBar.scrollEdgeAppearance = appearance
         }
+    }
+
+    private static func configureNavigationBarAppearance() {
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.98))
+        appearance.shadowColor = UIColor(SecurePalette.border)
+        appearance.titleTextAttributes = [
+            .foregroundColor: UIColor(SecurePalette.textPrimary)
+        ]
+        appearance.largeTitleTextAttributes = [
+            .foregroundColor: UIColor(SecurePalette.textPrimary)
+        ]
+
+        let navigationBar = UINavigationBar.appearance()
+        navigationBar.standardAppearance = appearance
+        navigationBar.scrollEdgeAppearance = appearance
+        navigationBar.compactAppearance = appearance
+        navigationBar.tintColor = UIColor(SecurePalette.accent)
     }
 }

@@ -151,7 +151,7 @@ ApplicationWindow {
                         spacing: Ui.Style.paddingS
 
                         Text {
-                            text: username
+                            text: model.username || ""
                             color: Ui.Style.textPrimary
                             font.pixelSize: 12
                             elide: Text.ElideRight
@@ -162,14 +162,14 @@ ApplicationWindow {
                             text: Ui.I18n.t("dialog.addContact.reject")
                             Layout.preferredWidth: 52
                             height: 24
-                            onClicked: Ui.AppStore.respondFriendRequest(username, false)
+                            onClicked: Ui.AppStore.respondFriendRequest(model.username || "", false)
                         }
 
                         Components.PrimaryButton {
                             text: Ui.I18n.t("dialog.addContact.accept")
                             Layout.preferredWidth: 52
                             height: 24
-                            onClicked: Ui.AppStore.respondFriendRequest(username, true)
+                            onClicked: Ui.AppStore.respondFriendRequest(model.username || "", true)
                         }
                     }
                 }
