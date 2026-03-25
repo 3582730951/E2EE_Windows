@@ -15,13 +15,21 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QScreen>
+#include <QSet>
 #include <QTextStream>
 #include <QTimer>
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <memory>
+#include <thread>
+#include <vector>
 
 #ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <imm.h>
 #ifdef _MSC_VER
@@ -52,6 +60,11 @@ QString SmokeCaptureDir() {
     return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CAPTURE_DIR")).trimmed();
 }
 
+QString SmokeCapturePath(const QString& captureDir, const QString& name) {
+    return QDir(captureDir).filePath(
+        QFileInfo(name).completeBaseName() + QStringLiteral(".png"));
+}
+
 void AppendSmokeLog(const QString& captureDir, const QString& message) {
     qCritical().noquote() << message;
     if (captureDir.isEmpty()) {
@@ -77,7 +90,6 @@ bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QSt
     if (!dir.mkpath(captureDir)) {
         return false;
     }
-    const QString fileName = QFileInfo(name).completeBaseName() + QStringLiteral(".png");
     QScreen* screen = window->screen();
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
@@ -85,7 +97,7 @@ bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QSt
     if (!screen) {
         return false;
     }
-    const QString path = QDir(captureDir).filePath(fileName);
+    const QString path = SmokeCapturePath(captureDir, name);
     const QImage windowCapture = window->grabWindow();
     if (!windowCapture.isNull() && windowCapture.save(path)) {
         return true;
@@ -96,6 +108,141 @@ bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QSt
     }
     return screenCapture.save(path);
 }
+
+bool SaveSmokeImage(const QImage& image, const QString& captureDir, const QString& name) {
+    if (image.isNull() || captureDir.isEmpty()) {
+        return false;
+    }
+    QDir dir;
+    if (!dir.mkpath(captureDir)) {
+        return false;
+    }
+    return image.save(SmokeCapturePath(captureDir, name));
+}
+
+bool IsInformativeSmokeImage(const QImage& image) {
+    if (image.isNull()) {
+        return false;
+    }
+    const QImage argb = image.convertToFormat(QImage::Format_ARGB32);
+    if (argb.isNull()) {
+        return false;
+    }
+    const int stepX = std::max(1, argb.width() / 24);
+    const int stepY = std::max(1, argb.height() / 24);
+    QSet<QRgb> samples;
+    int minLuma = 255;
+    int maxLuma = 0;
+    for (int y = 0; y < argb.height(); y += stepY) {
+        for (int x = 0; x < argb.width(); x += stepX) {
+            const QRgb pixel = argb.pixel(x, y);
+            samples.insert(pixel);
+            const int luma = (qRed(pixel) * 30 + qGreen(pixel) * 59 + qBlue(pixel) * 11) / 100;
+            minLuma = std::min(minLuma, luma);
+            maxLuma = std::max(maxLuma, luma);
+        }
+    }
+    return samples.size() >= 12 && (maxLuma - minLuma) >= 18;
+}
+
+#ifdef Q_OS_WIN
+QImage CaptureSmokeWindowNative(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) {
+        return {};
+    }
+    RECT rect{};
+    if (!GetWindowRect(hwnd, &rect)) {
+        return {};
+    }
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+
+    HDC screenDc = GetDC(nullptr);
+    if (!screenDc) {
+        return {};
+    }
+    HDC memoryDc = CreateCompatibleDC(screenDc);
+    if (!memoryDc) {
+        ReleaseDC(nullptr, screenDc);
+        return {};
+    }
+    HBITMAP bitmap = CreateCompatibleBitmap(screenDc, width, height);
+    if (!bitmap) {
+        DeleteDC(memoryDc);
+        ReleaseDC(nullptr, screenDc);
+        return {};
+    }
+    HGDIOBJ oldBitmap = SelectObject(memoryDc, bitmap);
+    const BOOL bltOk =
+        BitBlt(memoryDc, 0, 0, width, height, screenDc, rect.left, rect.top, SRCCOPY | CAPTUREBLT);
+
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    std::vector<uchar> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0);
+    const bool dibOk = bltOk &&
+        GetDIBits(memoryDc, bitmap, 0, static_cast<UINT>(height), pixels.data(), &bmi,
+                  DIB_RGB_COLORS) != 0;
+
+    SelectObject(memoryDc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(memoryDc);
+    ReleaseDC(nullptr, screenDc);
+
+    if (!dibOk) {
+        return {};
+    }
+    for (size_t i = 0; i < pixels.size() / 4; ++i) {
+        pixels[i * 4 + 3] = 0xFF;
+    }
+    QImage image(pixels.data(), width, height, QImage::Format_ARGB32);
+    return image.copy();
+}
+
+void ScheduleWindowsSmokeCaptureAndExit(HWND hwnd,
+                                        const QString& captureDir,
+                                        int delayMs) {
+    std::thread([hwnd, captureDir, delayMs]() {
+        constexpr int kAttempts = 3;
+        QImage bestImage;
+        bool informative = false;
+        for (int attempt = 0; attempt < kAttempts; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+            AppendSmokeLog(
+                captureDir,
+                QStringLiteral("UI smoke post-login native capture attempt %1")
+                    .arg(attempt + 1));
+            QImage image = CaptureSmokeWindowNative(hwnd);
+            if (image.isNull()) {
+                continue;
+            }
+            bestImage = image;
+            informative = IsInformativeSmokeImage(image);
+            if (informative) {
+                break;
+            }
+        }
+        const bool saved = SaveSmokeImage(bestImage, captureDir, QStringLiteral("post-login"));
+        AppendSmokeLog(captureDir,
+                       saved ? QStringLiteral("UI smoke post-login native capture saved")
+                             : QStringLiteral("UI smoke post-login native capture failed"));
+        if (!informative) {
+            AppendSmokeLog(captureDir,
+                           QStringLiteral("UI smoke post-login native capture not informative"));
+        }
+        AppendSmokeLog(captureDir, QStringLiteral("UI smoke login success; quitting"));
+        ::ExitProcess(saved && informative ? 0 : 4);
+    }).detach();
+}
+#endif
 
 class AuthWindowDragFilter : public QObject {
 public:
@@ -498,6 +645,25 @@ int main(int argc, char* argv[]) {
                         QPointer<QQuickWindow> smokeWindow(window);
                         const bool authMode =
                             smokeWindow ? smokeWindow->property("authMode").toBool() : true;
+#ifdef Q_OS_WIN
+                        const HWND smokeHwnd =
+                            smokeWindow ? reinterpret_cast<HWND>(smokeWindow->winId()) : nullptr;
+                        if (smokeHwnd) {
+                            const int nativeCaptureDelayMs =
+                                qMin(1800, qMax(500, postLoginCaptureDelayMs));
+                            smokeTimer.stop();
+                            AppendSmokeLog(
+                                smokeCaptureDir,
+                                QStringLiteral("UI smoke post-login native worker armed "
+                                               "(authMode=%1, delayMs=%2)")
+                                    .arg(authMode ? QStringLiteral("true")
+                                                  : QStringLiteral("false"))
+                                    .arg(nativeCaptureDelayMs));
+                            ScheduleWindowsSmokeCaptureAndExit(
+                                smokeHwnd, smokeCaptureDir, nativeCaptureDelayMs);
+                            return;
+                        }
+#endif
                         const int maxPostLoginWaitMs =
                             qMin(1800, qMax(350, postLoginCaptureDelayMs + 350));
                         constexpr int kShellReadyPollMs = 120;
