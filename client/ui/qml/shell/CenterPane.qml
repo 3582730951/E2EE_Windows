@@ -1465,6 +1465,8 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.rightMargin: Ui.Style.paddingS
+                    Layout.bottomMargin: 4
                     spacing: Ui.Style.paddingS
 
                     Components.IconButton {

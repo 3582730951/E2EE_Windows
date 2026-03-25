@@ -20,10 +20,10 @@ Item {
     property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
-    readonly property color loginLabelColor: Qt.rgba(0.93, 0.96, 1.0, 0.98)
-    readonly property color loginPlaceholderColor: Qt.rgba(0.83, 0.90, 1.0, 0.90)
-    readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.56)
-    readonly property color loginFieldBackground: Qt.rgba(0.07, 0.11, 0.16, 0.98)
+    readonly property color loginLabelColor: Qt.rgba(0.95, 0.97, 1.0, 0.99)
+    readonly property color loginPlaceholderColor: Qt.rgba(0.88, 0.93, 1.0, 0.96)
+    readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.74)
+    readonly property color loginFieldBackground: Qt.rgba(0.08, 0.12, 0.18, 0.99)
 
     signal authSucceeded()
 
@@ -296,7 +296,7 @@ Item {
 
                         Label {
                             text: Ui.I18n.t("auth.placeholder.account")
-                            font.pixelSize: 13
+                            font.pixelSize: 14
                             font.weight: Font.DemiBold
                             color: loginLabelColor
                             Layout.fillWidth: true
@@ -304,8 +304,9 @@ Item {
                         Components.SecureTextField {
                             id: accountField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 42
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
-                            font.pixelSize: 14
+                            font.pixelSize: 15
                             color: Ui.Style.textPrimary
                             placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
@@ -321,7 +322,7 @@ Item {
 
                         Label {
                             text: Ui.I18n.t("auth.placeholder.password")
-                            font.pixelSize: 13
+                            font.pixelSize: 14
                             font.weight: Font.DemiBold
                             color: loginLabelColor
                             Layout.fillWidth: true
@@ -329,9 +330,10 @@ Item {
                         Components.SecureTextField {
                             id: passwordField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 42
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
-                            font.pixelSize: 14
+                            font.pixelSize: 15
                             color: Ui.Style.textPrimary
                             placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
@@ -347,7 +349,7 @@ Item {
 
                         Label {
                             text: Ui.I18n.t("auth.placeholder.rootCode")
-                            font.pixelSize: 13
+                            font.pixelSize: 14
                             font.weight: Font.DemiBold
                             color: loginLabelColor
                             Layout.fillWidth: true
@@ -355,9 +357,10 @@ Item {
                         Components.SecureTextField {
                             id: rootCodeField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 42
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                            font.pixelSize: 14
+                            font.pixelSize: 15
                             color: Ui.Style.textPrimary
                             placeholderTextColor: loginPlaceholderColor
                             background: Rectangle {
@@ -372,8 +375,38 @@ Item {
                         }
 
                         CheckBox {
+                            id: autoLoginCheck
                             text: Ui.I18n.t("auth.autoLogin")
-                            font.pixelSize: 14
+                            font.pixelSize: 15
+                            spacing: 10
+                            indicator: Rectangle {
+                                implicitWidth: 18
+                                implicitHeight: 18
+                                radius: 4
+                                y: parent.height / 2 - height / 2
+                                color: autoLoginCheck.checked
+                                       ? Ui.Style.authFieldFocus
+                                       : loginFieldBackground
+                                border.width: 1
+                                border.color: autoLoginCheck.checked
+                                              ? Ui.Style.authFieldFocus
+                                              : loginFieldBorder
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 8
+                                    height: 8
+                                    radius: 2
+                                    visible: autoLoginCheck.checked
+                                    color: "#F6FAFF"
+                                }
+                            }
+                            contentItem: Text {
+                                text: autoLoginCheck.text
+                                font: autoLoginCheck.font
+                                color: loginLabelColor
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: autoLoginCheck.indicator.width + autoLoginCheck.spacing
+                            }
                         }
 
                         Button {
