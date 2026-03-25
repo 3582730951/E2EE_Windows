@@ -710,7 +710,7 @@ struct AppShell: View {
     var body: some View {
         ZStack(alignment: .top) {
             SecureWindowConfigurator()
-            SecureSceneBackground()
+            shellBackground
 
             TabView(selection: $selectedTab) {
                 NavigationStack {
@@ -762,7 +762,7 @@ struct AppShell: View {
             .background(shellBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SecurePalette.backgroundBottom)
+        .background(shellBackground)
         .toolbarBackground(SecurePalette.backgroundTop.opacity(0.98), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
