@@ -518,24 +518,29 @@ struct ClientConversationDetailView: View {
     let conversation: ClientConversation
 
     var body: some View {
-        VStack(spacing: 12) {
-            ClientSecuritySummaryCard(store: store)
-            ClientMessagesCard(store: store)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear
-                .frame(height: 10)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        ZStack(alignment: .bottom) {
+            SecurePalette.backgroundBottom
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ClientSecuritySummaryCard(store: store)
+                    .padding(.horizontal, 16)
+
+                ClientMessagesCard(store: store)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
             ClientComposerCard(store: store)
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
-                .background(SecurePalette.backgroundBottom.opacity(0.98))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    SecurePalette.backgroundBottom.opacity(0.96)
+                        .ignoresSafeArea(edges: .bottom)
+                )
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
