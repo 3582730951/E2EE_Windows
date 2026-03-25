@@ -290,46 +290,79 @@ Item {
                         anchors.fill: parent
                         spacing: Ui.Style.paddingM
 
+                        Label {
+                            text: Ui.I18n.t("auth.placeholder.account")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Ui.Style.textPrimary
+                            Layout.fillWidth: true
+                        }
                         Components.SecureTextField {
+                            id: accountField
                             Layout.fillWidth: true
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
                             font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                border.width: 1
+                                border.color: accountField.activeFocus
+                                              ? Ui.Style.authFieldFocus
+                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
                             }
                             onTextChanged: accountInput = text
                         }
 
+                        Label {
+                            text: Ui.I18n.t("auth.placeholder.password")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Ui.Style.textPrimary
+                            Layout.fillWidth: true
+                        }
                         Components.SecureTextField {
+                            id: passwordField
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
                             font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                border.width: 1
+                                border.color: passwordField.activeFocus
+                                              ? Ui.Style.authFieldFocus
+                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
                             }
                             onTextChanged: passwordInput = text
                         }
 
+                        Label {
+                            text: Ui.I18n.t("auth.placeholder.rootCode")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Ui.Style.textPrimary
+                            Layout.fillWidth: true
+                        }
                         Components.SecureTextField {
+                            id: rootCodeField
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
                             font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Qt.rgba(0.88, 0.93, 1.0, 0.82)
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Qt.rgba(0.09, 0.13, 0.18, 0.96)
+                                border.width: 1
+                                border.color: rootCodeField.activeFocus
+                                              ? Ui.Style.authFieldFocus
+                                              : Qt.rgba(0.78, 0.85, 0.94, 0.34)
                             }
                             onTextChanged: rootCodeInput = text
                         }

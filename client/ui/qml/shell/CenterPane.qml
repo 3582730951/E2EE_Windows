@@ -755,14 +755,14 @@ Item {
                 id: imeStatusLabel
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                text: imeStatusText()
+                text: ""
                 color: Ui.Style.textSecondary
                 font.pixelSize: Ui.Style.microTextSize
                 font.weight: Font.Medium
                 elide: Text.ElideRight
                 width: Math.min(parent.width * 0.4, 300)
                 horizontalAlignment: Text.AlignHCenter
-                visible: hasChat
+                visible: false
             }
 
             Menu {
@@ -831,7 +831,7 @@ Item {
                 anchors.fill: parent
                 source: "qrc:/mi/e2ee/ui/qml/assets/wallpaper_tile.svg"
                 fillMode: Image.Tile
-                opacity: 0.28
+                opacity: 0.14
                 smooth: true
                 visible: !messageArea.hasChatBackground
             }
@@ -2792,8 +2792,8 @@ Item {
                                            ? Math.min(maxBubbleWidth + outgoingMetaRightPad,
                                                       availableBubbleWidth)
                                            : Math.min(maxBubbleWidth,
-                                                      Math.max(contentWidth, metaRow.implicitWidth + outgoingMetaExtraPad) + hPadding * 2)
-                property real bubbleHeight: contentHeight + metaRow.implicitHeight +
+                                                      Math.max(contentWidth, metaBadge.implicitWidth + outgoingMetaExtraPad) + hPadding * 2)
+                property real bubbleHeight: contentHeight + metaBadge.implicitHeight +
                                             vPadding * 2 + (senderLabel.visible ? senderLabel.implicitHeight + 4 : 0)
 
                 width: bubbleWidth
@@ -3431,23 +3431,40 @@ Item {
                                             : (isEmoji ? emojiContent : textContent)))))))
                         }
 
-                        Row {
-                            id: metaRow
-                            spacing: 8
+                        Rectangle {
+                            id: metaBadge
                             anchors.right: parent.right
                             anchors.rightMargin: isOutgoing ? Math.max(10, bubbleBlock.outgoingMetaSafeInset - 2) : 0
-                            Text {
-                                text: timeText || ""
-                                font.pixelSize: Ui.Style.microTextSize
-                                font.weight: Font.Medium
-                                color: isOutgoing ? Ui.Style.bubbleMetaOutFg : Ui.Style.bubbleMetaInFg
-                            }
-                            Text {
-                                visible: isOutgoing
-                                text: tickText(statusTicks)
-                                font.pixelSize: Ui.Style.microTextSize
-                                font.weight: Font.DemiBold
-                                color: Ui.Style.bubbleMetaOutFg
+                            radius: 7
+                            color: bubbleBlock.transparentBubble
+                                   ? Qt.rgba(7 / 255, 12 / 255, 18 / 255, 0.78)
+                                   : (isOutgoing
+                                      ? Qt.rgba(8 / 255, 26 / 255, 20 / 255, 0.42)
+                                      : Qt.rgba(8 / 255, 14 / 255, 21 / 255, 0.40))
+                            border.width: 1
+                            border.color: Qt.rgba(1, 1, 1, bubbleBlock.transparentBubble ? 0.18 : 0.10)
+                            implicitWidth: metaRow.implicitWidth + 12
+                            implicitHeight: metaRow.implicitHeight + 4
+
+                            Row {
+                                id: metaRow
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Text {
+                                    text: timeText || ""
+                                    font.pixelSize: Math.max(Ui.Style.microTextSize, 14)
+                                    font.weight: Font.DemiBold
+                                    color: isOutgoing
+                                           ? Qt.lighter(Ui.Style.bubbleMetaOutFg, 1.08)
+                                           : Qt.lighter(Ui.Style.bubbleMetaInFg, 1.08)
+                                }
+                                Text {
+                                    visible: isOutgoing
+                                    text: tickText(statusTicks)
+                                    font.pixelSize: Math.max(Ui.Style.microTextSize, 14)
+                                    font.weight: Font.DemiBold
+                                    color: Qt.lighter(Ui.Style.bubbleMetaOutFg, 1.08)
+                                }
                             }
                         }
                     }
