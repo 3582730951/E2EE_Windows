@@ -1951,7 +1951,13 @@ jobs:
               body.extend(png_chunk(b"IEND", b""))
               path.write_bytes(bytes(body))
 
-          def trim_black_frame(path: Path, threshold: int = 8, ratio_limit: float = 0.995):
+          def trim_black_frame(
+              path: Path,
+              threshold: int = 8,
+              ratio_limit: float = 0.995,
+              near_edge_search_px: int = 96,
+              min_band_height_px: int = 80,
+          ):
               decoded = decode_png_rgba(path)
               if decoded is None:
                   return False
@@ -1977,6 +1983,32 @@ jobs:
                           hits += 1
                   return hits / height
 
+              def find_near_edge_band_from_top():
+                  limit = min(height - 1, near_edge_search_px)
+                  y = 0
+                  while y <= limit:
+                      if row_black_ratio(y) >= ratio_limit:
+                          start = y
+                          while y + 1 < height and row_black_ratio(y + 1) >= ratio_limit:
+                              y += 1
+                          if (y - start + 1) >= min_band_height_px:
+                              return start, y
+                      y += 1
+                  return None
+
+              def find_near_edge_band_from_bottom():
+                  limit = max(0, height - 1 - near_edge_search_px)
+                  y = height - 1
+                  while y >= limit:
+                      if row_black_ratio(y) >= ratio_limit:
+                          end = y
+                          while y - 1 >= 0 and row_black_ratio(y - 1) >= ratio_limit:
+                              y -= 1
+                          if (end - y + 1) >= min_band_height_px:
+                              return y, end
+                      y -= 1
+                  return None
+
               top = 0
               while top < height - 1 and row_black_ratio(top) >= ratio_limit:
                   top += 1
@@ -1993,7 +2025,17 @@ jobs:
               crop_w = right - left + 1
               crop_h = bottom - top + 1
               if crop_w >= width and crop_h >= height:
-                  return False
+                  top_band = find_near_edge_band_from_top()
+                  bottom_band = find_near_edge_band_from_bottom()
+                  if top_band is None and bottom_band is None:
+                      return False
+                  if top_band is not None:
+                      top = top_band[1] + 1
+                  if bottom_band is not None:
+                      bottom = bottom_band[0] - 1
+                  if top >= bottom:
+                      return False
+                  crop_h = bottom - top + 1
               if crop_w < int(width * 0.70) or crop_h < int(height * 0.70):
                   return False
 
