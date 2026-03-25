@@ -898,7 +898,15 @@ jobs:
               body.extend(png_chunk(b"IEND", b""))
               path.write_bytes(bytes(body))
 
-          def trim_black_frame(path: Path, threshold: int = 8, ratio_limit: float = 0.995):
+          def trim_black_frame(
+              path: Path,
+              threshold: int = 8,
+              pure_ratio_limit: float = 0.995,
+              edge_ratio_limit: float = 0.60,
+              corner_ratio_limit: float = 0.001,
+              side_ratio_limit: float = 0.985,
+              min_edge_trim_px: int = 24,
+          ):
               decoded = decode_png_rgba(path)
               if decoded is None:
                   return False
@@ -906,36 +914,64 @@ jobs:
               if width < 64 or height < 64:
                   return False
 
-              def row_black_ratio(y: int) -> float:
+              def row_black_ratio(y: int, left: int = 0, right: int = None) -> float:
+                  if right is None:
+                      right = width - 1
                   row = rows[y]
                   hits = 0
-                  for x in range(width):
+                  span = right - left + 1
+                  for x in range(left, right + 1):
                       o = x * 4
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
-                  return hits / width
+                  return hits / span
 
-              def col_black_ratio(x: int) -> float:
+              def col_black_ratio(x: int, top: int = 0, bottom: int = None) -> float:
+                  if bottom is None:
+                      bottom = height - 1
                   hits = 0
                   o = x * 4
-                  for y in range(height):
+                  span = bottom - top + 1
+                  for y in range(top, bottom + 1):
                       row = rows[y]
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
-                  return hits / height
+                  return hits / span
 
               top = 0
-              while top < height - 1 and row_black_ratio(top) >= ratio_limit:
+              while top < height - 1 and row_black_ratio(top) >= edge_ratio_limit:
                   top += 1
               bottom = height - 1
-              while bottom > top and row_black_ratio(bottom) >= ratio_limit:
+              while bottom > top and row_black_ratio(bottom) >= edge_ratio_limit:
                   bottom -= 1
-              left = 0
-              while left < width - 1 and col_black_ratio(left) >= ratio_limit:
-                  left += 1
-              right = width - 1
-              while right > left and col_black_ratio(right) >= ratio_limit:
-                  right -= 1
+              coarse_top_trim = top
+              coarse_bottom_trim = (height - 1) - bottom
+
+              # Require meaningful trim on both vertical edges before aggressive cleanup.
+              if coarse_top_trim >= min_edge_trim_px and coarse_bottom_trim >= min_edge_trim_px:
+                  while top < bottom and row_black_ratio(top) > corner_ratio_limit:
+                      top += 1
+                  while bottom > top and row_black_ratio(bottom) > corner_ratio_limit:
+                      bottom -= 1
+                  left = 0
+                  while left < width - 1 and col_black_ratio(left, top, bottom) >= side_ratio_limit:
+                      left += 1
+                  right = width - 1
+                  while right > left and col_black_ratio(right, top, bottom) >= side_ratio_limit:
+                      right -= 1
+              else:
+                  top = 0
+                  while top < height - 1 and row_black_ratio(top) >= pure_ratio_limit:
+                      top += 1
+                  bottom = height - 1
+                  while bottom > top and row_black_ratio(bottom) >= pure_ratio_limit:
+                      bottom -= 1
+                  left = 0
+                  while left < width - 1 and col_black_ratio(left) >= pure_ratio_limit:
+                      left += 1
+                  right = width - 1
+                  while right > left and col_black_ratio(right) >= pure_ratio_limit:
+                      right -= 1
 
               crop_w = right - left + 1
               crop_h = bottom - top + 1
