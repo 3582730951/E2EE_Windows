@@ -400,6 +400,21 @@ Item {
         imeCandidateIndex = 0
         imePreedit = ""
     }
+    function requestCurrentLocation() {
+        locationDialog.errorText = ""
+        locationDialog.locationBusy = true
+        locationSourceLoader.active = !smokeMode
+        if (smokeMode) {
+            locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+            locationDialog.locationBusy = false
+            return
+        }
+        if (locationSourceLoader.status === Loader.Ready
+                && locationSourceLoader.item
+                && locationSourceLoader.item.update) {
+            locationSourceLoader.item.update()
+        }
+    }
     function cancelImeComposition(keepText) {
         if (!imeComposing) {
             return
@@ -2465,6 +2480,7 @@ Item {
             locationLatField.text = ""
             locationLonField.text = ""
         }
+        onClosed: locationSourceLoader.active = false
 
         background: Rectangle {
             radius: 12
@@ -2507,11 +2523,7 @@ Item {
                       : Ui.I18n.t("attach.locationCurrent")
                 Layout.fillWidth: true
                 enabled: !locationDialog.locationBusy
-                onClicked: {
-                    locationDialog.errorText = ""
-                    locationDialog.locationBusy = true
-                    locationSource.update()
-                }
+                onClicked: requestCurrentLocation()
             }
             Text {
                 visible: locationDialog.errorText.length > 0
@@ -2550,28 +2562,43 @@ Item {
         }
     }
 
-    PositionSource {
-        id: locationSource
+    Loader {
+        id: locationSourceLoader
         active: false
-        updateInterval: 0
-        onPositionChanged: {
-            if (!position || !position.coordinate || !position.coordinate.isValid) {
-                locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
-                locationDialog.locationBusy = false
-                return
+        sourceComponent: locationSourceComponent
+        onLoaded: {
+            if (locationDialog.locationBusy
+                    && item
+                    && item.update) {
+                item.update()
             }
-            locationLatField.text = position.coordinate.latitude.toFixed(6)
-            locationLonField.text = position.coordinate.longitude.toFixed(6)
-            if (locationLabelField.text.trim().length === 0) {
-                locationLabelField.text = Ui.I18n.t("attach.locationCurrentLabel")
-            }
-            locationDialog.errorText = ""
-            locationDialog.locationBusy = false
         }
-        onSourceErrorChanged: {
-            if (sourceError !== PositionSource.NoError) {
-                locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+    }
+
+    Component {
+        id: locationSourceComponent
+        PositionSource {
+            active: false
+            updateInterval: 0
+            onPositionChanged: {
+                if (!position || !position.coordinate || !position.coordinate.isValid) {
+                    locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+                    locationDialog.locationBusy = false
+                    return
+                }
+                locationLatField.text = position.coordinate.latitude.toFixed(6)
+                locationLonField.text = position.coordinate.longitude.toFixed(6)
+                if (locationLabelField.text.trim().length === 0) {
+                    locationLabelField.text = Ui.I18n.t("attach.locationCurrentLabel")
+                }
+                locationDialog.errorText = ""
                 locationDialog.locationBusy = false
+            }
+            onSourceErrorChanged: {
+                if (sourceError !== PositionSource.NoError) {
+                    locationDialog.errorText = Ui.I18n.t("attach.locationUnavailable")
+                    locationDialog.locationBusy = false
+                }
             }
         }
     }
