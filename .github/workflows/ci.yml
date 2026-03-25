@@ -815,11 +815,11 @@ jobs:
           import struct
           import zlib
           from pathlib import Path
-          
+
           def png_chunk(kind: bytes, payload: bytes) -> bytes:
               crc = zlib.crc32(kind + payload) & 0xFFFFFFFF
               return len(payload).to_bytes(4, "big") + kind + payload + crc.to_bytes(4, "big")
-          
+
           def decode_png_rgba(path: Path):
               data = path.read_bytes()
               if data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -884,7 +884,7 @@ jobs:
                   rows.append(bytes(row))
                   prev = row
               return width, height, rows
-          
+
           def encode_png_rgba(path: Path, width: int, height: int, rows):
               raw = bytearray()
               for row in rows:
@@ -897,7 +897,7 @@ jobs:
               body.extend(png_chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
               body.extend(png_chunk(b"IEND", b""))
               path.write_bytes(bytes(body))
-          
+
           def trim_black_frame(path: Path, threshold: int = 8, ratio_limit: float = 0.995):
               decoded = decode_png_rgba(path)
               if decoded is None:
@@ -905,7 +905,7 @@ jobs:
               width, height, rows = decoded
               if width < 64 or height < 64:
                   return False
-          
+
               def row_black_ratio(y: int) -> float:
                   row = rows[y]
                   hits = 0
@@ -914,7 +914,7 @@ jobs:
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
                   return hits / width
-          
+
               def col_black_ratio(x: int) -> float:
                   hits = 0
                   o = x * 4
@@ -923,7 +923,7 @@ jobs:
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
                   return hits / height
-          
+
               top = 0
               while top < height - 1 and row_black_ratio(top) >= ratio_limit:
                   top += 1
@@ -936,19 +936,19 @@ jobs:
               right = width - 1
               while right > left and col_black_ratio(right) >= ratio_limit:
                   right -= 1
-          
+
               crop_w = right - left + 1
               crop_h = bottom - top + 1
               if crop_w >= width and crop_h >= height:
                   return False
               if crop_w < int(width * 0.70) or crop_h < int(height * 0.70):
                   return False
-          
+
               cropped_rows = [rows[y][left * 4:(right + 1) * 4] for y in range(top, bottom + 1)]
               encode_png_rgba(path, crop_w, crop_h, cropped_rows)
               print(f"trimmed {path}: {width}x{height} -> {crop_w}x{crop_h} (l={left}, t={top}, r={width-right-1}, b={height-bottom-1})")
               return True
-          
+
           roots = [Path("build/ui_smoke_artifacts")]
           for root in roots:
               if not root.exists():
@@ -1696,12 +1696,12 @@ jobs:
           import struct
           import sys
           import zlib
-          
+
           path = sys.argv[1]
           data = open(path, "rb").read()
           if data[:8] != b"\x89PNG\r\n\x1a\n":
               sys.exit(2)
-          
+
           idx = 8
           idat = b""
           width = 0
@@ -1709,7 +1709,7 @@ jobs:
           bit_depth = 0
           color_type = 0
           interlace = 0
-          
+
           while idx + 8 <= len(data):
               chunk_len = int.from_bytes(data[idx:idx + 4], "big")
               idx += 4
@@ -1724,19 +1724,19 @@ jobs:
                   idat += chunk_data
               elif chunk_type == b"IEND":
                   break
-          
+
           if not width or not height or bit_depth != 8 or color_type != 6 or interlace != 0:
               sys.exit(2)
-          
+
           raw = zlib.decompress(idat)
           bytes_per_pixel = 4
           stride = width * bytes_per_pixel
-          
+
           left_cols = min(48, width)
           right_start = max(0, width - 48)
           left_black = [0] * left_cols
           right_black = [0] * (width - right_start)
-          
+
           def paeth(a: int, b: int, c: int) -> int:
               p = a + b - c
               pa = abs(p - a)
@@ -1747,7 +1747,7 @@ jobs:
               if pb <= pc:
                   return b
               return c
-          
+
           cursor = 0
           prev = bytearray(stride)
           for _ in range(height):
@@ -1771,19 +1771,19 @@ jobs:
                       up = prev[x]
                       up_left = prev[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
                       row[x] = (row[x] + paeth(left, up, up_left)) & 0xFF
-          
+
               for x in range(left_cols):
                   o = x * bytes_per_pixel
                   if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
                       left_black[x] += 1
-          
+
               for i, x in enumerate(range(right_start, width)):
                   o = x * bytes_per_pixel
                   if row[o] < 10 and row[o + 1] < 10 and row[o + 2] < 10:
                       right_black[i] += 1
-          
+
               prev = row
-          
+
           left_ratio = max((value / height for value in left_black), default=0.0)
           right_ratio = max((value / height for value in right_black), default=0.0)
           sys.exit(1 if left_ratio > 0.20 or right_ratio > 0.20 else 0)
@@ -1832,11 +1832,11 @@ jobs:
           import struct
           import zlib
           from pathlib import Path
-          
+
           def png_chunk(kind: bytes, payload: bytes) -> bytes:
               crc = zlib.crc32(kind + payload) & 0xFFFFFFFF
               return len(payload).to_bytes(4, "big") + kind + payload + crc.to_bytes(4, "big")
-          
+
           def decode_png_rgba(path: Path):
               data = path.read_bytes()
               if data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -1901,7 +1901,7 @@ jobs:
                   rows.append(bytes(row))
                   prev = row
               return width, height, rows
-          
+
           def encode_png_rgba(path: Path, width: int, height: int, rows):
               raw = bytearray()
               for row in rows:
@@ -1914,7 +1914,7 @@ jobs:
               body.extend(png_chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
               body.extend(png_chunk(b"IEND", b""))
               path.write_bytes(bytes(body))
-          
+
           def trim_black_frame(path: Path, threshold: int = 8, ratio_limit: float = 0.995):
               decoded = decode_png_rgba(path)
               if decoded is None:
@@ -1922,7 +1922,7 @@ jobs:
               width, height, rows = decoded
               if width < 64 or height < 64:
                   return False
-          
+
               def row_black_ratio(y: int) -> float:
                   row = rows[y]
                   hits = 0
@@ -1931,7 +1931,7 @@ jobs:
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
                   return hits / width
-          
+
               def col_black_ratio(x: int) -> float:
                   hits = 0
                   o = x * 4
@@ -1940,7 +1940,7 @@ jobs:
                       if row[o] <= threshold and row[o + 1] <= threshold and row[o + 2] <= threshold:
                           hits += 1
                   return hits / height
-          
+
               top = 0
               while top < height - 1 and row_black_ratio(top) >= ratio_limit:
                   top += 1
@@ -1953,19 +1953,19 @@ jobs:
               right = width - 1
               while right > left and col_black_ratio(right) >= ratio_limit:
                   right -= 1
-          
+
               crop_w = right - left + 1
               crop_h = bottom - top + 1
               if crop_w >= width and crop_h >= height:
                   return False
               if crop_w < int(width * 0.70) or crop_h < int(height * 0.70):
                   return False
-          
+
               cropped_rows = [rows[y][left * 4:(right + 1) * 4] for y in range(top, bottom + 1)]
               encode_png_rgba(path, crop_w, crop_h, cropped_rows)
               print(f"trimmed {path}: {width}x{height} -> {crop_w}x{crop_h} (l={left}, t={top}, r={width-right-1}, b={height-bottom-1})")
               return True
-          
+
           for file_path in sorted(glob.glob("build/ios_rootauth_artifacts/rootauth-ios-*.png")):
               trim_black_frame(Path(file_path))
           PY
