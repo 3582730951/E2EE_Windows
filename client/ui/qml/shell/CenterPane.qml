@@ -2748,6 +2748,7 @@ Item {
                                              !isEmoji
                 property int hPadding: transparentBubble ? (isEmoji ? 4 : 6) : 12
                 property int vPadding: transparentBubble ? (isEmoji ? 4 : 6) : 8
+                property int outgoingMetaRightPad: isOutgoing && usesFullWidth ? 10 : 0
                 property real bubbleEdgeInset: transparentBubble
                                                ? Ui.Style.paddingL
                                                : (isOutgoing
@@ -2768,7 +2769,8 @@ Item {
                                              : 0
                 property real contentHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
                 property real bubbleWidth: usesFullWidth
-                                           ? maxBubbleWidth
+                                           ? Math.min(maxBubbleWidth + outgoingMetaRightPad,
+                                                      availableBubbleWidth)
                                            : Math.min(maxBubbleWidth,
                                                       Math.max(contentWidth, metaRow.implicitWidth) + hPadding * 2)
                 property real bubbleHeight: contentHeight + metaRow.implicitHeight +
@@ -3410,6 +3412,7 @@ Item {
                             id: metaRow
                             spacing: 6
                             anchors.right: parent.right
+                            anchors.rightMargin: isOutgoing ? 6 : 0
                             Text {
                                 text: timeText || ""
                                 font.pixelSize: 10
@@ -3449,7 +3452,7 @@ Item {
                     anchors.bottom: bubble.bottom
                     anchors.bottomMargin: 8
                     anchors.right: bubble.right
-                    anchors.rightMargin: 1
+                    anchors.rightMargin: 0
                     visible: isOutgoing && !bubbleBlock.transparentBubble
                 }
             }
