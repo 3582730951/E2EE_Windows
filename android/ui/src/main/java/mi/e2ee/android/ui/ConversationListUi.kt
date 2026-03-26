@@ -268,7 +268,7 @@ fun ConversationListScreen(
                             .thenByDescending { parseConversationTime(it.time) }
                     )
                 val hasResults = pinned.isNotEmpty() || others.isNotEmpty()
-                val useExtendedFooter = hasResults && searched.size <= 6
+                val useExtendedFooter = hasResults && searched.size <= 4
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
@@ -333,15 +333,15 @@ fun ConversationListScreen(
                     if (hasResults) {
                         item(key = "conversation-tail-state") {
                             val tailModifier = if (useExtendedFooter) {
-                                Modifier.fillParentMaxHeight(0.42f)
+                                Modifier.fillParentMaxHeight(0.18f)
                             } else {
-                                Modifier.height(116.dp)
+                                Modifier.height(72.dp)
                             }
                             ConversationListTailState(
                                 totalCount = searched.size,
                                 modifier = tailModifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
                             )
                         }
                     } else {
@@ -349,9 +349,9 @@ fun ConversationListScreen(
                             ConversationListEmptyState(
                                 query = search,
                                 modifier = Modifier
-                                    .fillParentMaxHeight(0.62f)
+                                    .fillParentMaxHeight(0.38f)
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
                             )
                         }
                     }
@@ -434,12 +434,12 @@ private fun ConversationListTailState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 18.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -447,15 +447,15 @@ private fun ConversationListTailState(
                 imageVector = Icons.Filled.DoneAll,
                 contentDescription = tr("conversations_list_end", "End of list"),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = tr("conversations_list_end", "All chats loaded"),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = tr("conversations_list_end", "All chats loaded"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = tr("conversations_list_count", "%d encrypted chats").format(totalCount),
                 style = MaterialTheme.typography.bodySmall,
@@ -483,12 +483,12 @@ private fun ConversationListEmptyState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 22.dp),
+                .padding(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

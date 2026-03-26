@@ -72,7 +72,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -806,7 +805,7 @@ fun ChatScreen(
                         count = unreadCount,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 12.dp, bottom = composerInset + 10.dp)
+                            .padding(end = 14.dp, bottom = composerInset + 22.dp)
                     )
                 }
             }
@@ -1361,18 +1360,13 @@ private fun ChatTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 44.dp)
+                    .padding(start = 50.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactTopBarIconButton(
-                    icon = Icons.Filled.Search,
-                    contentDescription = tr("chat_search", "Search"),
-                    onClick = {}
-                )
                 CompactTopBarIconButton(
                     icon = Icons.Filled.Call,
                     contentDescription = tr("chat_call", "Call"),
@@ -1383,17 +1377,22 @@ private fun ChatTopBar(
                     contentDescription = tr("chat_video_call", "Video call"),
                     onClick = onVideoCall
                 )
+                Spacer(modifier = Modifier.width(4.dp))
                 if (BuildConfig.DEBUG) {
                     CompactTopBarIconButton(
                         icon = Icons.Filled.BugReport,
                         contentDescription = tr("chat_tools", "Tools"),
-                        onClick = onTools
+                        onClick = onTools,
+                        buttonSize = 28.dp,
+                        iconSize = 13.dp
                     )
                 }
                 CompactTopBarIconButton(
                     icon = Icons.Filled.Settings,
                     contentDescription = tr("settings_title", "Settings"),
-                    onClick = onSettings
+                    onClick = onSettings,
+                    buttonSize = 28.dp,
+                    iconSize = 13.dp
                 )
             }
         }
@@ -1405,11 +1404,13 @@ private fun CompactTopBarIconButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
+    buttonSize: androidx.compose.ui.unit.Dp = 30.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 15.dp,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .size(28.dp)
+            .size(buttonSize)
             .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
@@ -1418,7 +1419,7 @@ private fun CompactTopBarIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(iconSize)
         )
     }
 }
@@ -2496,21 +2497,21 @@ private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     ) {
         Box(
-            modifier = Modifier.size(38.dp),
+            modifier = Modifier.size(32.dp),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = tr("chat_jump_to_bottom", "Jump to bottom"),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(16.dp)
             )
             if (count > 0) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = 2.dp, end = 2.dp)
-                        .size(14.dp)
+                        .size(12.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.error),
                     contentAlignment = Alignment.Center
