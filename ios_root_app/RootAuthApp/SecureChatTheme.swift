@@ -187,14 +187,14 @@ struct SecureCardModifier: ViewModifier {
         content
             .padding(padding)
             .background(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(SecurePalette.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(SecurePalette.border, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 14)
+            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
     }
 }
 
@@ -216,7 +216,7 @@ struct SecureInputModifier: ViewModifier {
 }
 
 extension View {
-    func secureCard(padding: CGFloat = 18) -> some View {
+    func secureCard(padding: CGFloat = 16) -> some View {
         modifier(SecureCardModifier(padding: padding))
     }
 

@@ -46,11 +46,11 @@ private struct SecureNavigationRow<Destination: View>: View {
 
     var body: some View {
         NavigationLink(destination: destination) {
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(SecurePalette.accent)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
                     .background(
                         Circle()
                             .fill(SecurePalette.surfaceRaised)
@@ -71,13 +71,13 @@ private struct SecureNavigationRow<Destination: View>: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(SecurePalette.textMuted)
             }
-            .padding(14)
+            .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(SecurePalette.surfaceRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(SecurePalette.border, lineWidth: 1)
             )
         }
@@ -725,7 +725,7 @@ struct ClientWorkspaceView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 14,
+        SecureFullscreenScrollPage(horizontalPadding: 12,
                                    verticalPadding: 14,
                                    showsIndicators: false) {
             VStack(spacing: 14) {
@@ -758,10 +758,10 @@ struct ContactsHomeView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 18,
-                                   verticalPadding: 20,
+        SecureFullscreenScrollPage(horizontalPadding: 14,
+                                   verticalPadding: 16,
                                    showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 SecureSectionHeader(
                     eyebrow: "People",
                     title: "Contacts and direct threads",
@@ -810,10 +810,10 @@ struct CallsHomeView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 18,
-                                   verticalPadding: 20,
+        SecureFullscreenScrollPage(horizontalPadding: 14,
+                                   verticalPadding: 16,
                                    showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 SecureSectionHeader(
                     eyebrow: "Calls",
                     title: "Call hub",
@@ -841,10 +841,10 @@ struct TransportStatusView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 18,
-                                   verticalPadding: 20,
+        SecureFullscreenScrollPage(horizontalPadding: 14,
+                                   verticalPadding: 16,
                                    showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 SecureSectionHeader(
                     eyebrow: "Transport",
                     title: "Connection, session, and device status",
@@ -868,17 +868,17 @@ struct SettingsHomeView: View {
     @ObservedObject var rootAuthStore: RootAuthStore
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 14,
-                                   verticalPadding: 20,
+        SecureFullscreenScrollPage(horizontalPadding: 12,
+                                   verticalPadding: 16,
                                    showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 SecureSectionHeader(
                     eyebrow: "Settings",
                     title: "System, privacy, and trust",
                     detail: "Move identity, device, and root authorization under one predictable settings hierarchy."
                 )
 
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     SecureNavigationRow(
                         title: "Security Center",
                         detail: "Device trust, root authorization, and linked device state.",

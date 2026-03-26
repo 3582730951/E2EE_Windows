@@ -18,7 +18,7 @@ struct ContentView: View {
             SecureSceneBackground()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
+                VStack(spacing: 18) {
                     if let embeddedTitle, !embeddedTitle.isEmpty {
                         SecureSectionHeader(
                             eyebrow: "Security Center",
@@ -45,8 +45,8 @@ struct ContentView: View {
                         scanResultCard(result)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 16)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -147,7 +147,7 @@ struct ContentView: View {
                 .buttonStyle(SecureSecondaryButtonStyle())
             }
         }
-        .secureCard(padding: 20)
+        .secureCard(padding: 18)
     }
 
     private var manualApprovalCard: some View {
@@ -203,7 +203,7 @@ struct ContentView: View {
     }
 
     private var scanApprovalCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             SecureSectionHeader(
                 eyebrow: "Fast lane",
                 title: "Scan and verify a login request",
@@ -397,7 +397,7 @@ struct ContentView: View {
                         systemImage: "shield.lefthalf.filled"
                     )
                 }
-                .padding(18)
+                .padding(16)
             }
             .navigationTitle("Scan Request")
             .navigationBarTitleDisplayMode(.inline)
