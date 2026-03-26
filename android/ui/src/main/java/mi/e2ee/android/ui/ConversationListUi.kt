@@ -67,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -711,10 +712,12 @@ private fun SwipeRevealConversation(
         val newOffset = (offset.value + delta).coerceIn(-revealPx, 0f)
         scope.launch { offset.snapTo(newOffset) }
     }
+    val revealProgress = (abs(offset.value) / revealPx).coerceIn(0f, 1f)
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = revealProgress }
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
                 .padding(end = 12.dp),
             horizontalArrangement = Arrangement.End,
