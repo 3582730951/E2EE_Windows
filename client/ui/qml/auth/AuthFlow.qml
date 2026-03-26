@@ -242,13 +242,17 @@ Item {
 
                         Rectangle {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: securityCopy.implicitHeight + Ui.Style.paddingL * 2
                             radius: Ui.Style.radiusLarge
                             color: Ui.Style.authSurfaceStrong
                             border.width: 1
                             border.color: Ui.Style.authCardBorder
 
-                            ColumnLayout {
-                                anchors.fill: parent
+                            Column {
+                                id: securityCopy
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
                                 anchors.margins: Ui.Style.paddingL
                                 spacing: Ui.Style.paddingS
 
@@ -259,28 +263,20 @@ Item {
                                     font.weight: Font.DemiBold
                                 }
 
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: "• 登录链路加密并校验服务器信任"
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: Ui.Style.authSubtitleTextSize
-                                    wrapMode: Text.Wrap
-                                }
+                                Repeater {
+                                    model: [
+                                        "登录链路加密并校验服务器信任",
+                                        "会话消息采用前向安全轮换机制",
+                                        "设备与离线文件密钥隔离存储"
+                                    ]
 
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: "• 会话消息采用前向安全轮换机制"
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: Ui.Style.authSubtitleTextSize
-                                    wrapMode: Text.Wrap
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: "• 设备与离线文件密钥隔离存储"
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: Ui.Style.authSubtitleTextSize
-                                    wrapMode: Text.Wrap
+                                    delegate: Label {
+                                        width: securityCopy.width
+                                        text: "\u2022 " + modelData
+                                        color: Ui.Style.textSecondary
+                                        font.pixelSize: Ui.Style.authSubtitleTextSize
+                                        wrapMode: Text.Wrap
+                                    }
                                 }
                             }
                         }
