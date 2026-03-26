@@ -1318,13 +1318,13 @@ private fun ChatTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        tonalElevation = 2.dp
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp)
+                .padding(bottom = 6.dp)
         ) {
             TopAppBar(
                 modifier = Modifier
@@ -1349,9 +1349,10 @@ private fun ChatTopBar(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                UiStatusCountBadge(
-                                    label = tr("chat_encrypted", "Encrypted"),
-                                    tone = UiBadgeTone.Primary
+                                Text(
+                                    text = tr("chat_encrypted", "Encrypted"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
                                 )
                             }
                         }
@@ -1371,21 +1372,21 @@ private fun ChatTopBar(
                     }
                 },
                 actions = {
-                    FilledTonalIconButton(
+                    IconButton(
                         onClick = onSelfClick,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.secondary
                         )
                     ) {
                         AvatarBadge(
                             initials = selfInitials,
                             tint = MaterialTheme.colorScheme.secondary,
-                            size = 22.dp
+                            size = 24.dp
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
@@ -1394,66 +1395,58 @@ private fun ChatTopBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                TopBarAssistActionChip(
+                TopBarActionIcon(
                     icon = Icons.Filled.Call,
-                    label = tr("chat_call", "Call"),
+                    contentDescription = tr("chat_call", "Call"),
                     onClick = onCall
                 )
-                TopBarAssistActionChip(
+                TopBarActionIcon(
                     icon = Icons.Filled.Videocam,
-                    label = tr("chat_video_call", "Video call"),
+                    contentDescription = tr("chat_video_call", "Video call"),
                     onClick = onVideoCall
                 )
+                TopBarActionIcon(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = tr("settings_title", "Settings"),
+                    onClick = onSettings
+                )
                 if (BuildConfig.DEBUG) {
-                    TopBarAssistActionChip(
+                    TopBarActionIcon(
                         icon = Icons.Filled.BugReport,
-                        label = tr("chat_tools", "Tools"),
+                        contentDescription = tr("chat_tools", "Tools"),
                         onClick = onTools
                     )
                 }
-                TopBarAssistActionChip(
-                    icon = Icons.Filled.Settings,
-                    label = tr("settings_title", "Settings"),
-                    onClick = onSettings
-                )
             }
         }
     }
 }
 
 @Composable
-private fun TopBarAssistActionChip(
+private fun TopBarActionIcon(
     icon: ImageVector,
-    label: String,
+    contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    AssistChip(
+    FilledTonalIconButton(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        leadingIcon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(18.dp)
-            )
-        },
-        label = {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium
-            )
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            labelColor = MaterialTheme.colorScheme.onSurface,
-            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        modifier = modifier.size(34.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    )
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(18.dp)
+        )
+    }
 }
 
 @Composable
@@ -2375,13 +2368,18 @@ private fun ReactionChip(reaction: MessageReaction) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 7.dp, vertical = 3.dp)
     ) {
         Text(
             text = "${reaction.label} ${reaction.count}",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
         )
     }
 }
@@ -2395,7 +2393,12 @@ private fun UnreadSeparator(count: Int) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f))
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f))
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp)
+                )
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text(
@@ -2414,9 +2417,9 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        tonalElevation = 2.dp,
-        shadowElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -3069,8 +3072,8 @@ fun ComposerBar(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 3.dp
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 1.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
             if (showQuickActions) {
@@ -3224,8 +3227,8 @@ private fun CompactMessageField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
             focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
         )
@@ -3242,12 +3245,12 @@ private fun QuickActionButton(
     AssistChip(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         leadingIcon = {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
         },
         label = {
@@ -3257,9 +3260,9 @@ private fun QuickActionButton(
             )
         },
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            labelColor = MaterialTheme.colorScheme.onSurface,
-            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
         )
     )
 }

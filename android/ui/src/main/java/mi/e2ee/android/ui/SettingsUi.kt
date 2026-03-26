@@ -358,7 +358,7 @@ private fun ThemeModeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Primary)
+                UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Neutral)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
             Row(
@@ -373,6 +373,10 @@ private fun ThemeModeSection(
                         selected = selected,
                         onClick = { onModeChange(option.mode) },
                         label = { Text(option.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        ),
                         leadingIcon = if (selected) {
                             {
                                 Icon(
@@ -416,7 +420,7 @@ private fun LanguageSection(controller: LanguageController) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Primary)
+                UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Neutral)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
             Row(
@@ -431,6 +435,10 @@ private fun LanguageSection(controller: LanguageController) {
                         selected = selected,
                         onClick = { controller.setLanguage(pack.code) },
                         label = { Text(pack.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        ),
                         leadingIcon = if (selected) {
                             {
                                 Icon(
@@ -476,7 +484,7 @@ private fun SettingsTopBar(
             )
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -495,7 +503,7 @@ private fun SettingsSection(entries: List<SettingEntry>) {
                             .fillMaxWidth()
                             .padding(horizontal = 6.dp)
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.24f))
                     )
                 }
             }

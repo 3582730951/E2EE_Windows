@@ -189,8 +189,8 @@ object ChatUiTokens {
     val IconCorner = 10.dp
     val SectionSpacing = 12.dp
     val ItemSpacing = 8.dp
-    const val IconContainerAlpha = 0.14f
-    const val SurfaceBorderAlpha = 0.32f
+    const val IconContainerAlpha = 0.12f
+    const val SurfaceBorderAlpha = 0.22f
     const val MotionFastMs = 160
     const val MotionStandardMs = 220
 }

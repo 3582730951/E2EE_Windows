@@ -273,8 +273,6 @@ fun ConversationListScreen(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
                         .nestedScroll(nestedScrollConnection),
                     state = listState
                 ) {
@@ -434,7 +432,7 @@ private fun ConversationListTailState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
     ) {
         Column(
             modifier = Modifier
@@ -484,7 +482,7 @@ private fun ConversationListEmptyState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
     ) {
         Column(
             modifier = Modifier
@@ -540,7 +538,7 @@ private fun ConversationTopBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -559,8 +557,8 @@ fun ConversationBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        tonalElevation = 3.dp
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
+        tonalElevation = 0.dp
     ) {
         NavigationBarItem(
             selected = activeTab == ConversationTab.Contacts,
@@ -676,8 +674,10 @@ private fun QuickActionCard(
 ) {
     Card(
         modifier = modifier.clickable { onClick() },
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+        )
     ) {
         Row(
             modifier = Modifier
@@ -715,7 +715,7 @@ private fun SwipeRevealConversation(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
                 .padding(end = 12.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
@@ -795,8 +795,8 @@ private fun SwipeActionButton(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .background(tint.copy(alpha = 0.15f), CircleShape),
+                .size(38.dp)
+                .background(tint.copy(alpha = 0.1f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(imageVector = icon, contentDescription = label, tint = tint)
@@ -844,13 +844,13 @@ private fun ConversationRow(
             }
         ),
         shape = RoundedCornerShape(0.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
@@ -914,14 +914,14 @@ private fun ConversationRow(
                                 contentDescription = tr("conversations_muted", "Muted"),
                                 tone = UiIconTone.Neutral
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
                         if (item.mentionCount > 0) {
                             UiStatusCountBadge(
                                 label = "@${item.mentionCount}",
                                 tone = UiBadgeTone.Warning
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
                         if (item.unreadCount > 0) {
                             UiStatusCountBadge(
@@ -931,7 +931,7 @@ private fun ConversationRow(
                         }
                         if (item.isPinned) {
                             if (hasBadges) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                             }
                             ConversationStatusGlyph(
                                 icon = Icons.Filled.PushPin,
@@ -946,7 +946,7 @@ private fun ConversationRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
             )
         }
     }
