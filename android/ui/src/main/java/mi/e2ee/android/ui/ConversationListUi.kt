@@ -1,9 +1,6 @@
 package mi.e2ee.android.ui
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -33,13 +30,17 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,7 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,20 +62,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,7 +82,6 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import mi.e2ee.android.R
 
 data class ConversationPreview(
     val id: String,
@@ -541,7 +535,7 @@ private fun ConversationTopBar(
             )
             Spacer(modifier = Modifier.weight(1f))
             CompactIconButton(
-                painter = painterResource(R.drawable.ic_3d_compose),
+                icon = Icons.Filled.Add,
                 contentDescription = tr("conversations_quick_new_group", "New group"),
                 onClick = onNewGroup
             )
@@ -565,9 +559,6 @@ fun ConversationBottomBar(
         tonalElevation = 3.dp,
         shadowElevation = 8.dp
     ) {
-        val contactsPainter = painterResource(R.drawable.ic_3d_contacts)
-        val chatsPainter = painterResource(R.drawable.ic_3d_chats)
-        val settingsPainter = painterResource(R.drawable.ic_3d_settings)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -578,19 +569,19 @@ fun ConversationBottomBar(
         ) {
             BottomNavItem(
                 label = tr("nav_contacts", "Contacts"),
-                painter = contactsPainter,
+                icon = Icons.Filled.Person,
                 selected = activeTab == ConversationTab.Contacts,
                 onClick = onContacts
             )
             BottomNavItem(
                 label = tr("nav_chats", "Chats"),
-                painter = chatsPainter,
+                icon = Icons.Filled.Chat,
                 selected = activeTab == ConversationTab.Chats,
                 onClick = onChats
             )
             BottomNavItem(
                 label = tr("nav_settings", "Settings"),
-                painter = settingsPainter,
+                icon = Icons.Filled.Settings,
                 selected = activeTab == ConversationTab.Settings,
                 onClick = onSettings
             )
@@ -601,7 +592,7 @@ fun ConversationBottomBar(
 @Composable
 private fun BottomNavItem(
     label: String,
-    painter: Painter,
+    icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -609,7 +600,7 @@ private fun BottomNavItem(
     val tint = if (selected) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant
     val badgeColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-    else MaterialTheme.colorScheme.surfaceVariant
+    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -617,80 +608,39 @@ private fun BottomNavItem(
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        ThreeDIconBadge(
-            painter = painter,
-            contentDescription = label,
-            background = badgeColor,
-            size = 28.dp,
-            iconSize = 18.dp,
-            shadow = if (selected) 8.dp else 5.dp
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(badgeColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        if (selected) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Box(
+                modifier = Modifier
+                    .width(14.dp)
+                    .height(2.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        } else {
+            Spacer(modifier = Modifier.height(4.dp))
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = tint
         )
-    }
-}
-
-@Composable
-private fun ThreeDIconBadge(
-    painter: Painter,
-    contentDescription: String,
-    background: Color,
-    size: Dp,
-    iconSize: Dp,
-    shadow: Dp,
-    overlaySlash: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    val density = LocalDensity.current
-    val sizePx = with(density) { size.toPx() }
-    val highlight = background.copy(alpha = 0.95f)
-    val shade = background.copy(alpha = 0.55f)
-    Box(
-        modifier = modifier
-            .size(size)
-            .shadow(shadow, CircleShape, clip = false)
-            .clip(CircleShape)
-            .background(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.35f), highlight, shade),
-                    center = Offset(sizePx * 0.3f, sizePx * 0.25f),
-                    radius = sizePx
-                ),
-                shape = CircleShape
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(x = 2.dp, y = 2.dp)
-                .size(size * 0.32f)
-                .background(Color.White.copy(alpha = 0.18f), CircleShape)
-        )
-        Image(
-            painter = painter,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(iconSize),
-            contentScale = ContentScale.Fit
-        )
-        if (overlaySlash) {
-            val slashColor = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
-            Canvas(modifier = Modifier.size(iconSize)) {
-                val stroke = 2.dp.toPx()
-                drawLine(
-                    color = slashColor,
-                    start = Offset(0f, this.size.height),
-                    end = Offset(this.size.width, 0f),
-                    strokeWidth = stroke,
-                    cap = StrokeCap.Round
-                )
-            }
-        }
     }
 }
 
@@ -746,24 +696,24 @@ private fun CompactSearchField(
 
 @Composable
 private fun CompactIconButton(
-    painter: Painter,
+    icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
+            .size(30.dp)
             .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        ThreeDIconBadge(
-            painter = painter,
+        Icon(
+            imageVector = icon,
             contentDescription = contentDescription,
-            background = MaterialTheme.colorScheme.surfaceVariant,
-            size = 30.dp,
-            iconSize = 18.dp,
-            shadow = 6.dp
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(16.dp)
         )
     }
 }
@@ -946,6 +896,29 @@ private fun SwipeActionButton(
 }
 
 @Composable
+private fun ConversationStatusGlyph(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(11.dp)
+        )
+    }
+}
+
+@Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun ConversationRow(
     item: ConversationPreview,
@@ -1028,18 +1001,12 @@ private fun ConversationRow(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val mutePainter = painterResource(R.drawable.ic_3d_mute)
-                        val pinPainter = painterResource(R.drawable.ic_3d_pin)
                         val hasBadges = item.isMuted || item.mentionCount > 0 || item.unreadCount > 0
                         if (item.isMuted) {
-                            ThreeDIconBadge(
-                                painter = mutePainter,
+                            ConversationStatusGlyph(
+                                icon = Icons.Filled.NotificationsOff,
                                 contentDescription = tr("conversations_muted", "Muted"),
-                                background = MaterialTheme.colorScheme.surfaceVariant,
-                                size = 18.dp,
-                                iconSize = 12.dp,
-                                shadow = 4.dp,
-                                overlaySlash = true
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                         }
@@ -1077,13 +1044,10 @@ private fun ConversationRow(
                             if (hasBadges) {
                                 Spacer(modifier = Modifier.width(6.dp))
                             }
-                            ThreeDIconBadge(
-                                painter = pinPainter,
+                            ConversationStatusGlyph(
+                                icon = Icons.Filled.PushPin,
                                 contentDescription = tr("conversations_pinned", "Pinned"),
-                                background = MaterialTheme.colorScheme.surfaceVariant,
-                                size = 18.dp,
-                                iconSize = 12.dp,
-                                shadow = 4.dp
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

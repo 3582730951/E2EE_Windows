@@ -14,8 +14,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -87,28 +101,28 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
             subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
-            icon = { UiTokenIcon(label = "SC") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.Shield, contentDescription = null) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
-            icon = { UiTokenIcon(label = "AC") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.VerifiedUser, contentDescription = null) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
             subtitle = tr("settings_privacy_sub", "Visibility, read receipts"),
-            icon = { UiTokenIcon(label = "PR") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.Visibility, contentDescription = null) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
-            icon = { UiTokenIcon(label = "NT") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.Notifications, contentDescription = null) },
             trailing = {
                 Switch(
                     checked = notificationsEnabled,
@@ -123,7 +137,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-                icon = { UiTokenIcon(label = "ST") },
+                icon = { UiGlyphIcon(icon = Icons.Filled.Chat, contentDescription = null) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
             )
@@ -132,7 +146,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
-                icon = { UiTokenIcon(label = "DV") },
+                icon = { UiGlyphIcon(icon = Icons.Filled.Devices, contentDescription = null) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
             )
@@ -141,7 +155,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
-                icon = { UiTokenIcon(label = "AP") },
+                icon = { UiGlyphIcon(icon = Icons.Filled.Settings, contentDescription = null) },
                 trailing = {
                     Text(
                         text = themeSummary,
@@ -156,7 +170,7 @@ fun SettingsScreen(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
                     subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
-                    icon = { UiTokenIcon(label = "DG") },
+                    icon = { UiGlyphIcon(icon = Icons.Filled.BugReport, contentDescription = null) },
                     trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
                 )
@@ -167,7 +181,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
             subtitle = tr("settings_heartbeat_sub", "Send a keep-alive ping"),
-            icon = { UiTokenIcon(label = "HB") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.Schedule, contentDescription = null) },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
                     Text(tr("settings_run", "Run"))
@@ -177,7 +191,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
             subtitle = tr("settings_relogin_sub", "Refresh session with server"),
-            icon = { UiTokenIcon(label = "RC") },
+            icon = { UiGlyphIcon(icon = Icons.Filled.Link, contentDescription = null) },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
                     Text(tr("settings_run", "Run"))
@@ -273,7 +287,22 @@ private fun SettingsHeader(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AvatarBadge(initials = displayName.take(2).uppercase(), tint = MaterialTheme.colorScheme.primary, size = 48.dp)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = tr("settings_user_placeholder", "MI User"),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = displayName, style = MaterialTheme.typography.titleLarge)
@@ -318,7 +347,10 @@ private fun ThemeModeSection(
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UiTokenIcon(label = "TH")
+                UiGlyphIcon(
+                    icon = Icons.Filled.Settings,
+                    contentDescription = tr("settings_theme_mode", "Theme mode")
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = tr("settings_theme_mode", "Theme mode"), style = MaterialTheme.typography.bodyLarge)
@@ -368,7 +400,10 @@ private fun LanguageSection(controller: LanguageController) {
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UiTokenIcon(label = "LG")
+                UiGlyphIcon(
+                    icon = Icons.Filled.Chat,
+                    contentDescription = tr("settings_language", "Language")
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = tr("settings_language", "Language"), style = MaterialTheme.typography.bodyLarge)

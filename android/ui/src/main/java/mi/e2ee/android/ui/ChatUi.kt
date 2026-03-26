@@ -1412,6 +1412,12 @@ private fun CompactTopBarIconButton(
         modifier = modifier
             .size(buttonSize)
             .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
+                shape = CircleShape
+            )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -2492,35 +2498,36 @@ private fun TypingIndicator() {
 @Composable
 private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.shadow(4.dp, CircleShape),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+        modifier = modifier.shadow(8.dp, RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
-        Box(
-            modifier = Modifier.size(32.dp),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+                .widthIn(min = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = tr("chat_jump_to_bottom", "Jump to bottom"),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                modifier = Modifier.size(16.dp)
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+                modifier = Modifier.size(18.dp)
             )
             if (count > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 2.dp, end = 2.dp)
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.error),
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (count > 9) "9+" else count.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontSize = 9.sp
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp
                     )
                 }
             }

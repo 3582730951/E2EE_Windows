@@ -17,10 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ChevronRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -157,15 +161,48 @@ fun UiTokenIcon(
 }
 
 @Composable
+fun UiGlyphIcon(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    size: Dp = ChatUiTokens.IconSize,
+    cornerRadius: Dp = ChatUiTokens.IconCorner,
+    iconSize: Dp = 17.dp,
+    containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = ChatUiTokens.IconContainerAlpha),
+    contentColor: Color = MaterialTheme.colorScheme.primary
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(shape)
+            .background(containerColor)
+            .border(
+                width = 1.dp,
+                color = contentColor.copy(alpha = 0.28f),
+                shape = shape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = contentColor,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+@Composable
 fun UiChevron(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
-    Text(
-        text = "\u203A",
-        modifier = modifier,
-        style = MaterialTheme.typography.titleMedium,
-        color = color.copy(alpha = 0.85f)
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.ChevronRight,
+        contentDescription = null,
+        modifier = modifier.size(18.dp),
+        tint = color.copy(alpha = 0.85f)
     )
 }
 
