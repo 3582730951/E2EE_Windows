@@ -192,7 +192,7 @@ Item {
                 Rectangle {
                     Layout.fillHeight: true
                     Layout.fillWidth: true
-                    Layout.preferredWidth: authStage.width * 0.50
+                    Layout.preferredWidth: authStage.width * 0.42
                     radius: Ui.Style.radiusXL
                     color: Ui.Style.authContextBg
                     border.width: 1
@@ -201,21 +201,21 @@ Item {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingXL
+                        anchors.margins: Ui.Style.paddingL
                         spacing: Ui.Style.paddingM
 
-                        Rectangle {
-                            Layout.preferredHeight: 28
-                            radius: 14
-                            color: Ui.Style.authBadgeBg
-                            border.width: 1
-                            border.color: Ui.Style.authBadgeBorder
-                            Layout.alignment: Qt.AlignLeft
-                            implicitWidth: contextBadge.implicitWidth + Ui.Style.paddingL * 2
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+
+                            Rectangle {
+                                Layout.preferredWidth: 8
+                                Layout.preferredHeight: 8
+                                radius: 4
+                                color: Ui.Style.accent
+                            }
 
                             Label {
-                                id: contextBadge
-                                anchors.centerIn: parent
                                 text: Ui.I18n.t("auth.hero.badge")
                                 color: Ui.Style.authBadgeText
                                 font.pixelSize: Ui.Style.authMetaTextSize
@@ -225,58 +225,42 @@ Item {
 
                         Label {
                             Layout.fillWidth: true
-                            text: Ui.I18n.t("auth.title")
-                            color: Ui.Style.textPrimary
-                            font.pixelSize: Ui.Style.authTitleTextSize
-                            font.weight: Font.DemiBold
-                            wrapMode: Text.Wrap
-                        }
-
-                        Label {
-                            Layout.fillWidth: true
-                            text: Ui.I18n.t("auth.subtitle")
+                            text: "登录前确认服务器地址与账号信息，即可建立安全会话。"
                             color: Ui.Style.textSecondary
                             font.pixelSize: Ui.Style.authBodyTextSize
-                            wrapMode: Text.Wrap
+                            wrapMode: Text.WordWrap
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: securityCopy.implicitHeight + Ui.Style.paddingL * 2
-                            radius: Ui.Style.radiusLarge
-                            color: Ui.Style.authSurfaceStrong
-                            border.width: 1
-                            border.color: Ui.Style.authCardBorder
+                            Layout.preferredHeight: 1
+                            color: Ui.Style.authContextBorder
+                        }
 
-                            Column {
-                                id: securityCopy
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: Ui.Style.paddingL
+                        Repeater {
+                            model: [
+                                "首次连接会请求服务器信任确认",
+                                "会话消息与离线密钥默认隔离保存",
+                                "支持密码登录与二维码登录"
+                            ]
+
+                            delegate: RowLayout {
+                                Layout.fillWidth: true
                                 spacing: Ui.Style.paddingS
 
-                                Label {
-                                    text: "安全基线"
-                                    color: Ui.Style.authLabelText
-                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                    font.weight: Font.DemiBold
+                                Rectangle {
+                                    Layout.preferredWidth: 5
+                                    Layout.preferredHeight: 5
+                                    radius: 2.5
+                                    color: Ui.Style.tgMutedBadge
                                 }
 
-                                Repeater {
-                                    model: [
-                                        "登录链路加密并校验服务器信任",
-                                        "会话消息采用前向安全轮换机制",
-                                        "设备与离线文件密钥隔离存储"
-                                    ]
-
-                                    delegate: Label {
-                                        width: securityCopy.width
-                                        text: "\u2022 " + modelData
-                                        color: Ui.Style.textSecondary
-                                        font.pixelSize: Ui.Style.authSubtitleTextSize
-                                        wrapMode: Text.Wrap
-                                    }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: Ui.Style.authSubtitleTextSize
+                                    wrapMode: Text.WordWrap
                                 }
                             }
                         }
@@ -285,7 +269,7 @@ Item {
 
                         Label {
                             Layout.fillWidth: true
-                            text: "登录后将进入安全会话主界面"
+                            text: "高级选项可选填 Root Code。"
                             color: Ui.Style.textMuted
                             font.pixelSize: Ui.Style.authMetaTextSize
                             wrapMode: Text.Wrap
@@ -306,38 +290,30 @@ Item {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingL
+                        anchors.margins: Ui.Style.paddingXL
                         spacing: Ui.Style.paddingM
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: Ui.I18n.t("auth.title")
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 24
+                            font.weight: Font.DemiBold
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: Ui.I18n.t("auth.subtitle")
+                            color: Ui.Style.textSecondary
+                            font.pixelSize: Ui.Style.authSubtitleTextSize
+                            wrapMode: Text.WordWrap
+                        }
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 108
-                            radius: Ui.Style.radiusLarge
-                            color: Ui.Style.authPanelHeaderBg
-                            border.width: 1
-                            border.color: Ui.Style.authTitleBarBorder
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: Ui.Style.paddingL
-                                spacing: Ui.Style.paddingXs
-
-                                Label {
-                                    text: Ui.I18n.t("auth.title")
-                                    color: Ui.Style.textPrimary
-                                    font.pixelSize: 24
-                                    font.weight: Font.DemiBold
-                                    Layout.fillWidth: true
-                                }
-
-                                Label {
-                                    text: Ui.I18n.t("auth.subtitle")
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: Ui.Style.authSubtitleTextSize
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.Wrap
-                                }
-                            }
+                            Layout.preferredHeight: 1
+                            color: Ui.Style.authTitleBarBorder
                         }
 
                         Item {
@@ -822,25 +798,13 @@ Item {
                             }
                         }
 
-                        Rectangle {
+                        Label {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 44
-                            radius: Ui.Style.radiusMedium
-                            color: Ui.Style.authPanelFooterBg
-                            border.width: 1
-                            border.color: errorText.length > 0 ? Ui.Style.authDangerBorder : Ui.Style.authTitleBarBorder
-
-                            Label {
-                                anchors.fill: parent
-                                anchors.leftMargin: Ui.Style.paddingM
-                                anchors.rightMargin: Ui.Style.paddingM
-                                verticalAlignment: Text.AlignVCenter
-                                horizontalAlignment: Text.AlignHCenter
-                                text: errorText.length > 0 ? errorText : "连接后将自动同步会话安全状态"
-                                color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.textMuted
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                elide: Text.ElideRight
-                            }
+                            text: errorText.length > 0 ? errorText : "连接后将自动同步会话安全状态"
+                            color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.textMuted
+                            font.pixelSize: Ui.Style.authSubtitleTextSize
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }
