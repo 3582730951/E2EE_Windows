@@ -20,6 +20,7 @@ Item {
     property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
+    property bool advancedLoginExpanded: false
     readonly property color loginLabelColor: Qt.rgba(0.95, 0.97, 1.0, 0.99)
     readonly property color loginPlaceholderColor: Qt.rgba(0.88, 0.93, 1.0, 0.96)
     readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.74)
@@ -175,17 +176,6 @@ Item {
 
                     Item { Layout.fillWidth: true }
                     ToolButton {
-                        id: menuButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
-                        icon.width: 16
-                        icon.height: 16
-                        onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
-                        background: Rectangle {
-                            radius: 6
-                            color: menuButton.down ? Ui.Style.pressedBg : "transparent"
-                        }
-                    }
-                    ToolButton {
                         id: closeButton
                         icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
                         icon.width: 16
@@ -195,74 +185,6 @@ Item {
                             radius: 6
                             color: closeButton.down ? Ui.Style.pressedBg : "transparent"
                         }
-                    }
-                }
-            }
-
-            Menu {
-                id: menuPopup
-                property int sidePadding: 20
-                property string textSettings: Ui.I18n.t("auth.menu.settings")
-                property string textHelp: Ui.I18n.t("auth.menu.help")
-                property string textAbout: Ui.I18n.t("auth.menu.about")
-                readonly property real maxItemWidth: Math.max(metricsSettings.width,
-                                                             metricsHelp.width,
-                                                             metricsAbout.width)
-                implicitWidth: Math.ceil(maxItemWidth + sidePadding * 2)
-
-                TextMetrics {
-                    id: metricsSettings
-                    text: menuPopup.textSettings
-                    font: menuPopup.font
-                }
-                TextMetrics {
-                    id: metricsHelp
-                    text: menuPopup.textHelp
-                    font: menuPopup.font
-                }
-                TextMetrics {
-                    id: metricsAbout
-                    text: menuPopup.textAbout
-                    font: menuPopup.font
-                }
-
-                MenuItem {
-                    text: menuPopup.textSettings
-                    implicitWidth: menuPopup.implicitWidth
-                    leftPadding: menuPopup.sidePadding
-                    rightPadding: menuPopup.sidePadding
-                    contentItem: Text {
-                        text: parent.text
-                        color: Ui.Style.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        anchors.fill: parent
-                    }
-                }
-                MenuItem {
-                    text: menuPopup.textHelp
-                    implicitWidth: menuPopup.implicitWidth
-                    leftPadding: menuPopup.sidePadding
-                    rightPadding: menuPopup.sidePadding
-                    contentItem: Text {
-                        text: parent.text
-                        color: Ui.Style.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        anchors.fill: parent
-                    }
-                }
-                MenuItem {
-                    text: menuPopup.textAbout
-                    implicitWidth: menuPopup.implicitWidth
-                    leftPadding: menuPopup.sidePadding
-                    rightPadding: menuPopup.sidePadding
-                    contentItem: Text {
-                        text: parent.text
-                        color: Ui.Style.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        anchors.fill: parent
                     }
                 }
             }
@@ -353,65 +275,92 @@ Item {
                             onTextChanged: passwordInput = text
                         }
 
-                        Label {
-                            text: Ui.I18n.t("auth.placeholder.rootCode")
-                            font.pixelSize: 14
-                            font.weight: Font.DemiBold
-                            color: loginLabelColor
-                            Layout.fillWidth: true
-                        }
-                        Components.SecureTextField {
-                            id: rootCodeField
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 42
-                            echoMode: TextInput.Password
-                            placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                            font.pixelSize: 15
-                            color: Ui.Style.textPrimary
-                            placeholderTextColor: loginPlaceholderColor
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: loginFieldBackground
-                                border.width: 1
-                                border.color: rootCodeField.activeFocus
-                                              ? Ui.Style.authFieldFocus
-                                              : loginFieldBorder
+                        Button {
+                            id: advancedToggleButton
+                            Layout.alignment: Qt.AlignLeft
+                            flat: true
+                            text: advancedLoginExpanded ? "收起高级选项" : "高级选项"
+                            onClicked: advancedLoginExpanded = !advancedLoginExpanded
+                            contentItem: Text {
+                                text: advancedToggleButton.text
+                                color: advancedToggleButton.hovered || advancedToggleButton.down
+                                       ? Ui.Style.textPrimary
+                                       : Ui.Style.authBadgeText
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                                horizontalAlignment: Text.AlignLeft
+                                verticalAlignment: Text.AlignVCenter
                             }
-                            onTextChanged: rootCodeInput = text
+                            background: Rectangle {
+                                radius: Ui.Style.radiusSmall
+                                color: advancedToggleButton.down
+                                       ? Ui.Style.authInfoBorder
+                                       : (advancedToggleButton.hovered ? Ui.Style.authInfoBg : "transparent")
+                                border.width: advancedToggleButton.hovered || advancedToggleButton.down ? 1 : 0
+                                border.color: Ui.Style.authBadgeBorder
+                            }
                         }
 
-                        CheckBox {
-                            id: autoLoginCheck
-                            text: Ui.I18n.t("auth.autoLogin")
-                            font.pixelSize: 15
-                            spacing: 10
-                            indicator: Rectangle {
-                                implicitWidth: 18
-                                implicitHeight: 18
-                                radius: 4
-                                y: parent.height / 2 - height / 2
-                                color: autoLoginCheck.checked
-                                       ? Ui.Style.authFieldFocus
-                                       : loginFieldBackground
-                                border.width: 1
-                                border.color: autoLoginCheck.checked
-                                              ? Ui.Style.authFieldFocus
-                                              : loginFieldBorder
-                                Rectangle {
-                                    anchors.centerIn: parent
-                                    width: 8
-                                    height: 8
-                                    radius: 2
-                                    visible: autoLoginCheck.checked
-                                    color: "#F6FAFF"
-                                }
-                            }
-                            contentItem: Text {
-                                text: autoLoginCheck.text
-                                font: autoLoginCheck.font
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+                            visible: advancedLoginExpanded
+
+                            Label {
+                                text: Ui.I18n.t("auth.placeholder.rootCode")
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
                                 color: loginLabelColor
-                                verticalAlignment: Text.AlignVCenter
-                                leftPadding: autoLoginCheck.indicator.width + autoLoginCheck.spacing
+                                Layout.fillWidth: true
+                            }
+
+                            Components.SecureTextField {
+                                id: rootCodeField
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 40
+                                echoMode: TextInput.Password
+                                placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+                                font.pixelSize: 14
+                                color: Ui.Style.textPrimary
+                                placeholderTextColor: loginPlaceholderColor
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    color: loginFieldBackground
+                                    border.width: 1
+                                    border.color: rootCodeField.activeFocus
+                                                  ? Ui.Style.authFieldFocus
+                                                  : loginFieldBorder
+                                }
+                                onTextChanged: rootCodeInput = text
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Item { Layout.fillWidth: true }
+                                Button {
+                                    id: advancedQrLinkButton
+                                    text: Ui.I18n.t("auth.qrLogin")
+                                    flat: true
+                                    onClicked: loginStack.currentIndex = 2
+                                    contentItem: Text {
+                                        text: Ui.I18n.t("auth.qrLogin")
+                                        color: advancedQrLinkButton.hovered || advancedQrLinkButton.down
+                                               ? Ui.Style.textPrimary
+                                               : Ui.Style.authBadgeText
+                                        font.pixelSize: 13
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Rectangle {
+                                        radius: Ui.Style.radiusMedium
+                                        color: parent.down ? Ui.Style.authInfoBorder
+                                                           : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
+                                        border.width: parent.hovered || parent.down ? 1 : 0
+                                        border.color: Ui.Style.authBadgeBorder
+                                    }
+                                }
+                                Item { Layout.fillWidth: true }
                             }
                         }
 
@@ -477,98 +426,14 @@ Item {
                                     border.color: Ui.Style.authBadgeBorder
                                 }
                             }
-                            Button {
-                                id: qrLinkButton
-                                text: Ui.I18n.t("auth.qrLogin")
-                                flat: true
-                                onClicked: loginStack.currentIndex = 2
-                                contentItem: Text {
-                                    text: Ui.I18n.t("auth.qrLogin")
-                                    color: qrLinkButton.hovered || qrLinkButton.down
-                                           ? Ui.Style.textPrimary
-                                           : Ui.Style.authBadgeText
-                                    font.pixelSize: 14
-                                    font.weight: Font.DemiBold
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                background: Rectangle {
-                                    radius: Ui.Style.radiusMedium
-                                    color: parent.down ? Ui.Style.authInfoBorder
-                                                       : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
-                                    border.width: parent.hovered || parent.down ? 1 : 0
-                                    border.color: Ui.Style.authBadgeBorder
-                                }
-                            }
                             Item { Layout.fillWidth: true }
                         }
-                        Rectangle {
+                        Text {
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 126
-                            radius: Ui.Style.radiusLarge
-                            color: Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.10)
-                            border.width: 1
-                            border.color: Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.24)
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: Ui.Style.paddingM
-                                spacing: Ui.Style.paddingS
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: Ui.I18n.t("auth.hero.badge")
-                                    color: Ui.Style.textPrimary
-                                    font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                    text: Ui.I18n.t("chat.secureSession")
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: 12
-                                    lineHeightMode: Text.FixedHeight
-                                    lineHeight: 18
-                                }
-
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Repeater {
-                                        model: [
-                                            Ui.I18n.t("settings.privacy.clipboardIsolation"),
-                                            Ui.I18n.t("settings.privacy.internalIme")
-                                        ]
-                                        delegate: Rectangle {
-                                            radius: 10
-                                            color: Qt.rgba(1, 1, 1, 0.08)
-                                            border.width: 1
-                                            border.color: Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.25)
-                                            height: 24
-                                            width: labelMetrics.width + 20
-
-                                            TextMetrics {
-                                                id: labelMetrics
-                                                text: modelData
-                                                font.family: Ui.Style.fontFamily
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                            }
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData
-                                                color: Ui.Style.authBadgeText
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            text: Ui.I18n.t("auth.hero.badge")
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
                         }
                     }
                 }
