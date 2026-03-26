@@ -176,6 +176,15 @@ object ChatUiTokens {
     val CornerSmall = 14.dp
     val CornerMedium = 18.dp
     val CornerLarge = 22.dp
+    val IconContainerXs = 20.dp
+    val IconContainerSm = 30.dp
+    val IconContainerMd = 34.dp
+    val IconContainerLg = 40.dp
+    val IconGlyphXs = 11.dp
+    val IconGlyphSm = 14.dp
+    val IconGlyphMd = 17.dp
+    val IconGlyphLg = 19.dp
+    val BadgeCorner = 10.dp
     val IconSize = 34.dp
     val IconCorner = 10.dp
     val SectionSpacing = 12.dp

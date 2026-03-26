@@ -1341,9 +1341,9 @@ private fun ChatTopBar(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        LabeledChip(
+                        UiStatusCountBadge(
                             label = tr("chat_encrypted", "Encrypted"),
-                            tint = MaterialTheme.colorScheme.primary
+                            tone = UiBadgeTone.Primary
                         )
                     }
                 }
@@ -1408,26 +1408,16 @@ private fun CompactTopBarIconButton(
     iconSize: androidx.compose.ui.unit.Dp = 15.dp,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .size(buttonSize)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f))
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
-                shape = CircleShape
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(iconSize)
-        )
-    }
+    UiSemanticIcon(
+        icon = icon,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tone = UiIconTone.Neutral,
+        size = buttonSize,
+        cornerRadius = ChatUiTokens.IconCorner,
+        iconSize = iconSize,
+        onClick = onClick
+    )
 }
 
 @Composable

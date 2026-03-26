@@ -13,11 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Devices
@@ -29,14 +30,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,7 +44,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -76,7 +74,6 @@ fun SettingsApp() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     sdk: SdkBridge,
@@ -102,28 +99,28 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
             subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.Shield, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.Shield, contentDescription = null, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.VerifiedUser, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.VerifiedUser, contentDescription = null, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
             subtitle = tr("settings_privacy_sub", "Visibility, read receipts"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.Visibility, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.Visibility, contentDescription = null, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.Notifications, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.Notifications, contentDescription = null, tone = UiIconTone.Accent) },
             trailing = {
                 Switch(
                     checked = notificationsEnabled,
@@ -138,7 +135,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-                icon = { UiGlyphIcon(icon = Icons.Filled.Chat, contentDescription = null) },
+                icon = { UiSemanticIcon(icon = Icons.Filled.Chat, contentDescription = null, tone = UiIconTone.Primary) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
             )
@@ -147,7 +144,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
-                icon = { UiGlyphIcon(icon = Icons.Filled.Devices, contentDescription = null) },
+                icon = { UiSemanticIcon(icon = Icons.Filled.Devices, contentDescription = null, tone = UiIconTone.Accent) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
             )
@@ -156,7 +153,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
-                icon = { UiGlyphIcon(icon = Icons.Filled.Settings, contentDescription = null) },
+                icon = { UiSemanticIcon(icon = Icons.Filled.Settings, contentDescription = null, tone = UiIconTone.Neutral) },
                 trailing = {
                     Text(
                         text = themeSummary,
@@ -171,7 +168,7 @@ fun SettingsScreen(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
                     subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
-                    icon = { UiGlyphIcon(icon = Icons.Filled.BugReport, contentDescription = null) },
+                    icon = { UiSemanticIcon(icon = Icons.Filled.BugReport, contentDescription = null, tone = UiIconTone.Warning) },
                     trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
                 )
@@ -182,7 +179,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
             subtitle = tr("settings_heartbeat_sub", "Send a keep-alive ping"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.Schedule, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.Schedule, contentDescription = null, tone = UiIconTone.Accent) },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
                     Text(tr("settings_run", "Run"))
@@ -192,7 +189,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
             subtitle = tr("settings_relogin_sub", "Refresh session with server"),
-            icon = { UiGlyphIcon(icon = Icons.Filled.Link, contentDescription = null) },
+            icon = { UiSemanticIcon(icon = Icons.Filled.Link, contentDescription = null, tone = UiIconTone.Primary) },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
                     Text(tr("settings_run", "Run"))
@@ -203,17 +200,9 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(tr("settings_title", "Settings")) },
-                modifier = Modifier.shadow(4.dp),
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text(
-                            text = tr("settings_back", "Back"),
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
+            SettingsTopBar(
+                title = tr("settings_title", "Settings"),
+                onBack = onBack
             )
         },
         bottomBar = {
@@ -288,22 +277,13 @@ private fun SettingsHeader(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Person,
-                    contentDescription = tr("settings_user_placeholder", "MI User"),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            UiSemanticIcon(
+                icon = Icons.Filled.Person,
+                contentDescription = tr("settings_user_placeholder", "MI User"),
+                tone = UiIconTone.Primary,
+                size = ChatUiTokens.IconContainerLg,
+                iconSize = ChatUiTokens.IconGlyphLg
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = displayName, style = MaterialTheme.typography.titleLarge)
@@ -320,9 +300,9 @@ private fun SettingsHeader(
                     )
                 }
             }
-            LabeledChip(
+            UiStatusCountBadge(
                 label = if (remoteOk) tr("settings_remote_ok", "Online") else tr("settings_remote_error", "Offline"),
-                tint = if (remoteOk) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                tone = if (remoteOk) UiBadgeTone.Accent else UiBadgeTone.Danger
             )
         }
     }
@@ -348,9 +328,10 @@ private fun ThemeModeSection(
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UiGlyphIcon(
+                UiSemanticIcon(
                     icon = Icons.Filled.Settings,
-                    contentDescription = tr("settings_theme_mode", "Theme mode")
+                    contentDescription = tr("settings_theme_mode", "Theme mode"),
+                    tone = UiIconTone.Neutral
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -361,7 +342,7 @@ private fun ThemeModeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                LabeledChip(label = activeLabel, tint = MaterialTheme.colorScheme.primary)
+                UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Primary)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
             Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
@@ -401,9 +382,10 @@ private fun LanguageSection(controller: LanguageController) {
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UiGlyphIcon(
+                UiSemanticIcon(
                     icon = Icons.Filled.Chat,
-                    contentDescription = tr("settings_language", "Language")
+                    contentDescription = tr("settings_language", "Language"),
+                    tone = UiIconTone.Primary
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -414,7 +396,7 @@ private fun LanguageSection(controller: LanguageController) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                LabeledChip(label = controller.current.label, tint = MaterialTheme.colorScheme.primary)
+                UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Primary)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
             Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
@@ -440,6 +422,45 @@ private fun LanguageSection(controller: LanguageController) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsTopBar(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 2.dp,
+        shadowElevation = 6.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UiSemanticIcon(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = tr("settings_back", "Back"),
+                tone = UiIconTone.Neutral,
+                size = ChatUiTokens.IconContainerSm,
+                iconSize = ChatUiTokens.IconGlyphSm,
+                onClick = onBack
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,151 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+enum class UiIconTone {
+    Primary,
+    Accent,
+    Neutral,
+    Warning,
+    Danger
+}
+
+enum class UiBadgeTone {
+    Primary,
+    Accent,
+    Neutral,
+    Warning,
+    Danger
+}
+
+private data class UiIconPalette(
+    val container: Color,
+    val content: Color,
+    val border: Color
+)
+
+private data class UiBadgePalette(
+    val container: Color,
+    val content: Color,
+    val border: Color
+)
+
+@Composable
+private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
+    val emphasizedAlpha = if (active) 0.22f else ChatUiTokens.IconContainerAlpha
+    return when (tone) {
+        UiIconTone.Primary -> UiIconPalette(
+            container = MaterialTheme.colorScheme.primary.copy(alpha = emphasizedAlpha),
+            content = MaterialTheme.colorScheme.primary,
+            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.36f else 0.28f)
+        )
+        UiIconTone.Accent -> UiIconPalette(
+            container = MaterialTheme.colorScheme.secondary.copy(alpha = emphasizedAlpha),
+            content = MaterialTheme.colorScheme.secondary,
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.36f else 0.28f)
+        )
+        UiIconTone.Warning -> UiIconPalette(
+            container = MaterialTheme.colorScheme.tertiary.copy(alpha = emphasizedAlpha),
+            content = MaterialTheme.colorScheme.tertiary,
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.36f else 0.28f)
+        )
+        UiIconTone.Danger -> UiIconPalette(
+            container = MaterialTheme.colorScheme.error.copy(alpha = emphasizedAlpha),
+            content = MaterialTheme.colorScheme.error,
+            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.36f else 0.28f)
+        )
+        UiIconTone.Neutral -> UiIconPalette(
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.92f else 0.78f),
+            content = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.48f else 0.34f)
+        )
+    }
+}
+
+@Composable
+private fun badgePalette(tone: UiBadgeTone): UiBadgePalette {
+    return when (tone) {
+        UiBadgeTone.Primary -> UiBadgePalette(
+            container = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+            content = MaterialTheme.colorScheme.primary,
+            border = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
+        )
+        UiBadgeTone.Accent -> UiBadgePalette(
+            container = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
+            content = MaterialTheme.colorScheme.secondary,
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = 0.32f)
+        )
+        UiBadgeTone.Warning -> UiBadgePalette(
+            container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f),
+            content = MaterialTheme.colorScheme.tertiary,
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.32f)
+        )
+        UiBadgeTone.Danger -> UiBadgePalette(
+            container = MaterialTheme.colorScheme.error.copy(alpha = 0.16f),
+            content = MaterialTheme.colorScheme.error,
+            border = MaterialTheme.colorScheme.error.copy(alpha = 0.32f)
+        )
+        UiBadgeTone.Neutral -> UiBadgePalette(
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            content = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+        )
+    }
+}
+
+@Composable
+private fun UiIconFrame(
+    modifier: Modifier = Modifier,
+    size: Dp,
+    cornerRadius: Dp,
+    containerColor: Color,
+    borderColor: Color,
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    val frameModifier = Modifier
+        .size(size)
+        .clip(shape)
+        .background(containerColor)
+        .border(1.dp, borderColor, shape)
+        .let { base -> if (onClick != null) base.clickable { onClick() } else base }
+    Box(
+        modifier = modifier.then(frameModifier),
+        contentAlignment = Alignment.Center,
+        content = content
+    )
+}
+
+@Composable
+fun UiSemanticIcon(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tone: UiIconTone = UiIconTone.Primary,
+    active: Boolean = false,
+    size: Dp = ChatUiTokens.IconContainerMd,
+    cornerRadius: Dp = ChatUiTokens.IconCorner,
+    iconSize: Dp = ChatUiTokens.IconGlyphMd,
+    onClick: (() -> Unit)? = null
+) {
+    val palette = iconPalette(tone, active)
+    UiIconFrame(
+        modifier = modifier,
+        size = size,
+        cornerRadius = cornerRadius,
+        containerColor = palette.container,
+        borderColor = palette.border,
+        onClick = onClick
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = palette.content,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
@@ -137,18 +283,12 @@ fun UiTokenIcon(
     contentColor: Color = MaterialTheme.colorScheme.primary,
     textStyle: TextStyle = MaterialTheme.typography.labelSmall
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(shape)
-            .background(containerColor)
-            .border(
-                width = 1.dp,
-                color = contentColor.copy(alpha = 0.28f),
-                shape = shape
-            ),
-        contentAlignment = Alignment.Center
+    UiIconFrame(
+        modifier = modifier,
+        size = size,
+        cornerRadius = cornerRadius,
+        containerColor = containerColor,
+        borderColor = contentColor.copy(alpha = 0.28f)
     ) {
         Text(
             text = label.uppercase(),
@@ -171,24 +311,64 @@ fun UiGlyphIcon(
     containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = ChatUiTokens.IconContainerAlpha),
     contentColor: Color = MaterialTheme.colorScheme.primary
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(shape)
-            .background(containerColor)
-            .border(
-                width = 1.dp,
-                color = contentColor.copy(alpha = 0.28f),
-                shape = shape
-            ),
-        contentAlignment = Alignment.Center
+    UiIconFrame(
+        modifier = modifier,
+        size = size,
+        cornerRadius = cornerRadius,
+        containerColor = containerColor,
+        borderColor = contentColor.copy(alpha = 0.28f)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = contentColor,
             modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+@Composable
+fun UiStatusIconBadge(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tone: UiIconTone = UiIconTone.Neutral
+) {
+    UiSemanticIcon(
+        icon = icon,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tone = tone,
+        size = ChatUiTokens.IconContainerXs,
+        cornerRadius = ChatUiTokens.BadgeCorner,
+        iconSize = ChatUiTokens.IconGlyphXs
+    )
+}
+
+@Composable
+fun UiStatusCountBadge(
+    label: String,
+    modifier: Modifier = Modifier,
+    tone: UiBadgeTone = UiBadgeTone.Primary
+) {
+    val palette = badgePalette(tone)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(ChatUiTokens.BadgeCorner))
+            .background(palette.container)
+            .border(
+                width = 1.dp,
+                color = palette.border,
+                shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.content,
+            fontWeight = FontWeight.Medium
         )
     }
 }
@@ -241,12 +421,17 @@ fun StatusDot(color: Color, size: Dp = 8.dp) {
 fun LabeledChip(label: String, tint: Color, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(ChatUiTokens.CornerSmall))
+            .clip(RoundedCornerShape(ChatUiTokens.BadgeCorner))
             .background(tint.copy(alpha = 0.15f))
+            .border(
+                width = 1.dp,
+                color = tint.copy(alpha = 0.32f),
+                shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
+            )
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StatusDot(color = tint, size = 6.dp)
+        StatusDot(color = tint, size = 5.dp)
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = label,

@@ -437,11 +437,12 @@ private fun ConversationListTailState(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Filled.DoneAll,
+            UiSemanticIcon(
+                icon = Icons.Filled.DoneAll,
                 contentDescription = tr("conversations_list_end", "End of list"),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
+                tone = UiIconTone.Primary,
+                size = ChatUiTokens.IconContainerSm,
+                iconSize = ChatUiTokens.IconGlyphSm
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -486,11 +487,12 @@ private fun ConversationListEmptyState(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Filled.Search,
+            UiSemanticIcon(
+                icon = Icons.Filled.Search,
                 contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                tone = UiIconTone.Primary,
+                size = ChatUiTokens.IconContainerSm,
+                iconSize = ChatUiTokens.IconGlyphSm
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -534,9 +536,12 @@ private fun ConversationTopBar(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.weight(1f))
-            CompactIconButton(
+            UiSemanticIcon(
                 icon = Icons.Filled.Add,
                 contentDescription = tr("conversations_quick_new_group", "New group"),
+                tone = UiIconTone.Primary,
+                size = ChatUiTokens.IconContainerSm,
+                iconSize = ChatUiTokens.IconGlyphSm,
                 onClick = onNewGroup
             )
         }
@@ -599,8 +604,6 @@ private fun BottomNavItem(
 ) {
     val tint = if (selected) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant
-    val badgeColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -608,20 +611,14 @@ private fun BottomNavItem(
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(badgeColor),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = tint,
-                modifier = Modifier.size(16.dp)
-            )
-        }
+        UiSemanticIcon(
+            icon = icon,
+            contentDescription = label,
+            tone = if (selected) UiIconTone.Primary else UiIconTone.Neutral,
+            active = selected,
+            size = ChatUiTokens.IconContainerSm,
+            iconSize = ChatUiTokens.IconGlyphSm
+        )
         if (selected) {
             Spacer(modifier = Modifier.height(2.dp))
             Box(
@@ -691,30 +688,6 @@ private fun CompactSearchField(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CompactIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(30.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f))
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(16.dp)
-        )
     }
 }
 
@@ -899,23 +872,15 @@ private fun SwipeActionButton(
 private fun ConversationStatusGlyph(
     icon: ImageVector,
     contentDescription: String,
-    tint: Color,
+    tone: UiIconTone,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .size(18.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(11.dp)
-        )
-    }
+    UiStatusIconBadge(
+        icon = icon,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tone = tone
+    )
 }
 
 @Composable
@@ -948,20 +913,17 @@ private fun ConversationRow(
                 Box {
                     AvatarBadge(initials = item.initials, tint = MaterialTheme.colorScheme.primary)
                     if (item.isGroup) {
-                        Box(
+                        UiSemanticIcon(
+                            icon = Icons.Filled.Group,
+                            contentDescription = tr("conversations_group", "Group"),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(16.dp)
-                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Group,
-                                contentDescription = tr("conversations_group", "Group"),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
+                                .size(16.dp),
+                            tone = UiIconTone.Primary,
+                            size = 16.dp,
+                            cornerRadius = 8.dp,
+                            iconSize = 10.dp
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -1006,39 +968,22 @@ private fun ConversationRow(
                             ConversationStatusGlyph(
                                 icon = Icons.Filled.NotificationsOff,
                                 contentDescription = tr("conversations_muted", "Muted"),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tone = UiIconTone.Neutral
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         if (item.mentionCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.tertiary,
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "@${item.mentionCount}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
-                            }
+                            UiStatusCountBadge(
+                                label = "@${item.mentionCount}",
+                                tone = UiBadgeTone.Warning
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
                         }
                         if (item.unreadCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = if (item.unreadCount > 9) "9+" else item.unreadCount.toString(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
-                            }
+                            UiStatusCountBadge(
+                                label = if (item.unreadCount > 9) "9+" else item.unreadCount.toString(),
+                                tone = UiBadgeTone.Primary
+                            )
                         }
                         if (item.isPinned) {
                             if (hasBadges) {
@@ -1047,7 +992,7 @@ private fun ConversationRow(
                             ConversationStatusGlyph(
                                 icon = Icons.Filled.PushPin,
                                 contentDescription = tr("conversations_pinned", "Pinned"),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tone = UiIconTone.Neutral
                             )
                         }
                     }
@@ -1186,10 +1131,12 @@ private fun ConversationActionRow(
             .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = action.icon,
+        UiSemanticIcon(
+            icon = action.icon,
             contentDescription = action.label,
-            tint = tint
+            tone = if (action.isDestructive) UiIconTone.Danger else UiIconTone.Neutral,
+            size = ChatUiTokens.IconContainerSm,
+            iconSize = ChatUiTokens.IconGlyphSm
         )
         Spacer(modifier = Modifier.width(12.dp))
         Text(
