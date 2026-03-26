@@ -44,12 +44,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -433,7 +433,7 @@ private fun ConversationListTailState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
     ) {
         Column(
             modifier = Modifier
@@ -483,7 +483,7 @@ private fun ConversationListEmptyState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
     ) {
         Column(
             modifier = Modifier
@@ -531,15 +531,15 @@ private fun ConversationTopBar(
             )
         },
         actions = {
-            IconButton(onClick = onNewGroup) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = tr("conversations_quick_new_group", "New group")
-                )
-            }
+            UiToolbarIconButton(
+                icon = Icons.Filled.Add,
+                contentDescription = tr("conversations_quick_new_group", "New group"),
+                tone = UiIconTone.Primary,
+                onClick = onNewGroup
+            )
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -558,43 +558,62 @@ fun ConversationBottomBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
         tonalElevation = 0.dp
     ) {
-        NavigationBarItem(
+        ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Contacts,
             onClick = onContacts,
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.People,
-                    contentDescription = tr("nav_contacts", "Contacts")
-                )
-            },
-            label = { Text(tr("nav_contacts", "Contacts")) }
+            icon = Icons.Filled.People,
+            label = tr("nav_contacts", "Contacts")
         )
-        NavigationBarItem(
+        ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Chats,
             onClick = onChats,
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.ChatBubble,
-                    contentDescription = tr("nav_chats", "Chats")
-                )
-            },
-            label = { Text(tr("nav_chats", "Chats")) }
+            icon = Icons.Filled.ChatBubble,
+            label = tr("nav_chats", "Chats")
         )
-        NavigationBarItem(
+        ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Settings,
             onClick = onSettings,
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.Settings,
-                    contentDescription = tr("nav_settings", "Settings")
-                )
-            },
-            label = { Text(tr("nav_settings", "Settings")) }
+            icon = Icons.Filled.Settings,
+            label = tr("nav_settings", "Settings")
         )
     }
+}
+
+@Composable
+private fun ConversationBottomNavItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: ImageVector,
+    label: String
+) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        icon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(ChatUiTokens.IconGlyphLg)
+            )
+        },
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium
+            )
+        },
+        alwaysShowLabel = false,
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onSurface,
+            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        )
+    )
 }
 
 @Composable
@@ -718,7 +737,7 @@ private fun SwipeRevealConversation(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = revealProgress }
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f))
                 .padding(end = 12.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
@@ -798,11 +817,16 @@ private fun SwipeActionButton(
     ) {
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(ChatUiTokens.IconContainerMd)
                 .background(tint.copy(alpha = 0.1f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(imageVector = icon, contentDescription = label, tint = tint)
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(ChatUiTokens.IconGlyphSm)
+            )
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -825,7 +849,7 @@ private fun ConversationStatusGlyph(
         contentDescription = contentDescription,
         modifier = modifier,
         tone = tone,
-        framed = false
+        framed = true
     )
 }
 

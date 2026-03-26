@@ -75,32 +75,32 @@ private data class UiBadgePalette(
 
 @Composable
 private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
-    val emphasizedAlpha = if (active) 0.14f else 0.06f
+    val emphasizedAlpha = if (active) 0.12f else 0.05f
     return when (tone) {
         UiIconTone.Primary -> UiIconPalette(
             container = MaterialTheme.colorScheme.primary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.primary,
-            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.26f else 0.16f)
+            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.2f else 0.12f)
         )
         UiIconTone.Accent -> UiIconPalette(
             container = MaterialTheme.colorScheme.secondary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.secondary,
-            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.26f else 0.16f)
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.2f else 0.12f)
         )
         UiIconTone.Warning -> UiIconPalette(
             container = MaterialTheme.colorScheme.tertiary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.tertiary,
-            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.26f else 0.16f)
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.2f else 0.12f)
         )
         UiIconTone.Danger -> UiIconPalette(
             container = MaterialTheme.colorScheme.error.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.error,
-            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.26f else 0.16f)
+            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.2f else 0.12f)
         )
         UiIconTone.Neutral -> UiIconPalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.16f else 0.08f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.14f else 0.06f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.26f else 0.16f)
+            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.2f else 0.12f)
         )
     }
 }
@@ -109,29 +109,29 @@ private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
 private fun badgePalette(tone: UiBadgeTone): UiBadgePalette {
     return when (tone) {
         UiBadgeTone.Primary -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+            container = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.primary,
-            border = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+            border = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
         )
         UiBadgeTone.Accent -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+            container = MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.secondary,
-            border = MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f)
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
         )
         UiBadgeTone.Warning -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
+            container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.tertiary,
-            border = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f)
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f)
         )
         UiBadgeTone.Danger -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+            container = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.error,
-            border = MaterialTheme.colorScheme.error.copy(alpha = 0.22f)
+            border = MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
         )
         UiBadgeTone.Neutral -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+            border = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
         )
     }
 }
@@ -198,6 +198,26 @@ fun UiSemanticIcon(
 }
 
 @Composable
+fun UiToolbarIconButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tone: UiIconTone = UiIconTone.Neutral
+) {
+    UiSemanticIcon(
+        icon = icon,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tone = tone,
+        size = ChatUiTokens.IconContainerSm,
+        iconSize = ChatUiTokens.IconGlyphSm,
+        framed = true,
+        onClick = onClick
+    )
+}
+
+@Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text.uppercase(),
@@ -216,7 +236,7 @@ fun SurfaceSectionCard(
     Card(
         shape = RoundedCornerShape(ChatUiTokens.CornerLarge),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
         ),
         border = BorderStroke(1.dp, borderColor),
         modifier = modifier
@@ -224,7 +244,7 @@ fun SurfaceSectionCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(12.dp),
             content = content
         )
     }
@@ -415,8 +435,8 @@ private fun UiBadgeFrame(
                 color = palette.border,
                 shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
             )
-            .defaultMinSize(minHeight = 18.dp)
-            .padding(horizontal = horizontalPadding, vertical = 1.dp),
+            .defaultMinSize(minHeight = 16.dp)
+            .padding(horizontal = horizontalPadding, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         content()

@@ -1318,110 +1318,98 @@ private fun ChatTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
         tonalElevation = 0.dp
     ) {
-        Column(
+        TopAppBar(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp)
-        ) {
-            TopAppBar(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
+                .padding(horizontal = 6.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = status,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = status,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = tr("chat_encrypted", "Encrypted"),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            UiStatusIconBadge(
+                                icon = Icons.Filled.Lock,
+                                contentDescription = tr("chat_encrypted", "Encrypted"),
+                                tone = UiIconTone.Neutral,
+                                framed = true
+                            )
                         }
                     }
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = tr("chat_back", "Back")
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = onSelfClick,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.secondary
-                        )
-                    ) {
-                        AvatarBadge(
-                            initials = selfInitials,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            size = 24.dp
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                }
+            },
+            navigationIcon = {
+                UiToolbarIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = tr("chat_back", "Back"),
+                    onClick = onBack
                 )
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            },
+            actions = {
                 TopBarActionIcon(
                     icon = Icons.Filled.Call,
                     contentDescription = tr("chat_call", "Call"),
+                    tone = UiIconTone.Accent,
                     onClick = onCall
                 )
+                Spacer(modifier = Modifier.width(6.dp))
                 TopBarActionIcon(
                     icon = Icons.Filled.Videocam,
                     contentDescription = tr("chat_video_call", "Video call"),
+                    tone = UiIconTone.Primary,
                     onClick = onVideoCall
                 )
+                Spacer(modifier = Modifier.width(6.dp))
                 TopBarActionIcon(
                     icon = Icons.Filled.Settings,
                     contentDescription = tr("settings_title", "Settings"),
+                    tone = UiIconTone.Neutral,
                     onClick = onSettings
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = onSelfClick,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    AvatarBadge(
+                        initials = selfInitials,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        size = 22.dp
+                    )
+                }
                 if (BuildConfig.DEBUG) {
+                    Spacer(modifier = Modifier.width(6.dp))
                     TopBarActionIcon(
                         icon = Icons.Filled.BugReport,
                         contentDescription = tr("chat_tools", "Tools"),
+                        tone = UiIconTone.Warning,
                         onClick = onTools
                     )
                 }
-            }
-        }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                titleContentColor = MaterialTheme.colorScheme.onSurface
+            )
+        )
     }
 }
 
@@ -1429,24 +1417,17 @@ private fun ChatTopBar(
 private fun TopBarActionIcon(
     icon: ImageVector,
     contentDescription: String,
+    tone: UiIconTone,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    FilledTonalIconButton(
+    UiToolbarIconButton(
+        icon = icon,
+        contentDescription = contentDescription,
+        tone = tone,
         onClick = onClick,
-        modifier = modifier.size(34.dp),
-        shape = RoundedCornerShape(10.dp),
-        colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(18.dp)
-        )
-    }
+        modifier = modifier
+    )
 }
 
 @Composable

@@ -38,7 +38,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -113,28 +112,28 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
             subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.Shield, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.Shield, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.VerifiedUser, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.VerifiedUser, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
             subtitle = tr("settings_privacy_sub", "Visibility, read receipts"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.Visibility, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.Visibility, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.Notifications, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.Notifications, tone = UiIconTone.Accent) },
             trailing = {
                 Switch(
                     checked = notificationsEnabled,
@@ -149,7 +148,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-                icon = { UiSemanticIcon(icon = Icons.Filled.ChatBubble, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
+                icon = { SettingsLeadingIcon(icon = Icons.Filled.ChatBubble, tone = UiIconTone.Primary) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
             )
@@ -158,7 +157,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
-                icon = { UiSemanticIcon(icon = Icons.Filled.Devices, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
+                icon = { SettingsLeadingIcon(icon = Icons.Filled.Devices, tone = UiIconTone.Accent) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
             )
@@ -167,7 +166,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
-                icon = { UiSemanticIcon(icon = Icons.Filled.Settings, contentDescription = null, tone = UiIconTone.Neutral, framed = false) },
+                icon = { SettingsLeadingIcon(icon = Icons.Filled.Settings, tone = UiIconTone.Neutral) },
                 trailing = {
                     Text(
                         text = themeSummary,
@@ -182,7 +181,7 @@ fun SettingsScreen(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
                     subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
-                    icon = { UiSemanticIcon(icon = Icons.Filled.BugReport, contentDescription = null, tone = UiIconTone.Warning, framed = false) },
+                    icon = { SettingsLeadingIcon(icon = Icons.Filled.BugReport, tone = UiIconTone.Warning) },
                     trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
                 )
@@ -193,7 +192,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
             subtitle = tr("settings_heartbeat_sub", "Send a keep-alive ping"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.Schedule, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.Schedule, tone = UiIconTone.Accent) },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
                     Text(tr("settings_run", "Run"))
@@ -203,7 +202,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
             subtitle = tr("settings_relogin_sub", "Refresh session with server"),
-            icon = { UiSemanticIcon(icon = Icons.Filled.Link, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
+            icon = { SettingsLeadingIcon(icon = Icons.Filled.Link, tone = UiIconTone.Primary) },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
                     Text(tr("settings_run", "Run"))
@@ -401,6 +400,20 @@ private data class ThemeModeOption(
 )
 
 @Composable
+private fun SettingsLeadingIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tone: UiIconTone
+) {
+    UiSemanticIcon(
+        icon = icon,
+        contentDescription = null,
+        tone = tone,
+        size = ChatUiTokens.IconContainerSm,
+        iconSize = ChatUiTokens.IconGlyphSm
+    )
+}
+
+@Composable
 private fun LanguageSection(controller: LanguageController) {
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -469,12 +482,11 @@ private fun SettingsTopBar(
             .fillMaxWidth()
             .statusBarsPadding(),
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = tr("settings_back", "Back")
-                )
-            }
+            UiToolbarIconButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = tr("settings_back", "Back"),
+                onClick = onBack
+            )
         },
         title = {
             Text(
@@ -484,7 +496,7 @@ private fun SettingsTopBar(
             )
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -503,7 +515,7 @@ private fun SettingsSection(entries: List<SettingEntry>) {
                             .fillMaxWidth()
                             .padding(horizontal = 6.dp)
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.24f))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                     )
                 }
             }
