@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,8 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -334,15 +334,26 @@ fun UiStatusIconBadge(
     modifier: Modifier = Modifier,
     tone: UiIconTone = UiIconTone.Neutral
 ) {
-    UiSemanticIcon(
-        icon = icon,
-        contentDescription = contentDescription,
+    val badgeTone = when (tone) {
+        UiIconTone.Primary -> UiBadgeTone.Primary
+        UiIconTone.Accent -> UiBadgeTone.Accent
+        UiIconTone.Neutral -> UiBadgeTone.Neutral
+        UiIconTone.Warning -> UiBadgeTone.Warning
+        UiIconTone.Danger -> UiBadgeTone.Danger
+    }
+    val palette = badgePalette(badgeTone)
+    UiBadgeFrame(
         modifier = modifier,
-        tone = tone,
-        size = ChatUiTokens.IconContainerXs,
-        cornerRadius = ChatUiTokens.BadgeCorner,
-        iconSize = ChatUiTokens.IconGlyphXs
-    )
+        palette = palette,
+        horizontalPadding = 4.dp
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = palette.content,
+            modifier = Modifier.size(ChatUiTokens.IconGlyphXs)
+        )
+    }
 }
 
 @Composable
@@ -352,17 +363,9 @@ fun UiStatusCountBadge(
     tone: UiBadgeTone = UiBadgeTone.Primary
 ) {
     val palette = badgePalette(tone)
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(ChatUiTokens.BadgeCorner))
-            .background(palette.container)
-            .border(
-                width = 1.dp,
-                color = palette.border,
-                shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
+    UiBadgeFrame(
+        modifier = modifier,
+        palette = palette
     ) {
         Text(
             text = label,
@@ -374,12 +377,36 @@ fun UiStatusCountBadge(
 }
 
 @Composable
+private fun UiBadgeFrame(
+    modifier: Modifier = Modifier,
+    palette: UiBadgePalette,
+    horizontalPadding: Dp = 6.dp,
+    content: @Composable RowScope.() -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(ChatUiTokens.BadgeCorner))
+            .background(palette.container)
+            .border(
+                width = 1.dp,
+                color = palette.border,
+                shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
+            )
+            .defaultMinSize(minHeight = ChatUiTokens.IconContainerXs)
+            .padding(horizontal = horizontalPadding, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        content()
+    }
+}
+
+@Composable
 fun UiChevron(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     Icon(
-        imageVector = Icons.Filled.ChevronRight,
+        imageVector = MiOwnedIcons.ChevronRight,
         contentDescription = null,
         modifier = modifier.size(18.dp),
         tint = color.copy(alpha = 0.85f)
