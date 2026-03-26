@@ -29,6 +29,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -426,7 +438,7 @@ private fun ConversationListTailState(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             UiSemanticIcon(
-                icon = MiOwnedIcons.CheckDouble,
+                icon = Icons.Filled.DoneAll,
                 contentDescription = tr("conversations_list_end", "End of list"),
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
@@ -476,7 +488,7 @@ private fun ConversationListEmptyState(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             UiSemanticIcon(
-                icon = MiOwnedIcons.Search,
+                icon = Icons.Filled.Search,
                 contentDescription = title,
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
@@ -525,7 +537,7 @@ private fun ConversationTopBar(
             )
             Spacer(modifier = Modifier.weight(1f))
             UiSemanticIcon(
-                icon = MiOwnedIcons.Add,
+                icon = Icons.Filled.Add,
                 contentDescription = tr("conversations_quick_new_group", "New group"),
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
@@ -563,19 +575,19 @@ fun ConversationBottomBar(
         ) {
             BottomNavItem(
                 label = tr("nav_contacts", "Contacts"),
-                icon = MiOwnedIcons.Person,
+                icon = Icons.Filled.People,
                 selected = activeTab == ConversationTab.Contacts,
                 onClick = onContacts
             )
             BottomNavItem(
                 label = tr("nav_chats", "Chats"),
-                icon = MiOwnedIcons.Chat,
+                icon = Icons.Filled.ChatBubble,
                 selected = activeTab == ConversationTab.Chats,
                 onClick = onChats
             )
             BottomNavItem(
                 label = tr("nav_settings", "Settings"),
-                icon = MiOwnedIcons.Settings,
+                icon = Icons.Filled.Settings,
                 selected = activeTab == ConversationTab.Settings,
                 onClick = onSettings
             )
@@ -652,7 +664,7 @@ private fun CompactSearchField(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = MiOwnedIcons.Search,
+                imageVector = Icons.Filled.Search,
                 contentDescription = tr("conversations_search_icon", "Search"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
@@ -769,7 +781,7 @@ private fun SwipeRevealConversation(
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeActionButton(
-                icon = MiOwnedIcons.Pin,
+                icon = Icons.Filled.PushPin,
                 label = if (item.isPinned) {
                     tr("conversations_action_unpin", "Unpin")
                 } else {
@@ -784,7 +796,7 @@ private fun SwipeRevealConversation(
             )
             Spacer(modifier = Modifier.width(8.dp))
             SwipeActionButton(
-                icon = MiOwnedIcons.CheckDouble,
+                icon = Icons.Filled.DoneAll,
                 label = if (item.unreadCount > 0 || item.mentionCount > 0) {
                     tr("conversations_action_read", "Read")
                 } else {
@@ -799,7 +811,7 @@ private fun SwipeRevealConversation(
             )
             Spacer(modifier = Modifier.width(8.dp))
             SwipeActionButton(
-                icon = MiOwnedIcons.Delete,
+                icon = Icons.Filled.Delete,
                 label = tr("conversations_action_delete", "Delete"),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
@@ -905,7 +917,7 @@ private fun ConversationRow(
                     AvatarBadge(initials = item.initials, tint = MaterialTheme.colorScheme.primary)
                     if (item.isGroup) {
                         UiSemanticIcon(
-                            icon = MiOwnedIcons.Group,
+                            icon = Icons.Filled.Group,
                             contentDescription = tr("conversations_group", "Group"),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -958,7 +970,7 @@ private fun ConversationRow(
                         val hasBadges = item.isMuted || item.mentionCount > 0 || item.unreadCount > 0
                         if (item.isMuted) {
                             ConversationStatusGlyph(
-                                icon = MiOwnedIcons.BellOff,
+                                icon = Icons.Filled.NotificationsOff,
                                 contentDescription = tr("conversations_muted", "Muted"),
                                 tone = UiIconTone.Neutral
                             )
@@ -982,7 +994,7 @@ private fun ConversationRow(
                                 Spacer(modifier = Modifier.width(6.dp))
                             }
                             ConversationStatusGlyph(
-                                icon = MiOwnedIcons.Pin,
+                                icon = Icons.Filled.PushPin,
                                 contentDescription = tr("conversations_pinned", "Pinned"),
                                 tone = UiIconTone.Neutral
                             )
@@ -1014,7 +1026,7 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_pin", "Pin")
             },
-            icon = MiOwnedIcons.Pin
+            icon = Icons.Filled.PushPin
         ),
         ConversationAction(
             id = "mute",
@@ -1023,7 +1035,7 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_mute", "Mute")
             },
-            icon = if (item.isMuted) MiOwnedIcons.Bell else MiOwnedIcons.BellOff
+            icon = if (item.isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff
         ),
         ConversationAction(
             id = "read",
@@ -1032,12 +1044,12 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_mark_unread", "Mark unread")
             },
-            icon = MiOwnedIcons.CheckDouble
+            icon = Icons.Filled.DoneAll
         ),
         ConversationAction(
             id = "delete",
             label = tr("conversations_action_delete", "Delete"),
-            icon = MiOwnedIcons.Delete,
+            icon = Icons.Filled.Delete,
             isDestructive = true
         )
     )
