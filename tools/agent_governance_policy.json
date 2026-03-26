@@ -1,6 +1,18 @@
 {
-  "version": 1,
-  "updated_utc": "2026-03-26T00:00:00Z",
+  "version": 2,
+  "updated_utc": "2026-03-26T00:30:00Z",
+  "orchestration": {
+    "model": "pm_only",
+    "pm_role": "pm",
+    "allow_non_pm_orchestrator": false,
+    "delegate_roles": [
+      "architect",
+      "explorer",
+      "worker",
+      "integrator",
+      "reviewer"
+    ]
+  },
   "routing": {
     "pm": "gpt-5.4",
     "architect": "gpt-5.4",
@@ -13,8 +25,23 @@
   "isolation": {
     "level": "strong",
     "fresh_agent_by_default": true,
-    "minimal_context_packet": true,
-    "max_paths_per_task": 3
+    "minimal_context_packet": true
+  },
+  "task_envelope": {
+    "strict": true,
+    "required_fields": [
+      "task_id",
+      "role",
+      "goal",
+      "paths",
+      "commit_required",
+      "context_packet.base_commit"
+    ],
+    "max_paths_per_task": 2,
+    "forbid_wildcard_paths": true,
+    "max_goal_chars": 220,
+    "require_base_commit": true,
+    "require_failure_summary_on_retry": true
   },
   "sla_seconds": {
     "explorer": 90,
@@ -26,27 +53,81 @@
   "warnings": {
     "mode": "consecutive",
     "max_before_recycle": 3,
-    "actions": {
+    "escalation": {
       "1": "warning_1",
       "2": "warning_2",
-      "3": "recycle"
+      "3": "recycle_recommended"
     }
   },
   "invalid_response_rules": {
+    "timeout": {
+      "enabled": true
+    },
+    "no_response": {
+      "enabled": true,
+      "min_non_whitespace_chars": 10
+    },
     "analysis_only": {
       "enabled": true
+    },
+    "lazy_reply": {
+      "enabled": true,
+      "min_chars": 40,
+      "min_marker_hits": 1,
+      "generic_markers": [
+        "not enough context",
+        "need more context",
+        "cannot proceed",
+        "can't proceed",
+        "maybe try",
+        "please clarify",
+        "i will do this next",
+        "next step"
+      ]
+    },
+    "context_pollution": {
+      "enabled": true,
+      "markers": [
+        "as an ai",
+        "language model",
+        "cannot access your local files",
+        "cannot access your repo",
+        "unrelated task",
+        "from another project"
+      ],
+      "min_marker_hits": 1
     },
     "no_commit_hash": {
       "enabled": true,
       "apply_when_commit_required": true
     },
-    "timeout": {
-      "enabled": true
-    },
     "repeated_restatement": {
       "enabled": true,
       "min_chars": 80,
       "similarity_threshold": 0.9
+    }
+  },
+  "quality_scoring": {
+    "enabled": true,
+    "base_score": 100,
+    "min_score": 0,
+    "invalid_penalty": 10,
+    "reason_penalties": {
+      "timeout": 45,
+      "no_response": 40,
+      "context_pollution": 30,
+      "analysis_only": 25,
+      "no_commit_hash": 25,
+      "lazy_reply": 20,
+      "repeated_restatement": 15
+    },
+    "bonuses": {
+      "commit_hash_present_when_required": 10,
+      "changed_files_signal_present": 5
+    },
+    "thresholds": {
+      "pass": 80,
+      "watch": 60
     }
   }
 }
