@@ -516,6 +516,7 @@ private fun ConversationListEmptyState(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationTopBar(
     title: String,
