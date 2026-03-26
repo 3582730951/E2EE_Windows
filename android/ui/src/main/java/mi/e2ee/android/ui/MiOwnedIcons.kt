@@ -21,7 +21,7 @@ private fun miStrokeIcon(name: String, block: PathBuilder.() -> Unit): ImageVect
         path(
             fill = SolidColor(Color.Transparent),
             stroke = SolidColor(Color(0xFF000000)),
-            strokeLineWidth = 1.9f,
+            strokeLineWidth = 2f,
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round,
             strokeLineMiter = 4f,
@@ -44,9 +44,9 @@ object MiOwnedIcons {
 
     val Search: ImageVector by lazy {
         miStrokeIcon("MiSearch") {
-            moveTo(11f, 4f)
-            arcToRelative(7f, 7f, 0f, true, true, 0f, 14f)
-            arcToRelative(7f, 7f, 0f, true, true, 0f, -14f)
+            moveTo(11f, 5f)
+            arcToRelative(6f, 6f, 0f, true, true, 0f, 12f)
+            arcToRelative(6f, 6f, 0f, true, true, 0f, -12f)
             moveTo(16.5f, 16.5f)
             lineTo(20f, 20f)
         }
@@ -64,16 +64,16 @@ object MiOwnedIcons {
 
     val Group: ImageVector by lazy {
         miStrokeIcon("MiGroup") {
-            moveTo(9f, 7f)
-            arcToRelative(2.2f, 2.2f, 0f, true, true, 0f, 4.4f)
-            arcToRelative(2.2f, 2.2f, 0f, true, true, 0f, -4.4f)
-            moveTo(15.7f, 7.8f)
-            arcToRelative(1.8f, 1.8f, 0f, true, true, 0f, 3.6f)
-            arcToRelative(1.8f, 1.8f, 0f, true, true, 0f, -3.6f)
-            moveTo(4.8f, 18.4f)
-            quadTo(9f, 14.7f, 13.3f, 18.4f)
-            moveTo(12.9f, 18.4f)
-            quadTo(15.9f, 15.8f, 19.2f, 18.4f)
+            moveTo(8f, 6f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, 6f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, -6f)
+            moveTo(16f, 6f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, 6f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, -6f)
+            moveTo(4f, 19f)
+            quadTo(4f, 14.5f, 8.5f, 14.5f)
+            lineTo(15.5f, 14.5f)
+            quadTo(20f, 14.5f, 20f, 19f)
         }
     }
 
@@ -81,51 +81,69 @@ object MiOwnedIcons {
         miStrokeIcon("MiChat") {
             moveTo(5f, 6f)
             lineTo(19f, 6f)
-            quadTo(21f, 6f, 21f, 8f)
-            lineTo(21f, 14f)
-            quadTo(21f, 16f, 19f, 16f)
+            quadTo(21f, 6f, 21f, 9f)
+            lineTo(21f, 15f)
+            quadTo(21f, 18f, 18f, 18f)
             lineTo(10f, 16f)
-            lineTo(6f, 19f)
-            lineTo(7f, 16f)
-            lineTo(5f, 16f)
-            quadTo(3f, 16f, 3f, 14f)
-            lineTo(3f, 8f)
-            quadTo(3f, 6f, 5f, 6f)
+            lineTo(6.5f, 21f)
+            lineTo(6.5f, 18f)
+            lineTo(6f, 18f)
+            quadTo(3f, 18f, 3f, 15f)
+            lineTo(3f, 9f)
+            quadTo(3f, 6f, 6f, 6f)
         }
     }
 
     val Settings: ImageVector by lazy {
         miStrokeIcon("MiSettings") {
-            moveTo(12f, 7f)
-            arcToRelative(5f, 5f, 0f, true, true, 0f, 10f)
-            arcToRelative(5f, 5f, 0f, true, true, 0f, -10f)
-            moveTo(12f, 4f)
-            lineTo(12f, 5.5f)
-            moveTo(12f, 18.5f)
-            lineTo(12f, 20f)
-            moveTo(4f, 12f)
-            lineTo(5.5f, 12f)
-            moveTo(18.5f, 12f)
-            lineTo(20f, 12f)
-            moveTo(6.4f, 6.4f)
-            lineTo(7.5f, 7.5f)
-            moveTo(16.5f, 16.5f)
-            lineTo(17.6f, 17.6f)
-            moveTo(16.5f, 7.5f)
-            lineTo(17.6f, 6.4f)
-            moveTo(6.4f, 17.6f)
-            lineTo(7.5f, 16.5f)
+            moveTo(12f, 9f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, 6f)
+            arcToRelative(3f, 3f, 0f, true, true, 0f, -6f)
+            moveTo(19.4f, 15f)
+            quadTo(19f, 16f, 19.8f, 16.8f)
+            quadTo(21f, 18f, 19.8f, 19.2f)
+            quadTo(18.6f, 20.4f, 17.4f, 19.2f)
+            quadTo(16.6f, 18.4f, 15.6f, 18.8f)
+            quadTo(14f, 19.4f, 14f, 20.9f)
+            quadTo(14f, 22f, 12f, 22f)
+            quadTo(10f, 22f, 10f, 20.9f)
+            quadTo(10f, 19.4f, 8.4f, 18.8f)
+            quadTo(7.4f, 18.4f, 6.6f, 19.2f)
+            quadTo(5.4f, 20.4f, 4.2f, 19.2f)
+            quadTo(3f, 18f, 4.2f, 16.8f)
+            quadTo(5f, 16f, 4.6f, 15f)
+            quadTo(4f, 13.4f, 2.5f, 13.4f)
+            quadTo(1f, 13.4f, 1f, 12f)
+            quadTo(1f, 10.6f, 2.5f, 10.6f)
+            quadTo(4f, 10.6f, 4.6f, 9f)
+            quadTo(5f, 8f, 4.2f, 7.2f)
+            quadTo(3f, 6f, 4.2f, 4.8f)
+            quadTo(5.4f, 3.6f, 6.6f, 4.8f)
+            quadTo(7.4f, 5.6f, 8.4f, 5.2f)
+            quadTo(10f, 4.6f, 10f, 3.1f)
+            quadTo(10f, 2f, 12f, 2f)
+            quadTo(14f, 2f, 14f, 3.1f)
+            quadTo(14f, 4.6f, 15.6f, 5.2f)
+            quadTo(16.6f, 5.6f, 17.4f, 4.8f)
+            quadTo(18.6f, 3.6f, 19.8f, 4.8f)
+            quadTo(21f, 6f, 19.8f, 7.2f)
+            quadTo(19f, 8f, 19.4f, 9f)
+            quadTo(20f, 10.6f, 21.5f, 10.6f)
+            quadTo(23f, 10.6f, 23f, 12f)
+            quadTo(23f, 13.4f, 21.5f, 13.4f)
+            quadTo(20f, 13.4f, 19.4f, 15f)
         }
     }
 
     val Bell: ImageVector by lazy {
         miStrokeIcon("MiBell") {
-            moveTo(8f, 16f)
-            lineTo(8f, 11f)
-            quadTo(8f, 6.4f, 12f, 6.4f)
-            quadTo(16f, 6.4f, 16f, 11f)
-            lineTo(16f, 16f)
             moveTo(6f, 16f)
+            quadTo(7.3f, 14.5f, 7.8f, 12.8f)
+            lineTo(7.8f, 9f)
+            quadTo(7.8f, 4.8f, 12f, 4.8f)
+            quadTo(16.2f, 4.8f, 16.2f, 9f)
+            lineTo(16.2f, 12.8f)
+            quadTo(16.7f, 14.5f, 18f, 16f)
             lineTo(18f, 16f)
             moveTo(10f, 18f)
             quadTo(12f, 20f, 14f, 18f)
@@ -134,12 +152,13 @@ object MiOwnedIcons {
 
     val BellOff: ImageVector by lazy {
         miStrokeIcon("MiBellOff") {
-            moveTo(8f, 16f)
-            lineTo(8f, 12.2f)
-            quadTo(8f, 8f, 11.5f, 7.3f)
-            moveTo(16f, 11f)
-            lineTo(16f, 16f)
             moveTo(6f, 16f)
+            quadTo(7.3f, 14.5f, 7.8f, 12.8f)
+            lineTo(7.8f, 9f)
+            quadTo(7.8f, 7.2f, 8.8f, 6.1f)
+            moveTo(16.2f, 11.2f)
+            lineTo(16.2f, 12.8f)
+            quadTo(16.7f, 14.5f, 18f, 16f)
             lineTo(18f, 16f)
             moveTo(10f, 18f)
             quadTo(12f, 20f, 14f, 18f)
@@ -172,31 +191,31 @@ object MiOwnedIcons {
 
     val CheckDouble: ImageVector by lazy {
         miStrokeIcon("MiCheckDouble") {
-            moveTo(4.5f, 12.5f)
-            lineTo(7.5f, 15.5f)
-            lineTo(11.5f, 11.5f)
-            moveTo(10f, 12.5f)
-            lineTo(13f, 15.5f)
-            lineTo(19.5f, 9f)
+            moveTo(3.8f, 12.8f)
+            lineTo(7.2f, 16.2f)
+            lineTo(11.4f, 12f)
+            moveTo(9.2f, 12.8f)
+            lineTo(12.8f, 16.4f)
+            lineTo(20.2f, 9f)
         }
     }
 
     val Delete: ImageVector by lazy {
         miStrokeIcon("MiDelete") {
-            moveTo(8f, 7f)
-            lineTo(16f, 7f)
-            moveTo(10f, 7f)
-            lineTo(10.8f, 5f)
-            lineTo(13.2f, 5f)
-            lineTo(14f, 7f)
-            moveTo(9f, 7f)
-            lineTo(9.8f, 18f)
-            lineTo(14.2f, 18f)
-            lineTo(15f, 7f)
+            moveTo(7f, 6f)
+            lineTo(17f, 6f)
+            moveTo(10f, 6f)
+            lineTo(10.8f, 4.5f)
+            lineTo(13.2f, 4.5f)
+            lineTo(14f, 6f)
+            moveTo(8f, 6f)
+            lineTo(8.8f, 19f)
+            lineTo(15.2f, 19f)
+            lineTo(16f, 6f)
             moveTo(11f, 10f)
-            lineTo(11f, 15f)
+            lineTo(11f, 16f)
             moveTo(13f, 10f)
-            lineTo(13f, 15f)
+            lineTo(13f, 16f)
         }
     }
 
@@ -218,11 +237,11 @@ object MiOwnedIcons {
 
     val ArrowBack: ImageVector by lazy {
         miStrokeIcon("MiArrowBack") {
-            moveTo(14.8f, 6f)
-            lineTo(8.8f, 12f)
-            lineTo(14.8f, 18f)
-            moveTo(9f, 12f)
-            lineTo(19f, 12f)
+            moveTo(19f, 12f)
+            lineTo(7f, 12f)
+            moveTo(11f, 8f)
+            lineTo(7f, 12f)
+            lineTo(11f, 16f)
         }
     }
 
@@ -268,26 +287,19 @@ object MiOwnedIcons {
 
     val Devices: ImageVector by lazy {
         miStrokeIcon("MiDevices") {
-            moveTo(4f, 7f)
-            quadTo(4f, 6f, 5f, 6f)
-            lineTo(10f, 6f)
-            quadTo(11f, 6f, 11f, 7f)
-            lineTo(11f, 17f)
-            quadTo(11f, 18f, 10f, 18f)
-            lineTo(5f, 18f)
-            quadTo(4f, 18f, 4f, 17f)
-            close()
-            moveTo(7.5f, 16.1f)
-            lineTo(7.6f, 16.1f)
-            moveTo(13f, 8f)
-            quadTo(13f, 7f, 14f, 7f)
-            lineTo(19f, 7f)
-            quadTo(20f, 7f, 20f, 8f)
+            moveTo(6f, 5f)
+            lineTo(18f, 5f)
+            quadTo(20f, 5f, 20f, 7f)
             lineTo(20f, 15f)
-            quadTo(20f, 16f, 19f, 16f)
-            lineTo(14f, 16f)
-            quadTo(13f, 16f, 13f, 15f)
-            close()
+            quadTo(20f, 17f, 18f, 17f)
+            lineTo(6f, 17f)
+            quadTo(4f, 17f, 4f, 15f)
+            lineTo(4f, 7f)
+            quadTo(4f, 5f, 6f, 5f)
+            moveTo(12f, 17f)
+            lineTo(12f, 20f)
+            moveTo(9f, 20f)
+            lineTo(15f, 20f)
         }
     }
 
@@ -315,29 +327,29 @@ object MiOwnedIcons {
 
     val Clock: ImageVector by lazy {
         miStrokeIcon("MiClock") {
-            moveTo(12f, 4f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, 16f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, -16f)
-            moveTo(12f, 8f)
-            lineTo(12f, 12f)
-            lineTo(15f, 13.8f)
+            moveTo(12f, 3f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, 18f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, -18f)
+            moveTo(12f, 7f)
+            lineTo(12f, 13f)
+            lineTo(16f, 15f)
         }
     }
 
     val Link: ImageVector by lazy {
         miStrokeIcon("MiLink") {
-            moveTo(8.3f, 14.8f)
-            lineTo(6.4f, 16.7f)
-            quadTo(4.2f, 18.9f, 2.8f, 17.5f)
-            quadTo(1.5f, 16.2f, 3.7f, 13.9f)
-            lineTo(6.3f, 11.3f)
-            quadTo(8.2f, 9.4f, 10f, 10.6f)
-            moveTo(15.7f, 9.2f)
-            lineTo(17.6f, 7.3f)
-            quadTo(19.8f, 5.1f, 21.2f, 6.5f)
-            quadTo(22.5f, 7.8f, 20.3f, 10.1f)
-            lineTo(17.7f, 12.7f)
-            quadTo(15.8f, 14.6f, 14f, 13.4f)
+            moveTo(10f, 14f)
+            lineTo(8.4f, 15.6f)
+            quadTo(6.2f, 17.8f, 4.6f, 16.2f)
+            quadTo(3f, 14.6f, 5.2f, 12.4f)
+            lineTo(7.8f, 9.8f)
+            quadTo(9.7f, 7.9f, 11.5f, 9.1f)
+            moveTo(14f, 10f)
+            lineTo(15.6f, 8.4f)
+            quadTo(17.8f, 6.2f, 19.4f, 7.8f)
+            quadTo(21f, 9.4f, 18.8f, 11.6f)
+            lineTo(16.2f, 14.2f)
+            quadTo(14.3f, 16.1f, 12.5f, 14.9f)
             moveTo(9f, 15f)
             lineTo(15f, 9f)
         }
@@ -345,35 +357,40 @@ object MiOwnedIcons {
 
     val Call: ImageVector by lazy {
         miStrokeIcon("MiCall") {
-            moveTo(7f, 5.7f)
-            quadTo(5f, 8.4f, 7.6f, 13f)
-            quadTo(10.2f, 17.6f, 14.8f, 19.7f)
-            quadTo(17.7f, 21f, 18.9f, 18.2f)
-            lineTo(19.6f, 16.5f)
-            lineTo(15.8f, 14.9f)
-            lineTo(14.5f, 16.7f)
-            quadTo(11.5f, 15.3f, 9.9f, 12.1f)
-            lineTo(11.7f, 10.8f)
-            lineTo(10.1f, 7f)
-            close()
+            moveTo(19.2f, 17.2f)
+            lineTo(19.2f, 19.4f)
+            quadTo(19.2f, 20.8f, 17.8f, 20.8f)
+            quadTo(12.2f, 20.5f, 8.6f, 16.8f)
+            quadTo(4.9f, 13.2f, 4.6f, 7.6f)
+            quadTo(4.6f, 6.2f, 6f, 6.2f)
+            lineTo(8.2f, 6.2f)
+            quadTo(9.4f, 6.2f, 9.8f, 7.3f)
+            quadTo(10.1f, 8.6f, 10.6f, 9.8f)
+            quadTo(10.9f, 10.5f, 10.3f, 11.1f)
+            lineTo(9.2f, 12.2f)
+            quadTo(10.8f, 15.2f, 13.8f, 16.8f)
+            lineTo(14.9f, 15.7f)
+            quadTo(15.5f, 15.1f, 16.2f, 15.4f)
+            quadTo(17.4f, 15.9f, 18.7f, 16.2f)
+            quadTo(19.2f, 16.4f, 19.2f, 17.2f)
         }
     }
 
     val Video: ImageVector by lazy {
         miStrokeIcon("MiVideo") {
-            moveTo(4f, 8f)
-            quadTo(4f, 7f, 5f, 7f)
-            lineTo(13f, 7f)
-            quadTo(14f, 7f, 14f, 8f)
-            lineTo(14f, 16f)
-            quadTo(14f, 17f, 13f, 17f)
-            lineTo(5f, 17f)
-            quadTo(4f, 17f, 4f, 16f)
-            close()
-            moveTo(14f, 11f)
-            lineTo(20f, 8.5f)
-            lineTo(20f, 15.5f)
-            close()
+            moveTo(6f, 7f)
+            lineTo(14f, 7f)
+            quadTo(16f, 7f, 16f, 9f)
+            lineTo(16f, 15f)
+            quadTo(16f, 17f, 14f, 17f)
+            lineTo(6f, 17f)
+            quadTo(4f, 17f, 4f, 15f)
+            lineTo(4f, 9f)
+            quadTo(4f, 7f, 6f, 7f)
+            moveTo(16f, 10f)
+            lineTo(20f, 8f)
+            lineTo(20f, 16f)
+            lineTo(16f, 14f)
         }
     }
 
@@ -396,11 +413,11 @@ object MiOwnedIcons {
 
     val Alert: ImageVector by lazy {
         miStrokeIcon("MiAlert") {
-            moveTo(12f, 4f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, 16f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, -16f)
+            moveTo(12f, 3f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, 18f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, -18f)
             moveTo(12f, 8f)
-            lineTo(12f, 13f)
+            lineTo(12f, 13.5f)
             moveTo(12f, 16.5f)
             lineTo(12.1f, 16.5f)
         }
@@ -450,12 +467,15 @@ object MiOwnedIcons {
 
     val File: ImageVector by lazy {
         miStrokeIcon("MiFile") {
-            moveTo(7f, 4f)
-            lineTo(14f, 4f)
-            lineTo(18f, 8f)
-            lineTo(18f, 20f)
-            lineTo(7f, 20f)
-            close()
+            moveTo(7f, 3f)
+            lineTo(14f, 3f)
+            lineTo(18f, 7f)
+            lineTo(18f, 21f)
+            quadTo(18f, 22f, 17f, 22f)
+            lineTo(7f, 22f)
+            quadTo(6f, 22f, 6f, 21f)
+            lineTo(6f, 4f)
+            quadTo(6f, 3f, 7f, 3f)
             moveTo(14f, 4f)
             lineTo(14f, 8f)
             lineTo(18f, 8f)
@@ -486,42 +506,48 @@ object MiOwnedIcons {
 
     val Photo: ImageVector by lazy {
         miStrokeIcon("MiPhoto") {
-            moveTo(4f, 7f)
-            lineTo(20f, 7f)
+            moveTo(6f, 5f)
+            lineTo(18f, 5f)
+            quadTo(20f, 5f, 20f, 7f)
             lineTo(20f, 17f)
-            lineTo(4f, 17f)
-            close()
-            moveTo(7.5f, 10f)
-            lineTo(7.6f, 10f)
-            moveTo(6.5f, 15f)
-            lineTo(10.5f, 11f)
-            lineTo(13f, 13.5f)
-            lineTo(15f, 11.5f)
-            lineTo(17.5f, 15f)
+            quadTo(20f, 19f, 18f, 19f)
+            lineTo(6f, 19f)
+            quadTo(4f, 19f, 4f, 17f)
+            lineTo(4f, 7f)
+            quadTo(4f, 5f, 6f, 5f)
+            moveTo(8f, 11f)
+            lineTo(10.5f, 13.5f)
+            lineTo(14f, 10f)
+            lineTo(20f, 16f)
+            moveTo(9f, 9f)
+            lineTo(9.1f, 9f)
         }
     }
 
     val Location: ImageVector by lazy {
         miStrokeIcon("MiLocation") {
-            moveTo(12f, 5.5f)
-            arcToRelative(4f, 4f, 0f, true, true, 0f, 8f)
-            arcToRelative(4f, 4f, 0f, true, true, 0f, -8f)
-            moveTo(12f, 13.5f)
-            lineTo(12f, 20f)
+            moveTo(12f, 3f)
+            quadTo(6f, 3f, 6f, 9f)
+            quadTo(6f, 13.8f, 12f, 20f)
+            quadTo(18f, 13.8f, 18f, 9f)
+            quadTo(18f, 3f, 12f, 3f)
+            moveTo(12f, 6.5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
         }
     }
 
     val Emoji: ImageVector by lazy {
         miStrokeIcon("MiEmoji") {
-            moveTo(12f, 4f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, 16f)
-            arcToRelative(8f, 8f, 0f, true, true, 0f, -16f)
-            moveTo(9f, 10f)
-            lineTo(9.1f, 10f)
-            moveTo(15f, 10f)
-            lineTo(15.1f, 10f)
-            moveTo(8.7f, 14f)
-            quadTo(12f, 16.7f, 15.3f, 14f)
+            moveTo(12f, 3f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, 18f)
+            arcToRelative(9f, 9f, 0f, true, true, 0f, -18f)
+            moveTo(9f, 10.5f)
+            lineTo(9.1f, 10.5f)
+            moveTo(15f, 10.5f)
+            lineTo(15.1f, 10.5f)
+            moveTo(8.5f, 14.5f)
+            quadTo(12f, 18f, 15.5f, 14.5f)
         }
     }
 
@@ -557,14 +583,17 @@ object MiOwnedIcons {
 
     val Attach: ImageVector by lazy {
         miStrokeIcon("MiAttach") {
-            moveTo(9f, 12.5f)
-            lineTo(13.8f, 7.7f)
-            quadTo(15.6f, 5.9f, 17.3f, 7.6f)
-            quadTo(19f, 9.3f, 17.2f, 11.1f)
-            lineTo(10.8f, 17.5f)
-            quadTo(8.1f, 20.2f, 5.8f, 17.9f)
-            quadTo(3.6f, 15.7f, 6.3f, 13f)
-            lineTo(12.1f, 7.2f)
+            moveTo(16.5f, 6.5f)
+            lineTo(16.5f, 15.5f)
+            quadTo(16.5f, 20f, 12f, 20f)
+            quadTo(7.5f, 20f, 7.5f, 15.5f)
+            lineTo(7.5f, 5.5f)
+            quadTo(7.5f, 2.5f, 10.5f, 2.5f)
+            quadTo(13.5f, 2.5f, 13.5f, 5.5f)
+            lineTo(13.5f, 14.5f)
+            quadTo(13.5f, 16f, 12f, 16f)
+            quadTo(10.5f, 16f, 10.5f, 14.5f)
+            lineTo(10.5f, 6.5f)
         }
     }
 
@@ -582,21 +611,20 @@ object MiOwnedIcons {
 
     val Mic: ImageVector by lazy {
         miStrokeIcon("MiMic") {
-            moveTo(12f, 6f)
-            quadTo(10f, 6f, 10f, 8f)
-            lineTo(10f, 12f)
-            quadTo(10f, 14f, 12f, 14f)
-            quadTo(14f, 14f, 14f, 12f)
-            lineTo(14f, 8f)
-            quadTo(14f, 6f, 12f, 6f)
-            close()
-            moveTo(8f, 11.5f)
-            quadTo(8f, 16f, 12f, 16f)
-            quadTo(16f, 16f, 16f, 11.5f)
+            moveTo(12f, 4f)
+            quadTo(9f, 4f, 9f, 7f)
+            lineTo(9f, 11f)
+            quadTo(9f, 14f, 12f, 14f)
+            quadTo(15f, 14f, 15f, 11f)
+            lineTo(15f, 7f)
+            quadTo(15f, 4f, 12f, 4f)
+            moveTo(5f, 11f)
+            quadTo(5f, 18f, 12f, 18f)
+            quadTo(19f, 18f, 19f, 11f)
             moveTo(12f, 16f)
-            lineTo(12f, 19f)
-            moveTo(9.5f, 19f)
-            lineTo(14.5f, 19f)
+            lineTo(12f, 21f)
+            moveTo(9f, 21f)
+            lineTo(15f, 21f)
         }
     }
 }

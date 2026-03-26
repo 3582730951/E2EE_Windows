@@ -71,32 +71,32 @@ private data class UiBadgePalette(
 
 @Composable
 private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
-    val emphasizedAlpha = if (active) 0.22f else ChatUiTokens.IconContainerAlpha
+    val emphasizedAlpha = if (active) 0.14f else 0.06f
     return when (tone) {
         UiIconTone.Primary -> UiIconPalette(
             container = MaterialTheme.colorScheme.primary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.primary,
-            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.36f else 0.28f)
+            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.26f else 0.16f)
         )
         UiIconTone.Accent -> UiIconPalette(
             container = MaterialTheme.colorScheme.secondary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.secondary,
-            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.36f else 0.28f)
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.26f else 0.16f)
         )
         UiIconTone.Warning -> UiIconPalette(
             container = MaterialTheme.colorScheme.tertiary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.tertiary,
-            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.36f else 0.28f)
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.26f else 0.16f)
         )
         UiIconTone.Danger -> UiIconPalette(
             container = MaterialTheme.colorScheme.error.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.error,
-            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.36f else 0.28f)
+            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.26f else 0.16f)
         )
         UiIconTone.Neutral -> UiIconPalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.92f else 0.78f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.16f else 0.08f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.48f else 0.34f)
+            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.26f else 0.16f)
         )
     }
 }
@@ -139,16 +139,21 @@ private fun UiIconFrame(
     cornerRadius: Dp,
     containerColor: Color,
     borderColor: Color,
+    framed: Boolean = true,
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val frameModifier = Modifier
+    val baseModifier = Modifier
         .size(size)
         .clip(shape)
-        .background(containerColor)
-        .border(1.dp, borderColor, shape)
-        .let { base -> if (onClick != null) base.clickable { onClick() } else base }
+    val frameModifier = (if (framed) {
+        baseModifier
+            .background(containerColor)
+            .border(1.dp, borderColor, shape)
+    } else {
+        baseModifier
+    }).let { base -> if (onClick != null) base.clickable { onClick() } else base }
     Box(
         modifier = modifier.then(frameModifier),
         contentAlignment = Alignment.Center,
@@ -166,6 +171,7 @@ fun UiSemanticIcon(
     size: Dp = ChatUiTokens.IconContainerMd,
     cornerRadius: Dp = ChatUiTokens.IconCorner,
     iconSize: Dp = ChatUiTokens.IconGlyphMd,
+    framed: Boolean = true,
     onClick: (() -> Unit)? = null
 ) {
     val palette = iconPalette(tone, active)
@@ -175,6 +181,7 @@ fun UiSemanticIcon(
         cornerRadius = cornerRadius,
         containerColor = palette.container,
         borderColor = palette.border,
+        framed = framed,
         onClick = onClick
     ) {
         Icon(
@@ -288,7 +295,8 @@ fun UiTokenIcon(
         size = size,
         cornerRadius = cornerRadius,
         containerColor = containerColor,
-        borderColor = contentColor.copy(alpha = 0.28f)
+        borderColor = contentColor.copy(alpha = 0.28f),
+        framed = true
     ) {
         Text(
             text = label.uppercase(),
@@ -316,7 +324,8 @@ fun UiGlyphIcon(
         size = size,
         cornerRadius = cornerRadius,
         containerColor = containerColor,
-        borderColor = contentColor.copy(alpha = 0.28f)
+        borderColor = contentColor.copy(alpha = 0.28f),
+        framed = true
     ) {
         Icon(
             imageVector = icon,
@@ -332,7 +341,8 @@ fun UiStatusIconBadge(
     icon: ImageVector,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    tone: UiIconTone = UiIconTone.Neutral
+    tone: UiIconTone = UiIconTone.Neutral,
+    framed: Boolean = false
 ) {
     val badgeTone = when (tone) {
         UiIconTone.Primary -> UiBadgeTone.Primary
@@ -342,16 +352,25 @@ fun UiStatusIconBadge(
         UiIconTone.Danger -> UiBadgeTone.Danger
     }
     val palette = badgePalette(badgeTone)
-    UiBadgeFrame(
-        modifier = modifier,
-        palette = palette,
-        horizontalPadding = 4.dp
-    ) {
+    if (framed) {
+        UiBadgeFrame(
+            modifier = modifier,
+            palette = palette,
+            horizontalPadding = 4.dp
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = palette.content,
+                modifier = Modifier.size(ChatUiTokens.IconGlyphXs)
+            )
+        }
+    } else {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = palette.content,
-            modifier = Modifier.size(ChatUiTokens.IconGlyphXs)
+            modifier = modifier.size(ChatUiTokens.IconGlyphSm)
         )
     }
 }
@@ -408,8 +427,8 @@ fun UiChevron(
     Icon(
         imageVector = MiOwnedIcons.ChevronRight,
         contentDescription = null,
-        modifier = modifier.size(18.dp),
-        tint = color.copy(alpha = 0.85f)
+        modifier = modifier.size(16.dp),
+        tint = color.copy(alpha = 0.92f)
     )
 }
 

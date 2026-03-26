@@ -86,28 +86,28 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
             subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.Shield, contentDescription = null, tone = UiIconTone.Primary) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.Shield, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.ShieldCheck, contentDescription = null, tone = UiIconTone.Primary) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.ShieldCheck, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
             subtitle = tr("settings_privacy_sub", "Visibility, read receipts"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.Eye, contentDescription = null, tone = UiIconTone.Primary) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.Eye, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.Bell, contentDescription = null, tone = UiIconTone.Accent) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.Bell, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
             trailing = {
                 Switch(
                     checked = notificationsEnabled,
@@ -122,7 +122,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-                icon = { UiSemanticIcon(icon = MiOwnedIcons.Chat, contentDescription = null, tone = UiIconTone.Primary) },
+                icon = { UiSemanticIcon(icon = MiOwnedIcons.Chat, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
             )
@@ -131,7 +131,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
-                icon = { UiSemanticIcon(icon = MiOwnedIcons.Devices, contentDescription = null, tone = UiIconTone.Accent) },
+                icon = { UiSemanticIcon(icon = MiOwnedIcons.Devices, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
             )
@@ -140,7 +140,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
-                icon = { UiSemanticIcon(icon = MiOwnedIcons.Settings, contentDescription = null, tone = UiIconTone.Neutral) },
+                icon = { UiSemanticIcon(icon = MiOwnedIcons.Settings, contentDescription = null, tone = UiIconTone.Neutral, framed = false) },
                 trailing = {
                     Text(
                         text = themeSummary,
@@ -155,7 +155,7 @@ fun SettingsScreen(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
                     subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
-                    icon = { UiSemanticIcon(icon = MiOwnedIcons.Bug, contentDescription = null, tone = UiIconTone.Warning) },
+                    icon = { UiSemanticIcon(icon = MiOwnedIcons.Bug, contentDescription = null, tone = UiIconTone.Warning, framed = false) },
                     trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
                 )
@@ -166,7 +166,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
             subtitle = tr("settings_heartbeat_sub", "Send a keep-alive ping"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.Clock, contentDescription = null, tone = UiIconTone.Accent) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.Clock, contentDescription = null, tone = UiIconTone.Accent, framed = false) },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
                     Text(tr("settings_run", "Run"))
@@ -176,7 +176,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
             subtitle = tr("settings_relogin_sub", "Refresh session with server"),
-            icon = { UiSemanticIcon(icon = MiOwnedIcons.Link, contentDescription = null, tone = UiIconTone.Primary) },
+            icon = { UiSemanticIcon(icon = MiOwnedIcons.Link, contentDescription = null, tone = UiIconTone.Primary, framed = false) },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
                     Text(tr("settings_run", "Run"))
@@ -269,7 +269,8 @@ private fun SettingsHeader(
                 contentDescription = tr("settings_user_placeholder", "MI User"),
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerLg,
-                iconSize = ChatUiTokens.IconGlyphLg
+                iconSize = ChatUiTokens.IconGlyphLg,
+                framed = false
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -318,7 +319,8 @@ private fun ThemeModeSection(
                 UiSemanticIcon(
                     icon = MiOwnedIcons.Settings,
                     contentDescription = tr("settings_theme_mode", "Theme mode"),
-                    tone = UiIconTone.Neutral
+                    tone = UiIconTone.Neutral,
+                    framed = false
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -372,7 +374,8 @@ private fun LanguageSection(controller: LanguageController) {
                 UiSemanticIcon(
                     icon = MiOwnedIcons.Chat,
                     contentDescription = tr("settings_language", "Language"),
-                    tone = UiIconTone.Primary
+                    tone = UiIconTone.Primary,
+                    framed = false
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -440,6 +443,7 @@ private fun SettingsTopBar(
                 tone = UiIconTone.Neutral,
                 size = ChatUiTokens.IconContainerSm,
                 iconSize = ChatUiTokens.IconGlyphSm,
+                framed = false,
                 onClick = onBack
             )
             Spacer(modifier = Modifier.width(10.dp))

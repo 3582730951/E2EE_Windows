@@ -530,6 +530,7 @@ private fun ConversationTopBar(
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
                 iconSize = ChatUiTokens.IconGlyphSm,
+                framed = false,
                 onClick = onNewGroup
             )
         }
@@ -605,7 +606,8 @@ private fun BottomNavItem(
             tone = if (selected) UiIconTone.Primary else UiIconTone.Neutral,
             active = selected,
             size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm
+            iconSize = ChatUiTokens.IconGlyphSm,
+            framed = false
         )
         if (selected) {
             Spacer(modifier = Modifier.height(2.dp))
@@ -867,7 +869,8 @@ private fun ConversationStatusGlyph(
         icon = icon,
         contentDescription = contentDescription,
         modifier = modifier,
-        tone = tone
+        tone = tone,
+        framed = false
     )
 }
 
@@ -910,7 +913,8 @@ private fun ConversationRow(
                             tone = UiIconTone.Primary,
                             size = 16.dp,
                             cornerRadius = 8.dp,
-                            iconSize = 10.dp
+                            iconSize = 10.dp,
+                            framed = false
                         )
                     }
                 }
@@ -1124,7 +1128,8 @@ private fun ConversationActionRow(
             contentDescription = action.label,
             tone = if (action.isDestructive) UiIconTone.Danger else UiIconTone.Neutral,
             size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm
+            iconSize = ChatUiTokens.IconGlyphSm,
+            framed = false
         )
         Spacer(modifier = Modifier.width(12.dp))
         Text(

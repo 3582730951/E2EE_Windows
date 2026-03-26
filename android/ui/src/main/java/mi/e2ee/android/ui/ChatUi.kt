@@ -1383,6 +1383,7 @@ private fun CompactTopBarIconButton(
         size = buttonSize,
         cornerRadius = ChatUiTokens.IconCorner,
         iconSize = iconSize,
+        framed = false,
         onClick = onClick
     )
 }
