@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "updated_utc": "2026-03-26T00:00:00Z",
+  "routing": {
+    "pm": "gpt-5.4",
+    "architect": "gpt-5.4",
+    "explorer": "gpt-5.4",
+    "worker": "gpt-5.3-codex",
+    "integrator": "gpt-5.3-codex",
+    "reviewer": "gpt-5.4",
+    "fallback_worker": "gpt-5.1-codex-mini"
+  },
+  "isolation": {
+    "level": "strong",
+    "fresh_agent_by_default": true,
+    "minimal_context_packet": true,
+    "max_paths_per_task": 3
+  },
+  "sla_seconds": {
+    "explorer": 90,
+    "reviewer": 90,
+    "worker": 180,
+    "integrator": 120,
+    "default": 120
+  },
+  "warnings": {
+    "mode": "consecutive",
+    "max_before_recycle": 3,
+    "actions": {
+      "1": "warning_1",
+      "2": "warning_2",
+      "3": "recycle"
+    }
+  },
+  "invalid_response_rules": {
+    "analysis_only": {
+      "enabled": true
+    },
+    "no_commit_hash": {
+      "enabled": true,
+      "apply_when_commit_required": true
+    },
+    "timeout": {
+      "enabled": true
+    },
+    "repeated_restatement": {
+      "enabled": true,
+      "min_chars": 80,
+      "similarity_threshold": 0.9
+    }
+  }
+}
