@@ -81,13 +81,11 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilledTonalIconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -1374,7 +1372,7 @@ private fun ChatTopBar(
                 actions = {
                     FilledTonalIconButton(
                         onClick = onSelfClick,
-                        colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
                         )
                     ) {
@@ -2876,7 +2874,7 @@ private fun ActionIconButton(
         modifier = modifier
             .heightIn(min = 44.dp),
         shape = RoundedCornerShape(14.dp),
-        colors = FilledTonalButtonDefaults.filledTonalButtonColors(
+        colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
             contentColor = if (action.isDestructive) {
                 MaterialTheme.colorScheme.error
@@ -3119,7 +3117,7 @@ fun ComposerBar(
             Row(verticalAlignment = Alignment.Bottom) {
                 FilledTonalIconButton(
                     onClick = { showQuickActions = !showQuickActions },
-                    colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
                         containerColor = if (showQuickActions) {
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                         } else {
@@ -3160,7 +3158,7 @@ fun ComposerBar(
                 if (message.isNotBlank()) {
                     FilledIconButton(
                         onClick = onSend,
-                        colors = FilledIconButtonDefaults.filledIconButtonColors(
+                        colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
@@ -3173,7 +3171,7 @@ fun ComposerBar(
                 } else {
                     FilledTonalIconButton(
                         onClick = {},
-                        colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
