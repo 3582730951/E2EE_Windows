@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Link
@@ -31,12 +34,20 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -348,27 +359,30 @@ private fun ThemeModeSection(
                 UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Primary)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
-            Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
+            ) {
                 options.forEach { option ->
                     val selected = option.mode == mode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { onModeChange(option.mode) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = option.label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onModeChange(option.mode) },
+                        label = { Text(option.label) },
+                        leadingIcon = if (selected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                    )
                 }
             }
         }
@@ -403,27 +417,30 @@ private fun LanguageSection(controller: LanguageController) {
                 UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Primary)
             }
             Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
-            Row(horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
+            ) {
                 controller.packs.forEach { pack ->
                     val selected = pack.code == controller.current.code
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { controller.setLanguage(pack.code) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = pack.label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    FilterChip(
+                        selected = selected,
+                        onClick = { controller.setLanguage(pack.code) },
+                        label = { Text(pack.label) },
+                        leadingIcon = if (selected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                    )
                 }
             }
         }
@@ -436,38 +453,31 @@ private fun SettingsTopBar(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    TopAppBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 2.dp,
-        shadowElevation = 6.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            UiSemanticIcon(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = tr("settings_back", "Back"),
-                tone = UiIconTone.Neutral,
-                size = ChatUiTokens.IconContainerSm,
-                iconSize = ChatUiTokens.IconGlyphSm,
-                framed = false,
-                onClick = onBack
-            )
-            Spacer(modifier = Modifier.width(10.dp))
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = tr("settings_back", "Back")
+                )
+            }
+        },
+        title = {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-        }
-    }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    )
 }
 
 @Composable
@@ -497,25 +507,25 @@ private fun SettingsRow(entry: SettingEntry) {
     } else {
         Modifier
     }
-    Row(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .then(clickableModifier)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        entry.icon()
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+            .clip(RoundedCornerShape(12.dp)),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = entry.icon,
+        trailingContent = entry.trailing,
+        headlineContent = {
             Text(text = entry.title, style = MaterialTheme.typography.bodyLarge)
+        },
+        supportingContent = {
             Text(
                 text = entry.subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        entry.trailing()
-    }
+    )
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)

@@ -29,6 +29,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -467,26 +469,25 @@ fun StatusDot(color: Color, size: Dp = 8.dp) {
 
 @Composable
 fun LabeledChip(label: String, tint: Color, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(ChatUiTokens.BadgeCorner))
-            .background(tint.copy(alpha = 0.15f))
-            .border(
-                width = 1.dp,
-                color = tint.copy(alpha = 0.32f),
-                shape = RoundedCornerShape(ChatUiTokens.BadgeCorner)
+    SuggestionChip(
+        onClick = {},
+        modifier = modifier,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall
             )
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        StatusDot(color = tint, size = 5.dp)
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = tint
+        },
+        icon = {
+            StatusDot(color = tint, size = 6.dp)
+        },
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.32f)),
+        colors = SuggestionChipDefaults.suggestionChipColors(
+            containerColor = tint.copy(alpha = 0.15f),
+            labelColor = tint,
+            iconContentColor = tint
         )
-    }
+    )
 }
 
 @Composable

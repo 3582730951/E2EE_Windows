@@ -36,13 +36,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -78,17 +79,32 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledIconButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalButtonDefaults
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilledTonalIconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
@@ -107,7 +123,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -1303,95 +1318,107 @@ private fun ChatTopBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .shadow(8.dp, RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)),
+            .statusBarsPadding(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
         tonalElevation = 2.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(bottom = 8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactTopBarIconButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = tr("chat_back", "Back"),
-                    onClick = onBack
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            TopAppBar(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = status,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                UiStatusCountBadge(
+                                    label = tr("chat_encrypted", "Encrypted"),
+                                    tone = UiBadgeTone.Primary
+                                )
+                            }
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBack,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        UiStatusCountBadge(
-                            label = tr("chat_encrypted", "Encrypted"),
-                            tone = UiBadgeTone.Primary
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("chat_back", "Back")
                         )
                     }
-                }
-                Box(modifier = Modifier.clickable { onSelfClick() }) {
-                    AvatarBadge(
-                        initials = selfInitials,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        size = 24.dp
-                    )
-                }
-            }
+                },
+                actions = {
+                    FilledTonalIconButton(
+                        onClick = onSelfClick,
+                        colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+                        )
+                    ) {
+                        AvatarBadge(
+                            initials = selfInitials,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            size = 22.dp
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
 
-            Spacer(modifier = Modifier.height(6.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 50.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CompactTopBarIconButton(
+                TopBarAssistActionChip(
                     icon = Icons.Filled.Call,
-                    contentDescription = tr("chat_call", "Call"),
+                    label = tr("chat_call", "Call"),
                     onClick = onCall
                 )
-                CompactTopBarIconButton(
+                TopBarAssistActionChip(
                     icon = Icons.Filled.Videocam,
-                    contentDescription = tr("chat_video_call", "Video call"),
+                    label = tr("chat_video_call", "Video call"),
                     onClick = onVideoCall
                 )
-                Spacer(modifier = Modifier.width(4.dp))
                 if (BuildConfig.DEBUG) {
-                    CompactTopBarIconButton(
+                    TopBarAssistActionChip(
                         icon = Icons.Filled.BugReport,
-                        contentDescription = tr("chat_tools", "Tools"),
-                        onClick = onTools,
-                        buttonSize = 28.dp,
-                        iconSize = 13.dp
+                        label = tr("chat_tools", "Tools"),
+                        onClick = onTools
                     )
                 }
-                CompactTopBarIconButton(
+                TopBarAssistActionChip(
                     icon = Icons.Filled.Settings,
-                    contentDescription = tr("settings_title", "Settings"),
-                    onClick = onSettings,
-                    buttonSize = 28.dp,
-                    iconSize = 13.dp
+                    label = tr("settings_title", "Settings"),
+                    onClick = onSettings
                 )
             }
         }
@@ -1399,24 +1426,34 @@ private fun ChatTopBar(
 }
 
 @Composable
-private fun CompactTopBarIconButton(
+private fun TopBarAssistActionChip(
     icon: ImageVector,
-    contentDescription: String,
+    label: String,
     onClick: () -> Unit,
-    buttonSize: androidx.compose.ui.unit.Dp = 30.dp,
-    iconSize: androidx.compose.ui.unit.Dp = 15.dp,
     modifier: Modifier = Modifier
 ) {
-    UiSemanticIcon(
-        icon = icon,
-        contentDescription = contentDescription,
+    AssistChip(
+        onClick = onClick,
         modifier = modifier,
-        tone = UiIconTone.Neutral,
-        size = buttonSize,
-        cornerRadius = ChatUiTokens.IconCorner,
-        iconSize = iconSize,
-        framed = false,
-        onClick = onClick
+        shape = RoundedCornerShape(12.dp),
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(18.dp)
+            )
+        },
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     )
 }
 
@@ -2743,20 +2780,15 @@ private fun ReactionPickerRow() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         reactions.forEach { reaction ->
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(MaterialTheme.colorScheme.surface, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = reaction, fontSize = 16.sp)
-            }
+            SuggestionChip(
+                onClick = {},
+                label = { Text(text = reaction, fontSize = 16.sp) },
+                shape = RoundedCornerShape(14.dp)
+            )
         }
     }
 }
@@ -2839,32 +2871,30 @@ private fun ActionIconButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Column(
+    FilledTonalButton(
+        onClick = onClick,
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally
+            .heightIn(min = 44.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = FilledTonalButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            contentColor = if (action.isDestructive) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+        )
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = action.icon,
-                contentDescription = action.label,
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
+        Icon(
+            imageVector = action.icon,
+            contentDescription = action.label,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = action.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1
         )
     }
 }
@@ -2873,26 +2903,27 @@ private fun ActionIconButton(
 private fun ActionRow(action: MessageAction, onClick: () -> Unit) {
     val tint = if (action.isDestructive) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.onSurface
-    Row(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = action.icon,
-            contentDescription = action.label,
-            tint = tint
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = action.label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = tint
-        )
-    }
+            .clickable { onClick() },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = action.label,
+                tint = tint
+            )
+        },
+        headlineContent = {
+            Text(
+                text = action.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = tint
+            )
+        }
+    )
 }
 
 @Composable
@@ -3038,40 +3069,42 @@ fun ComposerBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .imePadding()
-            .shadow(14.dp, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)),
+            .imePadding(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         tonalElevation = 3.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
             if (showQuickActions) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     QuickActionButton(
                         icon = Icons.Filled.Photo,
                         label = tr("chat_quick_photo", "Photo"),
-                        modifier = Modifier.width(64.dp),
                         onClick = onAttachPhoto
                     )
                     QuickActionButton(
                         icon = Icons.Filled.InsertDriveFile,
                         label = tr("chat_quick_file", "File"),
-                        modifier = Modifier.width(64.dp),
                         onClick = onAttachFile
                     )
                     QuickActionButton(
                         icon = Icons.Filled.LocationOn,
                         label = tr("chat_quick_location", "Location"),
-                        modifier = Modifier.width(64.dp),
                         onClick = onAttachLocation
                     )
                     QuickActionButton(
                         icon = Icons.Filled.PersonAdd,
                         label = tr("chat_quick_contact", "Contact"),
-                        modifier = Modifier.width(64.dp),
                         onClick = onAttachContact
+                    )
+                    QuickActionButton(
+                        icon = Icons.Filled.EmojiEmotions,
+                        label = tr("chat_quick_sticker", "Sticker"),
+                        onClick = onAttachSticker
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -3084,18 +3117,33 @@ fun ComposerBar(
                 Spacer(modifier = Modifier.height(8.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
-                CircleIconButton(
-                    icon = Icons.Filled.AttachFile,
-                    contentDescription = tr("chat_attach", "Attach"),
-                    active = showQuickActions,
-                    onClick = { showQuickActions = !showQuickActions }
-                )
+                FilledTonalIconButton(
+                    onClick = { showQuickActions = !showQuickActions },
+                    colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = if (showQuickActions) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        contentColor = if (showQuickActions) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AttachFile,
+                        contentDescription = tr("chat_attach", "Attach")
+                    )
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 CompactMessageField(
                     value = message,
                     onValueChange = onMessageChange,
                     placeholder = tr("chat_placeholder", "Write a message..."),
                     modifier = Modifier.weight(1f),
+                    onEmoji = onEmoji,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Send
@@ -3109,22 +3157,33 @@ fun ComposerBar(
                     )
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                CircleIconButton(
-                    icon = Icons.Filled.EmojiEmotions,
-                    contentDescription = tr("chat_emoji", "Emoji"),
-                    onClick = onEmoji
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                CircleActionButton(
-                    icon = if (message.isNotBlank()) Icons.Filled.Send else Icons.Filled.Mic,
-                    contentDescription = tr("chat_send", "Send"),
-                    active = message.isNotBlank(),
-                    onClick = {
-                        if (message.isNotBlank()) {
-                            onSend()
-                        }
+                if (message.isNotBlank()) {
+                    FilledIconButton(
+                        onClick = onSend,
+                        colors = FilledIconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Send,
+                            contentDescription = tr("chat_send", "Send")
+                        )
                     }
-                )
+                } else {
+                    FilledTonalIconButton(
+                        onClick = {},
+                        colors = FilledTonalIconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Mic,
+                            contentDescription = tr("chat_voice", "Voice input")
+                        )
+                    }
+                }
             }
         }
     }
@@ -3136,43 +3195,42 @@ private fun CompactMessageField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    onEmoji: () -> Unit,
     keyboardOptions: KeyboardOptions,
     keyboardActions: KeyboardActions
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 40.dp, max = 120.dp)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.TopStart
-        ) {
-            if (value.isBlank()) {
-                Text(
-                    text = placeholder,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.heightIn(min = 56.dp, max = 132.dp),
+        placeholder = {
+            Text(
+                text = placeholder,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        textStyle = MaterialTheme.typography.bodyMedium,
+        singleLine = false,
+        minLines = 1,
+        maxLines = 4,
+        trailingIcon = {
+            IconButton(onClick = onEmoji) {
+                Icon(
+                    imageVector = Icons.Filled.EmojiEmotions,
+                    contentDescription = tr("chat_emoji", "Emoji")
                 )
             }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = false,
-                maxLines = 4,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = keyboardOptions,
-                keyboardActions = keyboardActions,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
+        },
+        shape = RoundedCornerShape(18.dp),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+        )
+    )
 }
 
 @Composable
@@ -3182,108 +3240,29 @@ private fun QuickActionButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
-    Column(
+    AssistChip(
+        onClick = onClick,
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { onClick() }
-                .padding(vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
+        shape = RoundedCornerShape(12.dp),
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(18.dp)
+            )
+        },
+        label = {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium
             )
-        }
-    }
-}
-
-@Composable
-private fun CircleIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    active: Boolean = false,
-    onClick: (() -> Unit)? = null
-) {
-    val background = if (active) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val tint = if (active) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val baseModifier = Modifier
-        .size(32.dp)
-        .clip(CircleShape)
-        .background(background)
-    val buttonModifier = if (onClick != null) {
-        baseModifier.clickable { onClick() }
-    } else {
-        baseModifier
-    }
-    Box(
-        modifier = buttonModifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(18.dp)
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            labelColor = MaterialTheme.colorScheme.onSurface,
+            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-@Composable
-private fun CircleActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    active: Boolean,
-    onClick: () -> Unit
-) {
-    val buttonColor = if (active) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(buttonColor)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = contentColor,
-            modifier = Modifier.size(18.dp)
-        )
-    }
+    )
 }
 
 @Composable

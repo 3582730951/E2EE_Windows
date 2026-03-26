@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,10 +44,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,10 +67,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -516,37 +522,28 @@ private fun ConversationTopBar(
     onNewGroup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(6.dp, RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    TopAppBar(
+        modifier = modifier.fillMaxWidth(),
+        title = {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleLarge
             )
-            Spacer(modifier = Modifier.weight(1f))
-            UiSemanticIcon(
-                icon = Icons.Filled.Add,
-                contentDescription = tr("conversations_quick_new_group", "New group"),
-                tone = UiIconTone.Primary,
-                size = ChatUiTokens.IconContainerSm,
-                iconSize = ChatUiTokens.IconGlyphSm,
-                framed = false,
-                onClick = onNewGroup
-            )
-        }
-    }
+        },
+        actions = {
+            IconButton(onClick = onNewGroup) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = tr("conversations_quick_new_group", "New group")
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    )
 }
 
 @Composable
@@ -557,88 +554,45 @@ fun ConversationBottomBar(
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    NavigationBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        tonalElevation = 3.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(58.dp)
-                .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            BottomNavItem(
-                label = tr("nav_contacts", "Contacts"),
-                icon = Icons.Filled.People,
-                selected = activeTab == ConversationTab.Contacts,
-                onClick = onContacts
-            )
-            BottomNavItem(
-                label = tr("nav_chats", "Chats"),
-                icon = Icons.Filled.ChatBubble,
-                selected = activeTab == ConversationTab.Chats,
-                onClick = onChats
-            )
-            BottomNavItem(
-                label = tr("nav_settings", "Settings"),
-                icon = Icons.Filled.Settings,
-                selected = activeTab == ConversationTab.Settings,
-                onClick = onSettings
-            )
-        }
-    }
-}
-
-@Composable
-private fun BottomNavItem(
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val tint = if (selected) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        UiSemanticIcon(
-            icon = icon,
-            contentDescription = label,
-            tone = if (selected) UiIconTone.Primary else UiIconTone.Neutral,
-            active = selected,
-            size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm,
-            framed = false
+        NavigationBarItem(
+            selected = activeTab == ConversationTab.Contacts,
+            onClick = onContacts,
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.People,
+                    contentDescription = tr("nav_contacts", "Contacts")
+                )
+            },
+            label = { Text(tr("nav_contacts", "Contacts")) }
         )
-        if (selected) {
-            Spacer(modifier = Modifier.height(2.dp))
-            Box(
-                modifier = Modifier
-                    .width(14.dp)
-                    .height(2.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(2.dp)
-                    )
-            )
-        } else {
-            Spacer(modifier = Modifier.height(4.dp))
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = tint
+        NavigationBarItem(
+            selected = activeTab == ConversationTab.Chats,
+            onClick = onChats,
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.ChatBubble,
+                    contentDescription = tr("nav_chats", "Chats")
+                )
+            },
+            label = { Text(tr("nav_chats", "Chats")) }
+        )
+        NavigationBarItem(
+            selected = activeTab == ConversationTab.Settings,
+            onClick = onSettings,
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = tr("nav_settings", "Settings")
+                )
+            },
+            label = { Text(tr("nav_settings", "Settings")) }
         )
     }
 }
@@ -651,46 +605,31 @@ private fun CompactSearchField(
     height: Dp,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
         modifier = modifier.height(height),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(height)
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        placeholder = {
+            Text(
+                text = placeholder,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        leadingIcon = {
             Icon(
                 imageVector = Icons.Filled.Search,
-                contentDescription = tr("conversations_search_icon", "Search"),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
+                contentDescription = tr("conversations_search_icon", "Search")
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(modifier = Modifier.weight(1f)) {
-                if (value.isBlank()) {
-                    Text(
-                        text = placeholder,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
+        },
+        shape = RoundedCornerShape(16.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+        )
+    )
 }
 
 private fun conversationPriority(item: ConversationPreview): Int {
@@ -1127,29 +1066,27 @@ private fun ConversationActionRow(
 ) {
     val tint = if (action.isDestructive) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.onSurface
-    Row(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        UiSemanticIcon(
-            icon = action.icon,
-            contentDescription = action.label,
-            tone = if (action.isDestructive) UiIconTone.Danger else UiIconTone.Neutral,
-            size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm,
-            framed = false
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = action.label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = tint
-        )
-    }
+            .clickable { onClick() },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = action.label,
+                tint = tint
+            )
+        },
+        headlineContent = {
+            Text(
+                text = action.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = tint
+            )
+        }
+    )
 }
 
 @Composable
