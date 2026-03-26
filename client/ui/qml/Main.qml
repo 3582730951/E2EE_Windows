@@ -13,8 +13,8 @@ ApplicationWindow {
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property bool authReady: authLoader.active && authLoader.status === Loader.Ready
     property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
-    property int authWidth: 1120
-    property int authHeight: 792
+    property int authWidth: 1024
+    property int authHeight: 728
 
     width: authMode ? authWidth : 1200
     height: authMode ? authHeight : 760
@@ -362,9 +362,111 @@ ApplicationWindow {
         layer.enabled: !(smokeMode && authMode)
         layer.smooth: true
 
+        Rectangle {
+            id: authTitleBar
+            visible: authMode
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Ui.Style.authWindowTitleBarHeight
+            color: Ui.Style.authTitleBarBg
+
+            DragHandler {
+                id: authDrag
+                target: null
+                acceptedButtons: Qt.LeftButton
+                grabPermissions: PointerHandler.CanTakeOverFromItems
+                property bool manualDrag: false
+                property point windowPos: Qt.point(0, 0)
+
+                onActiveChanged: {
+                    if (!active) {
+                        manualDrag = false
+                        return
+                    }
+                    manualDrag = true
+                    if (root.startSystemMove && root.startSystemMove()) {
+                        manualDrag = false
+                    } else {
+                        windowPos = Qt.point(root.x, root.y)
+                    }
+                }
+
+                onTranslationChanged: {
+                    if (!manualDrag) {
+                        return
+                    }
+                    root.x = windowPos.x + translation.x
+                    root.y = windowPos.y + translation.y
+                }
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Ui.Style.paddingM
+                anchors.rightMargin: 6
+                anchors.topMargin: 2
+                anchors.bottomMargin: 2
+                spacing: Ui.Style.paddingS
+
+                Label {
+                    text: Ui.I18n.t("app.title")
+                    color: Ui.Style.authTitleBarText
+                    font.pixelSize: Ui.Style.authWindowTitleTextSize
+                    font.weight: Font.Medium
+                }
+
+                Item { Layout.fillWidth: true }
+
+                ToolButton {
+                    id: authCloseButton
+                    hoverEnabled: true
+                    implicitWidth: 28
+                    implicitHeight: 20
+                    onClicked: root.close()
+                    background: Rectangle {
+                        radius: 6
+                        color: authCloseButton.down ? Ui.Style.pressedBg
+                                                    : (authCloseButton.hovered ? Ui.Style.hoverBg : "transparent")
+                    }
+                    contentItem: Item {
+                        width: 12
+                        height: 12
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 2
+                            radius: 1
+                            rotation: 45
+                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                        }
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 2
+                            radius: 1
+                            rotation: -45
+                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Ui.Style.authTitleBarBorder
+            }
+        }
+
         Item {
             id: rootStack
-            anchors.fill: parent
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.top: authMode ? authTitleBar.bottom : parent.top
             Loader {
                 id: authLoader
                 anchors.fill: parent

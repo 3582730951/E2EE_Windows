@@ -21,11 +21,6 @@ Item {
     property bool waitingServerTrust: false
     property bool qrActive: false
     property bool advancedLoginExpanded: false
-    readonly property color loginLabelColor: Qt.rgba(0.95, 0.97, 1.0, 0.99)
-    readonly property color loginPlaceholderColor: Qt.rgba(0.88, 0.93, 1.0, 0.96)
-    readonly property color loginFieldBorder: Qt.rgba(0.78, 0.86, 0.97, 0.74)
-    readonly property color loginFieldBackground: Qt.rgba(0.08, 0.12, 0.18, 0.99)
-    readonly property int authContentMaxWidth: 640
 
     signal authSucceeded()
 
@@ -149,62 +144,36 @@ Item {
     Rectangle {
         id: loginShell
         anchors.fill: parent
-        radius: 18
-        color: Qt.rgba(0.11, 0.14, 0.19, 0.89)
-        border.color: Qt.rgba(1, 1, 1, 0.08)
+        radius: Ui.Style.radiusLarge
+        color: Ui.Style.authCardBg
+        border.color: Ui.Style.authCardBorder
         antialiasing: true
         clip: true
 
         ColumnLayout {
             id: authColumn
-            width: Math.min(parent.width - Ui.Style.paddingL * 2, authContentMaxWidth)
+            width: Math.min(parent.width - Ui.Style.paddingXL * 2, Ui.Style.authPanelWidth)
             anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.top
-            anchors.topMargin: Ui.Style.paddingL
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: Ui.Style.paddingL
-            spacing: Ui.Style.paddingM
-
-            Item {
-                id: titleBar
-                Layout.fillWidth: true
-                Layout.preferredHeight: Ui.Style.topBarHeight
-
-                RowLayout {
-                    anchors.fill: parent
-                    spacing: Ui.Style.paddingS
-
-                    Item { Layout.fillWidth: true }
-                    ToolButton {
-                        id: closeButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/close-x.svg"
-                        icon.width: 16
-                        icon.height: 16
-                        onClicked: Qt.quit()
-                        background: Rectangle {
-                            radius: 6
-                            color: closeButton.down ? Ui.Style.pressedBg : "transparent"
-                        }
-                    }
-                }
-            }
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Ui.Style.paddingS
 
             Label {
                 text: Ui.I18n.t("auth.title")
-                font.pixelSize: 22
+                font.pixelSize: Ui.Style.authTitleTextSize
                 font.weight: Font.DemiBold
                 color: Ui.Style.textPrimary
+                Layout.fillWidth: true
             }
             Label {
                 text: Ui.I18n.t("auth.subtitle")
-                font.pixelSize: 14
+                font.pixelSize: Ui.Style.authSubtitleTextSize
                 color: Ui.Style.textSecondary
+                Layout.fillWidth: true
             }
 
             StackLayout {
                 id: loginStack
                 Layout.fillWidth: true
-                Layout.fillHeight: true
                 currentIndex: 0
                 onCurrentIndexChanged: {
                     errorText = ""
@@ -217,60 +186,61 @@ Item {
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    implicitHeight: loginPageLayout.implicitHeight
                     ColumnLayout {
-                        anchors.fill: parent
-                        spacing: Ui.Style.paddingM
+                        id: loginPageLayout
+                        width: parent.width
+                        spacing: Ui.Style.paddingS
 
                         Label {
                             text: Ui.I18n.t("auth.placeholder.account")
-                            font.pixelSize: 14
-                            font.weight: Font.DemiBold
-                            color: loginLabelColor
+                            font.pixelSize: Ui.Style.authSubtitleTextSize
+                            font.weight: Font.Medium
+                            color: Ui.Style.authLabelText
                             Layout.fillWidth: true
                         }
                         Components.SecureTextField {
                             id: accountField
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 42
+                            Layout.preferredHeight: Ui.Style.authFieldHeight
                             placeholderText: Ui.I18n.t("auth.placeholder.account")
-                            font.pixelSize: 15
+                            font.pixelSize: Ui.Style.authBodyTextSize
                             color: Ui.Style.textPrimary
-                            placeholderTextColor: loginPlaceholderColor
+                            placeholderTextColor: Ui.Style.authPlaceholderText
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: loginFieldBackground
+                                color: Ui.Style.authFieldBg
                                 border.width: 1
                                 border.color: accountField.activeFocus
                                               ? Ui.Style.authFieldFocus
-                                              : loginFieldBorder
+                                              : Ui.Style.authFieldBorder
                             }
                             onTextChanged: accountInput = text
                         }
 
                         Label {
                             text: Ui.I18n.t("auth.placeholder.password")
-                            font.pixelSize: 14
-                            font.weight: Font.DemiBold
-                            color: loginLabelColor
+                            font.pixelSize: Ui.Style.authSubtitleTextSize
+                            font.weight: Font.Medium
+                            color: Ui.Style.authLabelText
                             Layout.fillWidth: true
                         }
                         Components.SecureTextField {
                             id: passwordField
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 42
+                            Layout.preferredHeight: Ui.Style.authFieldHeight
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.placeholder.password")
-                            font.pixelSize: 15
+                            font.pixelSize: Ui.Style.authBodyTextSize
                             color: Ui.Style.textPrimary
-                            placeholderTextColor: loginPlaceholderColor
+                            placeholderTextColor: Ui.Style.authPlaceholderText
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: loginFieldBackground
+                                color: Ui.Style.authFieldBg
                                 border.width: 1
                                 border.color: passwordField.activeFocus
                                               ? Ui.Style.authFieldFocus
-                                              : loginFieldBorder
+                                              : Ui.Style.authFieldBorder
                             }
                             onTextChanged: passwordInput = text
                         }
@@ -286,7 +256,7 @@ Item {
                                 color: advancedToggleButton.hovered || advancedToggleButton.down
                                        ? Ui.Style.textPrimary
                                        : Ui.Style.authBadgeText
-                                font.pixelSize: 13
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
                                 font.weight: Font.Medium
                                 horizontalAlignment: Text.AlignLeft
                                 verticalAlignment: Text.AlignVCenter
@@ -308,28 +278,28 @@ Item {
 
                             Label {
                                 text: Ui.I18n.t("auth.placeholder.rootCode")
-                                font.pixelSize: 13
-                                font.weight: Font.DemiBold
-                                color: loginLabelColor
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.Medium
+                                color: Ui.Style.authLabelText
                                 Layout.fillWidth: true
                             }
 
                             Components.SecureTextField {
                                 id: rootCodeField
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 40
+                                Layout.preferredHeight: Ui.Style.authFieldHeight
                                 echoMode: TextInput.Password
                                 placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                                font.pixelSize: 14
+                                font.pixelSize: Ui.Style.authBodyTextSize
                                 color: Ui.Style.textPrimary
-                                placeholderTextColor: loginPlaceholderColor
+                                placeholderTextColor: Ui.Style.authPlaceholderText
                                 background: Rectangle {
                                     radius: Ui.Style.radiusMedium
-                                    color: loginFieldBackground
+                                    color: Ui.Style.authFieldBg
                                     border.width: 1
                                     border.color: rootCodeField.activeFocus
                                                   ? Ui.Style.authFieldFocus
-                                                  : loginFieldBorder
+                                                  : Ui.Style.authFieldBorder
                                 }
                                 onTextChanged: rootCodeInput = text
                             }
@@ -347,16 +317,16 @@ Item {
                                         color: advancedQrLinkButton.hovered || advancedQrLinkButton.down
                                                ? Ui.Style.textPrimary
                                                : Ui.Style.authBadgeText
-                                        font.pixelSize: 13
+                                        font.pixelSize: Ui.Style.authSubtitleTextSize
                                         font.weight: Font.Medium
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
                                         radius: Ui.Style.radiusMedium
-                                        color: parent.down ? Ui.Style.authInfoBorder
-                                                           : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
-                                        border.width: parent.hovered || parent.down ? 1 : 0
+                                        color: advancedQrLinkButton.down ? Ui.Style.authInfoBorder
+                                                                         : (advancedQrLinkButton.hovered ? Ui.Style.authInfoBg : "transparent")
+                                        border.width: advancedQrLinkButton.hovered || advancedQrLinkButton.down ? 1 : 0
                                         border.color: Ui.Style.authBadgeBorder
                                     }
                                 }
@@ -368,7 +338,7 @@ Item {
                             id: loginButton
                             text: Ui.I18n.t("auth.login")
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 40
+                            Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 gradient: Gradient {
@@ -376,11 +346,11 @@ Item {
                                     GradientStop { position: 1.0; color: loginButton.down ? Ui.Style.accent : Ui.Style.accent }
                                 }
                                 border.width: 1
-                                border.color: Qt.rgba(0.72, 0.84, 1.0, 0.64)
+                                border.color: Ui.Style.authBadgeBorder
                             }
                             contentItem: Text {
                                 text: Ui.I18n.t("auth.login")
-                                color: "#F6FAFF"
+                                color: Ui.Style.textPrimary
                                 font.pixelSize: 16
                                 font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
@@ -413,16 +383,16 @@ Item {
                                     color: registerLinkButton.hovered || registerLinkButton.down
                                            ? Ui.Style.textPrimary
                                            : Ui.Style.authBadgeText
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                     font.weight: Font.DemiBold
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
                                 }
                                 background: Rectangle {
                                     radius: Ui.Style.radiusMedium
-                                    color: parent.down ? Ui.Style.authInfoBorder
-                                                       : (parent.hovered ? Ui.Style.authInfoBg : "transparent")
-                                    border.width: parent.hovered || parent.down ? 1 : 0
+                                    color: registerLinkButton.down ? Ui.Style.authInfoBorder
+                                                                   : (registerLinkButton.hovered ? Ui.Style.authInfoBg : "transparent")
+                                    border.width: registerLinkButton.hovered || registerLinkButton.down ? 1 : 0
                                     border.color: Ui.Style.authBadgeBorder
                                 }
                             }
@@ -432,7 +402,7 @@ Item {
                             Layout.fillWidth: true
                             text: Ui.I18n.t("auth.hero.badge")
                             color: Ui.Style.textMuted
-                            font.pixelSize: 12
+                            font.pixelSize: Ui.Style.authMetaTextSize
                             horizontalAlignment: Text.AlignHCenter
                         }
                     }
@@ -440,51 +410,58 @@ Item {
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    implicitHeight: registerPageLayout.implicitHeight
                     ColumnLayout {
-                        anchors.fill: parent
-                        spacing: Ui.Style.paddingM
+                        id: registerPageLayout
+                        width: parent.width
+                        spacing: Ui.Style.paddingS
 
                         Components.SecureTextField {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: Ui.Style.authFieldHeight
                             placeholderText: Ui.I18n.t("auth.register.placeholder.account")
-                            font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            font.pixelSize: Ui.Style.authBodyTextSize
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Ui.Style.authPlaceholderText
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Ui.Style.authFieldBg
+                                border.width: 1
+                                border.color: Ui.Style.authFieldBorder
                             }
                             onTextChanged: registerAccount = text
                         }
 
                         Components.SecureTextField {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: Ui.Style.authFieldHeight
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.register.placeholder.password")
-                            font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            font.pixelSize: Ui.Style.authBodyTextSize
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Ui.Style.authPlaceholderText
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Ui.Style.authFieldBg
+                                border.width: 1
+                                border.color: Ui.Style.authFieldBorder
                             }
                             onTextChanged: registerPassword = text
                         }
 
                         Components.SecureTextField {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: Ui.Style.authFieldHeight
                             echoMode: TextInput.Password
                             placeholderText: Ui.I18n.t("auth.register.placeholder.confirm")
-                            font.pixelSize: 14
-                            color: "#FFFFFF"
-                            placeholderTextColor: Ui.Style.textSecondary
+                            font.pixelSize: Ui.Style.authBodyTextSize
+                            color: Ui.Style.textPrimary
+                            placeholderTextColor: Ui.Style.authPlaceholderText
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
-                                color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                                border.color: Ui.Style.borderSubtle
+                                color: Ui.Style.authFieldBg
+                                border.width: 1
+                                border.color: Ui.Style.authFieldBorder
                             }
                             onTextChanged: registerConfirm = text
                         }
@@ -492,14 +469,18 @@ Item {
                         Button {
                             text: Ui.I18n.t("auth.register")
                             Layout.fillWidth: true
+                            Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
                             background: Rectangle {
                                 radius: Ui.Style.radiusMedium
                                 color: Ui.Style.accent
+                                border.width: 1
+                                border.color: Ui.Style.authBadgeBorder
                             }
                             contentItem: Text {
                                 text: Ui.I18n.t("auth.register")
                                 color: Ui.Style.textPrimary
                                 font.pixelSize: 16
+                                font.weight: Font.DemiBold
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -532,6 +513,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
                             Item { Layout.fillWidth: true }
                             Button {
                                 text: Ui.I18n.t("auth.register.backLogin")
@@ -540,7 +522,7 @@ Item {
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.register.backLogin")
                                     color: Ui.Style.link
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -551,22 +533,22 @@ Item {
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.qrLogin")
                                     color: Ui.Style.link
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
                             Item { Layout.fillWidth: true }
                         }
-                        Item { Layout.fillHeight: true }
                     }
                 }
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    implicitHeight: qrPageLayout.implicitHeight
                     ColumnLayout {
-                        anchors.fill: parent
-                        spacing: Ui.Style.paddingM
+                        id: qrPageLayout
+                        width: parent.width
+                        spacing: Ui.Style.paddingS
 
                         Rectangle {
                             id: qrBox
@@ -574,8 +556,9 @@ Item {
                             width: 200
                             height: 200
                             radius: Ui.Style.radiusMedium
-                            color: Qt.rgba(0.08, 0.1, 0.14, 0.9)
-                            border.color: Ui.Style.borderSubtle
+                            color: Ui.Style.authFieldBg
+                            border.width: 1
+                            border.color: Ui.Style.authFieldBorder
                             Image {
                                 anchors.fill: parent
                                 fillMode: Image.PreserveAspectFit
@@ -588,7 +571,7 @@ Item {
                                 anchors.centerIn: parent
                                 text: Ui.I18n.t("auth.qr.placeholder")
                                 color: Ui.Style.textMuted
-                                font.pixelSize: 12
+                                font.pixelSize: Ui.Style.authMetaTextSize
                                 visible: !(clientBridge && clientBridge.qrLoginPayload.length > 0)
                             }
                         }
@@ -598,13 +581,14 @@ Item {
                                   ? Ui.I18n.format("auth.qr.refreshIn", qrSeconds)
                                   : Ui.I18n.t("auth.qr.expired")
                             color: qrSeconds > 0 ? Ui.Style.textSecondary : Ui.Style.link
-                            font.pixelSize: 13
+                            font.pixelSize: Ui.Style.authSubtitleTextSize
                             horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
                         }
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
                             Item { Layout.fillWidth: true }
                             Button {
                                 text: Ui.I18n.t("auth.qr.refresh")
@@ -613,7 +597,7 @@ Item {
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.qr.refresh")
                                     color: Ui.Style.link
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -622,6 +606,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
                             Item { Layout.fillWidth: true }
                             Button {
                                 text: Ui.I18n.t("auth.register.backLogin")
@@ -630,7 +615,7 @@ Item {
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.register.backLogin")
                                     color: Ui.Style.link
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
@@ -641,13 +626,12 @@ Item {
                                 contentItem: Text {
                                     text: Ui.I18n.t("auth.registerAccount")
                                     color: Ui.Style.link
-                                    font.pixelSize: 14
+                                    font.pixelSize: Ui.Style.authBodyTextSize
                                 }
                                 background: Rectangle { color: "transparent" }
                             }
                             Item { Layout.fillWidth: true }
                         }
-                        Item { Layout.fillHeight: true }
                     }
                 }
             }
@@ -655,7 +639,7 @@ Item {
             Text {
                 text: errorText
                 color: Ui.Style.danger
-                font.pixelSize: 13
+                font.pixelSize: Ui.Style.authSubtitleTextSize
                 visible: errorText.length > 0
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true

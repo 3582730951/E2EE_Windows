@@ -57,11 +57,16 @@ QtObject {
     property color authGlowSecondary: Qt.rgba(0.13, 0.75, 0.56, 0.16)
     property color authCardBg: Qt.rgba(12 / 255, 18 / 255, 27 / 255, 0.92)
     property color authCardBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.10)
+    property color authTitleBarBg: Qt.rgba(9 / 255, 14 / 255, 22 / 255, 0.94)
+    property color authTitleBarBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.16)
+    property color authTitleBarText: "#D7E7FA"
     property color authSurface: Qt.rgba(1, 1, 1, 0.03)
     property color authSurfaceStrong: Qt.rgba(1, 1, 1, 0.07)
     property color authFieldBg: Qt.rgba(8 / 255, 14 / 255, 20 / 255, 0.96)
     property color authFieldBorder: Qt.rgba(156 / 255, 176 / 255, 199 / 255, 0.13)
     property color authFieldFocus: "#8AB5FF"
+    property color authLabelText: "#E6F0FC"
+    property color authPlaceholderText: "#BBD0E8"
     property color authBadgeBg: Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.12)
     property color authBadgeBorder: Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.18)
     property color authBadgeText: "#D9E7FF"
@@ -114,6 +119,15 @@ QtObject {
     property int avatarSizeTopBar: 34
     property int dialogRowHeight: 74
     property int topBarHeight: 54
+    property int authWindowTitleBarHeight: 34
+    property int authWindowTitleTextSize: 13
+    property int authPanelWidth: 430
+    property int authTitleTextSize: 30
+    property int authSubtitleTextSize: 13
+    property int authBodyTextSize: 14
+    property int authMetaTextSize: 12
+    property int authFieldHeight: 40
+    property int authPrimaryButtonHeight: 42
     property int leftPaneWidthMin: 280
     property int leftPaneWidthDefault: 324
     property int rightPaneWidth: 360
