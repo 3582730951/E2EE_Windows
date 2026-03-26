@@ -13,8 +13,8 @@ ApplicationWindow {
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property bool authReady: authLoader.active && authLoader.status === Loader.Ready
     property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
-    property int authWidth: 960
-    property int authHeight: 680
+    property int authWidth: 840
+    property int authHeight: 620
 
     width: authMode ? authWidth : 1200
     height: authMode ? authHeight : 760
@@ -354,8 +354,8 @@ ApplicationWindow {
         color: authMode
                ? (smokeMode ? Ui.Style.authBackdropBottom : "transparent")
                : Ui.Style.windowBg
-        radius: authMode ? 28 : 20
-        border.color: authMode ? Ui.Style.authCardBorder : Ui.Style.borderSubtle
+        radius: authMode ? 18 : 20
+        border.color: Ui.Style.borderSubtle
         border.width: 1
         antialiasing: !(smokeMode && authMode)
         clip: true
@@ -403,33 +403,55 @@ ApplicationWindow {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Ui.Style.paddingXL
-                anchors.rightMargin: Ui.Style.paddingXL
-                anchors.topMargin: 6
-                anchors.bottomMargin: 6
-                spacing: Ui.Style.paddingM
-
-                Rectangle {
-                    Layout.preferredWidth: 8
-                    Layout.preferredHeight: 8
-                    radius: 4
-                    color: Ui.Style.accent
-                }
+                anchors.margins: 4
+                spacing: 6
 
                 Label {
                     text: Ui.I18n.t("app.title")
                     color: Ui.Style.authTitleBarText
                     font.pixelSize: Ui.Style.authWindowTitleTextSize
                     font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    text: Ui.I18n.t("auth.subtitle")
+                    color: Ui.Style.textMuted
+                    font.pixelSize: Ui.Style.authMetaTextSize
+                    elide: Text.ElideRight
                 }
 
                 Item { Layout.fillWidth: true }
 
                 ToolButton {
+                    id: authMinButton
+                    hoverEnabled: true
+                    implicitWidth: 28
+                    implicitHeight: 18
+                    onClicked: root.showMinimized()
+                    background: Rectangle {
+                        radius: 6
+                        color: authMinButton.down ? Ui.Style.pressedBg
+                                                  : (authMinButton.hovered ? Ui.Style.hoverBg : "transparent")
+                    }
+                    contentItem: Item {
+                        width: 12
+                        height: 12
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 2
+                            radius: 1
+                            color: authMinButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                        }
+                    }
+                }
+
+                ToolButton {
                     id: authCloseButton
                     hoverEnabled: true
-                    implicitWidth: 30
-                    implicitHeight: 20
+                    implicitWidth: 28
+                    implicitHeight: 18
                     onClicked: root.close()
                     background: Rectangle {
                         radius: 6
@@ -445,7 +467,7 @@ ApplicationWindow {
                             height: 2
                             radius: 1
                             rotation: 45
-                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textMuted
+                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
                         }
                         Rectangle {
                             anchors.centerIn: parent
@@ -453,7 +475,7 @@ ApplicationWindow {
                             height: 2
                             radius: 1
                             rotation: -45
-                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textMuted
+                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
                         }
                     }
                 }

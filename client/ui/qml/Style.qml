@@ -51,15 +51,15 @@ QtObject {
     property color topBarPillBg: isDark ? "#182631" : "#EDF3F8"
     property color topBarPillBorder: isDark ? "#223444" : "#D7E2EC"
 
-    property color authBackdropTop: "#071018"
-    property color authBackdropBottom: "#0E1823"
-    property color authGlowPrimary: Qt.rgba(0.30, 0.54, 1.0, 0.22)
-    property color authGlowSecondary: Qt.rgba(0.13, 0.75, 0.56, 0.16)
-    property color authCardBg: Qt.rgba(12 / 255, 18 / 255, 27 / 255, 0.88)
-    property color authCardBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.10)
-    property color authTitleBarBg: Qt.rgba(9 / 255, 14 / 255, 22 / 255, 0.94)
-    property color authTitleBarBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.16)
-    property color authTitleBarText: "#D7E7FA"
+    property color authBackdropTop: "#0A131B"
+    property color authBackdropBottom: "#0E1922"
+    property color authGlowPrimary: Qt.rgba(0.30, 0.54, 1.0, 0.12)
+    property color authGlowSecondary: Qt.rgba(0.13, 0.75, 0.56, 0.08)
+    property color authCardBg: Qt.rgba(14 / 255, 22 / 255, 32 / 255, 0.92)
+    property color authCardBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.12)
+    property color authTitleBarBg: panelBg
+    property color authTitleBarBorder: borderSubtle
+    property color authTitleBarText: textPrimary
     property color authTitleChipBg: Qt.rgba(13 / 255, 21 / 255, 32 / 255, 0.92)
     property color authTitleChipBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.22)
     property color authSurface: Qt.rgba(1, 1, 1, 0.03)
@@ -125,17 +125,17 @@ QtObject {
     property int avatarSizeTopBar: 34
     property int dialogRowHeight: 74
     property int topBarHeight: 54
-    property int authWindowTitleBarHeight: 34
-    property int authWindowTitleTextSize: 13
-    property int authPanelWidth: 430
-    property int authStageWidth: 900
-    property int authStageHeight: 560
-    property int authTitleTextSize: 30
+    property int authWindowTitleBarHeight: 26
+    property int authWindowTitleTextSize: 12
+    property int authPanelWidth: 520
+    property int authStageWidth: 560
+    property int authStageHeight: 520
+    property int authTitleTextSize: 24
     property int authSubtitleTextSize: 13
     property int authBodyTextSize: 14
     property int authMetaTextSize: 12
     property int authFieldHeight: 40
-    property int authPrimaryButtonHeight: 42
+    property int authPrimaryButtonHeight: 40
     property int leftPaneWidthMin: 280
     property int leftPaneWidthDefault: 324
     property int rightPaneWidth: 360

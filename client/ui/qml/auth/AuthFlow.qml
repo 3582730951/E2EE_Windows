@@ -157,26 +157,12 @@ Item {
         }
 
         Rectangle {
-            width: parent.width * 0.64
-            height: parent.height * 0.82
-            anchors.left: parent.left
-            anchors.leftMargin: -parent.width * 0.10
-            anchors.verticalCenter: parent.verticalCenter
-            radius: width / 2
+            width: parent.width * 0.54
+            height: parent.height * 0.46
+            anchors.centerIn: parent
+            radius: Ui.Style.radiusXL * 2
             color: Ui.Style.authGlowPrimary
-            opacity: 0.55
-        }
-
-        Rectangle {
-            width: parent.width * 0.44
-            height: parent.height * 0.62
-            anchors.right: parent.right
-            anchors.rightMargin: -parent.width * 0.06
-            anchors.top: parent.top
-            anchors.topMargin: parent.height * 0.18
-            radius: width / 2
-            color: Ui.Style.authGlowSecondary
-            opacity: 0.50
+            opacity: 0.16
         }
 
         Item {
@@ -185,157 +171,76 @@ Item {
             height: Math.min(parent.height - Ui.Style.paddingXL * 2, Ui.Style.authStageHeight)
             anchors.centerIn: parent
 
-            RowLayout {
-                anchors.fill: parent
-                spacing: Ui.Style.paddingL
+            Rectangle {
+                id: authPanel
+                width: Math.min(parent.width, Ui.Style.authPanelWidth)
+                height: Math.min(parent.height, Ui.Style.authStageHeight)
+                anchors.centerIn: parent
+                radius: Ui.Style.radiusXL
+                color: Ui.Style.authCardBg
+                border.width: 1
+                border.color: Ui.Style.authCardBorder
+                antialiasing: true
+                clip: true
 
-                Rectangle {
-                    Layout.fillHeight: true
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: authStage.width * 0.42
-                    radius: Ui.Style.radiusXL
-                    color: Ui.Style.authContextBg
-                    border.width: 1
-                    border.color: Ui.Style.authContextBorder
-                    antialiasing: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingL
+                    spacing: Ui.Style.paddingS
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingL
-                        spacing: Ui.Style.paddingM
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Ui.Style.paddingS
-
-                            Rectangle {
-                                Layout.preferredWidth: 8
-                                Layout.preferredHeight: 8
-                                radius: 4
-                                color: Ui.Style.accent
-                            }
-
-                            Label {
-                                text: Ui.I18n.t("auth.hero.badge")
-                                color: Ui.Style.authBadgeText
-                                font.pixelSize: Ui.Style.authMetaTextSize
-                                font.weight: Font.DemiBold
-                            }
-                        }
-
-                        Label {
-                            Layout.fillWidth: true
-                            text: "登录前确认服务器地址与账号信息，即可建立安全会话。"
-                            color: Ui.Style.textSecondary
-                            font.pixelSize: Ui.Style.authBodyTextSize
-                            wrapMode: Text.WordWrap
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: Ui.Style.authContextBorder
-                        }
-
-                        Repeater {
-                            model: [
-                                "首次连接会请求服务器信任确认",
-                                "会话消息与离线密钥默认隔离保存",
-                                "支持密码登录与二维码登录"
-                            ]
-
-                            delegate: RowLayout {
-                                Layout.fillWidth: true
-                                spacing: Ui.Style.paddingS
-
-                                Rectangle {
-                                    Layout.preferredWidth: 5
-                                    Layout.preferredHeight: 5
-                                    radius: 2.5
-                                    color: Ui.Style.tgMutedBadge
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: modelData
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: Ui.Style.authSubtitleTextSize
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-                        }
-
-                        Item { Layout.fillHeight: true }
-
-                        Label {
-                            Layout.fillWidth: true
-                            text: "高级选项可选填 Root Code。"
-                            color: Ui.Style.textMuted
-                            font.pixelSize: Ui.Style.authMetaTextSize
-                            wrapMode: Text.Wrap
-                        }
+                    Label {
+                        Layout.fillWidth: true
+                        text: Ui.I18n.t("app.title")
+                        color: Ui.Style.textMuted
+                        font.pixelSize: Ui.Style.authMetaTextSize
+                        font.weight: Font.Medium
+                        wrapMode: Text.NoWrap
+                        elide: Text.ElideRight
                     }
-                }
 
-                Rectangle {
-                    id: authPanel
-                    Layout.preferredWidth: Ui.Style.authPanelWidth
-                    Layout.fillHeight: true
-                    radius: Ui.Style.radiusXL
-                    color: Ui.Style.authCardBg
-                    border.width: 1
-                    border.color: Ui.Style.authCardBorder
-                    antialiasing: true
-                    clip: true
+                    Label {
+                        Layout.fillWidth: true
+                        text: Ui.I18n.t("auth.title")
+                        color: Ui.Style.textPrimary
+                        font.pixelSize: 22
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                    }
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingXL
-                        spacing: Ui.Style.paddingM
+                    Label {
+                        Layout.fillWidth: true
+                        text: Ui.I18n.t("auth.subtitle")
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: Ui.Style.authSubtitleTextSize
+                        wrapMode: Text.WordWrap
+                    }
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: Ui.I18n.t("auth.title")
-                            color: Ui.Style.textPrimary
-                            font.pixelSize: 24
-                            font.weight: Font.DemiBold
-                            wrapMode: Text.WordWrap
-                        }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        color: Ui.Style.authTitleBarBorder
+                    }
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: Ui.I18n.t("auth.subtitle")
-                            color: Ui.Style.textSecondary
-                            font.pixelSize: Ui.Style.authSubtitleTextSize
-                            wrapMode: Text.WordWrap
-                        }
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: Ui.Style.authTitleBarBorder
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-
-                            StackLayout {
-                                id: loginStack
-                                anchors.fill: parent
-                                currentIndex: 0
-                                onCurrentIndexChanged: {
-                                    errorText = ""
-                                    if (currentIndex === 2) {
-                                        startQrLogin()
-                                    } else {
-                                        stopQrLogin()
-                                    }
+                        StackLayout {
+                            id: loginStack
+                            anchors.fill: parent
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                errorText = ""
+                                if (currentIndex === 2) {
+                                    startQrLogin()
+                                } else {
+                                    stopQrLogin()
                                 }
+                            }
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    implicitHeight: loginPageLayout.implicitHeight
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: loginPageLayout.implicitHeight
 
                                     ColumnLayout {
                                         id: loginPageLayout
@@ -798,14 +703,13 @@ Item {
                             }
                         }
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: errorText.length > 0 ? errorText : "连接后将自动同步会话安全状态"
-                            color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.textMuted
-                            font.pixelSize: Ui.Style.authSubtitleTextSize
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                        }
+                    Label {
+                        Layout.fillWidth: true
+                        text: errorText.length > 0 ? errorText : "连接后将自动同步会话安全状态"
+                        color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.textMuted
+                        font.pixelSize: Ui.Style.authSubtitleTextSize
+                        horizontalAlignment: Text.AlignLeft
+                        wrapMode: Text.WordWrap
                     }
                 }
             }
