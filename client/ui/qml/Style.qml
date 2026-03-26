@@ -60,8 +60,14 @@ QtObject {
     property color authTitleBarBg: Qt.rgba(9 / 255, 14 / 255, 22 / 255, 0.94)
     property color authTitleBarBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.16)
     property color authTitleBarText: "#D7E7FA"
+    property color authTitleChipBg: Qt.rgba(13 / 255, 21 / 255, 32 / 255, 0.92)
+    property color authTitleChipBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.22)
     property color authSurface: Qt.rgba(1, 1, 1, 0.03)
     property color authSurfaceStrong: Qt.rgba(1, 1, 1, 0.07)
+    property color authContextBg: Qt.rgba(12 / 255, 19 / 255, 30 / 255, 0.74)
+    property color authContextBorder: Qt.rgba(159 / 255, 187 / 255, 214 / 255, 0.12)
+    property color authPanelHeaderBg: Qt.rgba(16 / 255, 25 / 255, 37 / 255, 0.94)
+    property color authPanelFooterBg: Qt.rgba(9 / 255, 14 / 255, 22 / 255, 0.82)
     property color authFieldBg: Qt.rgba(8 / 255, 14 / 255, 20 / 255, 0.96)
     property color authFieldBorder: Qt.rgba(156 / 255, 176 / 255, 199 / 255, 0.13)
     property color authFieldFocus: "#8AB5FF"
@@ -122,6 +128,8 @@ QtObject {
     property int authWindowTitleBarHeight: 34
     property int authWindowTitleTextSize: 13
     property int authPanelWidth: 430
+    property int authStageWidth: 900
+    property int authStageHeight: 560
     property int authTitleTextSize: 30
     property int authSubtitleTextSize: 13
     property int authBodyTextSize: 14

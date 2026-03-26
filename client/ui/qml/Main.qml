@@ -13,8 +13,8 @@ ApplicationWindow {
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property bool authReady: authLoader.active && authLoader.status === Loader.Ready
     property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
-    property int authWidth: 1024
-    property int authHeight: 728
+    property int authWidth: 960
+    property int authHeight: 680
 
     width: authMode ? authWidth : 1200
     height: authMode ? authHeight : 760
@@ -403,50 +403,83 @@ ApplicationWindow {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Ui.Style.paddingM
-                anchors.rightMargin: 6
-                anchors.topMargin: 2
-                anchors.bottomMargin: 2
-                spacing: Ui.Style.paddingS
+                anchors.leftMargin: Ui.Style.paddingXL
+                anchors.rightMargin: Ui.Style.paddingXL
+                anchors.topMargin: 6
+                anchors.bottomMargin: 6
+                spacing: Ui.Style.paddingM
 
-                Label {
-                    text: Ui.I18n.t("app.title")
-                    color: Ui.Style.authTitleBarText
-                    font.pixelSize: Ui.Style.authWindowTitleTextSize
-                    font.weight: Font.Medium
+                Rectangle {
+                    Layout.preferredHeight: parent.height
+                    Layout.minimumWidth: 220
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.authTitleChipBg
+                    border.width: 1
+                    border.color: Ui.Style.authTitleChipBorder
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: Ui.Style.paddingM
+                        anchors.rightMargin: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+
+                        Rectangle {
+                            Layout.preferredWidth: 8
+                            Layout.preferredHeight: 8
+                            radius: 4
+                            color: Ui.Style.accent
+                        }
+
+                        Label {
+                            text: Ui.I18n.t("app.title")
+                            color: Ui.Style.authTitleBarText
+                            font.pixelSize: Ui.Style.authWindowTitleTextSize
+                            font.weight: Font.Medium
+                        }
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
 
-                ToolButton {
-                    id: authCloseButton
-                    hoverEnabled: true
-                    implicitWidth: 28
-                    implicitHeight: 20
-                    onClicked: root.close()
-                    background: Rectangle {
-                        radius: 6
-                        color: authCloseButton.down ? Ui.Style.pressedBg
-                                                    : (authCloseButton.hovered ? Ui.Style.hoverBg : "transparent")
-                    }
-                    contentItem: Item {
-                        width: 12
-                        height: 12
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 10
-                            height: 2
-                            radius: 1
-                            rotation: 45
-                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                Rectangle {
+                    Layout.preferredHeight: parent.height
+                    Layout.preferredWidth: 46
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.authTitleChipBg
+                    border.width: 1
+                    border.color: Ui.Style.authTitleChipBorder
+
+                    ToolButton {
+                        id: authCloseButton
+                        anchors.centerIn: parent
+                        hoverEnabled: true
+                        implicitWidth: 34
+                        implicitHeight: 22
+                        onClicked: root.close()
+                        background: Rectangle {
+                            radius: 7
+                            color: authCloseButton.down ? Ui.Style.pressedBg
+                                                        : (authCloseButton.hovered ? Ui.Style.hoverBg : "transparent")
                         }
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 10
-                            height: 2
-                            radius: 1
-                            rotation: -45
-                            color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                        contentItem: Item {
+                            width: 12
+                            height: 12
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 10
+                                height: 2
+                                radius: 1
+                                rotation: 45
+                                color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                            }
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 10
+                                height: 2
+                                radius: 1
+                                rotation: -45
+                                color: authCloseButton.hovered ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                            }
                         }
                     }
                 }
