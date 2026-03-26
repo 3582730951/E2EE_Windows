@@ -1,6 +1,7 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -71,9 +63,9 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 AppMark()
                 Text(
                     text = tr("login_title", "Welcome back"),
@@ -86,18 +78,12 @@ fun LoginScreen(
                 )
             }
 
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     if (!errorMessage.isNullOrBlank()) {
                         LoginErrorBanner(errorCode = errorMessage)
@@ -108,41 +94,29 @@ fun LoginScreen(
                     if (!statusMessage.isNullOrBlank()) {
                         LoginStatusBanner(message = statusMessage)
                     }
-                    OutlinedTextField(
+
+                    LoginInputField(
+                        label = tr("login_phone_email", "Phone or email"),
                         value = email.value,
                         onValueChange = { email.value = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("login_phone_email", "Phone or email")) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Mail,
-                                contentDescription = "Email"
-                            )
-                        },
+                        placeholder = tr("login_phone_email", "Phone or email"),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
-                        ),
-                        shape = RoundedCornerShape(16.dp)
+                        )
                     )
-                    OutlinedTextField(
+                    LoginInputField(
+                        label = tr("login_password", "Password"),
                         value = password.value,
                         onValueChange = { password.value = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("login_password", "Password")) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Lock,
-                                contentDescription = "Password"
-                            )
-                        },
+                        placeholder = tr("login_password", "Password"),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
-                        ),
-                        shape = RoundedCornerShape(16.dp)
+                        )
                     )
-                    OutlinedTextField(
+                    LoginInputField(
+                        label = tr("login_root_code_short", "Root auth (optional)"),
                         value = rootCode.value,
                         onValueChange = { value ->
                             val cleaned = value.trim().filter {
@@ -150,19 +124,11 @@ fun LoginScreen(
                             }
                             rootCode.value = cleaned.take(160)
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("login_root_code", "Root auth string (code:signature) (optional)")) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Warning,
-                                contentDescription = "Root auth"
-                            )
-                        },
+                        placeholder = tr("login_root_code_placeholder", "code:signature"),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),
-                        shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
                     PrimaryButton(
@@ -171,37 +137,18 @@ fun LoginScreen(
                         onClick = { onLogin(email.value.trim(), password.value, rootCode.value) }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        LoginUtilityButton(
+                            label = tr("login_qr_show", "Show QR"),
+                            token = "QR",
                             onClick = { onShowQr(email.value.trim()) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.QrCode,
-                                contentDescription = "Show QR"
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = tr("login_qr_show", "Show QR"),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                        OutlinedButton(
+                            modifier = Modifier.weight(1f)
+                        )
+                        LoginUtilityButton(
+                            label = tr("login_scan_qr", "Scan QR"),
+                            token = "SC",
                             onClick = onScanQr,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.QrCodeScanner,
-                                contentDescription = "Scan QR"
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = tr("login_scan_qr", "Scan QR"), style = MaterialTheme.typography.titleMedium)
-                        }
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -230,11 +177,12 @@ private fun LoginErrorBanner(errorCode: String) {
             modifier = Modifier.align(Alignment.Center),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Filled.Warning,
-                contentDescription = tr("login_error", "Login failed - %s").format(errorCode),
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(18.dp)
+            UiTokenIcon(
+                label = "!",
+                size = 20.dp,
+                cornerRadius = 6.dp,
+                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
+                contentColor = MaterialTheme.colorScheme.error
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
@@ -255,10 +203,50 @@ private fun LoginStatusBanner(message: String) {
             .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            UiTokenIcon(
+                label = "i",
+                size = 20.dp,
+                cornerRadius = 6.dp,
+                containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
+                contentColor = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoginInputField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    keyboardOptions: KeyboardOptions,
+    singleLine: Boolean = false
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(placeholder) },
+            keyboardOptions = keyboardOptions,
+            shape = RoundedCornerShape(16.dp),
+            singleLine = singleLine
         )
     }
 }
@@ -266,19 +254,13 @@ private fun LoginStatusBanner(message: String) {
 @Composable
 private fun AppMark() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "MI",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
-            )
-        }
+        UiTokenIcon(
+            label = "MI",
+            size = 48.dp,
+            cornerRadius = 14.dp,
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+            contentColor = MaterialTheme.colorScheme.primary
+        )
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(text = tr("app_name", "MI Secure"), style = MaterialTheme.typography.titleLarge)
@@ -321,6 +303,37 @@ private fun LoginBackground() {
                 .offset(x = (-80).dp, y = 440.dp)
                 .clip(CircleShape)
                 .background(accent)
+        )
+    }
+}
+
+@Composable
+private fun LoginUtilityButton(
+    label: String,
+    token: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
+        )
+    ) {
+        UiTokenIcon(
+            label = token,
+            size = 20.dp,
+            cornerRadius = 6.dp,
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+            contentColor = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall
         )
     }
 }

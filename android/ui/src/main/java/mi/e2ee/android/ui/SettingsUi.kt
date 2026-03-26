@@ -12,26 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.PrivacyTip
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -103,28 +87,28 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
             subtitle = tr("settings_security_center_sub", "Root Auth, devices, trusted sessions"),
-            icon = { Icon(Icons.Filled.Security, contentDescription = "Security Center") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+            icon = { UiTokenIcon(label = "SC") },
+            trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
             subtitle = tr("settings_account_security_sub", "Password, devices, backup"),
-            icon = { Icon(Icons.Filled.Security, contentDescription = "Security") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+            icon = { UiTokenIcon(label = "AC") },
+            trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
             subtitle = tr("settings_privacy_sub", "Visibility, read receipts"),
-            icon = { Icon(Icons.Filled.PrivacyTip, contentDescription = "Privacy") },
-            trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+            icon = { UiTokenIcon(label = "PR") },
+            trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
             subtitle = tr("settings_notifications_sub", "Message, call alerts"),
-            icon = { Icon(Icons.Filled.Notifications, contentDescription = "Notifications") },
+            icon = { UiTokenIcon(label = "NT") },
             trailing = {
                 Switch(
                     checked = notificationsEnabled,
@@ -139,8 +123,8 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
                 subtitle = tr("settings_chat_storage_sub", "Cache, media, auto-download"),
-                icon = { Icon(Icons.Filled.Storage, contentDescription = "Storage") },
-                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                icon = { UiTokenIcon(label = "ST") },
+                trailing = { UiChevron() },
                 onClick = onOpenChats
             )
         )
@@ -148,8 +132,8 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
                 subtitle = tr("settings_devices_sub", "Active sessions"),
-                icon = { Icon(Icons.Filled.Devices, contentDescription = "Devices") },
-                trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                icon = { UiTokenIcon(label = "DV") },
+                trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
             )
         )
@@ -157,7 +141,7 @@ fun SettingsScreen(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
                 subtitle = tr("settings_appearance_sub", "Theme, font size"),
-                icon = { Icon(Icons.Filled.Tune, contentDescription = "Appearance") },
+                icon = { UiTokenIcon(label = "AP") },
                 trailing = {
                     Text(
                         text = themeSummary,
@@ -172,8 +156,8 @@ fun SettingsScreen(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
                     subtitle = tr("settings_diagnostics_sub", "SDK tools and logs"),
-                    icon = { Icon(Icons.Filled.BugReport, contentDescription = "Diagnostics") },
-                    trailing = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") },
+                    icon = { UiTokenIcon(label = "DG") },
+                    trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
                 )
             )
@@ -183,7 +167,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
             subtitle = tr("settings_heartbeat_sub", "Send a keep-alive ping"),
-            icon = { Icon(Icons.Filled.Notifications, contentDescription = "Heartbeat") },
+            icon = { UiTokenIcon(label = "HB") },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
                     Text(tr("settings_run", "Run"))
@@ -193,7 +177,7 @@ fun SettingsScreen(
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
             subtitle = tr("settings_relogin_sub", "Refresh session with server"),
-            icon = { Icon(Icons.Filled.Security, contentDescription = "Reconnect") },
+            icon = { UiTokenIcon(label = "RC") },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
                     Text(tr("settings_run", "Run"))
@@ -208,8 +192,11 @@ fun SettingsScreen(
                 title = { Text(tr("settings_title", "Settings")) },
                 modifier = Modifier.shadow(4.dp),
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    TextButton(onClick = onBack) {
+                        Text(
+                            text = tr("settings_back", "Back"),
+                            style = MaterialTheme.typography.labelLarge
+                        )
                     }
                 }
             )
@@ -331,17 +318,7 @@ private fun ThemeModeSection(
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            RoundedCornerShape(10.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.DarkMode, contentDescription = "Theme mode")
-                }
+                UiTokenIcon(label = "TH")
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = tr("settings_theme_mode", "Theme mode"), style = MaterialTheme.typography.bodyLarge)
@@ -391,17 +368,7 @@ private fun LanguageSection(controller: LanguageController) {
     SurfaceSectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            RoundedCornerShape(10.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Language, contentDescription = "Language")
-                }
+                UiTokenIcon(label = "LG")
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = tr("settings_language", "Language"), style = MaterialTheme.typography.bodyLarge)
@@ -451,9 +418,9 @@ private fun SettingsSection(entries: List<SettingEntry>) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(horizontal = 6.dp)
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline)
-                            .padding(horizontal = 16.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                     )
                 }
             }
@@ -475,17 +442,7 @@ private fun SettingsRow(entry: SettingEntry) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .background(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    RoundedCornerShape(10.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            entry.icon()
-        }
+        entry.icon()
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = entry.title, style = MaterialTheme.typography.bodyLarge)
