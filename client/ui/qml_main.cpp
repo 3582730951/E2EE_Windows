@@ -666,27 +666,12 @@ int main(int argc, char* argv[]) {
                         const bool authMode =
                             smokeWindow ? smokeWindow->property("authMode").toBool() : true;
 #ifdef Q_OS_WIN
-                        const HWND smokeHwnd =
-                            smokeWindow ? reinterpret_cast<HWND>(smokeWindow->winId()) : nullptr;
-                        if (smokeHwnd && !securityCenterScene) {
-                            const int nativeCaptureDelayMs =
-                                qMin(1800, qMax(500, postLoginCaptureDelayMs));
-                            smokeTimer.stop();
-                            AppendSmokeLog(
-                                smokeCaptureDir,
-                                QStringLiteral("UI smoke %1 native worker armed "
-                                               "(authMode=%2, delayMs=%3)")
-                                    .arg(captureName)
-                                    .arg(authMode ? QStringLiteral("true")
-                                                  : QStringLiteral("false"))
-                                    .arg(nativeCaptureDelayMs));
-                            ScheduleWindowsSmokeCaptureAndExit(
-                                smokeHwnd, smokeCaptureDir, captureName, nativeCaptureDelayMs);
-                            return;
-                        }
-#endif
+                        const int maxPostLoginWaitMs =
+                            qMin(2600, qMax(900, postLoginCaptureDelayMs + 900));
+#else
                         const int maxPostLoginWaitMs =
                             qMin(1800, qMax(350, postLoginCaptureDelayMs + 350));
+#endif
                         constexpr int kShellReadyPollMs = 120;
                         const int maxPostLoginPolls =
                             qMax(1, (maxPostLoginWaitMs + kShellReadyPollMs - 1) /
@@ -726,9 +711,40 @@ int main(int argc, char* argv[]) {
                                         opened
                                             ? QStringLiteral("UI smoke security center requested")
                                             : QStringLiteral("UI smoke security center request failed"));
+                                    if (smokeWindow) {
+                                        smokeWindow->update();
+                                    }
                                     const int nativeCaptureDelayMs =
                                         qMin(2200, qMax(850, postLoginCaptureDelayMs + 500));
                                     smokeTimer.stop();
+                                    AppendSmokeLog(
+                                        smokeCaptureDir,
+                                        QStringLiteral("UI smoke %1 native worker armed "
+                                                       "(shellReady=%2, delayMs=%3)")
+                                            .arg(captureName)
+                                            .arg(shellReady ? QStringLiteral("true")
+                                                            : QStringLiteral("false"))
+                                            .arg(nativeCaptureDelayMs));
+                                    ScheduleWindowsSmokeCaptureAndExit(
+                                        smokeHwnd, smokeCaptureDir, captureName,
+                                        nativeCaptureDelayMs);
+                                    return;
+                                }
+                                if (smokeHwnd) {
+                                    if (smokeWindow) {
+                                        smokeWindow->update();
+                                    }
+                                    const int nativeCaptureDelayMs =
+                                        qMin(2200, qMax(1200, postLoginCaptureDelayMs + 450));
+                                    smokeTimer.stop();
+                                    AppendSmokeLog(
+                                        smokeCaptureDir,
+                                        QStringLiteral("UI smoke %1 native worker armed "
+                                                       "(shellReady=%2, delayMs=%3)")
+                                            .arg(captureName)
+                                            .arg(shellReady ? QStringLiteral("true")
+                                                            : QStringLiteral("false"))
+                                            .arg(nativeCaptureDelayMs));
                                     ScheduleWindowsSmokeCaptureAndExit(
                                         smokeHwnd, smokeCaptureDir, captureName,
                                         nativeCaptureDelayMs);
