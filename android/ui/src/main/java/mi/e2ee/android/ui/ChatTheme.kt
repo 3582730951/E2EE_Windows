@@ -196,12 +196,12 @@ object ChatUiTokens {
 }
 
 @Composable
-fun ChatTheme(mode: Int = ThemeMode.ForceDark, content: @Composable () -> Unit) {
+fun ChatTheme(mode: Int = ThemeMode.FollowSystem, content: @Composable () -> Unit) {
     val useDark = when (mode) {
         ThemeMode.FollowSystem -> isSystemInDarkTheme()
         ThemeMode.ForceLight -> false
         ThemeMode.ForceDark -> true
-        else -> true
+        else -> isSystemInDarkTheme()
     }
     val colors = if (useDark) ChatDarkColorScheme else ChatColorScheme
     MaterialTheme(

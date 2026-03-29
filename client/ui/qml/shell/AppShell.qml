@@ -11,7 +11,17 @@ Item {
 
     property int windowWidth: 0
     property int leftWidth: Ui.Style.leftPaneWidthDefault
+    property int rightWidth: Ui.Style.rightPaneWidth
+    readonly property bool hasActiveChat: Ui.ChatStore.currentChatId.length > 0
+    readonly property bool canUseThreeColumn: root.windowWidth >= Ui.Style.threeColumnMinWidth
+    readonly property bool rightPaneMounted: hasActiveChat && (canUseThreeColumn || Ui.AppStore.rightPaneVisible)
     readonly property Window hostWindow: root.Window.window
+
+    onHasActiveChatChanged: {
+        if (!hasActiveChat) {
+            Ui.AppStore.closeRightPane()
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -70,6 +80,23 @@ Item {
                 Shell.CenterPane {
                     id: centerPane
                     SplitView.fillWidth: true
+                    SplitView.minimumWidth: Ui.Style.centerPaneWidthMin
+                }
+
+                Loader {
+                    id: rightPaneLoader
+                    active: root.rightPaneMounted
+                    visible: active
+                    SplitView.preferredWidth: root.rightWidth
+                    SplitView.minimumWidth: Ui.Style.rightPaneWidthMin
+                    SplitView.maximumWidth: Ui.Style.rightPaneWidthMax
+                    onWidthChanged: {
+                        if (active && width > Ui.Style.rightPaneWidthMin) {
+                            root.rightWidth = width
+                        }
+                    }
+                    sourceComponent: Shell.RightPane {
+                    }
                 }
             }
         }

@@ -16,16 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -88,12 +78,12 @@ fun GroupDetailScreen(
                 title = { Text(tr("group_info_title", "Group info")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
                     IconButton(onClick = {}) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        Icon(MiOwnedIcons.MoreVertical, contentDescription = "More")
                     }
                 }
             )
@@ -127,7 +117,7 @@ fun GroupDetailScreen(
                                 contentColor = MaterialTheme.colorScheme.primary
                             )
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Add")
+                            Icon(MiOwnedIcons.Add, contentDescription = "Add")
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(tr("group_add_members", "Add members"))
                         }
@@ -173,20 +163,20 @@ fun GroupDetailScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SimpleRow(
-                            icon = Icons.Filled.Link,
+                            icon = MiOwnedIcons.Link,
                             title = tr("group_invite_link", "Invite link"),
                             subtitle = tr("group_invite_link_sub", "Active, expires in 7 days")
                         )
                         DividerLine()
                         SimpleRow(
-                            icon = Icons.Filled.Notifications,
+                            icon = MiOwnedIcons.Bell,
                             title = tr("group_mute_notifications", "Mute notifications"),
                             subtitle = tr("group_mute_notifications_sub", "Off"),
                             trailing = { Switch(checked = false, onCheckedChange = {}) }
                         )
                         DividerLine()
                         SimpleRow(
-                            icon = Icons.Filled.Lock,
+                            icon = MiOwnedIcons.Lock,
                             title = tr("group_leave", "Leave group"),
                             subtitle = tr("group_leave_sub", "Remove yourself from this group"),
                             trailing = {
@@ -236,7 +226,7 @@ fun AddGroupMembersScreen(
                 title = { Text(tr("group_add_members_title", "Add members")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -289,7 +279,7 @@ fun AddGroupMembersScreen(
                 onValueChange = { query.value = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(tr("group_search_contacts", "Search contacts")) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search") },
+                leadingIcon = { Icon(MiOwnedIcons.Search, contentDescription = "Search") },
                 shape = RoundedCornerShape(16.dp)
             )
             Card(
@@ -386,7 +376,7 @@ private fun MemberRow(
                 Text(tr("group_remove_member", "Remove"), color = MaterialTheme.colorScheme.error)
             }
         } else {
-            Icon(Icons.Filled.Person, contentDescription = "Profile", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(MiOwnedIcons.Person, contentDescription = "Profile", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -451,7 +441,7 @@ private fun roleLabel(role: Int): String {
 private fun PermissionHint(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = Icons.Filled.Lock,
+            imageVector = MiOwnedIcons.Lock,
             contentDescription = text,
             tint = MaterialTheme.colorScheme.error,
             modifier = Modifier.size(14.dp)
@@ -470,7 +460,7 @@ private fun SimpleRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
-    trailing: @Composable () -> Unit = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+    trailing: @Composable () -> Unit = { Icon(MiOwnedIcons.ChevronRight, contentDescription = "Open") }
 ) {
     Row(
         modifier = Modifier

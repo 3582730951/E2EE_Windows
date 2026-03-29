@@ -1,0 +1,58 @@
+{
+  "primary_domains": [
+    "chats",
+    "contacts",
+    "calls",
+    "settings"
+  ],
+  "security_center": {
+    "parent_domain": "settings",
+    "required_children": [
+      "transport_status",
+      "devices",
+      "root_auth",
+      "trust_prompt",
+      "linked_sessions"
+    ]
+  },
+  "auth_routes": [
+    "login",
+    "register",
+    "qr_login",
+    "trust_prompt"
+  ],
+  "conversation_routes": [
+    "conversation_list",
+    "private_chat",
+    "group_chat",
+    "search_in_chat",
+    "pinned_messages",
+    "composer"
+  ],
+  "entity_detail_routes": [
+    "contact_detail",
+    "group_detail",
+    "group_members",
+    "blocked_users"
+  ],
+  "platform_adaptations": {
+    "ios": {
+      "root_container": "tab+navigation",
+      "detail_hides_root_tab": true,
+      "security_center_entry": "settings/security_center",
+      "calls_is_primary_domain": true
+    },
+    "android": {
+      "root_container": "tab+stack",
+      "detail_hides_root_tab": true,
+      "security_center_entry": "settings/security_center",
+      "calls_is_primary_domain": true
+    },
+    "windows": {
+      "root_container": "adaptive-shell",
+      "detail_hides_root_tab": false,
+      "security_center_entry": "settings/security_center",
+      "calls_is_primary_domain": true
+    }
+  }
+}

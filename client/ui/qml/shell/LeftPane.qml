@@ -180,6 +180,107 @@ Item {
                     }
                 }
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Ui.Style.paddingS
+
+                    Button {
+                        id: quickNewChatButton
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        onClicked: root.requestNewChat()
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: quickNewChatButton.down
+                                   ? Ui.Style.pressedBg
+                                   : (quickNewChatButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
+                            border.width: 1
+                            border.color: Ui.Style.topBarPillBorder
+                        }
+                        contentItem: RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Image {
+                                source: "qrc:/mi/e2ee/ui/icons/chat.svg"
+                                width: 13
+                                height: 13
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            Text {
+                                text: Ui.I18n.t("left.newChat")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Button {
+                        id: quickNewGroupButton
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        onClicked: root.requestCreateGroup()
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: quickNewGroupButton.down
+                                   ? Ui.Style.pressedBg
+                                   : (quickNewGroupButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
+                            border.width: 1
+                            border.color: Ui.Style.topBarPillBorder
+                        }
+                        contentItem: RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Image {
+                                source: "qrc:/mi/e2ee/ui/icons/group.svg"
+                                width: 13
+                                height: 13
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            Text {
+                                text: Ui.I18n.t("left.newGroup")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Button {
+                        id: quickAddContactButton
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        onClicked: root.requestAddContact()
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: quickAddContactButton.down
+                                   ? Ui.Style.pressedBg
+                                   : (quickAddContactButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
+                            border.width: 1
+                            border.color: Ui.Style.topBarPillBorder
+                        }
+                        contentItem: RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Image {
+                                source: "qrc:/mi/e2ee/ui/icons/plus.svg"
+                                width: 13
+                                height: 13
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            Text {
+                                text: Ui.I18n.t("left.addContact")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+
                 Components.SearchField {
                     id: searchField
                     Layout.fillWidth: true
@@ -202,111 +303,46 @@ Item {
             implicitWidth: compactWidth
             width: compactWidth
             MenuItem {
-                    id: menuNewChat
-                    text: Ui.I18n.t("left.newChat")
-                    implicitHeight: menuPopup.compactItemHeight
-                    height: menuPopup.compactItemHeight
-                    padding: menuPopup.compactPadding
-                    spacing: menuPopup.compactSpacing
-                    onTriggered: root.requestNewChat()
-                    contentItem: Text {
-                        anchors.fill: parent
-                        text: menuNewChat.text
-                        color: menuNewChat.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
-                        font.pixelSize: menuPopup.compactFontSize
-                        font.family: Ui.Style.fontFamily
-                        renderType: Text.NativeRendering
-                        antialiasing: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
+                id: menuDeviceManager
+                text: Ui.I18n.t("left.deviceManager")
+                implicitHeight: menuPopup.compactItemHeight
+                height: menuPopup.compactItemHeight
+                padding: menuPopup.compactPadding
+                spacing: menuPopup.compactSpacing
+                onTriggered: root.requestDeviceManager()
+                contentItem: Text {
+                    anchors.fill: parent
+                    text: menuDeviceManager.text
+                    color: menuDeviceManager.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    font.pixelSize: menuPopup.compactFontSize
+                    font.family: Ui.Style.fontFamily
+                    renderType: Text.NativeRendering
+                    antialiasing: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
-                MenuItem {
-                    id: menuNewGroup
-                    text: Ui.I18n.t("left.newGroup")
-                    implicitHeight: menuPopup.compactItemHeight
-                    height: menuPopup.compactItemHeight
-                    padding: menuPopup.compactPadding
-                    spacing: menuPopup.compactSpacing
-                    onTriggered: root.requestCreateGroup()
-                    contentItem: Text {
-                        anchors.fill: parent
-                        text: menuNewGroup.text
-                        color: menuNewGroup.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
-                        font.pixelSize: menuPopup.compactFontSize
-                        font.family: Ui.Style.fontFamily
-                        renderType: Text.NativeRendering
-                        antialiasing: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
+            }
+            MenuItem {
+                id: menuSettings
+                text: Ui.I18n.t("left.settings")
+                implicitHeight: menuPopup.compactItemHeight
+                height: menuPopup.compactItemHeight
+                padding: menuPopup.compactPadding
+                spacing: menuPopup.compactSpacing
+                onTriggered: root.requestSettings()
+                contentItem: Text {
+                    anchors.fill: parent
+                    text: menuSettings.text
+                    color: menuSettings.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    font.pixelSize: menuPopup.compactFontSize
+                    font.family: Ui.Style.fontFamily
+                    renderType: Text.NativeRendering
+                    antialiasing: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
-                MenuItem {
-                    id: menuAddContact
-                    text: Ui.I18n.t("left.addContact")
-                    implicitHeight: menuPopup.compactItemHeight
-                    height: menuPopup.compactItemHeight
-                    padding: menuPopup.compactPadding
-                    spacing: menuPopup.compactSpacing
-                    onTriggered: root.requestAddContact()
-                    contentItem: Text {
-                        anchors.fill: parent
-                        text: menuAddContact.text
-                        color: menuAddContact.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
-                        font.pixelSize: menuPopup.compactFontSize
-                        font.family: Ui.Style.fontFamily
-                        renderType: Text.NativeRendering
-                        antialiasing: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                }
-                MenuSeparator { }
-                MenuItem {
-                    id: menuDeviceManager
-                    text: Ui.I18n.t("left.deviceManager")
-                    implicitHeight: menuPopup.compactItemHeight
-                    height: menuPopup.compactItemHeight
-                    padding: menuPopup.compactPadding
-                    spacing: menuPopup.compactSpacing
-                    onTriggered: root.requestDeviceManager()
-                    contentItem: Text {
-                        anchors.fill: parent
-                        text: menuDeviceManager.text
-                        color: menuDeviceManager.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
-                        font.pixelSize: menuPopup.compactFontSize
-                        font.family: Ui.Style.fontFamily
-                        renderType: Text.NativeRendering
-                        antialiasing: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                }
-                MenuSeparator { }
-                MenuItem {
-                    id: menuSettings
-                    text: Ui.I18n.t("left.settings")
-                    implicitHeight: menuPopup.compactItemHeight
-                    height: menuPopup.compactItemHeight
-                    padding: menuPopup.compactPadding
-                    spacing: menuPopup.compactSpacing
-                    onTriggered: root.requestSettings()
-                    contentItem: Text {
-                        anchors.fill: parent
-                        text: menuSettings.text
-                        color: menuSettings.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
-                        font.pixelSize: menuPopup.compactFontSize
-                        font.family: Ui.Style.fontFamily
-                        renderType: Text.NativeRendering
-                        antialiasing: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
             }
         }
 
@@ -325,7 +361,7 @@ Item {
             model: Ui.AppStore.filteredDialogsModel
             boundsBehavior: Flickable.StopAtBounds
             cacheBuffer: 160
-            spacing: 4
+            spacing: 2
             delegate: dialogDelegate
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
         }
@@ -417,10 +453,10 @@ Item {
 
                 Rectangle {
                     anchors.left: parent.left
-                    anchors.leftMargin: 4
+                    anchors.leftMargin: 3
                     anchors.verticalCenter: parent.verticalCenter
                     width: 3
-                    height: parent.height - 20
+                    height: parent.height - 14
                     radius: 2
                     visible: selected
                     color: Ui.Style.tgUnreadBadge
@@ -428,7 +464,7 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    anchors.margins: 3
+                    anchors.margins: 2
                     radius: Ui.Style.radiusLarge
                     color: selected
                            ? Ui.Style.tgActiveRowBg
@@ -439,9 +475,9 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingM
-                    anchors.rightMargin: Ui.Style.paddingM + Ui.Style.paddingS
-                    spacing: Ui.Style.paddingM
+                    anchors.margins: Ui.Style.paddingS
+                    anchors.rightMargin: Ui.Style.paddingS + Ui.Style.paddingXS
+                    spacing: Ui.Style.paddingS
 
                 Rectangle {
                     width: Ui.Style.avatarSizeDialogRow
@@ -454,14 +490,14 @@ Item {
                         anchors.centerIn: parent
                         text: title.length > 0 ? title.charAt(0).toUpperCase() : "?"
                         color: Ui.Style.textPrimary
-                        font.pixelSize: 17
+                        font.pixelSize: 15
                         font.weight: Font.DemiBold
                     }
 
                     Rectangle {
-                        width: 12
-                        height: 12
-                        radius: 6
+                        width: 10
+                        height: 10
+                        radius: 5
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         anchors.rightMargin: 1
@@ -475,12 +511,12 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.rightMargin: Ui.Style.paddingS
-                    spacing: 4
+                    Layout.rightMargin: Ui.Style.paddingXS
+                    spacing: 2
                     Text {
                         text: title
                         Layout.fillWidth: true
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                         color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textPrimary
                         elide: Text.ElideRight
@@ -507,7 +543,7 @@ Item {
                         Text {
                             text: preview
                             Layout.fillWidth: true
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             color: selected ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
                             elide: Text.ElideRight
                         }
@@ -516,21 +552,21 @@ Item {
 
                 Item {
                     id: metaColumn
-                    Layout.preferredWidth: 60
-                    Layout.minimumWidth: 60
-                    Layout.maximumWidth: 60
+                    Layout.preferredWidth: 52
+                    Layout.minimumWidth: 52
+                    Layout.maximumWidth: 52
                     Layout.fillHeight: true
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 2
+                        spacing: 1
 
                         Text {
                             id: timeLabel
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignRight | Qt.AlignTop
                             text: timeText
-                            font.pixelSize: Math.max(12, Ui.Style.microTextSize - 1)
+                            font.pixelSize: 11
                             font.weight: unread > 0 ? Font.DemiBold : Font.Medium
                             color: unread > 0 ? Ui.Style.tgUnreadBadge : (selected ? Ui.Style.dialogSelectedFg : Ui.Style.textMuted)
                             horizontalAlignment: Text.AlignRight

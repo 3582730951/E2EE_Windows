@@ -14,12 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,7 +52,7 @@ fun PrivacyScreen(
                 title = { Text(tr("privacy_title", "Privacy")) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -117,7 +111,7 @@ fun PrivacyScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ToggleRow(
-                        icon = Icons.Filled.Visibility,
+                        icon = MiOwnedIcons.Eye,
                         title = tr("privacy_read_receipts", "Read receipts"),
                         subtitle = tr(
                             "privacy_read_receipts_sub",
@@ -139,7 +133,7 @@ fun PrivacyScreen(
                     }
                     DividerLine()
                     ToggleRow(
-                        icon = Icons.Filled.CheckCircle,
+                        icon = MiOwnedIcons.CheckCircle,
                         title = tr("privacy_screenshot_alerts", "Screenshot alerts"),
                         subtitle = tr(
                             "privacy_screenshot_alerts_sub",
@@ -158,7 +152,7 @@ fun PrivacyScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ToggleRow(
-                        icon = Icons.Filled.Lock,
+                        icon = MiOwnedIcons.Lock,
                         title = tr("privacy_history_enabled", "Store chat history"),
                         subtitle = tr("privacy_history_enabled_sub", "Allow saving chat history locally"),
                         checked = sdk.historyEnabled,
@@ -166,7 +160,7 @@ fun PrivacyScreen(
                     )
                     DividerLine()
                     ToggleRow(
-                        icon = Icons.Filled.CheckCircle,
+                        icon = MiOwnedIcons.CheckCircle,
                         title = tr("privacy_history_delete_attachments", "Delete attachments"),
                         subtitle = tr("privacy_history_delete_attachments_sub", "Remove media when clearing history"),
                         checked = deleteAttachments.value,
@@ -174,7 +168,7 @@ fun PrivacyScreen(
                     )
                     DividerLine()
                     ToggleRow(
-                        icon = Icons.Filled.Block,
+                        icon = MiOwnedIcons.Block,
                         title = tr("privacy_history_secure_wipe", "Secure wipe"),
                         subtitle = tr("privacy_history_secure_wipe_sub", "Overwrite deleted content"),
                         checked = secureWipe.value,
@@ -205,13 +199,13 @@ fun PrivacyScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     SimplePrivacyRow(
-                        icon = Icons.Filled.Lock,
+                        icon = MiOwnedIcons.Lock,
                         title = tr("privacy_passcode_lock", "Passcode lock"),
                         subtitle = tr("account_enabled", "Enabled")
                     )
                     DividerLine()
                     SimplePrivacyRow(
-                        icon = Icons.Filled.Block,
+                        icon = MiOwnedIcons.Block,
                         title = tr("privacy_blocked_users", "Blocked users"),
                         subtitle = if (blockedCount > 0) {
                             tr("privacy_blocked_count", "%d users").format(blockedCount)

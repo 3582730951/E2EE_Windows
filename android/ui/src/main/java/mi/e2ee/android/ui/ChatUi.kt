@@ -46,38 +46,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Forward
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Photo
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -845,7 +813,7 @@ fun ChatScreen(
             }
             if (effectiveState == ChatScreenState.NotFound) {
                 ChatStatusState(
-                    icon = Icons.Filled.Error,
+                    icon = MiOwnedIcons.Alert,
                     title = tr("chat_not_found_title", "Conversation not found"),
                     message = tr(
                         "chat_not_found_message",
@@ -859,7 +827,7 @@ fun ChatScreen(
             }
             if (effectiveState == ChatScreenState.PermissionDenied) {
                 ChatStatusState(
-                    icon = Icons.Filled.Lock,
+                    icon = MiOwnedIcons.Lock,
                     title = tr("chat_permission_title", "Permission required"),
                     message = tr("chat_permission_message", "You don't have access to this conversation."),
                     actionLabel = tr("chat_permission_action", "Go to settings"),
@@ -1345,7 +1313,7 @@ private fun ChatTopBar(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             UiStatusIconBadge(
-                                icon = Icons.Filled.Lock,
+                                icon = MiOwnedIcons.Lock,
                                 contentDescription = tr("chat_encrypted", "Encrypted"),
                                 tone = UiIconTone.Neutral,
                                 framed = true
@@ -1356,28 +1324,28 @@ private fun ChatTopBar(
             },
             navigationIcon = {
                 UiToolbarIconButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    icon = MiOwnedIcons.ArrowBack,
                     contentDescription = tr("chat_back", "Back"),
                     onClick = onBack
                 )
             },
             actions = {
                 TopBarActionIcon(
-                    icon = Icons.Filled.Call,
+                    icon = MiOwnedIcons.Call,
                     contentDescription = tr("chat_call", "Call"),
                     tone = UiIconTone.Accent,
                     onClick = onCall
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 TopBarActionIcon(
-                    icon = Icons.Filled.Videocam,
+                    icon = MiOwnedIcons.Video,
                     contentDescription = tr("chat_video_call", "Video call"),
                     tone = UiIconTone.Primary,
                     onClick = onVideoCall
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 TopBarActionIcon(
-                    icon = Icons.Filled.Settings,
+                    icon = MiOwnedIcons.Settings,
                     contentDescription = tr("settings_title", "Settings"),
                     tone = UiIconTone.Neutral,
                     onClick = onSettings
@@ -1398,7 +1366,7 @@ private fun ChatTopBar(
                 if (BuildConfig.DEBUG) {
                     Spacer(modifier = Modifier.width(6.dp))
                     TopBarActionIcon(
-                        icon = Icons.Filled.BugReport,
+                        icon = MiOwnedIcons.Bug,
                         contentDescription = tr("chat_tools", "Tools"),
                         tone = UiIconTone.Warning,
                         onClick = onTools
@@ -1649,7 +1617,7 @@ private fun ReplySwipeAction(revealProgress: Float) {
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Reply,
+            imageVector = MiOwnedIcons.Reply,
             contentDescription = tr("chat_quick_reply", "Quick reply"),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp)
@@ -1847,7 +1815,7 @@ private fun ReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
         }
         IconButton(onClick = onDismiss) {
             Icon(
-                imageVector = Icons.Filled.Close,
+                imageVector = MiOwnedIcons.Close,
                 contentDescription = tr("chat_dismiss", "Dismiss"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1905,7 +1873,7 @@ private fun LinkPreviewCard(preview: LinkPreview, isMine: Boolean) {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Filled.Link,
+                imageVector = MiOwnedIcons.Link,
                 contentDescription = tr("chat_link_preview", "Link preview"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1958,7 +1926,7 @@ fun AttachmentBlock(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Filled.InsertDriveFile,
+                        imageVector = MiOwnedIcons.File,
                         contentDescription = tr("chat_attachment_file", "File"),
                         tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary
                     )
@@ -1997,7 +1965,7 @@ fun AttachmentBlock(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Filled.Error,
+                            imageVector = MiOwnedIcons.Alert,
                             contentDescription = tr("chat_status_failed", "Failed"),
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(14.dp)
@@ -2025,7 +1993,7 @@ fun AttachmentBlock(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Filled.PlayArrow,
+                    imageVector = MiOwnedIcons.Play,
                     contentDescription = tr("chat_attachment_play", "Play"),
                     tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary
                 )
@@ -2061,7 +2029,7 @@ fun AttachmentBlock(
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Photo,
+                        imageVector = MiOwnedIcons.Photo,
                         contentDescription = tr("chat_attachment_photo", "Photo"),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center)
@@ -2100,7 +2068,7 @@ fun AttachmentBlock(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.LocationOn,
+                        imageVector = MiOwnedIcons.Location,
                         contentDescription = tr("chat_attachment_location", "Location"),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2131,7 +2099,7 @@ fun AttachmentBlock(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Filled.EmojiEmotions,
+                    imageVector = MiOwnedIcons.Emoji,
                     contentDescription = tr("chat_attachment_sticker", "Sticker"),
                     tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(36.dp)
@@ -2174,7 +2142,7 @@ private fun MessageMetaRow(
     ) {
         if (isFavorite) {
             Icon(
-                imageVector = Icons.Filled.Star,
+                imageVector = MiOwnedIcons.Star,
                 contentDescription = tr("chat_favorite", "Favorite"),
                 tint = textColor,
                 modifier = Modifier.size(12.dp)
@@ -2259,7 +2227,7 @@ private fun RevokedMessageRow(
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Undo,
+            imageVector = MiOwnedIcons.Undo,
             contentDescription = tr("chat_recalled", "Recalled"),
             tint = textColor,
             modifier = Modifier.size(14.dp)
@@ -2311,11 +2279,11 @@ private fun BubbleTail(
 @Composable
 private fun StatusIcon(status: MessageStatus) {
     val icon = when (status) {
-        MessageStatus.Sending -> Icons.Filled.Schedule
-        MessageStatus.Sent -> Icons.Filled.Check
-        MessageStatus.Delivered -> Icons.Filled.DoneAll
-        MessageStatus.Read -> Icons.Filled.DoneAll
-        MessageStatus.Failed -> Icons.Filled.Error
+        MessageStatus.Sending -> MiOwnedIcons.Clock
+        MessageStatus.Sent -> MiOwnedIcons.Check
+        MessageStatus.Delivered -> MiOwnedIcons.CheckDouble
+        MessageStatus.Read -> MiOwnedIcons.CheckDouble
+        MessageStatus.Failed -> MiOwnedIcons.Alert
     }
     val tint = when (status) {
         MessageStatus.Read -> MaterialTheme.colorScheme.secondary
@@ -2419,7 +2387,7 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Filled.PushPin,
+                    imageVector = MiOwnedIcons.Pin,
                     contentDescription = tr("chat_pinned", "Pinned"),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -2440,7 +2408,7 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
                 )
             }
             Icon(
-                imageVector = Icons.Filled.ChevronRight,
+                imageVector = MiOwnedIcons.ChevronRight,
                 contentDescription = tr("chat_open", "Open"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2519,7 +2487,7 @@ private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
+                imageVector = MiOwnedIcons.ChevronDown,
                 contentDescription = tr("chat_jump_to_bottom", "Jump to bottom"),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
                 modifier = Modifier.size(18.dp)
@@ -2553,7 +2521,7 @@ private fun ChatEmptyState(
     modifier: Modifier = Modifier
 ) {
     ChatStatusState(
-        icon = Icons.Filled.ChatBubble,
+        icon = MiOwnedIcons.Chat,
         title = title,
         message = message,
         actionLabel = actionLabel,
@@ -2624,7 +2592,7 @@ private fun NetworkBanner(text: String, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Filled.Error,
+            imageVector = MiOwnedIcons.Alert,
             contentDescription = text,
             tint = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.size(16.dp)
@@ -2663,13 +2631,13 @@ private fun MessageActionSheet(
     }
     val canRecall = message.isMine && !message.isRevoked && recallInitial != null && recallRemaining > 0
     val primaryActions = listOf(
-        MessageAction("reply", tr("chat_action_reply", "Reply"), Icons.AutoMirrored.Filled.Reply),
-        MessageAction("forward", tr("chat_action_forward", "Forward"), Icons.AutoMirrored.Filled.Forward),
-        MessageAction("copy", tr("chat_action_copy", "Copy"), Icons.Filled.ContentCopy),
+        MessageAction("reply", tr("chat_action_reply", "Reply"), MiOwnedIcons.Reply),
+        MessageAction("forward", tr("chat_action_forward", "Forward"), MiOwnedIcons.Forward),
+        MessageAction("copy", tr("chat_action_copy", "Copy"), MiOwnedIcons.Copy),
         MessageAction(
             "pin",
             if (isPinned) tr("chat_action_unpin", "Unpin") else tr("chat_action_pin", "Pin"),
-            Icons.Filled.PushPin
+            MiOwnedIcons.Pin
         )
     )
     val secondaryActions = buildList {
@@ -2678,7 +2646,7 @@ private fun MessageActionSheet(
                 "favorite",
                 if (isFavorite) tr("chat_action_unfavorite", "Unfavorite")
                 else tr("chat_action_favorite", "Favorite"),
-                Icons.Filled.Star
+                MiOwnedIcons.Star
             )
         )
         if (canRecall) {
@@ -2686,7 +2654,7 @@ private fun MessageActionSheet(
                 MessageAction(
                     "recall",
                     tr("chat_action_recall", "Recall"),
-                    Icons.AutoMirrored.Filled.Undo,
+                    MiOwnedIcons.Undo,
                     isDestructive = true
                 )
             )
@@ -2695,7 +2663,7 @@ private fun MessageActionSheet(
             MessageAction(
                 "delete",
                 tr("chat_action_delete", "Delete"),
-                Icons.Filled.Delete,
+                MiOwnedIcons.Delete,
                 isDestructive = true
             )
         )
@@ -2786,7 +2754,7 @@ private fun RecallHintRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Undo,
+            imageVector = MiOwnedIcons.Undo,
             contentDescription = if (isAvailable) {
                 tr("chat_recall_available", "Recall available %s")
                     .format(formatCountdown(remainingSeconds))
@@ -3065,27 +3033,27 @@ fun ComposerBar(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     QuickActionButton(
-                        icon = Icons.Filled.Photo,
+                        icon = MiOwnedIcons.Photo,
                         label = tr("chat_quick_photo", "Photo"),
                         onClick = onAttachPhoto
                     )
                     QuickActionButton(
-                        icon = Icons.Filled.InsertDriveFile,
+                        icon = MiOwnedIcons.File,
                         label = tr("chat_quick_file", "File"),
                         onClick = onAttachFile
                     )
                     QuickActionButton(
-                        icon = Icons.Filled.LocationOn,
+                        icon = MiOwnedIcons.Location,
                         label = tr("chat_quick_location", "Location"),
                         onClick = onAttachLocation
                     )
                     QuickActionButton(
-                        icon = Icons.Filled.PersonAdd,
+                        icon = MiOwnedIcons.PersonAdd,
                         label = tr("chat_quick_contact", "Contact"),
                         onClick = onAttachContact
                     )
                     QuickActionButton(
-                        icon = Icons.Filled.EmojiEmotions,
+                        icon = MiOwnedIcons.Emoji,
                         label = tr("chat_quick_sticker", "Sticker"),
                         onClick = onAttachSticker
                     )
@@ -3116,7 +3084,7 @@ fun ComposerBar(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.AttachFile,
+                        imageVector = MiOwnedIcons.Attach,
                         contentDescription = tr("chat_attach", "Attach")
                     )
                 }
@@ -3149,7 +3117,7 @@ fun ComposerBar(
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Send,
+                            imageVector = MiOwnedIcons.Send,
                             contentDescription = tr("chat_send", "Send")
                         )
                     }
@@ -3162,7 +3130,7 @@ fun ComposerBar(
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Mic,
+                            imageVector = MiOwnedIcons.Mic,
                             contentDescription = tr("chat_voice", "Voice input")
                         )
                     }
@@ -3199,7 +3167,7 @@ private fun CompactMessageField(
         trailingIcon = {
             IconButton(onClick = onEmoji) {
                 Icon(
-                    imageVector = Icons.Filled.EmojiEmotions,
+                    imageVector = MiOwnedIcons.Emoji,
                     contentDescription = tr("chat_emoji", "Emoji")
                 )
             }

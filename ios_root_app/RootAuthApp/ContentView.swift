@@ -52,7 +52,6 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .tint(SecurePalette.accent)
-        .preferredColorScheme(.dark)
         .sheet(isPresented: $showScanner) {
             scannerSheet
         }
@@ -408,7 +407,6 @@ struct ContentView: View {
             }
         }
         .tint(SecurePalette.accent)
-        .preferredColorScheme(.dark)
     }
 
     private func copyCode() {

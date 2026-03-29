@@ -30,17 +30,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -737,7 +726,7 @@ private fun GroupChatTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             CompactTopBarIconButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                icon = MiOwnedIcons.ArrowBack,
                 contentDescription = tr("chat_back", "Back"),
                 onClick = onBack
             )
@@ -754,24 +743,24 @@ private fun GroupChatTopBar(
                 )
             }
             CompactTopBarIconButton(
-                icon = Icons.Filled.Call,
+                icon = MiOwnedIcons.Call,
                 contentDescription = tr("group_call_voice", "Voice call"),
                 onClick = onStartVoiceCall
             )
             CompactTopBarIconButton(
-                icon = Icons.Filled.Videocam,
+                icon = MiOwnedIcons.Video,
                 contentDescription = tr("group_call_video", "Video call"),
                 onClick = onStartVideoCall
             )
             if (BuildConfig.DEBUG) {
                 CompactTopBarIconButton(
-                    icon = Icons.Filled.BugReport,
+                    icon = MiOwnedIcons.Bug,
                     contentDescription = tr("chat_tools", "Tools"),
                     onClick = onTools
                 )
             }
             CompactTopBarIconButton(
-                icon = Icons.Filled.Group,
+                icon = MiOwnedIcons.Group,
                 contentDescription = tr("group_members_section", "Members"),
                 onClick = onOpenGroupDetail
             )
@@ -799,7 +788,7 @@ private fun GroupCallBanner(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (room.video) Icons.Filled.Videocam else Icons.Filled.Call,
+                imageVector = if (room.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
                 contentDescription = tr("group_call_active", "Active call"),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -1062,7 +1051,7 @@ private fun GroupRevokedMessageRow(isMine: Boolean) {
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Undo,
+            imageVector = MiOwnedIcons.Undo,
             contentDescription = "Message recalled",
             tint = textColor,
             modifier = Modifier.size(14.dp)
@@ -1137,12 +1126,12 @@ private fun GroupMessageActionSheet(
     }
     val canRecall = message.isMine && !message.isRevoked && recallInitial != null && recallRemaining > 0
     val primaryActions = listOf(
-        MessageAction("reply", tr("chat_action_reply", "Reply"), Icons.AutoMirrored.Filled.Reply),
-        MessageAction("copy", tr("chat_action_copy", "Copy"), Icons.Filled.ContentCopy),
+        MessageAction("reply", tr("chat_action_reply", "Reply"), MiOwnedIcons.Reply),
+        MessageAction("copy", tr("chat_action_copy", "Copy"), MiOwnedIcons.Copy),
         MessageAction(
             "pin",
             if (isPinned) tr("chat_action_unpin", "Unpin") else tr("chat_action_pin", "Pin"),
-            Icons.Filled.PushPin
+            MiOwnedIcons.Pin
         )
     )
     val secondaryActions = buildList {
@@ -1151,7 +1140,7 @@ private fun GroupMessageActionSheet(
                 MessageAction(
                     "recall",
                     tr("chat_action_recall", "Recall"),
-                    Icons.AutoMirrored.Filled.Undo,
+                    MiOwnedIcons.Undo,
                     isDestructive = true
                 )
             )
@@ -1160,7 +1149,7 @@ private fun GroupMessageActionSheet(
             MessageAction(
                 "delete",
                 tr("chat_action_delete", "Delete"),
-                Icons.Filled.Delete,
+                MiOwnedIcons.Delete,
                 isDestructive = true
             )
         )
@@ -1256,7 +1245,7 @@ private fun GroupRecallHintRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Undo,
+            imageVector = MiOwnedIcons.Undo,
             contentDescription = "Recall available",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(14.dp)

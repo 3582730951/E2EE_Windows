@@ -1,5 +1,4 @@
 import QtQuick 2.15
-import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs 6.2
@@ -18,6 +17,8 @@ Item {
     property bool chatSearchVisible: false
     property bool stickToBottom: true
     property bool hasChat: Ui.ChatStore.currentChatId.length > 0
+    readonly property bool adaptiveThreeColumn: (hostWindow ? hostWindow.width : width) >= Ui.Style.threeColumnMinWidth
+    readonly property bool detailsPaneActive: hasChat && (adaptiveThreeColumn || Ui.AppStore.rightPaneVisible)
     property real actionScale: 1.32
     property real topBarScale: 0.72
     property int actionButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
@@ -106,6 +107,15 @@ Item {
         }
         chatSearchVisible = true
         chatSearchField.focusInput()
+    }
+    function toggleDetailsPane() {
+        if (!hasChat) {
+            return
+        }
+        if (adaptiveThreeColumn) {
+            return
+        }
+        Ui.AppStore.toggleRightPane()
     }
 
     function clearChatSearch() {
@@ -736,6 +746,22 @@ Item {
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.video")
                         onClicked: Ui.AppStore.handleCallAction(true)
+                    }
+                    Components.IconButton {
+                        id: detailsPaneButton
+                        icon.source: "qrc:/mi/e2ee/ui/icons/info.svg"
+                        buttonSize: actionButtonSize
+                        iconSize: actionIconSize
+                        bgColor: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.topBarPillBg
+                        hoverBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.hoverBg
+                        pressedBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.pressedBg
+                        baseColor: detailsPaneActive ? Ui.Style.iconActive : Ui.Style.iconMuted
+                        hoverColor: Ui.Style.iconActive
+                        pressColor: Ui.Style.iconActive
+                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        ToolTip.visible: hovered
+                        ToolTip.text: Ui.I18n.t("chat.details")
+                        onClicked: root.toggleDetailsPane()
                     }
                     Components.IconButton {
                         id: chatMoreButton

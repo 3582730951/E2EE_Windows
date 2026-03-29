@@ -16,23 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -72,11 +61,13 @@ fun ContactsApp() {
 fun AddFriendScreen(
     friends: List<FriendUi> = emptyList(),
     requests: List<FriendRequestUi> = emptyList(),
+    showBackButton: Boolean = false,
     onBack: () -> Unit = {},
     onOpenRequests: () -> Unit = {},
     onScanQr: () -> Unit = {},
     onContactSelected: (FriendUi) -> Unit = {},
     onOpenChats: () -> Unit = {},
+    onOpenCalls: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onSendRequest: (String, String) -> Unit = { _, _ -> },
     onAddFriend: (String, String) -> Unit = { _, _ -> },
@@ -100,19 +91,29 @@ fun AddFriendScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(tr("contacts_add_friend_title", "Add friend")) },
+                title = { Text(tr("contacts_title", "Contacts")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (showBackButton) {
+                        UiToolbarIconButton(
+                            icon = MiOwnedIcons.ArrowBack,
+                            contentDescription = tr("chat_back", "Back"),
+                            onClick = onBack
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenRequests) {
-                        Icon(Icons.Filled.Notifications, contentDescription = tr("contacts_requests_title", "Requests"))
-                    }
-                    IconButton(onClick = onScanQr) {
-                        Icon(Icons.Filled.QrCode, contentDescription = tr("contacts_scan", "Scan"))
-                    }
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.Bell,
+                        contentDescription = tr("contacts_requests_title", "Requests"),
+                        onClick = onOpenRequests,
+                        tone = UiIconTone.Accent
+                    )
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.Photo,
+                        contentDescription = tr("contacts_scan", "Scan"),
+                        onClick = onScanQr,
+                        tone = UiIconTone.Neutral
+                    )
                 }
             )
         },
@@ -121,6 +122,7 @@ fun AddFriendScreen(
                 activeTab = ConversationTab.Contacts,
                 onContacts = {},
                 onChats = onOpenChats,
+                onCalls = onOpenCalls,
                 onSettings = onOpenSettings
             )
         },
@@ -139,20 +141,20 @@ fun AddFriendScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(tr("contacts_search_placeholder", "Search by username or phone")) },
                 leadingIcon = {
-                    Icon(Icons.Filled.Search, contentDescription = tr("contacts_search", "Search"))
+                    Icon(MiOwnedIcons.Search, contentDescription = tr("contacts_search", "Search"))
                 },
                 shape = RoundedCornerShape(16.dp)
             )
             SurfaceSectionCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(text = tr("contacts_add_friend_title", "Add friend"), style = MaterialTheme.typography.titleMedium)
+                    Text(text = tr("contacts_add_card_title", "New contact"), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = usernameInput.value,
                         onValueChange = { usernameInput.value = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_username", "Username")) },
-                        leadingIcon = { Icon(Icons.Filled.PersonAdd, contentDescription = "Username") },
+                        leadingIcon = { Icon(MiOwnedIcons.PersonAdd, contentDescription = "Username") },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -162,7 +164,7 @@ fun AddFriendScreen(
                         onValueChange = { remarkInput.value = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_remark", "Remark (optional)")) },
-                        leadingIcon = { Icon(Icons.Filled.QrCode, contentDescription = "Remark") },
+                        leadingIcon = { Icon(MiOwnedIcons.Person, contentDescription = "Remark") },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -203,14 +205,14 @@ fun AddFriendScreen(
             }
             SurfaceSectionCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(text = tr("contacts_join_group", "Join group"), style = MaterialTheme.typography.titleMedium)
+                    Text(text = tr("contacts_join_group_short", "Join group"), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = groupIdInput.value,
                         onValueChange = { groupIdInput.value = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_group_id", "Group id")) },
-                        leadingIcon = { Icon(Icons.Filled.Group, contentDescription = "Group") },
+                        leadingIcon = { Icon(MiOwnedIcons.Group, contentDescription = "Group") },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -243,7 +245,7 @@ fun AddFriendScreen(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Filled.Notifications, contentDescription = tr("contacts_requests_title", "Requests"))
+                        Icon(MiOwnedIcons.Bell, contentDescription = tr("contacts_requests_title", "Requests"))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = tr("contacts_requests_count", "Requests (%d)").format(requests.size),
@@ -282,11 +284,13 @@ private fun FriendRow(friend: FriendUi, onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = friendDisplayName(friend), style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    text = friend.status,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (friend.remark.isNotBlank()) {
+                    Text(
+                        text = friend.username,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             FilledTonalButton(
                 onClick = onClick,
@@ -295,7 +299,7 @@ private fun FriendRow(friend: FriendUi, onClick: () -> Unit) {
                     contentColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Icon(Icons.Filled.ChevronRight, contentDescription = tr("contacts_open", "Open"))
+                Icon(MiOwnedIcons.ChevronRight, contentDescription = tr("contacts_open", "Open"))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(tr("contacts_open", "Open"))
             }
@@ -316,9 +320,11 @@ fun FriendRequestsScreen(
             TopAppBar(
                 title = { Text(tr("contacts_requests_title", "Friend requests")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.ArrowBack,
+                        contentDescription = tr("chat_back", "Back"),
+                        onClick = onBack
+                    )
                 }
             )
         },
@@ -394,14 +400,18 @@ fun ContactDetailScreen(
             TopAppBar(
                 title = { Text(tr("contacts_detail_title", "Contact")) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.ArrowBack,
+                        contentDescription = tr("chat_back", "Back"),
+                        onClick = onBack
+                    )
                 },
                 actions = {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Filled.ChevronRight, contentDescription = tr("contacts_more", "More"))
-                    }
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.ChevronRight,
+                        contentDescription = tr("contacts_more", "More"),
+                        onClick = {}
+                    )
                 }
             )
         },
@@ -468,13 +478,13 @@ fun ContactDetailScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ActionRow(
-                        icon = Icons.Filled.Delete,
+                        icon = MiOwnedIcons.Delete,
                         label = tr("contacts_delete", "Delete contact"),
                         tint = MaterialTheme.colorScheme.error,
                         onClick = onDelete
                     )
                     ActionRow(
-                        icon = Icons.Filled.Block,
+                        icon = MiOwnedIcons.Alert,
                         label = if (isBlocked) tr("contacts_unblock", "Unblock user") else tr("contacts_block", "Block user"),
                         tint = MaterialTheme.colorScheme.error,
                         onClick = { onToggleBlock(!isBlocked) }

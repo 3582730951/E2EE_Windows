@@ -33,7 +33,7 @@ import mi.e2ee.android.sdk.GroupMemberRole
 @Composable
 fun UiHost(
     sdk: SdkBridge,
-    themeMode: Int = ThemeMode.ForceDark,
+    themeMode: Int = ThemeMode.FollowSystem,
     onThemeModeChange: (Int) -> Unit = {}
 ) {
     val facade = remember(sdk) { SdkUiBridgeFacade(sdk) }
@@ -47,7 +47,7 @@ fun UiHost(
 @Composable
 private fun UiHost(
     facade: UiBridgeFacade,
-    themeMode: Int = ThemeMode.ForceDark,
+    themeMode: Int = ThemeMode.FollowSystem,
     onThemeModeChange: (Int) -> Unit = {}
 ) {
     val sdk = facade.sdk
@@ -137,14 +137,33 @@ private fun UiHost(
             onToggleMute = { facade.toggleConversationMute(it.id) },
             onDeleteConversation = { conversation -> facade.deleteConversation(conversation) },
             onOpenConversation = { conversation -> navigate(facade.openConversationRoute(conversation)) },
-            onOpenSettings = { navigate(FlowScreen.Settings) },
-            onOpenContacts = { navigate(FlowScreen.AddFriend) },
+            onOpenSettings = { resetTo(FlowScreen.Settings) },
+            onOpenContacts = { resetTo(FlowScreen.AddFriend) },
+            onOpenCalls = { resetTo(FlowScreen.Calls) },
             onOpenNewGroup = {
                 val route = facade.createGroupAndRoute()
                 if (route != null) {
                     navigate(route)
                 }
             }
+        )
+        FlowScreen.Calls -> CallsHomeScreen(
+            pendingCall = sdk.pendingCall,
+            activePeerCall = sdk.activePeerCall,
+            activeGroupCall = sdk.activeGroupCall,
+            groupRooms = sdk.groupCallRooms,
+            onOpenPeerCall = { state -> navigate(FlowScreen.PeerCall(state.callIdHex)) },
+            onOpenGroupCall = { state -> navigate(FlowScreen.GroupCall(state.groupId, state.callIdHex)) },
+            onJoinGroupRoom = { room ->
+                val info = sdk.joinGroupCallHex(room.groupId, room.callId, room.video)
+                val active = sdk.activeGroupCall
+                if (info != null && active != null) {
+                    navigate(FlowScreen.GroupCall(room.groupId, active.callIdHex))
+                }
+            },
+            onOpenChats = { resetTo(FlowScreen.Conversations) },
+            onOpenContacts = { resetTo(FlowScreen.AddFriend) },
+            onOpenSettings = { resetTo(FlowScreen.Settings) }
         )
         is FlowScreen.Chat -> {
             val convId = current.conversationId
@@ -309,13 +328,15 @@ private fun UiHost(
             sdk = sdk,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+            showBackButton = navState.stackSnapshot().size > 1,
             onBack = { goBack() },
             onOpenSecurityCenter = { navigate(FlowScreen.SecurityCenter) },
             onOpenAccount = { navigate(FlowScreen.Account) },
             onOpenPrivacy = { navigate(FlowScreen.Privacy) },
             onOpenDiagnostics = { navigate(FlowScreen.Diagnostics) },
-            onOpenChats = { navigate(FlowScreen.Conversations) },
-            onOpenContacts = { navigate(FlowScreen.AddFriend) }
+            onOpenChats = { resetTo(FlowScreen.Conversations) },
+            onOpenCalls = { resetTo(FlowScreen.Calls) },
+            onOpenContacts = { resetTo(FlowScreen.AddFriend) }
         )
         FlowScreen.SecurityCenter -> AccountScreen(
             sdk = sdk,
@@ -345,12 +366,14 @@ private fun UiHost(
         FlowScreen.AddFriend -> AddFriendScreen(
             friends = sdk.friends,
             requests = sdk.friendRequests,
+            showBackButton = navState.stackSnapshot().size > 1,
             onBack = { goBack() },
             onOpenRequests = { navigate(FlowScreen.FriendRequests) },
             onScanQr = { navigate(FlowScreen.QrLoginScan) },
             onContactSelected = { friend -> navigate(FlowScreen.ContactDetail(friend.username)) },
-            onOpenChats = { navigate(FlowScreen.Conversations) },
-            onOpenSettings = { navigate(FlowScreen.Settings) },
+            onOpenChats = { resetTo(FlowScreen.Conversations) },
+            onOpenCalls = { resetTo(FlowScreen.Calls) },
+            onOpenSettings = { resetTo(FlowScreen.Settings) },
             onSendRequest = { username, remark -> sdk.sendFriendRequest(username, remark) },
             onAddFriend = { username, remark -> sdk.addFriend(username, remark) },
             onJoinGroup = { groupId -> sdk.joinGroup(groupId) }

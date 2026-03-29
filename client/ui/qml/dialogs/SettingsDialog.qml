@@ -26,10 +26,24 @@ ApplicationWindow {
         { label: Ui.I18n.t("settings.privacy.aiEnhanceQualityX2"), scale: 2 },
         { label: Ui.I18n.t("settings.privacy.aiEnhanceQualityX4"), scale: 4 }
     ]
+    property var themeOptions: [
+        { label: Ui.I18n.t("settings.theme.system"), mode: "system" },
+        { label: Ui.I18n.t("settings.theme.light"), mode: "light" },
+        { label: Ui.I18n.t("settings.theme.dark"), mode: "dark" }
+    ]
 
     function aiQualityIndex(scale) {
         for (var i = 0; i < aiQualityOptions.length; ++i) {
             if (aiQualityOptions[i].scale === scale) {
+                return i
+            }
+        }
+        return 0
+    }
+
+    function themeModeIndex(mode) {
+        for (var i = 0; i < themeOptions.length; ++i) {
+            if (themeOptions[i].mode === mode) {
                 return i
             }
         }
@@ -152,10 +166,11 @@ ApplicationWindow {
                     spacing: Ui.Style.paddingS
                     Text { text: Ui.I18n.t("settings.theme"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
                     ComboBox {
-                        model: [Ui.I18n.t("settings.theme.dark"), Ui.I18n.t("settings.theme.light")]
+                        model: themeOptions
+                        textRole: "label"
                         Layout.preferredWidth: 220
-                        currentIndex: Ui.Style.themeMode === "light" ? 1 : 0
-                        onActivated: Ui.Style.themeMode = currentIndex === 1 ? "light" : "dark"
+                        currentIndex: themeModeIndex(Ui.Style.themeMode)
+                        onActivated: Ui.Style.themeMode = model[currentIndex].mode
                     }
                     Text { text: Ui.I18n.t("settings.language"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
                     ComboBox {

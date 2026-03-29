@@ -768,20 +768,17 @@ struct AppShell: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(SecurePalette.backgroundBottom.opacity(0.98), for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .tint(SecurePalette.accent)
-        .preferredColorScheme(.dark)
     }
 
     private static func configureTabBarAppearance() {
         let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundEffect = nil
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundBottom)
-        appearance.shadowColor = UIColor(SecurePalette.border.opacity(0.55))
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundBottom).withAlphaComponent(0.90)
+        appearance.shadowColor = UIColor.separator.withAlphaComponent(0.30)
 
         let selectedColor = UIColor(SecurePalette.accent)
-        let normalColor = UIColor.white.withAlphaComponent(0.84)
+        let normalColor = UIColor.secondaryLabel
         let selectedTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: selectedColor]
         let normalTextAttributes: [NSAttributedString.Key: Any] = [.foregroundColor: normalColor]
 
@@ -797,7 +794,7 @@ struct AppShell: View {
         let tabBar = UITabBar.appearance()
         tabBar.standardAppearance = appearance
         tabBar.unselectedItemTintColor = normalColor
-        tabBar.isTranslucent = false
+        tabBar.isTranslucent = true
         if #available(iOS 15.0, *) {
             tabBar.scrollEdgeAppearance = appearance
         }
@@ -805,15 +802,14 @@ struct AppShell: View {
 
     private static func configureNavigationBarAppearance() {
         let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundEffect = nil
-        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop.opacity(0.96))
-        appearance.shadowColor = UIColor(SecurePalette.border)
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = UIColor(SecurePalette.backgroundTop).withAlphaComponent(0.92)
+        appearance.shadowColor = UIColor.separator.withAlphaComponent(0.32)
         appearance.titleTextAttributes = [
-            .foregroundColor: UIColor(SecurePalette.textPrimary)
+            .foregroundColor: UIColor.label
         ]
         appearance.largeTitleTextAttributes = [
-            .foregroundColor: UIColor(SecurePalette.textPrimary)
+            .foregroundColor: UIColor.label
         ]
 
         let navigationBar = UINavigationBar.appearance()

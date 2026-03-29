@@ -20,11 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -267,7 +262,7 @@ private fun CallLayout(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    imageVector = Icons.Filled.MicOff,
+                    imageVector = MiOwnedIcons.MicOff,
                     contentDescription = null,
                     modifier = Modifier.size(72.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -289,7 +284,7 @@ private fun CallLayout(
                     .padding(12.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Filled.BugReport,
+                    imageVector = MiOwnedIcons.Bug,
                     contentDescription = tr("call_tools", "Call tools"),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -422,7 +417,7 @@ private fun CallLayout(
             )
         } else {
             Icon(
-                imageVector = Icons.Filled.VideocamOff,
+                imageVector = MiOwnedIcons.VideoOff,
                 contentDescription = null,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -446,7 +441,7 @@ private fun CallLayout(
                 modifier = Modifier.size(64.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Filled.CallEnd,
+                    imageVector = MiOwnedIcons.CallEnd,
                     contentDescription = tr("call_hangup", "Hang up"),
                     tint = MaterialTheme.colorScheme.onError
                 )

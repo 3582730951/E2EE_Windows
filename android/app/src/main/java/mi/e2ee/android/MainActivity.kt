@@ -59,12 +59,12 @@ class MainActivity : ComponentActivity() {
 
     private fun loadThemeMode(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val saved = prefs.getInt(KEY_THEME_MODE, ThemeMode.ForceDark)
+        val saved = prefs.getInt(KEY_THEME_MODE, ThemeMode.FollowSystem)
         return when (saved) {
             ThemeMode.FollowSystem,
             ThemeMode.ForceDark,
             ThemeMode.ForceLight -> saved
-            else -> ThemeMode.ForceDark
+            else -> ThemeMode.FollowSystem
         }
     }
 

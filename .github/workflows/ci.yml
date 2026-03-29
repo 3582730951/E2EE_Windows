@@ -35,7 +35,23 @@ env:
   MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS: "1.0"
 
 jobs:
+  verify-ui-contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify shared UI contract
+        run: |
+          set -euo pipefail
+          python3 tools/verify_ui_contract.py
+
   build-package:
+    needs:
+      - verify-ui-contract
     runs-on: windows-latest
     defaults:
       run:
@@ -1021,6 +1037,8 @@ jobs:
           path: dist/mi_e2ee_server.zip
 
   build-linux:
+    needs:
+      - verify-ui-contract
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1223,6 +1241,8 @@ jobs:
           path: dist/mi_e2ee_server_linux.tar.gz
 
   build-linux-debian:
+    needs:
+      - verify-ui-contract
     runs-on: ubuntu-latest
     container:
       image: buildpack-deps:bookworm
@@ -1434,6 +1454,8 @@ jobs:
             --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
   build-macos:
+    needs:
+      - verify-ui-contract
     runs-on: macos-latest
     defaults:
       run:
@@ -1634,6 +1656,8 @@ jobs:
           path: dist/mi_e2ee_server_macos.tar.gz
 
   build-ios-rootauth:
+    needs:
+      - verify-ui-contract
     runs-on: macos-latest
     outputs:
       app_bundle_verified: ${{ steps.ios_bundle.outputs.app_bundle_verified }}
@@ -2111,6 +2135,8 @@ jobs:
           if-no-files-found: ignore
 
   build-android:
+    needs:
+      - verify-ui-contract
     runs-on: ubuntu-latest
     outputs:
       emulator_validated: ${{ steps.android_emulator_validation.outputs.validated }}
@@ -2526,6 +2552,7 @@ jobs:
   final-acceptance:
     if: always()
     needs:
+      - verify-ui-contract
       - build-package
       - build-linux
       - build-linux-debian
@@ -2539,6 +2566,7 @@ jobs:
     steps:
       - name: Verify final acceptance gates
         env:
+          VERIFY_UI_CONTRACT_RESULT: ${{ needs.verify-ui-contract.result }}
           BUILD_PACKAGE_RESULT: ${{ needs.build-package.result }}
           BUILD_LINUX_RESULT: ${{ needs.build-linux.result }}
           BUILD_LINUX_DEBIAN_RESULT: ${{ needs.build-linux-debian.result }}
@@ -2568,6 +2596,7 @@ jobs:
               fail=1
             fi
           }
+          check_job "verify-ui-contract" "$VERIFY_UI_CONTRACT_RESULT"
           check_job "build-package" "$BUILD_PACKAGE_RESULT"
           check_job "build-linux" "$BUILD_LINUX_RESULT"
           check_job "build-linux-debian" "$BUILD_LINUX_DEBIAN_RESULT"
@@ -2592,6 +2621,7 @@ jobs:
           {
             echo "## Final Acceptance"
             echo
+            echo "- Shared UI contract verification: success"
             echo "- Windows/Linux/macOS packaging jobs: success"
             echo "- iOS app bundle evidence: ${IOS_APP_BUNDLE_VERIFIED}"
             echo "- iOS smoke evidence: ${IOS_SMOKE_VERIFIED}"

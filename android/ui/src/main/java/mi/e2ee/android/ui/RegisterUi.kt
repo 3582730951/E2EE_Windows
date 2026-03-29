@@ -16,10 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -110,7 +106,7 @@ fun RegisterScreen(
                         placeholder = { Text(tr("register_name", "Display name")) },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Filled.Person,
+                                imageVector = MiOwnedIcons.Person,
                                 contentDescription = "Name"
                             )
                         },
@@ -127,7 +123,7 @@ fun RegisterScreen(
                         placeholder = { Text(tr("register_phone_email", "Phone or email")) },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Filled.Mail,
+                                imageVector = MiOwnedIcons.Mail,
                                 contentDescription = "Email"
                             )
                         },
@@ -144,7 +140,7 @@ fun RegisterScreen(
                         placeholder = { Text(tr("register_password", "Password")) },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Filled.Lock,
+                                imageVector = MiOwnedIcons.Lock,
                                 contentDescription = "Password"
                             )
                         },
@@ -161,7 +157,7 @@ fun RegisterScreen(
                         placeholder = { Text(tr("register_confirm_password", "Confirm password")) },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Filled.Lock,
+                                imageVector = MiOwnedIcons.Lock,
                                 contentDescription = "Confirm password"
                             )
                         },

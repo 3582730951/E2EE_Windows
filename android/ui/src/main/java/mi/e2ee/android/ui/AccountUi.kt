@@ -14,15 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -92,7 +83,7 @@ fun AccountScreen(
                 title = { Text(screenTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -118,19 +109,19 @@ fun AccountScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     AccountRow(
-                        Icons.Filled.Key,
+                        MiOwnedIcons.Key,
                         tr("account_change_password", "Change password"),
                         tr("account_change_password_sub", "Last updated 12 days ago")
                     )
                     DividerLine()
                     AccountRow(
-                        Icons.Filled.Shield,
+                        MiOwnedIcons.Shield,
                         tr("account_two_factor", "Two-factor authentication"),
                         tr("account_enabled", "Enabled")
                     )
                     DividerLine()
                     AccountRow(
-                        Icons.Filled.VerifiedUser,
+                        MiOwnedIcons.ShieldCheck,
                         tr("account_encrypted_backup", "Encrypted backup"),
                         tr("account_enabled", "Enabled"),
                         trailing = {
@@ -149,7 +140,7 @@ fun AccountScreen(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     AccountRow(
-                        Icons.Filled.QrCode,
+                        MiOwnedIcons.QrCode,
                         tr("account_my_qr", "My QR code"),
                         tr("account_my_qr_sub", "Share securely")
                     )
@@ -182,7 +173,7 @@ fun AccountScreen(
                             IconButton(onClick = {
                                 clipboard.setText(AnnotatedString(pubkey))
                             }) {
-                                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
+                                Icon(MiOwnedIcons.Copy, contentDescription = "Copy")
                             }
                         }
                         if (code.isNotBlank()) {
@@ -197,7 +188,7 @@ fun AccountScreen(
                                 IconButton(onClick = {
                                     clipboard.setText(AnnotatedString(code))
                                 }) {
-                                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
+                                    Icon(MiOwnedIcons.Copy, contentDescription = "Copy")
                                 }
                             }
                             Text(
@@ -489,7 +480,7 @@ private fun AccountHeader(
                     )
                 }
             }
-            Icon(Icons.Filled.ChevronRight, contentDescription = "Edit")
+            Icon(MiOwnedIcons.ChevronRight, contentDescription = "Edit")
         }
     }
 }
@@ -499,7 +490,7 @@ private fun AccountRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
-    trailing: @Composable () -> Unit = { Icon(Icons.Filled.ChevronRight, contentDescription = "Open") }
+    trailing: @Composable () -> Unit = { Icon(MiOwnedIcons.ChevronRight, contentDescription = "Open") }
 ) {
     Row(
         modifier = Modifier
@@ -546,7 +537,7 @@ private fun DeviceRow(
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.Devices, contentDescription = device.displayId.ifBlank { "Device" })
+            Icon(MiOwnedIcons.Devices, contentDescription = device.displayId.ifBlank { "Device" })
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {

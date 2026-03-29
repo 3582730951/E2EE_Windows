@@ -29,18 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -122,6 +110,7 @@ fun ConversationListScreen(
     onOpenConversation: (ConversationPreview) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenContacts: () -> Unit = {},
+    onOpenCalls: () -> Unit = {},
     onOpenNewGroup: () -> Unit = {}
 ) {
     val strings = LocalStrings.current
@@ -219,6 +208,7 @@ fun ConversationListScreen(
                 activeTab = ConversationTab.Chats,
                 onContacts = onOpenContacts,
                 onChats = {},
+                onCalls = onOpenCalls,
                 onSettings = onOpenSettings
             )
         },
@@ -421,6 +411,7 @@ fun ConversationListScreen(
 enum class ConversationTab {
     Contacts,
     Chats,
+    Calls,
     Settings
 }
 
@@ -442,7 +433,7 @@ private fun ConversationListTailState(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             UiSemanticIcon(
-                icon = Icons.Filled.DoneAll,
+                icon = MiOwnedIcons.CheckDouble,
                 contentDescription = tr("conversations_list_end", "End of list"),
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
@@ -492,7 +483,7 @@ private fun ConversationListEmptyState(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             UiSemanticIcon(
-                icon = Icons.Filled.Search,
+                icon = MiOwnedIcons.Search,
                 contentDescription = title,
                 tone = UiIconTone.Primary,
                 size = ChatUiTokens.IconContainerSm,
@@ -531,7 +522,7 @@ private fun ConversationTopBar(
         },
         actions = {
             UiToolbarIconButton(
-                icon = Icons.Filled.Add,
+                icon = MiOwnedIcons.Add,
                 contentDescription = tr("conversations_quick_new_group", "New group"),
                 tone = UiIconTone.Primary,
                 onClick = onNewGroup
@@ -550,6 +541,7 @@ fun ConversationBottomBar(
     activeTab: ConversationTab,
     onContacts: () -> Unit,
     onChats: () -> Unit,
+    onCalls: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -563,19 +555,25 @@ fun ConversationBottomBar(
         ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Contacts,
             onClick = onContacts,
-            icon = Icons.Filled.People,
+            icon = MiOwnedIcons.Person,
             label = tr("nav_contacts", "Contacts")
         )
         ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Chats,
             onClick = onChats,
-            icon = Icons.Filled.ChatBubble,
+            icon = MiOwnedIcons.Chat,
             label = tr("nav_chats", "Chats")
+        )
+        ConversationBottomNavItem(
+            selected = activeTab == ConversationTab.Calls,
+            onClick = onCalls,
+            icon = MiOwnedIcons.Call,
+            label = tr("nav_calls", "Calls")
         )
         ConversationBottomNavItem(
             selected = activeTab == ConversationTab.Settings,
             onClick = onSettings,
-            icon = Icons.Filled.Settings,
+            icon = MiOwnedIcons.Settings,
             label = tr("nav_settings", "Settings")
         )
     }
@@ -641,7 +639,7 @@ private fun CompactSearchField(
         },
         leadingIcon = {
             Icon(
-                imageVector = Icons.Filled.Search,
+                imageVector = MiOwnedIcons.Search,
                 contentDescription = tr("conversations_search_icon", "Search")
             )
         },
@@ -747,7 +745,7 @@ private fun SwipeRevealConversation(
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeActionButton(
-                icon = Icons.Filled.PushPin,
+                icon = MiOwnedIcons.Pin,
                 label = if (item.isPinned) {
                     tr("conversations_action_unpin", "Unpin")
                 } else {
@@ -762,7 +760,7 @@ private fun SwipeRevealConversation(
             )
             Spacer(modifier = Modifier.width(8.dp))
             SwipeActionButton(
-                icon = Icons.Filled.DoneAll,
+                icon = MiOwnedIcons.CheckDouble,
                 label = if (item.unreadCount > 0 || item.mentionCount > 0) {
                     tr("conversations_action_read", "Read")
                 } else {
@@ -777,7 +775,7 @@ private fun SwipeRevealConversation(
             )
             Spacer(modifier = Modifier.width(8.dp))
             SwipeActionButton(
-                icon = Icons.Filled.Delete,
+                icon = MiOwnedIcons.Delete,
                 label = tr("conversations_action_delete", "Delete"),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = {
@@ -888,7 +886,7 @@ private fun ConversationRow(
                     AvatarBadge(initials = item.initials, tint = MaterialTheme.colorScheme.primary)
                     if (item.isGroup) {
                         UiSemanticIcon(
-                            icon = Icons.Filled.Group,
+                            icon = MiOwnedIcons.Group,
                             contentDescription = tr("conversations_group", "Group"),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -941,7 +939,7 @@ private fun ConversationRow(
                         val hasBadges = item.isMuted || item.mentionCount > 0 || item.unreadCount > 0
                         if (item.isMuted) {
                             ConversationStatusGlyph(
-                                icon = Icons.Filled.NotificationsOff,
+                                icon = MiOwnedIcons.BellOff,
                                 contentDescription = tr("conversations_muted", "Muted"),
                                 tone = UiIconTone.Neutral
                             )
@@ -965,7 +963,7 @@ private fun ConversationRow(
                                 Spacer(modifier = Modifier.width(4.dp))
                             }
                             ConversationStatusGlyph(
-                                icon = Icons.Filled.PushPin,
+                                icon = MiOwnedIcons.Pin,
                                 contentDescription = tr("conversations_pinned", "Pinned"),
                                 tone = UiIconTone.Neutral
                             )
@@ -997,7 +995,7 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_pin", "Pin")
             },
-            icon = Icons.Filled.PushPin
+            icon = MiOwnedIcons.Pin
         ),
         ConversationAction(
             id = "mute",
@@ -1006,7 +1004,7 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_mute", "Mute")
             },
-            icon = if (item.isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff
+            icon = if (item.isMuted) MiOwnedIcons.Bell else MiOwnedIcons.BellOff
         ),
         ConversationAction(
             id = "read",
@@ -1015,12 +1013,12 @@ private fun ConversationActionSheet(
             } else {
                 tr("conversations_action_mark_unread", "Mark unread")
             },
-            icon = Icons.Filled.DoneAll
+            icon = MiOwnedIcons.CheckDouble
         ),
         ConversationAction(
             id = "delete",
             label = tr("conversations_action_delete", "Delete"),
-            icon = Icons.Filled.Delete,
+            icon = MiOwnedIcons.Delete,
             isDestructive = true
         )
     )

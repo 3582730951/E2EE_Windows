@@ -2,20 +2,50 @@ import SwiftUI
 import UIKit
 
 enum SecurePalette {
-    static let backgroundTop = Color(red: 0.08, green: 0.13, blue: 0.20)
-    static let backgroundBottom = Color(red: 0.05, green: 0.09, blue: 0.15)
-    static let surface = Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.96)
-    static let surfaceRaised = Color(red: 0.13, green: 0.18, blue: 0.25).opacity(0.98)
-    static let border = Color.white.opacity(0.08)
-    static let borderStrong = Color.white.opacity(0.14)
-    static let textPrimary = Color(red: 0.93, green: 0.95, blue: 0.98)
-    static let textSecondary = Color(red: 0.63, green: 0.70, blue: 0.80)
-    static let textMuted = Color(red: 0.49, green: 0.57, blue: 0.66)
-    static let accent = Color(red: 0.28, green: 0.62, blue: 0.98)
-    static let accentSoft = Color(red: 0.18, green: 0.30, blue: 0.44)
-    static let success = Color(red: 0.24, green: 0.80, blue: 0.54)
-    static let warning = Color(red: 0.96, green: 0.71, blue: 0.29)
-    static let danger = Color(red: 0.94, green: 0.39, blue: 0.43)
+    private static func dynamicUIColor(light: UIColor, dark: UIColor) -> UIColor {
+        UIColor { trait in
+            trait.userInterfaceStyle == .dark ? dark : light
+        }
+    }
+
+    static let backgroundTopUIColor = dynamicUIColor(
+        light: UIColor(red: 0.95, green: 0.97, blue: 1.00, alpha: 1.0),
+        dark: UIColor(red: 0.10, green: 0.14, blue: 0.22, alpha: 1.0)
+    )
+    static let backgroundBottomUIColor = dynamicUIColor(
+        light: UIColor(red: 0.91, green: 0.94, blue: 0.99, alpha: 1.0),
+        dark: UIColor(red: 0.07, green: 0.10, blue: 0.17, alpha: 1.0)
+    )
+
+    static let backgroundTop = Color(uiColor: backgroundTopUIColor)
+    static let backgroundBottom = Color(uiColor: backgroundBottomUIColor)
+    static let surface = Color(uiColor: dynamicUIColor(
+        light: UIColor.white.withAlphaComponent(0.84),
+        dark: UIColor.secondarySystemBackground.withAlphaComponent(0.88)
+    ))
+    static let surfaceRaised = Color(uiColor: dynamicUIColor(
+        light: UIColor.white.withAlphaComponent(0.94),
+        dark: UIColor.tertiarySystemBackground.withAlphaComponent(0.90)
+    ))
+    static let border = Color(uiColor: dynamicUIColor(
+        light: UIColor.separator.withAlphaComponent(0.40),
+        dark: UIColor.separator.withAlphaComponent(0.65)
+    ))
+    static let borderStrong = Color(uiColor: dynamicUIColor(
+        light: UIColor.separator.withAlphaComponent(0.62),
+        dark: UIColor.separator.withAlphaComponent(0.82)
+    ))
+    static let textPrimary = Color(uiColor: .label)
+    static let textSecondary = Color(uiColor: .secondaryLabel)
+    static let textMuted = Color(uiColor: .tertiaryLabel)
+    static let accent = Color(uiColor: .systemBlue)
+    static let accentSoft = Color(uiColor: dynamicUIColor(
+        light: UIColor.systemBlue.withAlphaComponent(0.16),
+        dark: UIColor.systemBlue.withAlphaComponent(0.24)
+    ))
+    static let success = Color(uiColor: .systemGreen)
+    static let warning = Color(uiColor: .systemOrange)
+    static let danger = Color(uiColor: .systemRed)
 }
 
 enum SecureBannerTone {
@@ -51,15 +81,15 @@ struct SecureSceneBackground: View {
                 endPoint: .bottomTrailing
             )
             Circle()
-                .fill(SecurePalette.accent.opacity(0.16))
-                .frame(width: 280, height: 280)
-                .blur(radius: 80)
-                .offset(x: 140, y: -180)
+                .fill(SecurePalette.accent.opacity(0.10))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 120, y: -170)
             Circle()
-                .fill(SecurePalette.success.opacity(0.10))
-                .frame(width: 220, height: 220)
-                .blur(radius: 80)
-                .offset(x: -160, y: 220)
+                .fill(SecurePalette.success.opacity(0.07))
+                .frame(width: 190, height: 190)
+                .blur(radius: 85)
+                .offset(x: -130, y: 200)
         }
         .ignoresSafeArea()
     }
@@ -88,13 +118,20 @@ private final class SecureHostBackgroundView: UIView {
     }
 
     private func configureGradient() {
+        let resolvedTop = SecurePalette.backgroundTopUIColor.resolvedColor(with: traitCollection)
+        let resolvedBottom = SecurePalette.backgroundBottomUIColor.resolvedColor(with: traitCollection)
         gradientLayer.colors = [
-            UIColor(SecurePalette.backgroundTop).cgColor,
-            UIColor(SecurePalette.backgroundBottom).cgColor
+            resolvedTop.cgColor,
+            resolvedBottom.cgColor
         ]
         gradientLayer.locations = [0.0, 1.0]
         gradientLayer.startPoint = CGPoint(x: 0.1, y: 0.0)
         gradientLayer.endPoint = CGPoint(x: 0.9, y: 1.0)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        configureGradient()
     }
 }
 
@@ -194,7 +231,7 @@ struct SecureCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(SecurePalette.border, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: 8)
+            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
     }
 }
 

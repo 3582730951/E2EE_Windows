@@ -29,11 +29,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -139,7 +134,7 @@ fun QrLoginDisplayScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
             }
             Text(
                 text = t("qr_login_title", "QR login"),
@@ -160,13 +155,13 @@ fun QrLoginDisplayScreen(
                 if (!error.isNullOrBlank()) {
                     StatusBanner(
                         message = error ?: "",
-                        icon = Icons.Filled.Error,
+                        icon = MiOwnedIcons.Alert,
                         tint = MaterialTheme.colorScheme.error
                     )
                 } else {
                     StatusBanner(
                         message = status,
-                        icon = Icons.Filled.QrCode,
+                        icon = MiOwnedIcons.QrCode,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -316,7 +311,7 @@ fun QrLoginScanScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
             }
             Text(
                 text = t("qr_scan_title", "Scan QR"),
@@ -347,19 +342,19 @@ fun QrLoginScanScreen(
                 if (scanError != null) {
                     StatusBanner(
                         message = scanError ?: "",
-                        icon = Icons.Filled.Error,
+                        icon = MiOwnedIcons.Alert,
                         tint = MaterialTheme.colorScheme.error
                     )
                 } else if (approved) {
                     StatusBanner(
                         message = t("qr_scan_approved", "Login authorized"),
-                        icon = Icons.Filled.CheckCircle,
+                        icon = MiOwnedIcons.CheckCircle,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 } else {
                     StatusBanner(
                         message = t("qr_scan_hint", "Align the QR code within the frame."),
-                        icon = Icons.Filled.QrCode,
+                        icon = MiOwnedIcons.QrCode,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

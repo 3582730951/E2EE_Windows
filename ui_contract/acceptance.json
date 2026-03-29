@@ -1,0 +1,43 @@
+{
+  "fixture_scenes": {
+    "ios": [
+      "login",
+      "chats",
+      "detail",
+      "security",
+      "settings"
+    ],
+    "android": [
+      "login",
+      "chats",
+      "detail",
+      "settings",
+      "calls"
+    ],
+    "windows": [
+      "login",
+      "post_login",
+      "post_login_light",
+      "security_center"
+    ]
+  },
+  "required_evidence": [
+    "build",
+    "navigation_flow",
+    "fixture_smoke",
+    "golden_diff",
+    "accessibility",
+    "theme_parity",
+    "packaging"
+  ],
+  "metrics": {
+    "conversation_row_height": 64,
+    "avatar_size": 44,
+    "title_max_lines": 1,
+    "subtitle_max_lines": 1,
+    "minimum_hit_target_ios": 44,
+    "minimum_hit_target_android": 48,
+    "minimum_hit_target_windows": 40,
+    "max_primary_animation_ms": 300
+  }
+}

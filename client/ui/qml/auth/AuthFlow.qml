@@ -20,7 +20,6 @@ Item {
     property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
-    property bool advancedLoginExpanded: false
 
     signal authSucceeded()
 
@@ -221,6 +220,73 @@ Item {
                         color: Ui.Style.authTitleBarBorder
                     }
 
+                    TabBar {
+                        id: authTabBar
+                        Layout.fillWidth: true
+                        currentIndex: 0
+                        spacing: Ui.Style.paddingXS
+                        background: Rectangle {
+                            radius: Ui.Style.radiusMedium
+                            color: Ui.Style.authTabRail
+                            border.width: 1
+                            border.color: Ui.Style.authContextBorder
+                        }
+
+                        TabButton {
+                            text: Ui.I18n.t("auth.login")
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: authTabBar.currentIndex === 0 ? Ui.Style.dialogSelectedBg : "transparent"
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.DemiBold
+                                color: authTabBar.currentIndex === 0 ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                            }
+                        }
+
+                        TabButton {
+                            text: Ui.I18n.t("auth.registerAccount")
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: authTabBar.currentIndex === 1 ? Ui.Style.dialogSelectedBg : "transparent"
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.DemiBold
+                                color: authTabBar.currentIndex === 1 ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                            }
+                        }
+
+                        TabButton {
+                            text: Ui.I18n.t("auth.qrLogin")
+                            background: Rectangle {
+                                radius: Ui.Style.radiusMedium
+                                color: authTabBar.currentIndex === 2 ? Ui.Style.dialogSelectedBg : "transparent"
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.DemiBold
+                                color: authTabBar.currentIndex === 2 ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                            }
+                        }
+
+                        onCurrentIndexChanged: {
+                            if (loginStack.currentIndex !== currentIndex) {
+                                loginStack.currentIndex = currentIndex
+                            }
+                        }
+                    }
+
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -231,6 +297,9 @@ Item {
                             currentIndex: 0
                             onCurrentIndexChanged: {
                                 errorText = ""
+                                if (authTabBar.currentIndex !== currentIndex) {
+                                    authTabBar.currentIndex = currentIndex
+                                }
                                 if (currentIndex === 2) {
                                     startQrLogin()
                                 } else {
@@ -302,95 +371,31 @@ Item {
                                             onTextChanged: passwordInput = text
                                         }
 
-                                        Button {
-                                            id: advancedToggleButton
-                                            Layout.alignment: Qt.AlignLeft
-                                            flat: true
-                                            text: advancedLoginExpanded ? "收起高级选项" : "高级选项"
-                                            onClicked: advancedLoginExpanded = !advancedLoginExpanded
-                                            contentItem: Text {
-                                                text: advancedToggleButton.text
-                                                color: advancedToggleButton.hovered || advancedToggleButton.down
-                                                       ? Ui.Style.textPrimary
-                                                       : Ui.Style.authBadgeText
-                                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                                font.weight: Font.Medium
-                                                horizontalAlignment: Text.AlignLeft
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusSmall
-                                                color: advancedToggleButton.down
-                                                       ? Ui.Style.authInfoBorder
-                                                       : (advancedToggleButton.hovered ? Ui.Style.authInfoBg : "transparent")
-                                                border.width: advancedToggleButton.hovered || advancedToggleButton.down ? 1 : 0
-                                                border.color: Ui.Style.authBadgeBorder
-                                            }
+                                        Label {
+                                            text: Ui.I18n.t("auth.placeholder.rootCode")
+                                            font.pixelSize: Ui.Style.authMetaTextSize
+                                            color: Ui.Style.textMuted
+                                            Layout.fillWidth: true
                                         }
 
-                                        ColumnLayout {
+                                        Components.SecureTextField {
+                                            id: rootCodeField
                                             Layout.fillWidth: true
-                                            spacing: Ui.Style.paddingS
-                                            visible: advancedLoginExpanded
-
-                                            Label {
-                                                text: Ui.I18n.t("auth.placeholder.rootCode")
-                                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                                font.weight: Font.Medium
-                                                color: Ui.Style.authLabelText
-                                                Layout.fillWidth: true
+                                            Layout.preferredHeight: Ui.Style.authFieldHeight
+                                            echoMode: TextInput.Password
+                                            placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+                                            font.pixelSize: Ui.Style.authBodyTextSize
+                                            color: Ui.Style.textPrimary
+                                            placeholderTextColor: Ui.Style.authPlaceholderText
+                                            background: Rectangle {
+                                                radius: Ui.Style.radiusMedium
+                                                color: Ui.Style.authFieldBg
+                                                border.width: 1
+                                                border.color: rootCodeField.activeFocus
+                                                              ? Ui.Style.authFieldFocus
+                                                              : Ui.Style.authFieldBorder
                                             }
-
-                                            Components.SecureTextField {
-                                                id: rootCodeField
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: Ui.Style.authFieldHeight
-                                                echoMode: TextInput.Password
-                                                placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                                                font.pixelSize: Ui.Style.authBodyTextSize
-                                                color: Ui.Style.textPrimary
-                                                placeholderTextColor: Ui.Style.authPlaceholderText
-                                                background: Rectangle {
-                                                    radius: Ui.Style.radiusMedium
-                                                    color: Ui.Style.authFieldBg
-                                                    border.width: 1
-                                                    border.color: rootCodeField.activeFocus
-                                                                  ? Ui.Style.authFieldFocus
-                                                                  : Ui.Style.authFieldBorder
-                                                }
-                                                onTextChanged: rootCodeInput = text
-                                            }
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                Item { Layout.fillWidth: true }
-
-                                                Button {
-                                                    id: advancedQrLinkButton
-                                                    text: Ui.I18n.t("auth.qrLogin")
-                                                    flat: true
-                                                    onClicked: loginStack.currentIndex = 2
-                                                    contentItem: Text {
-                                                        text: Ui.I18n.t("auth.qrLogin")
-                                                        color: advancedQrLinkButton.hovered || advancedQrLinkButton.down
-                                                               ? Ui.Style.textPrimary
-                                                               : Ui.Style.authBadgeText
-                                                        font.pixelSize: Ui.Style.authSubtitleTextSize
-                                                        font.weight: Font.Medium
-                                                        horizontalAlignment: Text.AlignHCenter
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-                                                    background: Rectangle {
-                                                        radius: Ui.Style.radiusMedium
-                                                        color: advancedQrLinkButton.down ? Ui.Style.authInfoBorder
-                                                                                         : (advancedQrLinkButton.hovered ? Ui.Style.authInfoBg : "transparent")
-                                                        border.width: advancedQrLinkButton.hovered || advancedQrLinkButton.down ? 1 : 0
-                                                        border.color: Ui.Style.authBadgeBorder
-                                                    }
-                                                }
-
-                                                Item { Layout.fillWidth: true }
-                                            }
+                                            onTextChanged: rootCodeInput = text
                                         }
 
                                         Button {
@@ -428,37 +433,6 @@ Item {
                                             }
                                         }
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Ui.Style.paddingS
-                                            Item { Layout.fillWidth: true }
-
-                                            Button {
-                                                id: registerLinkButton
-                                                text: Ui.I18n.t("auth.registerAccount")
-                                                flat: true
-                                                onClicked: loginStack.currentIndex = 1
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.registerAccount")
-                                                    color: registerLinkButton.hovered || registerLinkButton.down
-                                                           ? Ui.Style.textPrimary
-                                                           : Ui.Style.authBadgeText
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                    font.weight: Font.DemiBold
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-                                                background: Rectangle {
-                                                    radius: Ui.Style.radiusMedium
-                                                    color: registerLinkButton.down ? Ui.Style.authInfoBorder
-                                                                                   : (registerLinkButton.hovered ? Ui.Style.authInfoBg : "transparent")
-                                                    border.width: registerLinkButton.hovered || registerLinkButton.down ? 1 : 0
-                                                    border.color: Ui.Style.authBadgeBorder
-                                                }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-                                        }
                                     }
                                 }
 
@@ -566,37 +540,6 @@ Item {
                                             }
                                         }
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Ui.Style.paddingS
-                                            Item { Layout.fillWidth: true }
-
-                                            Button {
-                                                text: Ui.I18n.t("auth.register.backLogin")
-                                                flat: true
-                                                onClicked: loginStack.currentIndex = 0
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.register.backLogin")
-                                                    color: Ui.Style.link
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                }
-                                                background: Rectangle { color: "transparent" }
-                                            }
-
-                                            Button {
-                                                text: Ui.I18n.t("auth.qrLogin")
-                                                flat: true
-                                                onClicked: loginStack.currentIndex = 2
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.qrLogin")
-                                                    color: Ui.Style.link
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                }
-                                                background: Rectangle { color: "transparent" }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-                                        }
                                     }
                                 }
 
@@ -667,37 +610,6 @@ Item {
                                             Item { Layout.fillWidth: true }
                                         }
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Ui.Style.paddingS
-                                            Item { Layout.fillWidth: true }
-
-                                            Button {
-                                                text: Ui.I18n.t("auth.register.backLogin")
-                                                flat: true
-                                                onClicked: loginStack.currentIndex = 0
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.register.backLogin")
-                                                    color: Ui.Style.link
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                }
-                                                background: Rectangle { color: "transparent" }
-                                            }
-
-                                            Button {
-                                                text: Ui.I18n.t("auth.registerAccount")
-                                                flat: true
-                                                onClicked: loginStack.currentIndex = 1
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.registerAccount")
-                                                    color: Ui.Style.link
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                }
-                                                background: Rectangle { color: "transparent" }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-                                        }
                                     }
                                 }
                             }

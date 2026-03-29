@@ -15,6 +15,7 @@ internal sealed interface FlowScreen {
     data class QrLoginDisplay(val username: String) : FlowScreen
     data object QrLoginScan : FlowScreen
     data object Conversations : FlowScreen
+    data object Calls : FlowScreen
     data class Chat(val conversationId: String) : FlowScreen
     data class GroupChat(val groupId: String) : FlowScreen
     data object Settings : FlowScreen
@@ -64,6 +65,7 @@ private fun FlowScreen.toSaveKey(): String = when (this) {
     is FlowScreen.QrLoginDisplay -> "qrDisplay:${Uri.encode(username)}"
     FlowScreen.QrLoginScan -> "qrScan"
     FlowScreen.Conversations -> "conversations"
+    FlowScreen.Calls -> "calls"
     is FlowScreen.Chat -> "chat:${Uri.encode(conversationId)}"
     is FlowScreen.GroupChat -> "groupChat:${Uri.encode(groupId)}"
     FlowScreen.Settings -> "settings"
@@ -87,6 +89,7 @@ private fun flowScreenFromSaveKey(value: String): FlowScreen = when {
     value.startsWith("qrDisplay:") -> FlowScreen.QrLoginDisplay(Uri.decode(value.substringAfter("qrDisplay:")))
     value == "qrScan" -> FlowScreen.QrLoginScan
     value == "conversations" -> FlowScreen.Conversations
+    value == "calls" -> FlowScreen.Calls
     value.startsWith("chat:") -> FlowScreen.Chat(Uri.decode(value.substringAfter("chat:")))
     value.startsWith("groupChat:") -> FlowScreen.GroupChat(Uri.decode(value.substringAfter("groupChat:")))
     value == "settings" -> FlowScreen.Settings

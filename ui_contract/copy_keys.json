@@ -1,0 +1,52 @@
+{
+  "canonical_domains": {
+    "navigation": [
+      "nav.chats",
+      "nav.contacts",
+      "nav.calls",
+      "nav.settings"
+    ],
+    "auth": [
+      "auth.login.title",
+      "auth.login.subtitle",
+      "auth.login.account",
+      "auth.login.password",
+      "auth.login.qr",
+      "auth.login.submit"
+    ],
+    "chat": [
+      "chat.search",
+      "chat.attach",
+      "chat.emoji",
+      "chat.send",
+      "chat.placeholder"
+    ],
+    "security_center": [
+      "security.center.title",
+      "security.transport.title",
+      "security.devices.title",
+      "security.root_auth.title",
+      "security.trust_prompt.title"
+    ]
+  },
+  "platform_key_hints": {
+    "windows": {
+      "nav.chats": "left.newChat",
+      "nav.settings": "settings.title",
+      "chat.search": "chat.searchInChat",
+      "chat.send": "chat.send"
+    },
+    "android": {
+      "nav.chats": "nav_chats",
+      "nav.contacts": "nav_contacts",
+      "nav.settings": "nav_settings",
+      "chat.search": "chat_search",
+      "chat.send": "chat_send"
+    },
+    "ios": {
+      "nav.chats": "hardcoded-currently",
+      "nav.settings": "hardcoded-currently",
+      "chat.send": "hardcoded-currently"
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "required_components": [
+    {
+      "id": "AppBarPrimary",
+      "role": "primary shell heading and actions",
+      "required_states": [
+        "default",
+        "search",
+        "detail"
+      ]
+    },
+    {
+      "id": "ConversationRow",
+      "role": "conversation preview cell",
+      "required_states": [
+        "default",
+        "selected",
+        "pinned",
+        "muted",
+        "typing",
+        "draft",
+        "unread"
+      ]
+    },
+    {
+      "id": "MessageBubble",
+      "role": "message cell",
+      "required_states": [
+        "incoming",
+        "outgoing",
+        "failed",
+        "recalled",
+        "reply",
+        "attachment"
+      ]
+    },
+    {
+      "id": "MessageStatus",
+      "role": "message delivery indicator",
+      "required_states": [
+        "sending",
+        "sent",
+        "delivered",
+        "read",
+        "failed"
+      ]
+    },
+    {
+      "id": "ComposerBar",
+      "role": "message compose surface",
+      "required_states": [
+        "idle",
+        "replying",
+        "expanded",
+        "disabled"
+      ],
+      "required_actions": [
+        "attach",
+        "emoji",
+        "send"
+      ]
+    },
+    {
+      "id": "SearchField",
+      "role": "conversation and in-chat search"
+    },
+    {
+      "id": "StatusBanner",
+      "role": "inline state and error communication",
+      "required_tones": [
+        "neutral",
+        "success",
+        "warning",
+        "danger"
+      ]
+    },
+    {
+      "id": "SectionCard",
+      "role": "secondary grouped surface"
+    },
+    {
+      "id": "SecurityBadge",
+      "role": "lightweight security/trust cue"
+    },
+    {
+      "id": "DetailMetricTile",
+      "role": "compact stats or device metadata"
+    },
+    {
+      "id": "RightDetailPane",
+      "role": "desktop side context pane"
+    },
+    {
+      "id": "TrustPromptCard",
+      "role": "TLS/trust confirmation"
+    },
+    {
+      "id": "RootAuthCodeCard",
+      "role": "root authorization code surface"
+    },
+    {
+      "id": "DeviceFingerprintRow",
+      "role": "monospaced sensitive identity row"
+    }
+  ]
+}
