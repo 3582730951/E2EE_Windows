@@ -15,8 +15,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import mi.e2ee.android.ui.ChatTheme
 import mi.e2ee.android.ui.ChatScreen
+import mi.e2ee.android.ui.CallsHomeScreen
 import mi.e2ee.android.ui.ConversationListScreen
 import mi.e2ee.android.ui.ConversationPreview
+import mi.e2ee.android.ui.GroupCallRoomUi
+import mi.e2ee.android.ui.IncomingCall
+import mi.e2ee.android.ui.LoginScreen
+import mi.e2ee.android.ui.PeerCallState
 import mi.e2ee.android.ui.ProvideLocalization
 import mi.e2ee.android.ui.SampleChat
 import mi.e2ee.android.ui.SdkBridge
@@ -85,8 +90,30 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreenshotScene(mode: String, context: Context) {
     when (mode.lowercase()) {
+        "login" -> LoginScreen(
+            statusMessage = "Secure workspace ready.",
+            remoteError = "Root authorization required for this device."
+        )
         "detail" -> ChatScreen(items = SampleChat.items)
+        "calls" -> CallsHomeScreen(
+            pendingCall = IncomingCall(
+                peerUsername = "Mira Chen",
+                callId = byteArrayOf(0x01, 0x02),
+                callIdHex = "0102",
+                video = false
+            ),
+            activePeerCall = PeerCallState(
+                peerUsername = "Aster Stone",
+                callId = byteArrayOf(0x0A, 0x0B),
+                callIdHex = "0a0b",
+                video = true,
+                initiator = true
+            ),
+            activeGroupCall = null,
+            groupRooms = previewCallRooms()
+        )
         "settings" -> SettingsScreen(sdk = remember(context) { SdkBridge(context) })
+        "chats" -> ConversationListScreen(conversations = previewConversations())
         else -> ConversationListScreen(conversations = previewConversations())
     }
 }
@@ -165,5 +192,18 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         isGroup = true,
         isTyping = false,
         draft = "verify API33 smoke gate"
+    )
+)
+
+private fun previewCallRooms(): List<GroupCallRoomUi> = listOf(
+    GroupCallRoomUi(
+        groupId = "Threat Guild",
+        callId = "room-a",
+        video = true
+    ),
+    GroupCallRoomUi(
+        groupId = "Ops Sync",
+        callId = "room-b",
+        video = false
     )
 )

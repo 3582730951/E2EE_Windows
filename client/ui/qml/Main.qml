@@ -153,6 +153,13 @@ ApplicationWindow {
         }
     }
 
+    function openShellSecurityCenter() {
+        var shell = activeShellItem()
+        if (shell && shell.openSecurityCenter) {
+            shell.openSecurityCenter()
+        }
+    }
+
     Component {
         id: authFlowComponent
 
@@ -178,6 +185,10 @@ ApplicationWindow {
 
             function handleEscape() {
                 appShell.handleEscape()
+            }
+
+            function openSecurityCenter() {
+                appShell.openSecurityCenter()
             }
 
             ColumnLayout {

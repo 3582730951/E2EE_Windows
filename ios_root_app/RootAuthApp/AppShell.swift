@@ -4,8 +4,10 @@ import UIKit
 
 private enum ScreenshotScenario: String {
     case none
+    case login
     case chats
     case detail
+    case settings
     case security
 
     static var current: ScreenshotScenario {
@@ -529,15 +531,20 @@ final class ClientWorkspaceStore: ObservableObject {
 
     private func loadScreenshotFixture() {
         isReady = true
-        isLoggedIn = true
-        remoteOK = true
+        let scenario = ScreenshotScenario.current
+        isLoggedIn = scenario != .login
+        remoteOK = scenario != .login
         deviceDisplayID = "ios-sim-01"
         serverHost = "secure-gateway.internal"
         serverPort = "9000"
         username = "aster"
-        draft = "Meeting notes are encrypted and ready to send."
-        statusText = "Screenshot fixture loaded."
-        lastError = ""
+        draft = scenario == .login
+            ? ""
+            : "Meeting notes are encrypted and ready to send."
+        statusText = scenario == .login
+            ? "Reconnect to continue the secure session."
+            : "Screenshot fixture loaded."
+        lastError = scenario == .login ? "Session expired. Sign in again." : ""
         configPath = "screenshot://fixture"
         let now = UInt64(Date().timeIntervalSince1970 * 1000)
         let fixtureConversations = [
@@ -702,7 +709,14 @@ struct AppShell: View {
     init() {
         let scenario = ScreenshotScenario.current
         screenshotScenario = scenario
-        _selectedTab = State(initialValue: scenario == .security ? .settings : .chats)
+        let initialTab: AppTab
+        switch scenario {
+        case .settings, .security:
+            initialTab = .settings
+        case .none, .login, .chats, .detail:
+            initialTab = .chats
+        }
+        _selectedTab = State(initialValue: initialTab)
         Self.configureTabBarAppearance()
         Self.configureNavigationBarAppearance()
     }
@@ -750,7 +764,11 @@ struct AppShell: View {
                 .tag(AppTab.calls)
 
                 NavigationStack {
-                    SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    if screenshotScenario == .security {
+                        SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    } else {
+                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(shellBackground)

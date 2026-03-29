@@ -85,27 +85,26 @@ install_apk_with_retry() {
 capture_ui_artifacts() {
   local workspace="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}"
   mkdir -p "$workspace/build/android_ui_artifacts"
+
+  capture_scene() {
+    local mode="$1"
+    local output="$2"
+    adb shell am force-stop mi.e2ee.android.ui || true
+    adb shell am start -W \
+      -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
+      --es mi.e2ee.android.extra.SCREENSHOT_MODE "$mode" || true
+    sleep 3
+    adb exec-out screencap -p > "$output"
+  }
+
   prime_android_device
   install_apk_with_retry "$workspace/android/app/build/outputs/apk/debug/app-debug.apk" mi.e2ee.android.ui
   install_apk_with_retry "$workspace/android/rootapp/build/outputs/apk/debug/rootapp-debug.apk" mi.e2ee.rootauth
-  adb shell am force-stop mi.e2ee.android.ui || true
-  adb shell am start -W \
-    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
-    --es mi.e2ee.android.extra.SCREENSHOT_MODE chats || true
-  sleep 3
-  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-chats.png"
-  adb shell am force-stop mi.e2ee.android.ui || true
-  adb shell am start -W \
-    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
-    --es mi.e2ee.android.extra.SCREENSHOT_MODE detail || true
-  sleep 3
-  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-detail.png"
-  adb shell am force-stop mi.e2ee.android.ui || true
-  adb shell am start -W \
-    -n mi.e2ee.android.ui/mi.e2ee.android.MainActivity \
-    --es mi.e2ee.android.extra.SCREENSHOT_MODE settings || true
-  sleep 3
-  adb exec-out screencap -p > "$workspace/build/android_ui_artifacts/android-settings.png"
+  capture_scene login "$workspace/build/android_ui_artifacts/android-login.png"
+  capture_scene chats "$workspace/build/android_ui_artifacts/android-chats.png"
+  capture_scene detail "$workspace/build/android_ui_artifacts/android-detail.png"
+  capture_scene calls "$workspace/build/android_ui_artifacts/android-calls.png"
+  capture_scene settings "$workspace/build/android_ui_artifacts/android-settings.png"
 }
 
 main() {

@@ -516,8 +516,6 @@ jobs:
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           $env:MI_E2EE_DATA_DIR = $dataDir
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
-          $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
-          $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"
           $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
           if (-not $serverExe) {
             throw "mi_e2ee_server.exe not found"
@@ -543,8 +541,16 @@ jobs:
             if (-not $ready) {
               throw "server not ready"
             }
-            Push-Location $exe.Directory.FullName
-            try {
+            function Invoke-UiSmoke([string]$scene) {
+              if ([string]::IsNullOrWhiteSpace($scene)) {
+                Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
+                $label = "default"
+              } else {
+                $env:MI_E2EE_UI_SMOKE_SCENE = $scene
+                $label = $scene
+              }
+              $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
+              $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.Directory.FullName -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
               if (-not $uiProc.WaitForExit(45000)) {
                 if (Test-Path $stdoutLog) {
@@ -554,7 +560,7 @@ jobs:
                   Get-Content $stderrLog | Write-Host
                 }
                 Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
-                throw "UI smoke timed out after 45s"
+                throw "UI smoke timed out after 45s ($label)"
               }
               if ($uiProc.ExitCode -ne 0) {
                 if (Test-Path $stdoutLog) {
@@ -563,9 +569,15 @@ jobs:
                 if (Test-Path $stderrLog) {
                   Get-Content $stderrLog | Write-Host
                 }
-                throw "UI smoke failed with exit code $($uiProc.ExitCode)"
+                throw "UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
+            }
+            Push-Location $exe.Directory.FullName
+            try {
+              Invoke-UiSmoke ""
+              Invoke-UiSmoke "security_center"
             } finally {
+              Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
               Pop-Location
             }
           } finally {
@@ -749,8 +761,6 @@ jobs:
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
-          $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stdout.log"
-          $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "stderr.log"
           $serverStdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stdout.log"
           $serverStderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stderr.log"
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
@@ -788,8 +798,16 @@ jobs:
               }
               throw "dist server not ready"
             }
-            Push-Location $clientRoot
-            try {
+            function Invoke-DistUiSmoke([string]$scene) {
+              if ([string]::IsNullOrWhiteSpace($scene)) {
+                Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
+                $label = "default"
+              } else {
+                $env:MI_E2EE_UI_SMOKE_SCENE = $scene
+                $label = $scene
+              }
+              $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
+              $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $clientLauncher -WorkingDirectory $clientRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
               if (-not $uiProc.WaitForExit(45000)) {
                 if (Test-Path $stdoutLog) {
@@ -799,7 +817,7 @@ jobs:
                   Get-Content $stderrLog | Write-Host
                 }
                 Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
-                throw "dist UI smoke timed out after 45s"
+                throw "dist UI smoke timed out after 45s ($label)"
               }
               if ($uiProc.ExitCode -ne 0) {
                 if (Test-Path $stdoutLog) {
@@ -808,9 +826,15 @@ jobs:
                 if (Test-Path $stderrLog) {
                   Get-Content $stderrLog | Write-Host
                 }
-                throw "dist UI smoke failed with exit code $($uiProc.ExitCode)"
+                throw "dist UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
+            }
+            Push-Location $clientRoot
+            try {
+              Invoke-DistUiSmoke ""
+              Invoke-DistUiSmoke "security_center"
             } finally {
+              Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
               Pop-Location
             }
           } finally {
@@ -1854,7 +1878,7 @@ jobs:
             local output="$2"
             local launch_log="build/ios_rootauth_artifacts/ios_rootauth_launch_${mode}.log"
             local settle_seconds=5
-            if [ "$mode" = "detail" ]; then
+            if [ "$mode" = "detail" ] || [ "$mode" = "security" ]; then
               settle_seconds=6
             fi
             for attempt in 1 2 3; do
@@ -1876,11 +1900,13 @@ jobs:
             done
             return 1
           }
+          capture_screenshot "login" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || true
           capture_screenshot "chats" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
             echo "Simulator screenshot failed; skip artifact" >&2
             exit 0
           }
           capture_screenshot "detail" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || true
+          capture_screenshot "settings" "build/ios_rootauth_artifacts/rootauth-ios-settings.png" || true
           capture_screenshot "security" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || true
 
       - name: Normalize RootAuth iOS screenshots

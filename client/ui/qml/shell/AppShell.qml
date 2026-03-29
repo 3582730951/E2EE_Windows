@@ -121,10 +121,22 @@ Item {
     Dialogs.SettingsDialog {
         id: settingsDialog
         ownerWindow: root.hostWindow
+        onRequestSecurityCenter: {
+            settingsDialog.close()
+            securityCenterDialog.open()
+        }
     }
     Dialogs.DeviceManagerDialog {
         id: deviceManagerDialog
         ownerWindow: root.hostWindow
+    }
+    Dialogs.SecurityCenterDialog {
+        id: securityCenterDialog
+        ownerWindow: root.hostWindow
+        onRequestManageDevices: {
+            securityCenterDialog.close()
+            deviceManagerDialog.open()
+        }
     }
 
     function focusSearch() {
@@ -135,7 +147,15 @@ Item {
         centerPane.showSearch()
     }
 
+    function openSecurityCenter() {
+        securityCenterDialog.open()
+    }
+
     function handleEscape() {
+        if (securityCenterDialog.visible) {
+            securityCenterDialog.close()
+            return
+        }
         if (settingsDialog.visible) {
             settingsDialog.close()
             return

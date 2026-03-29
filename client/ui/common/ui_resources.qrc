@@ -59,6 +59,7 @@
         <file alias="qml/dialogs/CreateGroupWizard.qml">../qml/dialogs/CreateGroupWizard.qml</file>
         <file alias="qml/dialogs/NotificationCenterDialog.qml">../qml/dialogs/NotificationCenterDialog.qml</file>
         <file alias="qml/dialogs/SettingsDialog.qml">../qml/dialogs/SettingsDialog.qml</file>
+        <file alias="qml/dialogs/SecurityCenterDialog.qml">../qml/dialogs/SecurityCenterDialog.qml</file>
         <file alias="qml/dialogs/DeviceManagerDialog.qml">../qml/dialogs/DeviceManagerDialog.qml</file>
         <file alias="qml/dialogs/TrustPromptDialog.qml">../qml/dialogs/TrustPromptDialog.qml</file>
         <file alias="qml/components/IconButton.qml">../qml/components/IconButton.qml</file>

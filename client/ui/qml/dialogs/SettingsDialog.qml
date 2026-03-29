@@ -8,6 +8,7 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 ApplicationWindow {
     id: root
     property var ownerWindow: null
+    signal requestSecurityCenter()
     visible: false
     width: 680
     height: 460
@@ -199,6 +200,59 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: Ui.Style.paddingM
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: Ui.Style.radiusMedium
+                        color: Ui.Style.panelBg
+                        border.color: Ui.Style.borderSubtle
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: Ui.Style.paddingM
+                            spacing: Ui.Style.paddingM
+
+                            Rectangle {
+                                width: 38
+                                height: 38
+                                radius: 19
+                                color: Ui.Style.dialogSelectedBg
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 18
+                                    height: 18
+                                    fillMode: Image.PreserveAspectFit
+                                    source: "qrc:/mi/e2ee/ui/icons/check.svg"
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Text {
+                                    text: Ui.I18n.t("settings.securityCenter.title")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    text: Ui.I18n.t("settings.securityCenter.detail")
+                                    color: Ui.Style.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            Components.GhostButton {
+                                text: Ui.I18n.t("settings.securityCenter.open")
+                                Layout.alignment: Qt.AlignVCenter
+                                onClicked: root.requestSecurityCenter()
+                            }
+                        }
+                    }
 
                     Text {
                         text: Ui.I18n.t("settings.privacy.clipboardIsolation")
