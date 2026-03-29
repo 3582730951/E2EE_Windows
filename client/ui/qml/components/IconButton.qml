@@ -4,6 +4,7 @@ import "qrc:/mi/e2ee/ui/qml" as Ui
 
 ToolButton {
     id: root
+    property string accessibleName: ""
     property color baseColor: Ui.Style.iconMuted
     property color hoverColor: Ui.Style.textPrimary
     property color pressColor: Ui.Style.textPrimary
@@ -17,6 +18,11 @@ ToolButton {
     implicitWidth: buttonSize
     implicitHeight: buttonSize
     hoverEnabled: true
+    Accessible.role: Accessible.Button
+    Accessible.name: root.accessibleName.length > 0
+                     ? root.accessibleName
+                     : (ToolTip.text ? ToolTip.text : "")
+    Accessible.description: ToolTip.text ? ToolTip.text : ""
 
     icon.width: iconSize
     icon.height: iconSize

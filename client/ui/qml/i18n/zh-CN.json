@@ -265,6 +265,10 @@
   "right.files": "文件",
   "right.mediaPlaceholder": "媒体占位",
   "right.filesPlaceholder": "文件占位",
+  "window.minimize": "最小化",
+  "window.maximize": "最大化",
+  "window.restore": "还原",
+  "window.close": "关闭",
 
   "sample.replyOk": "收到。",
   "sample.dialogPreviews": [

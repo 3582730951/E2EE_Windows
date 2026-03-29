@@ -265,6 +265,10 @@
   "right.files": "Files",
   "right.mediaPlaceholder": "Media placeholder",
   "right.filesPlaceholder": "Files placeholder",
+  "window.minimize": "Minimize",
+  "window.maximize": "Maximize",
+  "window.restore": "Restore",
+  "window.close": "Close",
 
   "sample.replyOk": "Got it.",
   "sample.dialogPreviews": [

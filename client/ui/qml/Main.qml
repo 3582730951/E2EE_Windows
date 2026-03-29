@@ -270,6 +270,9 @@ ApplicationWindow {
                             hoverEnabled: true
                             implicitWidth: 28
                             implicitHeight: 18
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("window.minimize")
+                            Accessible.name: ToolTip.text
                             onClicked: root.showMinimized()
                             background: Rectangle {
                                 radius: 6
@@ -294,6 +297,11 @@ ApplicationWindow {
                             hoverEnabled: true
                             implicitWidth: 28
                             implicitHeight: 18
+                            ToolTip.visible: hovered
+                            ToolTip.text: root.visibility === Window.Maximized
+                                          ? Ui.I18n.t("window.restore")
+                                          : Ui.I18n.t("window.maximize")
+                            Accessible.name: ToolTip.text
                             onClicked: root.toggleMaximize()
                             background: Rectangle {
                                 radius: 6
@@ -319,6 +327,9 @@ ApplicationWindow {
                             hoverEnabled: true
                             implicitWidth: 28
                             implicitHeight: 18
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("window.close")
+                            Accessible.name: ToolTip.text
                             onClicked: root.close()
                             background: Rectangle {
                                 radius: 6
@@ -439,6 +450,9 @@ ApplicationWindow {
                     hoverEnabled: true
                     implicitWidth: 28
                     implicitHeight: 18
+                    ToolTip.visible: hovered
+                    ToolTip.text: Ui.I18n.t("window.minimize")
+                    Accessible.name: ToolTip.text
                     onClicked: root.showMinimized()
                     background: Rectangle {
                         radius: 6
@@ -463,6 +477,9 @@ ApplicationWindow {
                     hoverEnabled: true
                     implicitWidth: 28
                     implicitHeight: 18
+                    ToolTip.visible: hovered
+                    ToolTip.text: Ui.I18n.t("window.close")
+                    Accessible.name: ToolTip.text
                     onClicked: root.close()
                     background: Rectangle {
                         radius: 6
