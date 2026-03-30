@@ -49,10 +49,11 @@ Item {
     property var imeCandidates: []
     property int imeCandidateIndex: 0
     property string imePreedit: ""
-    property bool internalImeReady: !smokeMode &&
-                                    Ui.PreferenceStore.internalImeEnabled &&
-                                    clientBridge && clientBridge.imeAvailable &&
-                                    clientBridge.imeAvailable()
+    property bool internalImeReady: !!(!smokeMode &&
+                                       Ui.PreferenceStore.internalImeEnabled &&
+                                       bridge &&
+                                       bridge.imeAvailable &&
+                                       bridge.imeAvailable())
     property bool imePopupVisible: internalImeReady && imeComposing &&
                                    imeCandidates && imeCandidates.length > 0
     property int callDurationSec: 0
@@ -1141,7 +1142,7 @@ Item {
         }
 
         Connections {
-            target: clientBridge
+            target: root.bridge
             function onCallStateChanged() { syncCallState() }
             function onGroupCallStateChanged() { syncCallState() }
         }
@@ -1150,8 +1151,8 @@ Item {
             id: callDurationTimer
             interval: 1000
             repeat: true
-            running: clientBridge &&
-                     (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.groupCallActive)
+            running: !!(root.bridge &&
+                        (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.groupCallActive))
             onTriggered: {
                 if (!callStartMs || callStartMs <= 0) {
                     callStartMs = Date.now()
