@@ -12,8 +12,10 @@ ApplicationWindow {
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property string smokeScene: typeof uiSmokeScene !== "undefined" ? (uiSmokeScene || "") : ""
     property bool authReady: authLoader.active && authLoader.status === Loader.Ready
-    property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
-                             && shellLoader.item && shellLoader.item.shellReady
+    property bool shellReady: shellLoader.active
+                             && shellLoader.status === Loader.Ready
+                             && !!shellLoader.item
+                             && shellLoader.item.shellReady === true
     property int authWidth: 840
     property int authHeight: 620
 
