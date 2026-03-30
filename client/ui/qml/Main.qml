@@ -184,6 +184,7 @@ ApplicationWindow {
         Item {
             id: shellRoot
             anchors.fill: parent
+            readonly property bool shellReady: smokeAdapter.shellReady
 
             function focusSearch() {
                 smokeAdapter.focusSearch()
