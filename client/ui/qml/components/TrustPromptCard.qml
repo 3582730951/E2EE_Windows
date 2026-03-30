@@ -30,7 +30,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.descriptionText
             textRole: "detail"
-            foreground: Ui.Style.textSecondary
+            roleColor: Ui.Style.textSecondary
         }
 
         Components.DeviceFingerprintRow {

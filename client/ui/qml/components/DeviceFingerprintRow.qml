@@ -29,7 +29,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: root.labelText
                 textRole: "caption"
-                foreground: Ui.Style.textMuted
+                roleColor: Ui.Style.textMuted
             }
 
             Components.UiText {

@@ -25,7 +25,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.labelText
             textRole: "caption"
-            foreground: Ui.Style.authLabelText
+            roleColor: Ui.Style.authLabelText
         }
 
         Components.SecureTextField {
