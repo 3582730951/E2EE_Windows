@@ -2,7 +2,7 @@ pragma Singleton
 import QtQuick 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 
-QtObject {
+Item {
     id: store
 
     readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false

@@ -2,7 +2,7 @@ pragma Singleton
 import QtQuick 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 
-QtObject {
+Item {
     id: store
 
     readonly property var client: typeof clientBridge === "undefined" ? null : clientBridge
