@@ -587,10 +587,10 @@ jobs:
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
               Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
-              python tools\\windows_smoke_matrix_check.py --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
               if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
-                python tools\\windows_smoke_golden_diff.py --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+                python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
               }
             }
             Push-Location $exe.Directory.FullName
@@ -873,10 +873,10 @@ jobs:
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
               Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
-              python tools\\windows_smoke_matrix_check.py --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
               if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
-                python tools\\windows_smoke_golden_diff.py --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+                python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
               }
             }
             Push-Location $clientRoot
