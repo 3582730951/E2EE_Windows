@@ -280,6 +280,28 @@ void ScheduleWindowsSmokeCaptureAndExit(HWND hwnd,
         ::ExitProcess(saved && informative ? 0 : 4);
     }).detach();
 }
+
+QQuickWindow* FindVisibleTransientSmokeWindow(QQuickWindow* ownerWindow) {
+    if (!ownerWindow) {
+        return nullptr;
+    }
+    const auto windows = QGuiApplication::allWindows();
+    for (QWindow* candidate : windows) {
+        if (!candidate || candidate == ownerWindow || !candidate->isVisible()) {
+            continue;
+        }
+        if (candidate->transientParent() != ownerWindow) {
+            continue;
+        }
+        if (!(candidate->flags() & Qt::Window)) {
+            continue;
+        }
+        if (auto* quickWindow = qobject_cast<QQuickWindow*>(candidate)) {
+            return quickWindow;
+        }
+    }
+    return nullptr;
+}
 #endif
 
 class AuthWindowDragFilter : public QObject {
@@ -721,7 +743,6 @@ int main(int argc, char* argv[]) {
                                            kShellReadyPollMs);
                         auto postLoginDone = std::make_shared<bool>(false);
                         auto pollCount = std::make_shared<int>(0);
-                        auto shellReadyObserved = std::make_shared<bool>(false);
                         auto finishPostLoginCapture =
                             [smokeWindow, smokeCaptureDir, &smokeTimer, &app, rootObject,
                              postLoginDone, captureName, smokeScene,
@@ -759,18 +780,74 @@ int main(int argc, char* argv[]) {
                                     }
                                     const int nativeCaptureDelayMs =
                                         qMin(2200, qMax(850, postLoginCaptureDelayMs + 500));
-                                    smokeTimer.stop();
-                                    AppendSmokeLog(
-                                        smokeCaptureDir,
-                                        QStringLiteral("UI smoke %1 native worker armed "
-                                                       "(shellReady=%2, delayMs=%3)")
-                                            .arg(captureName)
-                                            .arg(shellReady ? QStringLiteral("true")
-                                                            : QStringLiteral("false"))
-                                            .arg(nativeCaptureDelayMs));
-                                    ScheduleWindowsSmokeCaptureAndExit(
-                                        smokeHwnd, smokeCaptureDir, captureName,
-                                        nativeCaptureDelayMs);
+                                    constexpr int kSecurityDialogPollMs = 120;
+                                    const int maxSecurityDialogWaitMs =
+                                        qMin(2400, qMax(900, postLoginCaptureDelayMs + 700));
+                                    const int maxSecurityDialogPolls =
+                                        qMax(1, (maxSecurityDialogWaitMs +
+                                                 kSecurityDialogPollMs - 1) /
+                                                        kSecurityDialogPollMs);
+                                    auto dialogPollCount = std::make_shared<int>(0);
+                                    auto* securityDialogTimer = new QTimer(&app);
+                                    securityDialogTimer->setSingleShot(false);
+                                    securityDialogTimer->setInterval(kSecurityDialogPollMs);
+                                    QObject::connect(
+                                        securityDialogTimer, &QTimer::timeout, &app,
+                                        [smokeWindow, securityDialogTimer, dialogPollCount,
+                                         maxSecurityDialogPolls, smokeCaptureDir,
+                                         captureName, shellReady, nativeCaptureDelayMs,
+                                         smokeHwnd, &smokeTimer]() mutable {
+                                            *dialogPollCount += 1;
+                                            QQuickWindow* dialogWindow =
+                                                FindVisibleTransientSmokeWindow(
+                                                    smokeWindow.data());
+                                            if (!dialogWindow &&
+                                                *dialogPollCount < maxSecurityDialogPolls) {
+                                                return;
+                                            }
+                                            securityDialogTimer->stop();
+                                            securityDialogTimer->deleteLater();
+                                            const bool dialogVisible = dialogWindow != nullptr;
+                                            if (dialogVisible) {
+                                                dialogWindow->update();
+                                                AppendSmokeLog(
+                                                    smokeCaptureDir,
+                                                    QStringLiteral("UI smoke security center "
+                                                                   "dialog visible (poll=%1)")
+                                                        .arg(*dialogPollCount));
+                                            } else {
+                                                AppendSmokeLog(
+                                                    smokeCaptureDir,
+                                                    QStringLiteral("UI smoke security center "
+                                                                   "dialog not visible; using "
+                                                                   "main window fallback"));
+                                            }
+                                            const HWND captureHwnd =
+                                                dialogVisible
+                                                    ? reinterpret_cast<HWND>(
+                                                          dialogWindow->winId())
+                                                    : smokeHwnd;
+                                            smokeTimer.stop();
+                                            AppendSmokeLog(
+                                                smokeCaptureDir,
+                                                QStringLiteral("UI smoke %1 native worker armed "
+                                                               "(target=%2, shellReady=%3, "
+                                                               "delayMs=%4)")
+                                                    .arg(captureName)
+                                                    .arg(dialogVisible
+                                                             ? QStringLiteral(
+                                                                   "security-dialog")
+                                                             : QStringLiteral(
+                                                                   "main-window-fallback"))
+                                                    .arg(shellReady
+                                                             ? QStringLiteral("true")
+                                                             : QStringLiteral("false"))
+                                                    .arg(nativeCaptureDelayMs));
+                                            ScheduleWindowsSmokeCaptureAndExit(
+                                                captureHwnd, smokeCaptureDir,
+                                                captureName, nativeCaptureDelayMs);
+                                        });
+                                    securityDialogTimer->start();
                                     return;
                                 }
                                 if (smokeHwnd) {
@@ -847,7 +924,7 @@ int main(int argc, char* argv[]) {
                             postLoginTimer, &QTimer::timeout, &app,
                             [smokeWindow, postLoginTimer, pollCount, maxPostLoginPolls,
                              finishPostLoginCapture, postLoginDone,
-                             shellReadyObserved, smokeCaptureDir]() mutable {
+                             smokeCaptureDir]() mutable {
                                 if (*postLoginDone) {
                                     postLoginTimer->stop();
                                     postLoginTimer->deleteLater();
@@ -856,23 +933,24 @@ int main(int argc, char* argv[]) {
                                 const bool shellReady =
                                     smokeWindow && smokeWindow->property("shellReady").toBool();
                                 *pollCount += 1;
-                                if (shellReady && !*shellReadyObserved &&
-                                    *pollCount < maxPostLoginPolls) {
-                                    *shellReadyObserved = true;
+                                if (shellReady) {
                                     AppendSmokeLog(
                                         smokeCaptureDir,
-                                        QStringLiteral("UI smoke post-login shell ready observed"));
+                                        QStringLiteral("UI smoke post-login shell ready observed "
+                                                       "(poll=%1); arming capture")
+                                            .arg(*pollCount));
+                                    postLoginTimer->stop();
+                                    postLoginTimer->deleteLater();
+                                    finishPostLoginCapture(QStringLiteral("shellReady"),
+                                                           true);
                                     return;
                                 }
-                                if (!shellReady && *pollCount < maxPostLoginPolls) {
+                                if (*pollCount < maxPostLoginPolls) {
                                     return;
                                 }
                                 postLoginTimer->stop();
                                 postLoginTimer->deleteLater();
-                                finishPostLoginCapture(
-                                    shellReady ? QStringLiteral("shellReady")
-                                               : QStringLiteral("fallback"),
-                                    shellReady);
+                                finishPostLoginCapture(QStringLiteral("fallback"), false);
                             });
                         if (smokeWindow) {
                             smokeWindow->update();
