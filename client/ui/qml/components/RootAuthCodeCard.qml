@@ -21,11 +21,17 @@ Rectangle {
         anchors.margins: Ui.Style.paddingM
         spacing: Ui.Style.paddingS
 
-        Components.UiText {
+        Text {
             Layout.fillWidth: true
             text: root.labelText
-            textRole: "caption"
-            roleColor: Ui.Style.authLabelText
+            color: Ui.Style.authLabelText
+            font.family: Ui.Style.fontFamily
+            font.pixelSize: Ui.Style.fontPixelSize("caption")
+            font.weight: Ui.Style.fontWeight("caption")
+            font.hintingPreference: Font.PreferFullHinting
+            elide: Text.ElideRight
+            renderType: Text.NativeRendering
+            antialiasing: true
         }
 
         Components.SecureTextField {
