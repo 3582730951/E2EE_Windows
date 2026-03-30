@@ -21,6 +21,61 @@
       "security_center"
     ]
   },
+  "windows": {
+    "dpi_matrix": [
+      1.0,
+      1.25,
+      1.5,
+      1.75,
+      2.0
+    ],
+    "fixture_viewports": {
+      "login": [
+        840,
+        620
+      ],
+      "post_login": [
+        900,
+        620
+      ],
+      "post_login_light": [
+        900,
+        620
+      ],
+      "security_center": [
+        900,
+        620
+      ]
+    },
+    "excluded_surfaces": [
+      "dialogs/NewChatDialog.qml",
+      "dialogs/AddContactDialog.qml",
+      "dialogs/CreateGroupWizard.qml",
+      "dialogs/NotificationCenterDialog.qml",
+      "shell/GroupCallWindow.qml",
+      "widgets/**"
+    ],
+    "legacy_scope": "excluded",
+    "acceptance_surfaces": [
+      "client/ui/qml/auth/AuthFlow.qml",
+      "client/ui/qml/Main.qml",
+      "client/ui/qml/SmokeAdapter.qml",
+      "client/ui/qml/TrustFlowCoordinator.qml",
+      "client/ui/qml/SecurityDialogCoordinator.qml",
+      "client/ui/qml/components/UiText.qml",
+      "client/ui/qml/components/AppBarPrimary.qml",
+      "client/ui/qml/components/StatusBanner.qml",
+      "client/ui/qml/components/SecurityBadge.qml",
+      "client/ui/qml/shell/AppShell.qml",
+      "client/ui/qml/shell/LeftPane.qml",
+      "client/ui/qml/shell/CenterPane.qml",
+      "client/ui/qml/shell/RightPane.qml",
+      "client/ui/qml/dialogs/SecurityCenterDialog.qml",
+      "client/ui/qml/dialogs/SettingsDialog.qml",
+      "client/ui/qml/dialogs/DeviceManagerDialog.qml",
+      "client/ui/qml/dialogs/TrustPromptDialog.qml"
+    ]
+  },
   "required_evidence": [
     "build",
     "navigation_flow",
@@ -28,7 +83,11 @@
     "golden_diff",
     "accessibility",
     "theme_parity",
-    "packaging"
+    "packaging",
+    "ownership_manifest",
+    "text_policy",
+    "literal_copy",
+    "smoke_matrix"
   ],
   "metrics": {
     "conversation_row_height": 64,

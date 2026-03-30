@@ -12,14 +12,16 @@ Item {
     property int windowWidth: 0
     property int leftWidth: Ui.Style.leftPaneWidthDefault
     property int rightWidth: Ui.Style.rightPaneWidth
-    readonly property bool hasActiveChat: Ui.ChatStore.currentChatId.length > 0
+    property var securityCoordinator: null
+    readonly property bool shellReady: true
+    readonly property bool hasActiveChat: Ui.ChatDisplayStore.currentChatId.length > 0
     readonly property bool canUseThreeColumn: root.windowWidth >= Ui.Style.threeColumnMinWidth
-    readonly property bool rightPaneMounted: hasActiveChat && (canUseThreeColumn || Ui.AppStore.rightPaneVisible)
+    readonly property bool rightPaneMounted: hasActiveChat && (canUseThreeColumn || Ui.ChatDisplayStore.rightPaneVisible)
     readonly property Window hostWindow: root.Window.window
 
     onHasActiveChatChanged: {
         if (!hasActiveChat) {
-            Ui.AppStore.closeRightPane()
+            Ui.ChatDisplayStore.closeRightPane()
         }
     }
 
@@ -73,8 +75,8 @@ Item {
                     onRequestAddContact: addContactDialog.open()
                     onRequestCreateGroup: createGroupWizard.open()
                     onRequestNotifications: notificationDialog.open()
-                    onRequestSettings: settingsDialog.open()
-                    onRequestDeviceManager: deviceManagerDialog.open()
+                    onRequestSettings: if (root.securityCoordinator) root.securityCoordinator.openSettings()
+                    onRequestDeviceManager: if (root.securityCoordinator) root.securityCoordinator.openDeviceManager()
                 }
 
                 Shell.CenterPane {
@@ -118,27 +120,6 @@ Item {
         id: notificationDialog
         ownerWindow: root.hostWindow
     }
-    Dialogs.SettingsDialog {
-        id: settingsDialog
-        ownerWindow: root.hostWindow
-        onRequestSecurityCenter: {
-            settingsDialog.close()
-            securityCenterDialog.open()
-        }
-    }
-    Dialogs.DeviceManagerDialog {
-        id: deviceManagerDialog
-        ownerWindow: root.hostWindow
-    }
-    Dialogs.SecurityCenterDialog {
-        id: securityCenterDialog
-        ownerWindow: root.hostWindow
-        onRequestManageDevices: {
-            securityCenterDialog.close()
-            deviceManagerDialog.open()
-        }
-    }
-
     function focusSearch() {
         leftPane.focusSearch()
     }
@@ -148,20 +129,13 @@ Item {
     }
 
     function openSecurityCenter() {
-        securityCenterDialog.open()
+        if (root.securityCoordinator) {
+            root.securityCoordinator.openSecurityCenter()
+        }
     }
 
     function handleEscape() {
-        if (securityCenterDialog.visible) {
-            securityCenterDialog.close()
-            return
-        }
-        if (settingsDialog.visible) {
-            settingsDialog.close()
-            return
-        }
-        if (deviceManagerDialog.visible) {
-            deviceManagerDialog.close()
+        if (root.securityCoordinator && root.securityCoordinator.handleEscape()) {
             return
         }
         if (createGroupWizard.visible) {
@@ -183,7 +157,7 @@ Item {
         if (centerPane.clearChatSearch()) {
             return
         }
-        if (Ui.ConversationStore.searchQuery.length > 0) {
+        if (Ui.ChatDisplayStore.searchQuery.length > 0) {
             leftPane.clearSearch()
             return
         }

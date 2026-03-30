@@ -2,6 +2,7 @@
 #define MI_E2EE_CLIENT_UI_WIDGETS_THEME_H
 
 #include <QColor>
+#include <QLocale>
 #include <QPainter>
 #include <QPixmap>
 #include <QString>
@@ -23,9 +24,18 @@ inline UiPalette DefaultPalette() {
     return UiPalette{};
 }
 
+inline QString WidgetSansFontStack() {
+    const QString locale = QLocale::system().name().replace(QLatin1Char('_'),
+                                                            QLatin1Char('-'));
+    if (locale.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)) {
+        return QStringLiteral("\"Microsoft YaHei UI\", \"Segoe UI Variable\", \"Segoe UI\", sans-serif");
+    }
+    return QStringLiteral("\"Segoe UI Variable\", \"Segoe UI\", \"Microsoft YaHei UI\", sans-serif");
+}
+
 inline QString BuildGlobalStyleSheet(const UiPalette& c = DefaultPalette()) {
     return QStringLiteral(R"(
-        QWidget { background: %1; color: %2; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+        QWidget { background: %1; color: %2; font-family: %8; }
         QDialog, QMainWindow { background: %1; }
         QFrame#Panel, QWidget#Panel { background: %3; border-radius: 8px; border: none; }
         QLineEdit, QComboBox, QTextEdit, QListWidget, QScrollArea {
@@ -54,7 +64,7 @@ inline QString BuildGlobalStyleSheet(const UiPalette& c = DefaultPalette()) {
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
     )")
         .arg(c.background.name(), c.textPrimary.name(), c.panel.name(), c.accent.name(),
-             c.accentHover.name(), c.border.name(), c.buttonDark.name());
+             c.accentHover.name(), c.border.name(), c.buttonDark.name(), WidgetSansFontStack());
 }
 
 inline QPixmap BuildAvatar(const QString& text, const QColor& color, int diameter = 40) {
@@ -67,7 +77,16 @@ inline QPixmap BuildAvatar(const QString& text, const QColor& color, int diamete
     painter.drawEllipse(0, 0, diameter, diameter);
 
     painter.setPen(Qt::white);
-    QFont font(QStringLiteral("Microsoft YaHei"), diameter / 3);
+    QFont font;
+    font.setFamilies(QLocale::system().name().startsWith(QStringLiteral("zh"),
+                                                         Qt::CaseInsensitive)
+                         ? (QStringList() << QStringLiteral("Microsoft YaHei UI")
+                                          << QStringLiteral("Segoe UI Variable")
+                                          << QStringLiteral("Segoe UI"))
+                         : (QStringList() << QStringLiteral("Segoe UI Variable")
+                                          << QStringLiteral("Segoe UI")
+                                          << QStringLiteral("Microsoft YaHei UI")));
+    font.setPointSize(diameter / 3);
     font.setBold(true);
     painter.setFont(font);
     painter.drawText(avatar.rect(), Qt::AlignCenter, text.left(2).toUpper());

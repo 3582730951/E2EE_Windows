@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Accessibility 1.0
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
 
@@ -47,56 +48,26 @@ Item {
     function completeAuth() {
         stopQrLogin()
         authSucceeded()
-        Ui.AppStore.currentPage = 1
     }
 
     function attemptLogin(user, pass, rootCode, fromTrust) {
-        if (!clientBridge) {
-            errorText = Ui.I18n.t("auth.error.login")
-            return false
-        }
-        if (!clientBridge.init("")) {
-            errorText = clientBridge.lastError.length
-                ? clientBridge.lastError
-                : Ui.I18n.t("auth.error.login")
-            return false
-        }
-        if (!clientBridge.loginWithRootCode(user, pass, rootCode)) {
-            if (clientBridge.hasPendingServerTrust) {
-                waitingServerTrust = true
-                if (!fromTrust) {
-                    errorText = "需信任服务器（TLS）"
-                }
-            } else if (clientBridge.lastError.length) {
-                errorText = clientBridge.lastError
-            } else {
+        if (!Ui.AuthDisplayStore.login(user, pass, rootCode)) {
+            waitingServerTrust = Ui.AuthDisplayStore.waitingServerTrust
+            errorText = Ui.AuthDisplayStore.errorText
+            if (waitingServerTrust && !fromTrust && errorText.length === 0) {
                 errorText = Ui.I18n.t("auth.error.login")
             }
             return false
         }
         waitingServerTrust = false
         errorText = ""
-        Ui.AppStore.bootstrapAfterLogin()
         completeAuth()
         return true
     }
 
     function startQrLogin() {
-        if (!clientBridge) {
-            errorText = Ui.I18n.t("auth.error.login")
-            return false
-        }
-        if (!clientBridge.init("")) {
-            errorText = clientBridge.lastError.length
-                ? clientBridge.lastError
-                : Ui.I18n.t("auth.error.login")
-            return false
-        }
-        var user = accountInput
-        if (!clientBridge.beginQrLogin(user)) {
-            errorText = clientBridge.lastError.length
-                ? clientBridge.lastError
-                : Ui.I18n.t("auth.error.login")
+        if (!Ui.AuthDisplayStore.beginQrLogin(accountInput)) {
+            errorText = Ui.AuthDisplayStore.errorText
             stopQrLogin()
             return false
         }
@@ -108,28 +79,23 @@ Item {
     }
 
     function pollQrLogin() {
-        if (!qrActive || !clientBridge) {
+        if (!qrActive) {
             return
         }
-        if (!clientBridge.pollQrLogin()) {
-            errorText = clientBridge.lastError.length
-                ? clientBridge.lastError
-                : Ui.I18n.t("auth.error.login")
+        if (!Ui.AuthDisplayStore.pollQrLogin()) {
+            errorText = Ui.AuthDisplayStore.errorText
             stopQrLogin()
             return
         }
-        if (clientBridge.loggedIn) {
+        if (Ui.AuthDisplayStore.loggedIn) {
             errorText = ""
             stopQrLogin()
-            Ui.AppStore.bootstrapAfterLogin()
             completeAuth()
         }
     }
 
     function stopQrLogin() {
-        if (clientBridge) {
-            clientBridge.cancelQrLogin()
-        }
+        Ui.AuthDisplayStore.cancelQrLogin()
         qrActive = false
         qrPollTimer.stop()
         qrTimer.stop()
@@ -138,6 +104,29 @@ Item {
     function resetQrTimer() {
         qrSeconds = 30
         qrTimer.restart()
+    }
+
+    function statusTone() {
+        return errorText.length > 0 ? "danger" : "neutral"
+    }
+
+    function statusTitle() {
+        if (errorText.length > 0) {
+            return errorText
+        }
+        return Ui.AuthDisplayStore.gatewayState.length > 0
+                ? Ui.AuthDisplayStore.gatewayState
+                : Ui.I18n.t("auth.hero.badge")
+    }
+
+    function statusDetail() {
+        if (waitingServerTrust) {
+            return Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+        }
+        if (Ui.AuthDisplayStore.gatewayDetail.length > 0) {
+            return Ui.AuthDisplayStore.gatewayDetail
+        }
+        return Ui.I18n.t("dialog.securityCenter.serverHint")
     }
 
     Rectangle {
@@ -204,6 +193,13 @@ Item {
                         font.pixelSize: 22
                         font.weight: Font.DemiBold
                         wrapMode: Text.WordWrap
+                    }
+
+                    Components.SecurityBadge {
+                        labelText: Ui.AuthDisplayStore.gatewayState.length > 0
+                                   ? Ui.AuthDisplayStore.gatewayState
+                                   : Ui.I18n.t("auth.hero.badge")
+                        detailText: Ui.AuthDisplayStore.gatewayDetail
                     }
 
                     Label {
@@ -322,6 +318,7 @@ Item {
                                             font.weight: Font.Medium
                                             color: Ui.Style.authLabelText
                                             Layout.fillWidth: true
+                                            elide: Text.ElideRight
                                         }
 
                                         Components.SecureTextField {
@@ -332,6 +329,7 @@ Item {
                                             font.pixelSize: Ui.Style.authBodyTextSize
                                             color: Ui.Style.textPrimary
                                             placeholderTextColor: Ui.Style.authPlaceholderText
+                                            Accessible.name: Ui.I18n.t("auth.placeholder.account")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.authFieldBg
@@ -349,6 +347,7 @@ Item {
                                             font.weight: Font.Medium
                                             color: Ui.Style.authLabelText
                                             Layout.fillWidth: true
+                                            elide: Text.ElideRight
                                         }
 
                                         Components.SecureTextField {
@@ -360,6 +359,7 @@ Item {
                                             font.pixelSize: Ui.Style.authBodyTextSize
                                             color: Ui.Style.textPrimary
                                             placeholderTextColor: Ui.Style.authPlaceholderText
+                                            Accessible.name: Ui.I18n.t("auth.placeholder.password")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.authFieldBg
@@ -371,30 +371,11 @@ Item {
                                             onTextChanged: passwordInput = text
                                         }
 
-                                        Label {
-                                            text: Ui.I18n.t("auth.placeholder.rootCode")
-                                            font.pixelSize: Ui.Style.authMetaTextSize
-                                            color: Ui.Style.textMuted
+                                        Components.RootAuthCodeCard {
+                                            id: rootCodeFieldCard
                                             Layout.fillWidth: true
-                                        }
-
-                                        Components.SecureTextField {
-                                            id: rootCodeField
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            echoMode: TextInput.Password
+                                            labelText: Ui.I18n.t("auth.placeholder.rootCode")
                                             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: rootCodeField.activeFocus
-                                                              ? Ui.Style.authFieldFocus
-                                                              : Ui.Style.authFieldBorder
-                                            }
                                             onTextChanged: rootCodeInput = text
                                         }
 
@@ -403,6 +384,7 @@ Item {
                                             text: Ui.I18n.t("auth.login")
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
+                                            Accessible.name: Ui.I18n.t("auth.login")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 gradient: Gradient {
@@ -452,6 +434,7 @@ Item {
                                             font.pixelSize: Ui.Style.authBodyTextSize
                                             color: Ui.Style.textPrimary
                                             placeholderTextColor: Ui.Style.authPlaceholderText
+                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.account")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.authFieldBg
@@ -469,6 +452,7 @@ Item {
                                             font.pixelSize: Ui.Style.authBodyTextSize
                                             color: Ui.Style.textPrimary
                                             placeholderTextColor: Ui.Style.authPlaceholderText
+                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.password")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.authFieldBg
@@ -486,6 +470,7 @@ Item {
                                             font.pixelSize: Ui.Style.authBodyTextSize
                                             color: Ui.Style.textPrimary
                                             placeholderTextColor: Ui.Style.authPlaceholderText
+                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.confirm")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.authFieldBg
@@ -499,6 +484,7 @@ Item {
                                             text: Ui.I18n.t("auth.register")
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
+                                            Accessible.name: Ui.I18n.t("auth.register")
                                             background: Rectangle {
                                                 radius: Ui.Style.radiusMedium
                                                 color: Ui.Style.accent
@@ -523,19 +509,13 @@ Item {
                                                     return
                                                 }
                                                 errorText = ""
-                                                if (clientBridge && !clientBridge.init("")) {
-                                                    errorText = clientBridge.lastError.length
-                                                        ? clientBridge.lastError
+                                                if (!Ui.AuthDisplayStore.registerAccount(registerAccount, registerPassword)) {
+                                                    errorText = Ui.AuthDisplayStore.errorText.length > 0
+                                                        ? Ui.AuthDisplayStore.errorText
                                                         : Ui.I18n.t("auth.error.registerIncomplete")
                                                     return
                                                 }
-                                                if (!clientBridge || !clientBridge.registerUser(registerAccount, registerPassword)) {
-                                                    errorText = clientBridge && clientBridge.lastError.length
-                                                        ? clientBridge.lastError
-                                                        : Ui.I18n.t("auth.error.registerIncomplete")
-                                                    return
-                                                }
-                                                errorText = "注册成功，请登录"
+                                                errorText = ""
                                                 loginStack.currentIndex = 0
                                             }
                                         }
@@ -565,8 +545,8 @@ Item {
                                             Image {
                                                 anchors.fill: parent
                                                 fillMode: Image.PreserveAspectFit
-                                                source: clientBridge && clientBridge.qrLoginPayload.length > 0
-                                                        ? clientBridge.qrLoginImage(qrBox.width)
+                                                source: Ui.AuthDisplayStore.qrLoginPayload.length > 0
+                                                        ? Ui.AuthDisplayStore.qrLoginImage(qrBox.width)
                                                         : ""
                                                 visible: source.length > 0
                                             }
@@ -576,7 +556,7 @@ Item {
                                                 text: Ui.I18n.t("auth.qr.placeholder")
                                                 color: Ui.Style.textMuted
                                                 font.pixelSize: Ui.Style.authMetaTextSize
-                                                visible: !(clientBridge && clientBridge.qrLoginPayload.length > 0)
+                                                visible: !(Ui.AuthDisplayStore.qrLoginPayload.length > 0)
                                             }
                                         }
 
@@ -588,6 +568,7 @@ Item {
                                             font.pixelSize: Ui.Style.authSubtitleTextSize
                                             horizontalAlignment: Text.AlignHCenter
                                             Layout.fillWidth: true
+                                            elide: Text.ElideRight
                                         }
 
                                         RowLayout {
@@ -598,6 +579,7 @@ Item {
                                             Button {
                                                 text: Ui.I18n.t("auth.qr.refresh")
                                                 flat: true
+                                                Accessible.name: Ui.I18n.t("auth.qr.refresh")
                                                 onClicked: startQrLogin()
                                                 contentItem: Text {
                                                     text: Ui.I18n.t("auth.qr.refresh")
@@ -615,13 +597,11 @@ Item {
                             }
                         }
 
-                    Label {
+                    Components.StatusBanner {
                         Layout.fillWidth: true
-                        text: errorText.length > 0 ? errorText : "连接后将自动同步会话安全状态"
-                        color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.textMuted
-                        font.pixelSize: Ui.Style.authSubtitleTextSize
-                        horizontalAlignment: Text.AlignLeft
-                        wrapMode: Text.WordWrap
+                        tone: statusTone()
+                        titleText: statusTitle()
+                        detailText: statusDetail()
                     }
                 }
             }
@@ -629,17 +609,15 @@ Item {
     }
 
     Connections {
-        target: clientBridge
-        function onTrustStateChanged() {
-            if (waitingServerTrust && clientBridge && !clientBridge.hasPendingServerTrust) {
+        target: Ui.AuthDisplayStore
+        function onWaitingServerTrustChanged() {
+            if (waitingServerTrust && !Ui.AuthDisplayStore.waitingServerTrust) {
                 attemptLogin(lastLoginAccount, lastLoginPassword, lastLoginRootCode, true)
             }
         }
-        function onErrorChanged() {
-            if (waitingServerTrust && clientBridge && clientBridge.hasPendingServerTrust) {
-                if (clientBridge.lastError.length > 0) {
-                    errorText = clientBridge.lastError
-                }
+        function onErrorTextChanged() {
+            if (Ui.AuthDisplayStore.errorText.length > 0) {
+                errorText = Ui.AuthDisplayStore.errorText
             }
         }
     }

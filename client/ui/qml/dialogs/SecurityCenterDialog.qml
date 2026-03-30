@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Accessibility 1.0
 import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
@@ -26,68 +27,14 @@ ApplicationWindow {
     palette.highlightedText: Ui.Style.textPrimary
 
     property var overviewCards: []
-    property ListModel devicesModel: ListModel {}
-    property string currentDeviceDisplay: "N/A"
+    property string currentDeviceDisplay: ""
     property string gatewayInfo: ""
 
     function refreshOverview() {
-        devicesModel.clear()
-
-        var linkedCount = 0
-        var currentId = clientBridge ? clientBridge.deviceId : ""
-        currentDeviceDisplay = (clientBridge && clientBridge.deviceDisplayId.length > 0)
-            ? clientBridge.deviceDisplayId
-            : "N/A"
-        gatewayInfo = clientBridge ? clientBridge.serverInfo() : ""
-
-        var devices = clientBridge ? clientBridge.listDevices() : []
-        for (var i = 0; i < devices.length; ++i) {
-            var device = devices[i]
-            if (currentId && device.deviceId === currentId) {
-                continue
-            }
-            linkedCount += 1
-            devicesModel.append({
-                deviceDisplayId: device.deviceDisplayId,
-                lastSeenSec: device.lastSeenSec || 0
-            })
-        }
-
-        var transportHealthy = clientBridge ? clientBridge.remoteOk : false
-        overviewCards = [
-            {
-                icon: "qrc:/mi/e2ee/ui/icons/check.svg",
-                title: Ui.I18n.t("dialog.securityCenter.transportTitle"),
-                value: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
-                    : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention"),
-                detail: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
-                    : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
-            },
-            {
-                icon: "qrc:/mi/e2ee/ui/icons/info.svg",
-                title: Ui.I18n.t("dialog.securityCenter.trustTitle"),
-                value: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.trustReady")
-                    : Ui.I18n.t("dialog.securityCenter.trustReview"),
-                detail: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.trustReadyHint")
-                    : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
-            },
-            {
-                icon: "qrc:/mi/e2ee/ui/icons/device.svg",
-                title: Ui.I18n.t("dialog.securityCenter.devicesTitle"),
-                value: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedCount),
-                detail: Ui.I18n.t("dialog.securityCenter.devicesHint")
-            },
-            {
-                icon: "qrc:/mi/e2ee/ui/icons/clock.svg",
-                title: Ui.I18n.t("dialog.securityCenter.serverTitle"),
-                value: gatewayInfo.length > 0 ? gatewayInfo : "127.0.0.1",
-                detail: Ui.I18n.t("dialog.securityCenter.serverHint")
-            }
-        ]
+        Ui.SecurityDisplayStore.refresh()
+        overviewCards = Ui.SecurityDisplayStore.overviewCards
+        currentDeviceDisplay = Ui.SecurityDisplayStore.maskedCurrentDeviceId
+        gatewayInfo = Ui.SecurityDisplayStore.gatewayDisplayDetail
     }
 
     function open() {
@@ -97,7 +44,7 @@ ApplicationWindow {
         requestActivate()
     }
 
-    onVisibleChanged: {
+        onVisibleChanged: {
         if (visible) {
             refreshOverview()
         }
@@ -131,17 +78,15 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 2
 
-                Text {
+                Components.UiText {
                     text: root.title
-                    color: Ui.Style.textPrimary
-                    font.pixelSize: 14
-                    font.weight: Font.DemiBold
+                    textRole: "subtitle"
                 }
 
-                Text {
+                Components.UiText {
                     text: Ui.I18n.t("dialog.securityCenter.subtitle")
-                    color: Ui.Style.textMuted
-                    font.pixelSize: 11
+                    textRole: "caption"
+                    roleColor: Ui.Style.textMuted
                 }
             }
 
@@ -153,6 +98,7 @@ ApplicationWindow {
                              : "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
                 buttonSize: Ui.Style.iconButtonSmall
                 iconSize: 14
+                Accessible.name: Ui.I18n.t("dialog.addContact.cancel")
                 onClicked: root.close()
             }
         }
@@ -208,26 +154,23 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 spacing: 3
 
-                                Text {
+                                Components.UiText {
                                     text: modelData.title
-                                    color: Ui.Style.textSecondary
-                                    font.pixelSize: 11
+                                    textRole: "caption"
+                                    roleColor: Ui.Style.textSecondary
                                 }
 
-                                Text {
+                                Components.UiText {
                                     text: modelData.value
-                                    color: Ui.Style.textPrimary
-                                    font.pixelSize: 16
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
+                                    textRole: "value_single"
+                                    roleColor: Ui.Style.textPrimary
                                 }
 
-                                Text {
+                                Components.UiText {
                                     text: modelData.detail
-                                    color: Ui.Style.textMuted
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
+                                    textRole: "detail"
+                                    roleColor: Ui.Style.textMuted
                                 }
                             }
                         }
@@ -253,23 +196,22 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             spacing: 2
 
-                            Text {
+                            Components.UiText {
                                 text: Ui.I18n.t("dialog.securityCenter.currentDevice")
-                                color: Ui.Style.textSecondary
-                                font.pixelSize: 11
+                                textRole: "caption"
+                                roleColor: Ui.Style.textSecondary
                             }
 
-                            Text {
+                            Components.UiText {
                                 text: root.currentDeviceDisplay
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 14
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
+                                textRole: "value_single"
+                                roleColor: Ui.Style.textPrimary
                             }
                         }
 
                         Components.GhostButton {
                             text: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                            Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
                             onClicked: root.requestManageDevices()
                         }
                     }
@@ -278,7 +220,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.preferredHeight: Math.max(96, Math.min(contentHeight, 220))
                         clip: true
-                        model: devicesModel
+                        model: Ui.SecurityDisplayStore.devicesModel
                         spacing: Ui.Style.paddingS
 
                         delegate: Rectangle {
@@ -313,30 +255,27 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     spacing: 2
 
-                                    Text {
-                                        text: deviceDisplayId.length > 0 ? deviceDisplayId : "N/A"
-                                        color: Ui.Style.textPrimary
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
+                                    Components.UiText {
+                                        text: maskedDeviceDisplayId
+                                        textRole: "value_single"
+                                        roleColor: Ui.Style.textPrimary
                                     }
 
-                                    Text {
-                                        text: lastSeenSec > 0
-                                              ? ("Last seen " + lastSeenSec + "s")
-                                              : Ui.I18n.t("dialog.securityCenter.transportHealthy")
-                                        color: Ui.Style.textMuted
-                                        font.pixelSize: 11
+                                    Components.UiText {
+                                        text: lastSeenDisplay
+                                        textRole: "caption"
+                                        roleColor: Ui.Style.textMuted
                                     }
                                 }
                             }
                         }
                     }
 
-                    Text {
-                        visible: devicesModel.count === 0
+                    Components.UiText {
+                        visible: Ui.SecurityDisplayStore.linkedDeviceCount === 0
                         text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 12
+                        textRole: "supporting"
+                        roleColor: Ui.Style.textMuted
                     }
                 }
             }

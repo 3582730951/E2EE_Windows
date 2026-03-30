@@ -4,24 +4,29 @@ import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/auth" as Auth
-import "qrc:/mi/e2ee/ui/qml/dialogs" as Dialogs
-import "qrc:/mi/e2ee/ui/qml/shell" as Shell
+import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 ApplicationWindow {
     id: root
     property bool authMode: Ui.SessionStore.currentPage === 0
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    property string smokeScene: typeof uiSmokeScene !== "undefined" ? (uiSmokeScene || "") : ""
     property bool authReady: authLoader.active && authLoader.status === Loader.Ready
     property bool shellReady: shellLoader.active && shellLoader.status === Loader.Ready
+                             && shellLoader.item && shellLoader.item.shellReady
     property int authWidth: 840
     property int authHeight: 620
 
-    width: authMode ? authWidth : 1200
-    height: authMode ? authHeight : 760
-    minimumWidth: authMode ? authWidth : 900
-    minimumHeight: authMode ? authHeight : 620
-    maximumWidth: authMode ? authWidth : 16384
-    maximumHeight: authMode ? authHeight : 16384
+    width: authMode
+           ? authWidth
+           : (smokeMode ? Ui.SmokeSceneStore.viewportWidth(false) : 1200)
+    height: authMode
+            ? authHeight
+            : (smokeMode ? Ui.SmokeSceneStore.viewportHeight() : 760)
+    minimumWidth: authMode ? authWidth : width
+    minimumHeight: authMode ? authHeight : height
+    maximumWidth: smokeMode ? width : (authMode ? authWidth : 16384)
+    maximumHeight: smokeMode ? height : (authMode ? authHeight : 16384)
     flags: Qt.FramelessWindowHint | Qt.Window
     visible: true
     title: Ui.I18n.t("app.title")
@@ -80,7 +85,7 @@ ApplicationWindow {
         if (text.length === 0) {
             return
         }
-        Ui.AppStore.setInternalClipboard(text)
+        Ui.ChatDisplayStore.setInternalClipboard(text)
         if (cut && item.remove !== undefined) {
             var range = selectionRange(item)
             if (range) {
@@ -97,8 +102,8 @@ ApplicationWindow {
         if (!item) {
             return
         }
-        var internalText = Ui.AppStore.internalClipboardText || ""
-        var internalMs = Ui.AppStore.internalClipboardMs || 0
+        var internalText = Ui.ChatDisplayStore.internalClipboardText || ""
+        var internalMs = Ui.ChatDisplayStore.internalClipboardMs || 0
         var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
         var systemMs = clientBridge ? clientBridge.systemClipboardTimestamp() : 0
         var text = internalText
@@ -176,19 +181,19 @@ ApplicationWindow {
             anchors.fill: parent
 
             function focusSearch() {
-                appShell.focusSearch()
+                smokeAdapter.focusSearch()
             }
 
             function showChatSearch() {
-                appShell.showChatSearch()
+                smokeAdapter.showChatSearch()
             }
 
             function handleEscape() {
-                appShell.handleEscape()
+                smokeAdapter.handleEscape()
             }
 
             function openSecurityCenter() {
-                appShell.openSecurityCenter()
+                smokeAdapter.openSecurityCenter()
             }
 
             ColumnLayout {
@@ -360,8 +365,8 @@ ApplicationWindow {
                     }
                 }
 
-                Shell.AppShell {
-                    id: appShell
+                Ui.SmokeAdapter {
+                    id: smokeAdapter
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     windowWidth: root.width
@@ -428,19 +433,18 @@ ApplicationWindow {
                 anchors.margins: 4
                 spacing: 6
 
-                Label {
+                Components.UiText {
                     text: Ui.I18n.t("app.title")
-                    color: Ui.Style.authTitleBarText
+                    textRole: "caption"
+                    roleColor: Ui.Style.authTitleBarText
                     font.pixelSize: Ui.Style.authWindowTitleTextSize
-                    font.weight: Font.Medium
-                    elide: Text.ElideRight
                 }
 
-                Label {
+                Components.UiText {
                     text: Ui.I18n.t("auth.subtitle")
-                    color: Ui.Style.textMuted
+                    textRole: "caption"
+                    roleColor: Ui.Style.textMuted
                     font.pixelSize: Ui.Style.authMetaTextSize
-                    elide: Text.ElideRight
                 }
 
                 Item { Layout.fillWidth: true }
@@ -581,28 +585,7 @@ ApplicationWindow {
         onActivated: handleSecureSelectAll()
     }
 
-    Dialogs.TrustPromptDialog {
-        id: trustDialog
+    Ui.TrustFlowCoordinator {
         ownerWindow: root
-        onAccepted: function(pinText) {
-            if (!clientBridge) {
-                return
-            }
-            if (mode === "peer") {
-                clientBridge.trustPendingPeer(pinText)
-            } else {
-                clientBridge.trustPendingServer(pinText)
-            }
-        }
-    }
-
-    Connections {
-        target: clientBridge
-        function onServerTrustRequired(fingerprint, pin) {
-            trustDialog.openWith("server", fingerprint, pin, "")
-        }
-        function onPeerTrustRequired(peer, fingerprint, pin) {
-            trustDialog.openWith("peer", fingerprint, pin, peer)
-        }
     }
 }

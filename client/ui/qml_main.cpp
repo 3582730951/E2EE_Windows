@@ -64,10 +64,35 @@ QString SmokeScene() {
     return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_SCENE")).trimmed().toLower();
 }
 
+QString SmokeLocale() {
+    return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_LOCALE")).trimmed();
+}
+
+QString SmokeTheme() {
+    return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_THEME")).trimmed().toLower();
+}
+
+double SmokeScale() {
+    const QString value = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_SCALE")).trimmed();
+    bool ok = false;
+    const double parsed = value.toDouble(&ok);
+    if (ok && parsed > 0.0) {
+        return parsed;
+    }
+    return 1.0;
+}
+
 QString SmokeCaptureNameForScene(const QString& scene) {
-    return scene == QStringLiteral("security_center")
-        ? QStringLiteral("security-center")
-        : QStringLiteral("post-login");
+    if (scene == QStringLiteral("login")) {
+        return QStringLiteral("login");
+    }
+    if (scene == QStringLiteral("security_center")) {
+        return QStringLiteral("security-center");
+    }
+    if (scene == QStringLiteral("post_login_light")) {
+        return QStringLiteral("post-login-light");
+    }
+    return QStringLiteral("post-login");
 }
 
 QString SmokeCapturePath(const QString& captureDir, const QString& name) {
@@ -532,6 +557,9 @@ int main(int argc, char* argv[]) {
     const QString smokeConfig = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CONFIG"));
     const QString smokeCaptureDir = SmokeCaptureDir();
     const QString smokeScene = SmokeScene();
+    const QString smokeLocale = SmokeLocale();
+    const QString smokeTheme = SmokeTheme();
+    const double smokeScale = SmokeScale();
     QTimer smokeTimer;
 
     QQmlApplicationEngine engine;
@@ -539,6 +567,10 @@ int main(int argc, char* argv[]) {
     mi::client::ui::QuickClient client;
     engine.rootContext()->setContextProperty("clientBridge", &client);
     engine.rootContext()->setContextProperty("uiSmokeMode", smokeMode);
+    engine.rootContext()->setContextProperty("uiSmokeScene", smokeScene);
+    engine.rootContext()->setContextProperty("uiSmokeLocale", smokeLocale);
+    engine.rootContext()->setContextProperty("uiSmokeTheme", smokeTheme);
+    engine.rootContext()->setContextProperty("uiSmokeScale", smokeScale);
     QObject::connect(&engine, &QQmlEngine::warnings, &app,
                      [smokeCaptureDir](const QList<QQmlError>& warnings) {
                          for (const auto& warning : warnings) {
@@ -640,6 +672,17 @@ int main(int argc, char* argv[]) {
                                            ? QStringLiteral("UI smoke login capture ok")
                                            : QStringLiteral("UI smoke login capture failed"));
                     });
+                }
+                if (smokeScene == QStringLiteral("login")) {
+                    const int loginOnlyDelayMs =
+                        qMax(350, preCaptureDelayMs + 250);
+                    QTimer::singleShot(loginOnlyDelayMs, &app, [&smokeTimer, smokeCaptureDir]() {
+                        smokeTimer.stop();
+                        AppendSmokeLog(smokeCaptureDir,
+                                       QStringLiteral("UI smoke login-only scene complete; quitting"));
+                        QCoreApplication::exit(0);
+                    });
+                    return;
                 }
                 QTimer::singleShot(loginDelayMs, &client, [&app, &client, &smokeTimer, smokeUser,
                                                            smokePass, smokeCaptureDir, window,

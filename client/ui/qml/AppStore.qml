@@ -356,6 +356,20 @@ QtObject {
         currentChatType = "group"
         currentChatMembers = 6
         rebuildFiltered()
+        syncDomainStores()
+    }
+
+    function seedSmokeScene(sceneName) {
+        seedSmokePreview()
+        if ((sceneName || "") === "security_center") {
+            rightPaneVisible = false
+        }
+    }
+
+    function enterSmokeShellPreview(sceneName) {
+        seedSmokeScene(sceneName || "")
+        currentPage = 1
+        syncDomainStores()
     }
 
     function isEmojiBase(code) {
@@ -586,6 +600,7 @@ QtObject {
         if (dialogsModel.count > 0 && currentChatId.length === 0) {
             setCurrentChat(dialogsModel.get(0).chatId)
         }
+        syncDomainStores()
     }
 
     function rebuildDialogs() {
@@ -2136,7 +2151,7 @@ QtObject {
         function onTokenChanged() {
             if (clientBridge && clientBridge.loggedIn) {
                 if (smokeMode) {
-                    seedSmokePreview()
+                    seedSmokeScene(typeof uiSmokeScene !== "undefined" ? (uiSmokeScene || "") : "")
                 } else {
                     bootstrapAfterLogin()
                 }

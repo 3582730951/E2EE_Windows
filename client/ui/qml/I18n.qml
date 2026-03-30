@@ -1,10 +1,29 @@
 pragma Singleton
 import QtQuick 2.15
+import QtCore
 
 QtObject {
     id: root
 
-    property string currentLocale: "zh-CN"
+    Settings {
+        id: localeSettings
+        category: "ui_i18n"
+        property string localeMode: "system"
+    }
+
+    readonly property string smokeLocale: typeof uiSmokeLocale !== "undefined"
+                                          ? (uiSmokeLocale || "")
+                                          : ""
+    property string localeMode: {
+        var mode = localeSettings.localeMode
+        if (mode === "system" || mode === "zh-CN" || mode === "en-US") {
+            return mode
+        }
+        return "system"
+    }
+    readonly property string effectiveLocale: resolvedLocale(localeMode)
+    readonly property string currentLocale: effectiveLocale
+    readonly property bool usesCjkLocale: effectiveLocale === "zh-CN"
     property var strings: ({})
     property bool loaded: false
     property var languages: [
@@ -16,7 +35,7 @@ QtObject {
 
     function ensureLoaded() {
         if (!loaded) {
-            setLocale(currentLocale)
+            loadCatalog(effectiveLocale)
         }
     }
 
@@ -65,10 +84,39 @@ QtObject {
 
     function loadLanguagePack(url, code, name) {
         registerLanguage(code, name, url)
-        setLocale(code)
+        setLocaleMode(code)
+    }
+
+    function systemLocaleMode() {
+        var localeName = Qt.locale().name || ""
+        var normalized = (localeName + "").replace("_", "-")
+        return normalized.indexOf("zh") === 0 ? "zh-CN" : "en-US"
+    }
+
+    function resolvedLocale(mode) {
+        if (smokeLocale === "zh-CN" || smokeLocale === "en-US") {
+            return smokeLocale
+        }
+        if (mode === "zh-CN" || mode === "en-US") {
+            return mode
+        }
+        return systemLocaleMode()
+    }
+
+    function setLocaleMode(mode) {
+        if (!(mode === "system" || mode === "zh-CN" || mode === "en-US")) {
+            return
+        }
+        localeMode = mode
+        localeSettings.localeMode = mode
+        loadCatalog(effectiveLocale)
     }
 
     function setLocale(code) {
+        setLocaleMode(code)
+    }
+
+    function loadCatalog(code) {
         var entry = null
         for (var i = 0; i < languages.length; ++i) {
             if (languages[i].code === code) {
@@ -85,7 +133,6 @@ QtObject {
         if (request.status === 0 || request.status === 200) {
             try {
                 strings = JSON.parse(request.responseText)
-                currentLocale = code
                 loaded = true
                 localeChanged()
             } catch (err) {
@@ -93,5 +140,16 @@ QtObject {
         }
     }
 
-    Component.onCompleted: setLocale(currentLocale)
+    onLocaleModeChanged: {
+        if (localeSettings.localeMode !== localeMode) {
+            localeSettings.localeMode = localeMode
+        }
+    }
+
+    onEffectiveLocaleChanged: {
+        loaded = false
+        loadCatalog(effectiveLocale)
+    }
+
+    Component.onCompleted: loadCatalog(effectiveLocale)
 }

@@ -47,13 +47,13 @@ Item {
                         width: 84
                         height: 84
                         radius: 42
-                        color: Ui.Style.avatarColor(Ui.AppStore.currentChatTitle)
+                        color: Ui.Style.avatarColor(Ui.ChatDisplayStore.currentChatTitle)
                         Layout.alignment: Qt.AlignHCenter
                         Text {
                             anchors.centerIn: parent
-                            text: Ui.AppStore.currentChatTitle.length > 0
-                                  ? Ui.AppStore.currentChatTitle.charAt(0).toUpperCase()
-                                  : "?"
+                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                  ? Ui.ChatDisplayStore.currentChatTitle.charAt(0).toUpperCase()
+                                  : ""
                             color: Ui.Style.textPrimary
                             font.pixelSize: 26
                             font.weight: Font.DemiBold
@@ -62,8 +62,8 @@ Item {
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: Ui.AppStore.currentChatTitle.length > 0
-                              ? Ui.AppStore.currentChatTitle
+                        text: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                              ? Ui.ChatDisplayStore.currentChatTitle
                               : Ui.I18n.t("right.noChatSelected")
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
@@ -71,7 +71,7 @@ Item {
                     }
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: Ui.AppStore.currentChatSubtitle
+                        text: Ui.ChatDisplayStore.currentChatSubtitle
                         font.pixelSize: 12
                         color: Ui.Style.textMuted
                     }
@@ -107,7 +107,7 @@ Item {
 
             StackLayout {
                 Layout.fillWidth: true
-                currentIndex: Ui.AppStore.currentChatType === "group" ? 1 : 0
+                currentIndex: Ui.ChatDisplayStore.currentChatType === "group" ? 1 : 0
 
                 Item {
                     ColumnLayout {
@@ -124,15 +124,28 @@ Item {
                                 anchors.margins: Ui.Style.paddingM
                                 spacing: Ui.Style.paddingS
 
-                                Text { text: Ui.I18n.t("right.profile"); color: Ui.Style.textSecondary; font.pixelSize: 11 }
+                                Text { text: Ui.I18n.t("right.profile"); color: Ui.Style.textSecondary; font.pixelSize: 11; elide: Text.ElideRight }
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 4
-                                    Text { text: Ui.I18n.t("right.username"); color: Ui.Style.textMuted; font.pixelSize: 10 }
-                                    Text { text: "@demo"; color: Ui.Style.textPrimary; font.pixelSize: 12 }
-                                    Text { text: Ui.I18n.t("right.phone"); color: Ui.Style.textMuted; font.pixelSize: 10 }
-                                    Text { text: "+1 202-555-0101"; color: Ui.Style.textPrimary; font.pixelSize: 12 }
+                                    Text { text: Ui.I18n.t("right.username"); color: Ui.Style.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
+                                    Text {
+                                        text: Ui.ChatDisplayStore.currentChatSubtitle.length > 0
+                                              ? Ui.ChatDisplayStore.currentChatSubtitle
+                                              : Ui.I18n.t("right.noChatSelected")
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                    }
+                                    Text { text: Ui.I18n.t("right.phone"); color: Ui.Style.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
+                                    Text {
+                                        text: Ui.SecurityDisplayStore.gatewayDisplayDetail
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                    }
                                 }
 
                                 RowLayout {
@@ -168,7 +181,7 @@ Item {
                                 anchors.margins: Ui.Style.paddingM
                                 spacing: Ui.Style.paddingS
 
-                                Text { text: Ui.I18n.t("right.group"); color: Ui.Style.textSecondary; font.pixelSize: 11 }
+                                Text { text: Ui.I18n.t("right.group"); color: Ui.Style.textSecondary; font.pixelSize: 11; elide: Text.ElideRight }
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -246,7 +259,7 @@ Item {
 
                                     ListView {
                                         clip: true
-                                        model: Ui.AppStore.membersModel
+                                        model: Ui.ChatDisplayStore.membersModel
                                         delegate: Item {
                                             width: ListView.view.width
                                             height: 54
@@ -266,7 +279,7 @@ Item {
                                                     color: Ui.Style.avatarColor(avatarKey)
                                                     Text {
                                                         anchors.centerIn: parent
-                                                        text: displayName.length > 0 ? displayName.charAt(0).toUpperCase() : "?"
+                                                        text: displayName.length > 0 ? displayName.charAt(0).toUpperCase() : ""
                                                         color: Ui.Style.textPrimary
                                                         font.pixelSize: 13
                                                     }

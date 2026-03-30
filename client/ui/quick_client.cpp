@@ -1,6 +1,7 @@
 #include "quick_client.h"
 #include "c_api_client.h"
 #include "cpp_client_adapter.h"
+#include "display_contract.h"
 #include "media_transport_capi.h"
 
 #include <QAbstractVideoBuffer>
@@ -3560,6 +3561,11 @@ QVariantList QuickClient::listDevices() {
   return out;
 }
 
+QVariantList QuickClient::listDevicesDisplay() {
+  return display_contract::BuildDeviceDisplayList(
+      listDevices(), deviceId(), deviceDisplayId());
+}
+
 bool QuickClient::kickDevice(const QString& deviceId) {
   const QString id = deviceId.trimmed();
   if (id.isEmpty()) {
@@ -3581,6 +3587,24 @@ bool QuickClient::kickDevice(const QString& deviceId) {
   UpdateLastError(QString());
   emit status(QStringLiteral("已踢出设备"));
   return true;
+}
+
+QString QuickClient::gatewayDisplayState() const {
+  return mi::client::ui::display_contract::BuildGatewayDisplayInfo(config_path_)
+      .state;
+}
+
+QString QuickClient::gatewayDisplayDetail() const {
+  return mi::client::ui::display_contract::BuildGatewayDisplayInfo(config_path_)
+      .detail;
+}
+
+QString QuickClient::maskedCurrentDeviceId() const {
+  QString value = deviceDisplayId();
+  if (value.trimmed().isEmpty()) {
+    value = deviceId();
+  }
+  return mi::client::ui::display_contract::MaskedDeviceId(value);
 }
 
 bool QuickClient::sendReadReceipt(const QString& peerUsername,

@@ -38,6 +38,9 @@
         <file alias="qml/Main.qml">../qml/Main.qml</file>
         <file alias="qml/Style.qml">../qml/Style.qml</file>
         <file alias="qml/I18n.qml">../qml/I18n.qml</file>
+        <file alias="qml/TrustFlowCoordinator.qml">../qml/TrustFlowCoordinator.qml</file>
+        <file alias="qml/SecurityDialogCoordinator.qml">../qml/SecurityDialogCoordinator.qml</file>
+        <file alias="qml/SmokeAdapter.qml">../qml/SmokeAdapter.qml</file>
         <file alias="qml/qmldir">../qml/qmldir</file>
         <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
         <file alias="qml/stores/qmldir">../qml/stores/qmldir</file>
@@ -46,6 +49,11 @@
         <file alias="qml/stores/ChatStore.qml">../qml/stores/ChatStore.qml</file>
         <file alias="qml/stores/CallStore.qml">../qml/stores/CallStore.qml</file>
         <file alias="qml/stores/PreferenceStore.qml">../qml/stores/PreferenceStore.qml</file>
+        <file alias="qml/stores/AuthDisplayStore.qml">../qml/stores/AuthDisplayStore.qml</file>
+        <file alias="qml/stores/SecurityDisplayStore.qml">../qml/stores/SecurityDisplayStore.qml</file>
+        <file alias="qml/stores/ChatDisplayStore.qml">../qml/stores/ChatDisplayStore.qml</file>
+        <file alias="qml/stores/CallDisplayStore.qml">../qml/stores/CallDisplayStore.qml</file>
+        <file alias="qml/stores/SmokeSceneStore.qml">../qml/stores/SmokeSceneStore.qml</file>
         <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
         <file alias="qml/i18n/zh-CN.json">../qml/i18n/zh-CN.json</file>
         <file alias="qml/i18n/en-US.json">../qml/i18n/en-US.json</file>
@@ -72,6 +80,13 @@
         <file alias="qml/components/SearchField.qml">../qml/components/SearchField.qml</file>
         <file alias="qml/components/SecureTextField.qml">../qml/components/SecureTextField.qml</file>
         <file alias="qml/components/SecureTextArea.qml">../qml/components/SecureTextArea.qml</file>
+        <file alias="qml/components/UiText.qml">../qml/components/UiText.qml</file>
+        <file alias="qml/components/AppBarPrimary.qml">../qml/components/AppBarPrimary.qml</file>
+        <file alias="qml/components/StatusBanner.qml">../qml/components/StatusBanner.qml</file>
+        <file alias="qml/components/SecurityBadge.qml">../qml/components/SecurityBadge.qml</file>
+        <file alias="qml/components/TrustPromptCard.qml">../qml/components/TrustPromptCard.qml</file>
+        <file alias="qml/components/RootAuthCodeCard.qml">../qml/components/RootAuthCodeCard.qml</file>
+        <file alias="qml/components/DeviceFingerprintRow.qml">../qml/components/DeviceFingerprintRow.qml</file>
         <file alias="qml/shell/GroupCallWindow.qml">../qml/shell/GroupCallWindow.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>

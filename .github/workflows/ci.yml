@@ -48,6 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/verify_ui_contract.py
+          python3 tools/windows_qml_accessibility_audit.py
+          python3 tools/windows_qml_text_policy_audit.py
+          python3 tools/windows_qml_literal_copy_audit.py
 
   build-package:
     needs:
@@ -541,14 +544,15 @@ jobs:
             if (-not $ready) {
               throw "server not ready"
             }
-            function Invoke-UiSmoke([string]$scene) {
-              if ([string]::IsNullOrWhiteSpace($scene)) {
-                Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
-                $label = "default"
-              } else {
-                $env:MI_E2EE_UI_SMOKE_SCENE = $scene
-                $label = $scene
-              }
+            function Invoke-UiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+              $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
+              $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
+              $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
+              $env:MI_E2EE_UI_SMOKE_THEME = $theme
+              $env:MI_E2EE_UI_SMOKE_SCALE = [string]$scale
+              $env:QT_SCALE_FACTOR = [string]$scale
+              $scaleLabel = [int][Math]::Round($scale * 100.0)
+              $label = "$sceneName-$locale-$theme-$scaleLabel"
               $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
               $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.Directory.FullName -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
@@ -571,13 +575,41 @@ jobs:
                 }
                 throw "UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
+              $captureName = switch ($sceneName) {
+                "login" { "login.png" }
+                "security_center" { "security-center.png" }
+                "post_login_light" { "post-login-light.png" }
+                default { "post-login.png" }
+              }
+              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              if (-not (Test-Path $capturePath)) {
+                throw "UI smoke capture missing: $capturePath"
+              }
+              $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
+              Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
+              python tools\\windows_smoke_matrix_check.py --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
+                $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
+                python tools\\windows_smoke_golden_diff.py --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+              }
             }
             Push-Location $exe.Directory.FullName
             try {
-              Invoke-UiSmoke ""
-              Invoke-UiSmoke "security_center"
+              $scales = @(1.0, 1.25, 1.5, 1.75, 2.0)
+              foreach ($scale in $scales) {
+                Invoke-UiSmoke "login" "zh-CN" "light" $scale
+                Invoke-UiSmoke "post_login" "zh-CN" "light" $scale
+                Invoke-UiSmoke "post_login_light" "zh-CN" "light" $scale
+                Invoke-UiSmoke "security_center" "zh-CN" "light" $scale
+              }
+              Invoke-UiSmoke "post_login" "zh-CN" "dark" 1.0
+              Invoke-UiSmoke "post_login" "en-US" "light" 1.0
             } finally {
               Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_LOCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_THEME -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_SCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:QT_SCALE_FACTOR -ErrorAction SilentlyContinue
               Pop-Location
             }
           } finally {
@@ -798,14 +830,15 @@ jobs:
               }
               throw "dist server not ready"
             }
-            function Invoke-DistUiSmoke([string]$scene) {
-              if ([string]::IsNullOrWhiteSpace($scene)) {
-                Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
-                $label = "default"
-              } else {
-                $env:MI_E2EE_UI_SMOKE_SCENE = $scene
-                $label = $scene
-              }
+            function Invoke-DistUiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+              $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
+              $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
+              $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
+              $env:MI_E2EE_UI_SMOKE_THEME = $theme
+              $env:MI_E2EE_UI_SMOKE_SCALE = [string]$scale
+              $env:QT_SCALE_FACTOR = [string]$scale
+              $scaleLabel = [int][Math]::Round($scale * 100.0)
+              $label = "$sceneName-$locale-$theme-$scaleLabel"
               $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
               $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $clientLauncher -WorkingDirectory $clientRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
@@ -828,13 +861,41 @@ jobs:
                 }
                 throw "dist UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
+              $captureName = switch ($sceneName) {
+                "login" { "login.png" }
+                "security_center" { "security-center.png" }
+                "post_login_light" { "post-login-light.png" }
+                default { "post-login.png" }
+              }
+              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              if (-not (Test-Path $capturePath)) {
+                throw "dist UI smoke capture missing: $capturePath"
+              }
+              $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
+              Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
+              python tools\\windows_smoke_matrix_check.py --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
+                $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
+                python tools\\windows_smoke_golden_diff.py --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+              }
             }
             Push-Location $clientRoot
             try {
-              Invoke-DistUiSmoke ""
-              Invoke-DistUiSmoke "security_center"
+              $scales = @(1.0, 1.25, 1.5, 1.75, 2.0)
+              foreach ($scale in $scales) {
+                Invoke-DistUiSmoke "login" "zh-CN" "light" $scale
+                Invoke-DistUiSmoke "post_login" "zh-CN" "light" $scale
+                Invoke-DistUiSmoke "post_login_light" "zh-CN" "light" $scale
+                Invoke-DistUiSmoke "security_center" "zh-CN" "light" $scale
+              }
+              Invoke-DistUiSmoke "post_login" "zh-CN" "dark" 1.0
+              Invoke-DistUiSmoke "post_login" "en-US" "light" 1.0
             } finally {
               Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_LOCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_THEME -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_UI_SMOKE_SCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:QT_SCALE_FACTOR -ErrorAction SilentlyContinue
               Pop-Location
             }
           } finally {

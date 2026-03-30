@@ -19,7 +19,7 @@ Item {
 
     function clearSearch() {
         searchField.text = ""
-        Ui.AppStore.setSearchQuery("")
+        Ui.ChatDisplayStore.setSearchQuery("")
     }
 
     Rectangle {
@@ -66,7 +66,7 @@ Item {
                         spacing: 2
 
                         Text {
-                            text: "MI E2EE"
+                            text: Ui.I18n.t("app.title")
                             color: Ui.Style.textPrimary
                             font.pixelSize: 19
                             font.weight: Font.DemiBold
@@ -158,7 +158,7 @@ Item {
 
                         Rectangle {
                             id: notificationsBadge
-                            visible: Ui.ConversationStore.notificationCount > 0
+                            visible: Ui.ChatDisplayStore.notificationCount > 0
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.rightMargin: -2
@@ -171,7 +171,7 @@ Item {
                             Text {
                                 id: badgeText
                                 anchors.centerIn: parent
-                                text: Ui.ConversationStore.notificationCount > 99 ? "99+" : Ui.ConversationStore.notificationCount
+                                text: Ui.ChatDisplayStore.notificationCount > 99 ? "99+" : Ui.ChatDisplayStore.notificationCount
                                 color: Ui.Style.unreadBadgeFg
                                 font.pixelSize: 10
                                 font.weight: Font.DemiBold
@@ -188,6 +188,7 @@ Item {
                         id: quickNewChatButton
                         Layout.fillWidth: true
                         Layout.preferredHeight: 32
+                        Accessible.name: Ui.I18n.t("left.newChat")
                         onClicked: root.requestNewChat()
                         background: Rectangle {
                             radius: Ui.Style.radiusMedium
@@ -220,6 +221,7 @@ Item {
                         id: quickNewGroupButton
                         Layout.fillWidth: true
                         Layout.preferredHeight: 32
+                        Accessible.name: Ui.I18n.t("left.newGroup")
                         onClicked: root.requestCreateGroup()
                         background: Rectangle {
                             radius: Ui.Style.radiusMedium
@@ -252,6 +254,7 @@ Item {
                         id: quickAddContactButton
                         Layout.fillWidth: true
                         Layout.preferredHeight: 32
+                        Accessible.name: Ui.I18n.t("left.addContact")
                         onClicked: root.requestAddContact()
                         background: Rectangle {
                             radius: Ui.Style.radiusMedium
@@ -286,8 +289,8 @@ Item {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 120
                     placeholderText: Ui.I18n.t("left.search")
-                    text: Ui.ConversationStore.searchQuery
-                    onTextEdited: Ui.AppStore.setSearchQuery(text)
+                    text: Ui.ChatDisplayStore.searchQuery
+                    onTextEdited: Ui.ChatDisplayStore.setSearchQuery(text)
                 }
             }
         }
@@ -358,7 +361,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: Ui.AppStore.filteredDialogsModel
+            model: Ui.ChatDisplayStore.filteredDialogsModel
             boundsBehavior: Flickable.StopAtBounds
             cacheBuffer: 160
             spacing: 2
@@ -369,7 +372,7 @@ Item {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: Ui.AppStore.filteredDialogsModel.count === 0
+            visible: Ui.ChatDisplayStore.filteredDialogsModel.count === 0
 
             Rectangle {
                 anchors.centerIn: parent
@@ -444,7 +447,7 @@ Item {
         Item {
             width: ListView.view.width
             height: Ui.Style.dialogRowHeight
-            property bool selected: chatId === Ui.ChatStore.currentChatId
+            property bool selected: chatId === Ui.ChatDisplayStore.currentChatId
             function handlePressed(mouse) {
                 if (mouse.button === Qt.RightButton) {
                     contextMenu.popup()
@@ -488,7 +491,7 @@ Item {
                     border.color: selected ? Ui.Style.railAccentBorder : Qt.rgba(1, 1, 1, 0.08)
                     Text {
                         anchors.centerIn: parent
-                        text: title.length > 0 ? title.charAt(0).toUpperCase() : "?"
+                        text: title.length > 0 ? title.charAt(0).toUpperCase() : ""
                         color: Ui.Style.textPrimary
                         font.pixelSize: 15
                         font.weight: Font.DemiBold
@@ -611,7 +614,7 @@ Item {
                 id: mouseArea
                 anchors.fill: parent
                 hoverEnabled: true
-                onClicked: Ui.AppStore.setCurrentChat(chatId)
+                onClicked: Ui.ChatDisplayStore.setCurrentChat(chatId)
                 onPressed: handlePressed
             }
 
@@ -619,16 +622,16 @@ Item {
                 id: contextMenu
                 MenuItem {
                     text: pinned ? Ui.I18n.t("left.context.unpin") : Ui.I18n.t("left.context.pin")
-                    onTriggered: Ui.AppStore.togglePin(chatId)
+                    onTriggered: Ui.ChatDisplayStore.togglePin(chatId)
                 }
                 MenuItem {
                     text: Ui.I18n.t("left.context.markRead")
-                    onTriggered: Ui.AppStore.markDialogRead(chatId)
+                    onTriggered: Ui.ChatDisplayStore.markDialogRead(chatId)
                 }
                 MenuItem { text: Ui.I18n.t("left.context.mute") }
                 MenuItem {
                     text: Ui.I18n.t("left.context.delete")
-                    onTriggered: Ui.AppStore.removeChat(chatId)
+                    onTriggered: Ui.ChatDisplayStore.removeChat(chatId)
                 }
             }
         }

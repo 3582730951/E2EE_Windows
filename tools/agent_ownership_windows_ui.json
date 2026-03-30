@@ -1,0 +1,93 @@
+{
+  "version": "2026-03-29",
+  "allowed_paths": {
+    "Agent1": [
+      "ui_contract/tokens.json",
+      "ui_contract/acceptance.json",
+      "ui_contract/components.json",
+      "ui_contract/copy_keys.json",
+      "client/ui/qml/I18n.qml",
+      "client/ui/qml/Style.qml",
+      "client/ui/qml/Main.qml",
+      "client/ui/qml/components/UiText.qml",
+      "client/ui/qml/components/AppBarPrimary.qml",
+      "client/ui/qml/components/StatusBanner.qml",
+      "client/ui/qml/components/SecurityBadge.qml",
+      "client/ui/display_contract.h",
+      "client/ui/display_contract.cpp"
+    ],
+    "Agent2": [
+      "client/ui/qml/auth/AuthFlow.qml",
+      "client/ui/qml/dialogs/SecurityCenterDialog.qml",
+      "client/ui/qml/dialogs/SettingsDialog.qml",
+      "client/ui/qml/dialogs/DeviceManagerDialog.qml",
+      "client/ui/qml/dialogs/TrustPromptDialog.qml",
+      "client/ui/qml/TrustFlowCoordinator.qml",
+      "client/ui/qml/SecurityDialogCoordinator.qml",
+      "client/ui/qml/components/TrustPromptCard.qml",
+      "client/ui/qml/components/RootAuthCodeCard.qml",
+      "client/ui/qml/components/DeviceFingerprintRow.qml",
+      "client/ui/qml/stores/AuthDisplayStore.qml",
+      "client/ui/qml/stores/SecurityDisplayStore.qml",
+      "client/ui/quick_client.h",
+      "client/ui/quick_client.cpp"
+    ],
+    "Agent3": [
+      "client/ui/qml/AppStore.qml",
+      "client/ui/qml/stores/SessionStore.qml",
+      "client/ui/qml/stores/ConversationStore.qml",
+      "client/ui/qml/stores/ChatStore.qml",
+      "client/ui/qml/stores/CallStore.qml",
+      "client/ui/qml/stores/PreferenceStore.qml",
+      "client/ui/qml/stores/ChatDisplayStore.qml",
+      "client/ui/qml/stores/CallDisplayStore.qml",
+      "client/ui/qml/stores/SmokeSceneStore.qml",
+      "client/ui/qml/SmokeAdapter.qml",
+      "client/ui/qml/shell/AppShell.qml",
+      "client/ui/qml/shell/LeftPane.qml",
+      "client/ui/qml/shell/CenterPane.qml",
+      "client/ui/qml/shell/RightPane.qml",
+      "client/ui/qml_main.cpp",
+      "client/ui/common/ui_resources.qrc",
+      "client/ui/qml/qmldir",
+      "client/ui/qml/stores/qmldir",
+      "client/ui/CMakeLists.txt",
+      ".github/workflows/ci.yml",
+      "tools/verify_ui_contract.py",
+      "tools/windows_qml_accessibility_audit.py",
+      "tools/windows_qml_text_policy_audit.py",
+      "tools/windows_qml_literal_copy_audit.py",
+      "tools/windows_smoke_matrix_check.py",
+      "tools/windows_smoke_golden_diff.py",
+      "tools/agent_ownership_windows_ui.json"
+    ]
+  },
+  "forbidden_paths": [
+    "client/ui/qml/dialogs/NewChatDialog.qml",
+    "client/ui/qml/dialogs/AddContactDialog.qml",
+    "client/ui/qml/dialogs/CreateGroupWizard.qml",
+    "client/ui/qml/dialogs/NotificationCenterDialog.qml",
+    "client/ui/qml/shell/GroupCallWindow.qml"
+  ],
+  "no_edit_surfaces": [
+    "client/ui/qml/dialogs/NewChatDialog.qml",
+    "client/ui/qml/dialogs/AddContactDialog.qml",
+    "client/ui/qml/dialogs/CreateGroupWizard.qml",
+    "client/ui/qml/dialogs/NotificationCenterDialog.qml",
+    "client/ui/qml/shell/GroupCallWindow.qml",
+    "client/ui/widgets"
+  ],
+  "legacy_excluded_surfaces": [
+    "client/ui/widgets",
+    "client/ui/main.cpp",
+    "client/ui/widget_main.cpp"
+  ],
+  "single_writer_manifests": [
+    "client/ui/common/ui_resources.qrc",
+    "client/ui/qml/qmldir",
+    "client/ui/qml/stores/qmldir",
+    "client/ui/CMakeLists.txt",
+    ".github/workflows/ci.yml",
+    "tools/agent_ownership_windows_ui.json"
+  ]
+}

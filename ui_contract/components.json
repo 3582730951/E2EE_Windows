@@ -1,6 +1,10 @@
 {
   "required_components": [
     {
+      "id": "UiText",
+      "role": "single source of text rendering and overflow policy"
+    },
+    {
       "id": "AppBarPrimary",
       "role": "primary shell heading and actions",
       "required_states": [
@@ -102,5 +106,38 @@
       "id": "DeviceFingerprintRow",
       "role": "monospaced sensitive identity row"
     }
-  ]
+  ],
+  "windows_display_fields": {
+    "gatewayDisplayState": {
+      "allowed_values": [
+        "本地配置",
+        "远程接入",
+        "已固定"
+      ]
+    },
+    "gatewayDisplayDetail": {
+      "mode": "singleLineElide",
+      "forbidden_fragments": [
+        "config:",
+        "\\",
+        "/"
+      ]
+    },
+    "maskedCurrentDeviceId": {
+      "format": "first4_ellipsis_last4",
+      "overview_policy": "masked_only"
+    },
+    "fullSensitiveValue": {
+      "overview_policy": "copy_only"
+    },
+    "deviceListDisplay": {
+      "fields": {
+        "deviceId": "action_only",
+        "copyValue": "copy_only",
+        "maskedDeviceDisplayId": "overview_masked_only",
+        "lastSeenDisplay": "overview_safe",
+        "isCurrent": "internal_filter_only"
+      }
+    }
+  }
 }

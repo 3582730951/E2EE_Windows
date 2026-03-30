@@ -159,6 +159,7 @@ if(MI_E2EE_BUILD_LEGACY_UI)
 endif()
 
 add_executable(mi_e2ee_client_ui_app
+    display_contract.cpp
     qml_main.cpp
     quick_client.cpp
 )

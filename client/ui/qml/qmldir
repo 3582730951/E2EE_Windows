@@ -1,8 +1,16 @@
 singleton Style 1.0 Style.qml
 singleton AppStore 1.0 AppStore.qml
 singleton I18n 1.0 I18n.qml
+TrustFlowCoordinator 1.0 TrustFlowCoordinator.qml
+SecurityDialogCoordinator 1.0 SecurityDialogCoordinator.qml
+SmokeAdapter 1.0 SmokeAdapter.qml
 singleton SessionStore 1.0 stores/SessionStore.qml
 singleton ConversationStore 1.0 stores/ConversationStore.qml
 singleton ChatStore 1.0 stores/ChatStore.qml
 singleton CallStore 1.0 stores/CallStore.qml
 singleton PreferenceStore 1.0 stores/PreferenceStore.qml
+singleton AuthDisplayStore 1.0 stores/AuthDisplayStore.qml
+singleton SecurityDisplayStore 1.0 stores/SecurityDisplayStore.qml
+singleton ChatDisplayStore 1.0 stores/ChatDisplayStore.qml
+singleton CallDisplayStore 1.0 stores/CallDisplayStore.qml
+singleton SmokeSceneStore 1.0 stores/SmokeSceneStore.qml

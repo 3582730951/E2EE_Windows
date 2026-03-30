@@ -122,7 +122,11 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool respondFriendRequest(const QString& requesterUsername,
                                         bool accept);
   Q_INVOKABLE QVariantList listDevices();
+  Q_INVOKABLE QVariantList listDevicesDisplay();
   Q_INVOKABLE bool kickDevice(const QString& deviceId);
+  Q_INVOKABLE QString gatewayDisplayState() const;
+  Q_INVOKABLE QString gatewayDisplayDetail() const;
+  Q_INVOKABLE QString maskedCurrentDeviceId() const;
   Q_INVOKABLE bool sendReadReceipt(const QString& peerUsername,
                                    const QString& messageId);
   Q_INVOKABLE bool trustPendingServer(const QString& pin);

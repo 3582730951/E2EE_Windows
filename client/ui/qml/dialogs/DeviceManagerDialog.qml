@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Accessibility 1.0
 import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
@@ -30,28 +31,11 @@ ApplicationWindow {
         requestActivate()
     }
 
-    property ListModel devicesModel: ListModel {}
     property string pendingKickId: ""
     property string pendingKickDisplayId: ""
 
     function refreshDevices() {
-        devicesModel.clear()
-        if (!clientBridge) {
-            return
-        }
-        var list = clientBridge.listDevices()
-        var currentId = clientBridge.deviceId
-        for (var i = 0; i < list.length; ++i) {
-            var d = list[i]
-            if (currentId && d.deviceId === currentId) {
-                continue
-            }
-            devicesModel.append({
-                deviceId: d.deviceId,
-                deviceDisplayId: d.deviceDisplayId,
-                lastSeenSec: d.lastSeenSec || 0
-            })
-        }
+        Ui.SecurityDisplayStore.refresh()
     }
 
     onVisibleChanged: {
@@ -87,6 +71,7 @@ ApplicationWindow {
                 color: Ui.Style.textPrimary
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
+                elide: Text.ElideRight
             }
             Item { Layout.fillWidth: true }
             Components.IconButton {
@@ -95,6 +80,7 @@ ApplicationWindow {
                              : "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
                 buttonSize: Ui.Style.iconButtonSmall
                 iconSize: 14
+                Accessible.name: Ui.I18n.t("dialog.addContact.cancel")
                 onClicked: root.close()
             }
         }
@@ -105,10 +91,10 @@ ApplicationWindow {
         anchors.margins: Ui.Style.paddingM
         spacing: Ui.Style.paddingM
 
-        Text {
+        Components.UiText {
             text: Ui.I18n.t("dialog.deviceManager.currentDevice")
-            color: Ui.Style.textSecondary
-            font.pixelSize: 12
+            textRole: "caption"
+            roleColor: Ui.Style.textSecondary
         }
 
         Rectangle {
@@ -128,37 +114,37 @@ ApplicationWindow {
                     height: 36
                     radius: 18
                     color: Ui.Style.avatarColor("device")
-                    Text {
+                    Image {
                         anchors.centerIn: parent
-                        text: "PC"
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        width: 16
+                        height: 16
+                        fillMode: Image.PreserveAspectFit
+                        source: "qrc:/mi/e2ee/ui/icons/device.svg"
                     }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Text {
+                    Components.UiText {
                         text: Ui.I18n.t("dialog.deviceManager.thisDevice")
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 13
+                        textRole: "subtitle"
+                        roleColor: Ui.Style.textPrimary
                     }
-                    Text {
-                        text: (clientBridge && clientBridge.deviceDisplayId.length > 0)
-                              ? ("ID: " + clientBridge.deviceDisplayId)
+                    Components.UiText {
+                        text: Ui.SecurityDisplayStore.maskedCurrentDeviceId.length > 0
+                              ? Ui.SecurityDisplayStore.maskedCurrentDeviceId
                               : Ui.I18n.t("dialog.deviceManager.deviceOnline")
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
+                        textRole: "caption"
+                        roleColor: Ui.Style.textMuted
                     }
                 }
             }
         }
 
-        Text {
+        Components.UiText {
             text: Ui.I18n.t("dialog.deviceManager.linkedDevices")
-            color: Ui.Style.textSecondary
-            font.pixelSize: 12
+            textRole: "caption"
+            roleColor: Ui.Style.textSecondary
         }
 
         ColumnLayout {
@@ -169,7 +155,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
                 clip: true
-                model: devicesModel
+                model: Ui.SecurityDisplayStore.devicesModel
                 delegate: Rectangle {
                     width: ListView.view.width
                     implicitHeight: linkedDeviceRow.implicitHeight + Ui.Style.paddingM * 2
@@ -185,41 +171,38 @@ ApplicationWindow {
                             width: 36
                             height: 36
                             radius: 18
-                            color: Ui.Style.avatarColor(deviceDisplayId.length > 0
-                                                       ? deviceDisplayId
+                            color: Ui.Style.avatarColor(maskedDeviceDisplayId.length > 0
+                                                       ? maskedDeviceDisplayId
                                                        : "device")
-                            Text {
+                            Image {
                                 anchors.centerIn: parent
-                                text: "LD"
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
+                                width: 16
+                                height: 16
+                                fillMode: Image.PreserveAspectFit
+                                source: "qrc:/mi/e2ee/ui/icons/device.svg"
                             }
                         }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
-                            Text {
-                                text: deviceDisplayId.length > 0 ? deviceDisplayId : "N/A"
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
+                            Components.UiText {
+                                text: maskedDeviceDisplayId
+                                textRole: "value_single"
+                                roleColor: Ui.Style.textPrimary
                             }
-                            Text {
-                                text: lastSeenSec > 0
-                                      ? ("Last seen " + lastSeenSec + "s")
-                                      : Ui.I18n.t("dialog.deviceManager.deviceOnline")
-                                color: Ui.Style.textMuted
-                                font.pixelSize: 11
+                            Components.UiText {
+                                text: lastSeenDisplay
+                                textRole: "caption"
+                                roleColor: Ui.Style.textMuted
                             }
                         }
                         Components.GhostButton {
                             text: Ui.I18n.t("dialog.deviceManager.unlink")
                             Layout.alignment: Qt.AlignVCenter
+                            Accessible.name: Ui.I18n.t("dialog.deviceManager.unlink")
                             onClicked: {
                                 pendingKickId = deviceId
-                                pendingKickDisplayId =
-                                    deviceDisplayId.length > 0 ? deviceDisplayId : "N/A"
+                                pendingKickDisplayId = maskedDeviceDisplayId
                                 kickConfirm.open()
                             }
                         }
@@ -228,11 +211,11 @@ ApplicationWindow {
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
             }
 
-            Text {
-                visible: devicesModel.count === 0
-                text: Ui.I18n.t("chat.empty")
-                color: Ui.Style.textMuted
-                font.pixelSize: 12
+            Components.UiText {
+                visible: Ui.SecurityDisplayStore.linkedDeviceCount === 0
+                text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
+                textRole: "supporting"
+                roleColor: Ui.Style.textMuted
             }
         }
 
@@ -252,8 +235,8 @@ ApplicationWindow {
             var target = pendingKickId
             pendingKickId = ""
             pendingKickDisplayId = ""
-            if (clientBridge && target.length > 0) {
-                if (clientBridge.kickDevice(target)) {
+            if (target.length > 0) {
+                if (Ui.SecurityDisplayStore.kickDevice(target)) {
                     root.refreshDevices()
                 }
             }
@@ -278,7 +261,7 @@ ApplicationWindow {
                 text: Ui.I18n.format("dialog.deviceManager.kickConfirm",
                                      pendingKickDisplayId.length > 0
                                      ? pendingKickDisplayId
-                                     : "N/A")
+                                     : Ui.SecurityDisplayStore.maskedCurrentDeviceId)
                 color: Ui.Style.textPrimary
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap

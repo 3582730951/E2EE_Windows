@@ -21,12 +21,23 @@
       "chat.send",
       "chat.placeholder"
     ],
+    "settings": [
+      "settings.title",
+      "settings.theme",
+      "settings.theme.system",
+      "settings.theme.light",
+      "settings.theme.dark",
+      "settings.language"
+    ],
     "security_center": [
       "security.center.title",
       "security.transport.title",
       "security.devices.title",
       "security.root_auth.title",
-      "security.trust_prompt.title"
+      "security.trust_prompt.title",
+      "security.gateway.state.local",
+      "security.gateway.state.remote",
+      "security.gateway.state.pinned"
     ]
   },
   "platform_key_hints": {
@@ -44,9 +55,9 @@
       "chat.send": "chat_send"
     },
     "ios": {
-      "nav.chats": "hardcoded-currently",
-      "nav.settings": "hardcoded-currently",
-      "chat.send": "hardcoded-currently"
+      "nav.chats": "nav.chats",
+      "nav.settings": "nav.settings",
+      "chat.send": "chat.send"
     }
   }
 }

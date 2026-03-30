@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QPalette>
 #include <QStyleHints>
 #include <QStringList>
@@ -62,14 +63,17 @@ QColor Pick(Scheme schemeValue, QColor dark, QColor light, QColor highContrast) 
 
 QFont defaultFont(int pointSize, QFont::Weight weight) {
     QFont font;
-    font.setFamilies(QStringList() << QStringLiteral("SF Pro Text")
-                                   << QStringLiteral("SF Pro Display")
-                                   << QStringLiteral("HarmonyOS Sans")
-                                   << QStringLiteral("MiSans")
-                                   << QStringLiteral("PingFang SC")
-                                   << QStringLiteral("Microsoft YaHei UI")
-                                   << QStringLiteral("Segoe UI Variable")
-                                   << QStringLiteral("Segoe UI"));
+    const QString locale = QLocale::system().name().replace(QLatin1Char('_'),
+                                                            QLatin1Char('-'));
+    const bool useZhCn = locale.startsWith(QStringLiteral("zh"),
+                                           Qt::CaseInsensitive);
+    font.setFamilies(useZhCn
+                         ? (QStringList() << QStringLiteral("Microsoft YaHei UI")
+                                          << QStringLiteral("Segoe UI Variable")
+                                          << QStringLiteral("Segoe UI"))
+                         : (QStringList() << QStringLiteral("Segoe UI Variable")
+                                          << QStringLiteral("Segoe UI")
+                                          << QStringLiteral("Microsoft YaHei UI")));
     font.setPointSize(ScalePoints(pointSize));
     font.setWeight(weight);
     return font;

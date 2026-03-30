@@ -3,3 +3,8 @@ singleton ConversationStore 1.0 ConversationStore.qml
 singleton ChatStore 1.0 ChatStore.qml
 singleton CallStore 1.0 CallStore.qml
 singleton PreferenceStore 1.0 PreferenceStore.qml
+singleton AuthDisplayStore 1.0 AuthDisplayStore.qml
+singleton SecurityDisplayStore 1.0 SecurityDisplayStore.qml
+singleton ChatDisplayStore 1.0 ChatDisplayStore.qml
+singleton CallDisplayStore 1.0 CallDisplayStore.qml
+singleton SmokeSceneStore 1.0 SmokeSceneStore.qml

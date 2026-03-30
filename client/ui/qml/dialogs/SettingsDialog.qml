@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Accessibility 1.0
 import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/components" as Components
@@ -32,6 +33,9 @@ ApplicationWindow {
         { label: Ui.I18n.t("settings.theme.light"), mode: "light" },
         { label: Ui.I18n.t("settings.theme.dark"), mode: "dark" }
     ]
+    property var localeOptions: [
+        { name: Ui.I18n.t("settings.theme.system"), code: "system" }
+    ].concat(Ui.I18n.languages)
 
     function aiQualityIndex(scale) {
         for (var i = 0; i < aiQualityOptions.length; ++i) {
@@ -52,18 +56,28 @@ ApplicationWindow {
     }
 
     function requestAiQuality(scale) {
-        if (scale === 4 && !Ui.AppStore.aiEnhanceX4Confirmed) {
+        if (scale === 4 && !Ui.PreferenceStore.aiEnhanceX4Confirmed) {
             pendingAiQualityScale = scale
             aiX4Dialog.open()
             return
         }
-        Ui.AppStore.setAiEnhanceQualityLevel(scale)
+        Ui.PreferenceStore.setAiEnhanceQualityLevel(scale)
+    }
+
+    function localeModeIndex(mode) {
+        for (var i = 0; i < localeOptions.length; ++i) {
+            if (localeOptions[i].code === mode) {
+                return i
+            }
+        }
+        return 0
     }
     palette.buttonText: Ui.Style.textPrimary
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
 
     function open() {
+        Ui.SecurityDisplayStore.refresh()
         visible = true
         raise()
         requestActivate()
@@ -96,6 +110,7 @@ ApplicationWindow {
                 color: Ui.Style.textPrimary
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
+                elide: Text.ElideRight
             }
             Item { Layout.fillWidth: true }
             Components.IconButton {
@@ -104,6 +119,7 @@ ApplicationWindow {
                              : "qrc:/mi/e2ee/ui/icons/close-x-dark.svg"
                 buttonSize: Ui.Style.iconButtonSmall
                 iconSize: 14
+                Accessible.name: Ui.I18n.t("dialog.addContact.cancel")
                 onClicked: root.close()
             }
         }
@@ -139,6 +155,7 @@ ApplicationWindow {
                     text: modelData
                     color: ListView.isCurrentItem ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
                     font.pixelSize: 12
+                    elide: Text.ElideRight
                 }
                 MouseArea {
                     id: mouseArea
@@ -165,7 +182,7 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: Ui.Style.paddingS
-                    Text { text: Ui.I18n.t("settings.theme"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
+                    Text { text: Ui.I18n.t("settings.theme"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
                     ComboBox {
                         model: themeOptions
                         textRole: "label"
@@ -173,17 +190,17 @@ ApplicationWindow {
                         currentIndex: themeModeIndex(Ui.Style.themeMode)
                         onActivated: Ui.Style.themeMode = model[currentIndex].mode
                     }
-                    Text { text: Ui.I18n.t("settings.language"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
+                    Text { text: Ui.I18n.t("settings.language"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
                     ComboBox {
-                        model: Ui.I18n.languages
+                        model: localeOptions
                         textRole: "name"
                         Layout.preferredWidth: 220
-                        currentIndex: Ui.I18n.languageIndex(Ui.I18n.currentLocale)
-                        onActivated: Ui.I18n.setLocale(model[currentIndex].code)
+                        currentIndex: localeModeIndex(Ui.I18n.localeMode)
+                        onActivated: Ui.I18n.setLocaleMode(model[currentIndex].code)
                     }
-                    Text { text: Ui.I18n.t("settings.fontSize"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
+                    Text { text: Ui.I18n.t("settings.fontSize"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
                     Slider { from: 12; to: 16; value: 13 }
-                    Text { text: Ui.I18n.t("settings.messageDensity"); color: Ui.Style.textSecondary; font.pixelSize: 12 }
+                    Text { text: Ui.I18n.t("settings.messageDensity"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
                     ComboBox { model: [Ui.I18n.t("settings.density.normal"), Ui.I18n.t("settings.density.compact")] }
                 }
             }
@@ -236,6 +253,7 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
                                 }
                                 Text {
                                     text: Ui.I18n.t("settings.securityCenter.detail")
@@ -258,6 +276,7 @@ ApplicationWindow {
                         text: Ui.I18n.t("settings.privacy.clipboardIsolation")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
+                        elide: Text.ElideRight
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -269,8 +288,8 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
                         Switch {
-                            checked: Ui.AppStore.clipboardIsolationEnabled
-                            onToggled: Ui.AppStore.setClipboardIsolationEnabled(checked)
+                            checked: Ui.PreferenceStore.clipboardIsolationEnabled
+                            onToggled: Ui.PreferenceStore.setClipboardIsolationEnabled(checked)
                         }
                     }
 
@@ -278,6 +297,7 @@ ApplicationWindow {
                         text: Ui.I18n.t("settings.privacy.internalIme")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
+                        elide: Text.ElideRight
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -289,8 +309,8 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
                         Switch {
-                            checked: Ui.AppStore.internalImeEnabled
-                            onToggled: Ui.AppStore.setInternalImeEnabled(checked)
+                            checked: Ui.PreferenceStore.internalImeEnabled
+                            onToggled: Ui.PreferenceStore.setInternalImeEnabled(checked)
                         }
                     }
 
@@ -298,6 +318,7 @@ ApplicationWindow {
                         text: Ui.I18n.t("settings.privacy.saveHistory")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
+                        elide: Text.ElideRight
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -309,8 +330,8 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
                         Switch {
-                            checked: Ui.AppStore.historySaveEnabled
-                            onToggled: Ui.AppStore.setHistorySaveEnabled(checked)
+                            checked: Ui.PreferenceStore.historySaveEnabled
+                            onToggled: Ui.PreferenceStore.setHistorySaveEnabled(checked)
                         }
                     }
 
@@ -318,6 +339,7 @@ ApplicationWindow {
                         text: Ui.I18n.t("settings.privacy.aiEnhance")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 12
+                        elide: Text.ElideRight
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -329,8 +351,8 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
                         Switch {
-                            checked: Ui.AppStore.aiEnhanceEnabled
-                            onToggled: Ui.AppStore.setAiEnhanceEnabled(checked)
+                            checked: Ui.PreferenceStore.aiEnhanceEnabled
+                            onToggled: Ui.PreferenceStore.setAiEnhanceEnabled(checked)
                         }
                     }
                     Item { Layout.fillHeight: true }
@@ -357,8 +379,8 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         spacing: Ui.Style.paddingXS
-                        enabled: Ui.AppStore.aiEnhanceEnabled
-                        opacity: Ui.AppStore.aiEnhanceEnabled ? 1.0 : 0.45
+                        enabled: Ui.PreferenceStore.aiEnhanceEnabled
+                        opacity: Ui.PreferenceStore.aiEnhanceEnabled ? 1.0 : 0.45
                         Text {
                             text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
                             color: Ui.Style.textSecondary
@@ -371,43 +393,43 @@ ApplicationWindow {
                                 model: aiQualityOptions
                                 textRole: "label"
                                 Layout.preferredWidth: 220
-                                enabled: Ui.AppStore.aiEnhanceEnabled
-                                currentIndex: aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
+                                enabled: Ui.PreferenceStore.aiEnhanceEnabled
+                                currentIndex: aiQualityIndex(Ui.PreferenceStore.aiEnhanceQualityLevel)
                                 onActivated: requestAiQuality(model[currentIndex].scale)
                             }
                         }
                         Text {
-                            text: Ui.AppStore.aiEnhanceGpuName.length > 0
+                            text: Ui.PreferenceStore.aiEnhanceGpuName.length > 0
                                   ? Ui.I18n.t("settings.privacy.aiEnhanceGpu").arg(
-                                        Ui.AppStore.aiEnhanceGpuName +
-                                        (Ui.AppStore.aiEnhanceGpuSeries > 0
-                                         ? (" (" + Ui.AppStore.aiEnhanceGpuSeries + Ui.I18n.t("settings.privacy.aiEnhanceGpuSeriesSuffix") + ")")
+                                        Ui.PreferenceStore.aiEnhanceGpuName +
+                                        (Ui.PreferenceStore.aiEnhanceGpuSeries > 0
+                                         ? (" (" + Ui.PreferenceStore.aiEnhanceGpuSeries + Ui.I18n.t("settings.privacy.aiEnhanceGpuSeriesSuffix") + ")")
                                          : ""))
                                   : ""
-                            visible: Ui.AppStore.aiEnhanceGpuName.length > 0
+                            visible: Ui.PreferenceStore.aiEnhanceGpuName.length > 0
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                         }
                         Text {
-                            text: Ui.AppStore.aiEnhanceGpuAvailable
+                            text: Ui.PreferenceStore.aiEnhanceGpuAvailable
                                   ? ""
                                   : Ui.I18n.t("settings.privacy.aiEnhanceGpuUnavailable")
-                            visible: !Ui.AppStore.aiEnhanceGpuAvailable
+                            visible: !Ui.PreferenceStore.aiEnhanceGpuAvailable
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                         }
                         Text {
                             text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendPerf")
-                                  .arg(Ui.AppStore.aiEnhancePerfScale)
+                                  .arg(Ui.PreferenceStore.aiEnhancePerfScale)
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                         }
                         Text {
                             text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendQuality")
-                                  .arg(Ui.AppStore.aiEnhanceQualityScale)
+                                  .arg(Ui.PreferenceStore.aiEnhanceQualityScale)
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -424,19 +446,17 @@ ApplicationWindow {
                     Text { text: Ui.I18n.t("settings.about.appName"); color: Ui.Style.textPrimary; font.pixelSize: 16 }
                     Text { text: Ui.I18n.t("settings.about.build"); color: Ui.Style.textMuted; font.pixelSize: 12 }
                     Text {
-                        text: clientBridge ? clientBridge.serverInfo() : ""
+                        text: Ui.SecurityDisplayStore.gatewayDisplayDetail
                         color: Ui.Style.textMuted
                         font.pixelSize: 11
                     }
                     Text {
-                        text: clientBridge ? clientBridge.version() : ""
+                        text: Ui.SecurityDisplayStore.versionText
                         color: Ui.Style.textMuted
                         font.pixelSize: 11
                     }
                     Text {
-                        text: clientBridge
-                              ? (clientBridge.remoteOk ? "在线" : ("离线：" + clientBridge.remoteError))
-                              : ""
+                        text: Ui.SecurityDisplayStore.connectionSummary()
                         color: Ui.Style.textMuted
                         font.pixelSize: 11
                     }
@@ -463,7 +483,7 @@ ApplicationWindow {
                 anchors.right: parent.right
                 wrapMode: Text.WordWrap
                 color: Ui.Style.textPrimary
-                text: Ui.AppStore.aiEnhanceGpuAvailable
+                text: Ui.PreferenceStore.aiEnhanceGpuAvailable
                       ? Ui.I18n.t("settings.privacy.aiEnhanceX4MessageGpu")
                       : Ui.I18n.t("settings.privacy.aiEnhanceX4MessageCpu")
             }
@@ -480,14 +500,14 @@ ApplicationWindow {
         }
         onAccepted: {
             var targetScale = pendingAiQualityScale || 4
-            Ui.AppStore.setAiEnhanceX4Confirmed(true)
-            Ui.AppStore.setAiEnhanceQualityLevel(targetScale)
+            Ui.PreferenceStore.setAiEnhanceX4Confirmed(true)
+            Ui.PreferenceStore.setAiEnhanceQualityLevel(targetScale)
             pendingAiQualityScale = 0
         }
         onRejected: {
             pendingAiQualityScale = 0
             aiQualityCombo.currentIndex =
-                aiQualityIndex(Ui.AppStore.aiEnhanceQualityLevel)
+                aiQualityIndex(Ui.PreferenceStore.aiEnhanceQualityLevel)
         }
     }
 }

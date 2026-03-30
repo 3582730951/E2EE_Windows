@@ -16,9 +16,9 @@ Item {
 
     property bool chatSearchVisible: false
     property bool stickToBottom: true
-    property bool hasChat: Ui.ChatStore.currentChatId.length > 0
+    property bool hasChat: Ui.ChatDisplayStore.currentChatId.length > 0
     readonly property bool adaptiveThreeColumn: (hostWindow ? hostWindow.width : width) >= Ui.Style.threeColumnMinWidth
-    readonly property bool detailsPaneActive: hasChat && (adaptiveThreeColumn || Ui.AppStore.rightPaneVisible)
+    readonly property bool detailsPaneActive: hasChat && (adaptiveThreeColumn || Ui.ChatDisplayStore.rightPaneVisible)
     property real actionScale: 1.32
     property real topBarScale: 0.72
     property int actionButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
@@ -115,7 +115,7 @@ Item {
         if (adaptiveThreeColumn) {
             return
         }
-        Ui.AppStore.toggleRightPane()
+        Ui.ChatDisplayStore.toggleRightPane()
     }
 
     function clearChatSearch() {
@@ -187,7 +187,7 @@ Item {
         imageViewer.openWith(resolved, name || "")
     }
     function requestImageEnhanceForMessage(messageId, url, name) {
-        if (!Ui.AppStore.aiEnhanceEnabled) {
+        if (!Ui.ChatDisplayStore.aiEnhanceEnabled) {
             return
         }
         if (!clientBridge || !clientBridge.requestImageEnhanceForMessage) {
@@ -319,7 +319,7 @@ Item {
             return
         }
         if (Ui.PreferenceStore.clipboardIsolationEnabled) {
-            Ui.AppStore.setInternalClipboard(selected)
+            Ui.ChatDisplayStore.setInternalClipboard(selected)
             if (cut) {
                 var range = selectedRange()
                 if (range) {
@@ -343,8 +343,8 @@ Item {
             messageInput.paste()
             return
         }
-        var internalText = Ui.AppStore.internalClipboardText || ""
-        var internalMs = Ui.AppStore.internalClipboardMs || 0
+        var internalText = Ui.ChatDisplayStore.internalClipboardText || ""
+        var internalMs = Ui.ChatDisplayStore.internalClipboardMs || 0
         var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
         var systemMs = clientBridge ? clientBridge.systemClipboardTimestamp() : 0
         var text = internalText
@@ -365,7 +365,7 @@ Item {
         if (!Ui.PreferenceStore.clipboardIsolationEnabled) {
             return true
         }
-        var internalText = Ui.AppStore.internalClipboardText || ""
+        var internalText = Ui.ChatDisplayStore.internalClipboardText || ""
         var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
         return internalText.length > 0 || systemText.length > 0
     }
@@ -597,7 +597,7 @@ Item {
     }
 
     Connections {
-        target: Ui.AppStore
+        target: Ui.PreferenceStore
         function onInternalImeEnabledChanged() {
             if (!Ui.PreferenceStore.internalImeEnabled) {
                 cancelImeComposition(true)
@@ -633,14 +633,14 @@ Item {
                         Layout.preferredWidth: 38
                         Layout.preferredHeight: 38
                         radius: 19
-                        color: Ui.Style.avatarColor(Ui.ChatStore.currentChatId)
+                        color: Ui.Style.avatarColor(Ui.ChatDisplayStore.currentChatId)
                         border.width: 1
                         border.color: Ui.Style.borderStrong
 
                         Text {
                             anchors.centerIn: parent
-                            text: Ui.ChatStore.currentChatTitle.length > 0
-                                  ? Ui.ChatStore.currentChatTitle.charAt(0).toUpperCase()
+                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                  ? Ui.ChatDisplayStore.currentChatTitle.charAt(0).toUpperCase()
                                   : "?"
                             color: Ui.Style.textPrimary
                             font.pixelSize: 14
@@ -652,8 +652,8 @@ Item {
                         Layout.fillWidth: true
                         spacing: 4
                         Text {
-                            text: Ui.ChatStore.currentChatTitle.length > 0
-                                  ? Ui.ChatStore.currentChatTitle
+                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                  ? Ui.ChatDisplayStore.currentChatTitle
                                   : Ui.I18n.t("chat.selectChat")
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -684,7 +684,7 @@ Item {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: Ui.ChatStore.currentChatSubtitle
+                                text: Ui.ChatDisplayStore.currentChatSubtitle
                                 font.pixelSize: Ui.Style.microTextSize
                                 font.weight: Font.Medium
                                 color: Ui.Style.textSecondary
@@ -730,10 +730,10 @@ Item {
                         bgColor: Ui.Style.topBarPillBg
                         hoverBg: Ui.Style.hoverBg
                         pressedBg: Ui.Style.pressedBg
-                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.call")
-                        onClicked: Ui.AppStore.handleCallAction(false)
+                        onClicked: Ui.ChatDisplayStore.handleCallAction(false)
                     }
                     Components.IconButton {
                         icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
@@ -742,10 +742,10 @@ Item {
                         bgColor: Ui.Style.topBarPillBg
                         hoverBg: Ui.Style.hoverBg
                         pressedBg: Ui.Style.pressedBg
-                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.video")
-                        onClicked: Ui.AppStore.handleCallAction(true)
+                        onClicked: Ui.ChatDisplayStore.handleCallAction(true)
                     }
                     Components.IconButton {
                         id: detailsPaneButton
@@ -758,7 +758,7 @@ Item {
                         baseColor: detailsPaneActive ? Ui.Style.iconActive : Ui.Style.iconMuted
                         hoverColor: Ui.Style.iconActive
                         pressColor: Ui.Style.iconActive
-                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.details")
                         onClicked: root.toggleDetailsPane()
@@ -800,24 +800,24 @@ Item {
                 MenuItem {
                     text: Ui.I18n.t("chat.stealth")
                     checkable: true
-                    checked: Ui.AppStore.isChatStealth(Ui.ChatStore.currentChatId)
-                    enabled: Ui.ChatStore.currentChatId.length > 0
-                    onTriggered: Ui.AppStore.toggleChatStealth(Ui.ChatStore.currentChatId)
+                    checked: Ui.ChatDisplayStore.isChatStealth(Ui.ChatDisplayStore.currentChatId)
+                    enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                    onTriggered: Ui.ChatDisplayStore.toggleChatStealth(Ui.ChatDisplayStore.currentChatId)
                 }
                 MenuItem {
                     text: Ui.I18n.t("chat.mute")
                     checkable: true
-                    checked: Ui.AppStore.isChatMuted(Ui.ChatStore.currentChatId)
-                    enabled: Ui.ChatStore.currentChatId.length > 0
-                    onTriggered: Ui.AppStore.toggleChatMuted(Ui.ChatStore.currentChatId)
+                    checked: Ui.ChatDisplayStore.isChatMuted(Ui.ChatDisplayStore.currentChatId)
+                    enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                    onTriggered: Ui.ChatDisplayStore.toggleChatMuted(Ui.ChatDisplayStore.currentChatId)
                 }
                 MenuItem {
-                    text: Ui.AppStore.isChatBlocked(Ui.ChatStore.currentChatId)
+                    text: Ui.ChatDisplayStore.isChatBlocked(Ui.ChatDisplayStore.currentChatId)
                           ? Ui.I18n.t("chat.unblock")
                           : Ui.I18n.t("right.block")
-                    enabled: Ui.ChatStore.currentChatId.length > 0 &&
-                             Ui.ChatStore.currentChatType === "private"
-                    onTriggered: Ui.AppStore.toggleChatBlocked(Ui.ChatStore.currentChatId)
+                    enabled: Ui.ChatDisplayStore.currentChatId.length > 0 &&
+                             Ui.ChatDisplayStore.currentChatType === "private"
+                    onTriggered: Ui.ChatDisplayStore.toggleChatBlocked(Ui.ChatDisplayStore.currentChatId)
                 }
             }
 
@@ -834,7 +834,7 @@ Item {
             id: messageArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            property bool hasChatBackground: Ui.AppStore.currentChatBackgroundUrl.length > 0
+            property bool hasChatBackground: Ui.ChatDisplayStore.currentChatBackgroundUrl.length > 0
             color: Ui.Style.messageBg
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Ui.Style.messageGradientStart }
@@ -843,7 +843,7 @@ Item {
 
             Image {
                 anchors.fill: parent
-                source: Ui.AppStore.currentChatBackgroundUrl
+                source: Ui.ChatDisplayStore.currentChatBackgroundUrl
                 fillMode: Image.PreserveAspectCrop
                 smooth: true
                 antialiasing: true
@@ -865,8 +865,8 @@ Item {
 
             Rectangle {
                 id: groupCallBanner
-                property var callInfo: Ui.AppStore.groupCallInfo(Ui.ChatStore.currentChatId)
-                visible: Ui.ChatStore.currentChatType === "group" && callInfo
+                property var callInfo: Ui.ChatDisplayStore.groupCallInfo(Ui.ChatDisplayStore.currentChatId)
+                visible: Ui.ChatDisplayStore.currentChatType === "group" && callInfo
                 height: visible ? 48 : 0
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -890,20 +890,21 @@ Item {
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         Layout.alignment: Qt.AlignVCenter
+                        elide: Text.ElideRight
                     }
                     Item { Layout.fillWidth: true }
                     Components.GhostButton {
                         text: Ui.I18n.t("chat.groupCallJoin")
-                        visible: !!(clientBridge && !clientBridge.groupCallActive)
-                        onClicked: Ui.AppStore.joinGroupCall(
+                        visible: !Ui.CallDisplayStore.groupCallActive
+                        onClicked: Ui.ChatDisplayStore.joinGroupCall(
                                        groupCallBanner.callInfo &&
                                        groupCallBanner.callInfo.video)
                     }
                     Components.PrimaryButton {
                         text: Ui.I18n.t("chat.groupCallLeave")
-                        visible: !!(clientBridge && clientBridge.groupCallActive &&
-                                 clientBridge.activeGroupCallGroup === Ui.ChatStore.currentChatId)
-                        onClicked: Ui.AppStore.leaveGroupCall()
+                        visible: Ui.CallDisplayStore.groupCallActive &&
+                                 Ui.CallDisplayStore.activeGroupCallGroup === Ui.ChatDisplayStore.currentChatId
+                        onClicked: Ui.ChatDisplayStore.leaveGroupCall()
                     }
                 }
             }
@@ -919,8 +920,8 @@ Item {
                                     ? groupCallBanner.height + Ui.Style.paddingS
                                     : 0)
                 clip: true
-                model: Ui.ChatStore.currentChatId.length > 0
-                       ? Ui.AppStore.messagesModel(Ui.ChatStore.currentChatId)
+                model: Ui.ChatDisplayStore.currentChatId.length > 0
+                       ? Ui.ChatDisplayStore.messagesModel(Ui.ChatDisplayStore.currentChatId)
                        : null
                 boundsBehavior: Flickable.StopAtBounds
                 cacheBuffer: 320
@@ -940,7 +941,7 @@ Item {
 
             Item {
                 anchors.fill: parent
-                visible: Ui.ChatStore.currentChatId.length === 0
+                visible: Ui.ChatDisplayStore.currentChatId.length === 0
 
                 Rectangle {
                     anchors.centerIn: parent
@@ -1044,6 +1045,7 @@ Item {
             Components.IconButton {
                 id: jumpButton
                 visible: !stickToBottom && messageList.count > 0
+                accessibleName: Ui.I18n.t("chat.jumpBottom")
                 icon.source: "qrc:/mi/e2ee/ui/icons/chevron-down.svg"
                 buttonSize: 30
                 iconSize: 14
@@ -1062,10 +1064,10 @@ Item {
                 id: callOverlay
                 anchors.fill: parent
                 z: 5
-                visible: Ui.CallStore.incomingCallActive &&
-                         (!clientBridge || clientBridge.activeCallId.length === 0)
-                property bool callVideo: !!(clientBridge && clientBridge.activeCallVideo)
-                property string callPeer: clientBridge ? clientBridge.activeCallPeer : ""
+                visible: Ui.CallDisplayStore.incomingCallActive &&
+                         Ui.CallDisplayStore.activeCallId.length === 0
+                property bool callVideo: Ui.CallDisplayStore.incomingCallVideo
+                property string callPeer: Ui.CallDisplayStore.incomingCallPeer
 
                 Rectangle {
                     anchors.fill: parent
@@ -1078,8 +1080,8 @@ Item {
 
                 Rectangle {
                     id: incomingPanel
-                    visible: Ui.CallStore.incomingCallActive &&
-                             (!clientBridge || clientBridge.activeCallId.length === 0)
+                    visible: Ui.CallDisplayStore.incomingCallActive &&
+                             Ui.CallDisplayStore.activeCallId.length === 0
                     width: 320
                     height: 210
                     radius: 14
@@ -1092,7 +1094,7 @@ Item {
                         anchors.margins: Ui.Style.paddingM
                         spacing: Ui.Style.paddingS
                         Text {
-                            text: Ui.CallStore.incomingCallVideo
+                            text: Ui.CallDisplayStore.incomingCallVideo
                                   ? Ui.I18n.t("chat.callIncomingVideo")
                                   : Ui.I18n.t("chat.callIncomingVoice")
                             font.pixelSize: 13
@@ -1100,7 +1102,7 @@ Item {
                             color: Ui.Style.textPrimary
                         }
                         Text {
-                            text: Ui.AppStore.resolveTitle(Ui.CallStore.incomingCallPeer)
+                            text: Ui.ChatDisplayStore.resolveTitle(Ui.CallDisplayStore.incomingCallPeer)
                             font.pixelSize: 12
                             color: Ui.Style.textSecondary
                             elide: Text.ElideRight
@@ -1112,12 +1114,12 @@ Item {
                             Components.GhostButton {
                                 text: Ui.I18n.t("chat.callDecline")
                                 Layout.fillWidth: true
-                                onClicked: Ui.AppStore.declineIncomingCall()
+                                onClicked: Ui.CallDisplayStore.declineIncomingCall()
                             }
                             Components.PrimaryButton {
                                 text: Ui.I18n.t("chat.callAccept")
                                 Layout.fillWidth: true
-                                onClicked: Ui.AppStore.acceptIncomingCall()
+                                onClicked: Ui.CallDisplayStore.acceptIncomingCall()
                             }
                         }
                     }
@@ -1128,7 +1130,7 @@ Item {
 
         function syncCallState() {
             if (clientBridge &&
-                (clientBridge.activeCallId.length > 0 || clientBridge.groupCallActive)) {
+                (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.groupCallActive)) {
                 callStartMs = Date.now()
                 callDurationSec = 0
                 resetCallControls()
@@ -1149,7 +1151,7 @@ Item {
             interval: 1000
             repeat: true
             running: clientBridge &&
-                     (clientBridge.activeCallId.length > 0 || clientBridge.groupCallActive)
+                     (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.groupCallActive)
             onTriggered: {
                 if (!callStartMs || callStartMs <= 0) {
                     callStartMs = Date.now()
@@ -1161,8 +1163,8 @@ Item {
 
         Window {
             id: voiceCallWindow
-            visible: clientBridge && clientBridge.activeCallId.length > 0 &&
-                     !clientBridge.activeCallVideo
+            visible: Ui.CallDisplayStore.activeCallId.length > 0 &&
+                     !Ui.CallDisplayStore.activeCallVideo
             flags: Qt.Window | Qt.FramelessWindowHint
             transientParent: root.hostWindow
             color: "transparent"
@@ -1223,7 +1225,7 @@ Item {
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: Ui.AppStore.resolveTitle(clientBridge ? clientBridge.activeCallPeer : "")
+                    text: Ui.ChatDisplayStore.resolveTitle(Ui.CallDisplayStore.activeCallPeer)
                     color: Ui.Style.textSecondary
                     font.pixelSize: 12
                 }
@@ -1240,6 +1242,7 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 18
                 Components.RoundIconButton {
+                    accessibleName: Ui.I18n.t("chat.endCall")
                     icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
                     buttonSize: 50
                     iconSize: 22
@@ -1260,8 +1263,8 @@ Item {
 
         Window {
             id: videoCallWindow
-            visible: clientBridge && clientBridge.activeCallId.length > 0 &&
-                     clientBridge.activeCallVideo
+            visible: Ui.CallDisplayStore.activeCallId.length > 0 &&
+                     Ui.CallDisplayStore.activeCallVideo
             flags: Qt.Window | Qt.FramelessWindowHint
             transientParent: root.hostWindow
             color: "transparent"
@@ -1372,7 +1375,7 @@ Item {
                         font.weight: Font.DemiBold
                     }
                     Text {
-                        text: Ui.AppStore.resolveTitle(clientBridge ? clientBridge.activeCallPeer : "")
+                        text: Ui.ChatDisplayStore.resolveTitle(Ui.CallDisplayStore.activeCallPeer)
                         color: Ui.Style.textSecondary
                         font.pixelSize: 11
                     }
@@ -1390,6 +1393,7 @@ Item {
                     anchors.bottomMargin: 18
                     spacing: 18
                     Components.RoundIconButton {
+                        accessibleName: Ui.I18n.t("chat.toggleMic")
                         icon.source: "qrc:/mi/e2ee/ui/icons/mic.svg"
                         buttonSize: 46
                         iconSize: 20
@@ -1405,6 +1409,7 @@ Item {
                         }
                     }
                     Components.RoundIconButton {
+                        accessibleName: Ui.I18n.t("chat.endCall")
                         icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
                         buttonSize: 56
                         iconSize: 22
@@ -1421,6 +1426,7 @@ Item {
                         }
                     }
                     Components.RoundIconButton {
+                        accessibleName: Ui.I18n.t("chat.toggleCamera")
                         icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
                         buttonSize: 46
                         iconSize: 20
@@ -1449,7 +1455,7 @@ Item {
             durationSec: callDurationSec
             micEnabled: callMicEnabled
             cameraEnabled: callCameraEnabled
-            onLeaveRequested: Ui.AppStore.leaveGroupCall()
+            onLeaveRequested: Ui.ChatDisplayStore.leaveGroupCall()
             onMicToggled: {
                 callMicEnabled = enabled
                 if (clientBridge && clientBridge.setCallMicEnabled) {
@@ -1482,8 +1488,8 @@ Item {
                 spacing: Ui.Style.paddingS
 
                 Text {
-                    visible: Ui.AppStore.sendErrorMessage.length > 0
-                    text: Ui.AppStore.sendErrorMessage
+                    visible: Ui.ChatDisplayStore.sendErrorMessage.length > 0
+                    text: Ui.ChatDisplayStore.sendErrorMessage
                     color: Ui.Style.danger
                     font.pixelSize: 11
                     elide: Text.ElideRight
@@ -1543,7 +1549,7 @@ Item {
                                     color: Ui.Style.accent
                                 }
                                 background: Rectangle { color: "transparent" }
-                                enabled: Ui.ChatStore.currentChatId.length > 0
+                                enabled: Ui.ChatDisplayStore.currentChatId.length > 0
                                 Keys.onPressed: function(event) {
                                     var allowInternalIme = internalImeReady && !externalImeActive()
                                     if (allowInternalIme) {
@@ -1640,7 +1646,8 @@ Item {
                         Layout.preferredWidth: 86
                         Layout.preferredHeight: Math.max(34, inputButtonSize)
                         Layout.alignment: Qt.AlignVCenter
-                        enabled: Ui.ChatStore.currentChatId.length > 0
+                        Accessible.name: Ui.I18n.t("chat.send")
+                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
                         onClicked: {
                             if (!hasDraft) {
                                 messageInput.forceActiveFocus()
@@ -1770,9 +1777,9 @@ Item {
             }
 
             Connections {
-                target: Ui.AppStore
+                target: Ui.ChatDisplayStore
                 function onSendErrorMessageChanged() {
-                    if (Ui.AppStore.sendErrorMessage.length > 0) {
+                    if (Ui.ChatDisplayStore.sendErrorMessage.length > 0) {
                         sendErrorTimer.restart()
                     }
                 }
@@ -1782,7 +1789,7 @@ Item {
                 id: sendErrorTimer
                 interval: 3000
                 repeat: false
-                onTriggered: Ui.AppStore.clearSendError()
+                onTriggered: Ui.ChatDisplayStore.clearSendError()
             }
 
             function updateInputHeight() {
@@ -1818,7 +1825,7 @@ Item {
                 if (messageInput.text.trim().length === 0) {
                     return
                 }
-                var ok = Ui.AppStore.sendMessage(messageInput.text)
+                var ok = Ui.ChatDisplayStore.sendMessage(messageInput.text)
                 if (ok) {
                     messageInput.text = ""
                 }
@@ -1831,7 +1838,7 @@ Item {
         title: Ui.I18n.t("attach.document")
         fileMode: FileDialog.OpenFile
         onAccepted: {
-            Ui.AppStore.sendFile(resolveDialogUrl(filePicker))
+            Ui.ChatDisplayStore.sendFile(resolveDialogUrl(filePicker))
         }
     }
     FileDialog {
@@ -1842,7 +1849,7 @@ Item {
             "媒体文件 (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.mp4 *.mov *.mkv *.webm *.avi)"
         ]
         onAccepted: {
-            Ui.AppStore.sendFile(resolveDialogUrl(mediaPicker))
+            Ui.ChatDisplayStore.sendFile(resolveDialogUrl(mediaPicker))
         }
     }
     FileDialog {
@@ -2218,7 +2225,7 @@ Item {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                Ui.AppStore.sendSticker(stickerId)
+                                Ui.ChatDisplayStore.sendSticker(stickerId)
                                 emojiPopup.close()
                             }
                         }
@@ -2306,6 +2313,7 @@ Item {
                             horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                             Layout.fillWidth: true
+                            elide: Text.ElideRight
                         }
                     }
                     MouseArea {
@@ -2385,6 +2393,7 @@ Item {
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
                 color: Ui.Style.textPrimary
+                elide: Text.ElideRight
             }
             Text {
                 text: Ui.I18n.t("attach.contactHint")
@@ -2408,7 +2417,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 140
-                visible: Ui.AppStore.contactsModel.count > 0
+                visible: Ui.ChatDisplayStore.contactsModel.count > 0
                 radius: 10
                 color: Ui.Style.panelBgAlt
                 border.color: Ui.Style.borderSubtle
@@ -2422,13 +2431,14 @@ Item {
                         text: Ui.I18n.t("attach.contactSelect")
                         color: Ui.Style.textSecondary
                         font.pixelSize: 11
+                        elide: Text.ElideRight
                     }
 
                     ListView {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        model: Ui.AppStore.contactsModel
+                        model: Ui.ChatDisplayStore.contactsModel
                         delegate: Rectangle {
                             width: ListView.view.width
                             height: 38
@@ -2505,12 +2515,12 @@ Item {
                     text: Ui.I18n.t("attach.contactSend")
                     Layout.fillWidth: true
                     onClicked: {
-                        var ok = Ui.AppStore.sendContactCard(contactUsernameField.text,
+                        var ok = Ui.ChatDisplayStore.sendContactCard(contactUsernameField.text,
                                                              contactDisplayField.text)
                         if (ok) {
                             contactDialog.close()
                         } else {
-                            contactDialog.errorText = Ui.AppStore.sendErrorMessage
+                            contactDialog.errorText = Ui.ChatDisplayStore.sendErrorMessage
                         }
                     }
                 }
@@ -2550,6 +2560,7 @@ Item {
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
                 color: Ui.Style.textPrimary
+                elide: Text.ElideRight
             }
             Components.SecureTextField {
                 id: locationLabelField
@@ -2604,11 +2615,11 @@ Item {
                             locationDialog.errorText = Ui.I18n.t("attach.locationInvalid")
                             return
                         }
-                        var ok = Ui.AppStore.sendLocation(lat, lon, locationLabelField.text)
+                        var ok = Ui.ChatDisplayStore.sendLocation(lat, lon, locationLabelField.text)
                         if (ok) {
                             locationDialog.close()
                         } else {
-                            locationDialog.errorText = Ui.AppStore.sendErrorMessage
+                            locationDialog.errorText = Ui.ChatDisplayStore.sendErrorMessage
                         }
                     }
                 }
@@ -2665,7 +2676,7 @@ Item {
             property bool isSystem: kind === "system"
             property bool isIncoming: kind === "in"
             property bool isOutgoing: kind === "out"
-            property bool showSender: isIncoming && Ui.ChatStore.currentChatType === "group"
+            property bool showSender: isIncoming && Ui.ChatDisplayStore.currentChatType === "group"
             property string contentKind: model.contentKind || "text"
             property bool isEmoji: contentKind === "emoji"
             property bool isSticker: contentKind === "sticker"
@@ -2694,7 +2705,7 @@ Item {
                                             : Ui.Style.paddingL
             property bool recallEligible: isOutgoing && msgId.length > 0 &&
                                           timestampMs > 0 &&
-                                          (Date.now() - timestampMs) <= Ui.AppStore.recallWindowMs
+                                          (Date.now() - timestampMs) <= Ui.ChatDisplayStore.recallWindowMs
 
             height: isDate || isSystem ? 32 : bubbleBlock.height + 10
 
@@ -2712,7 +2723,7 @@ Item {
                 if (attachmentRequested) {
                     return
                 }
-                var expectedKind = Ui.AppStore.detectFileKind(fileName || "")
+                var expectedKind = Ui.ChatDisplayStore.detectFileKind(fileName || "")
                 if (!fileId || !fileKey || hasLocalUrl(fileUrl)) {
                     return
                 }
@@ -2950,7 +2961,7 @@ Item {
                                       ? Ui.I18n.t("image.context.enhanced")
                                       : Ui.I18n.t("image.context.enhance")
                                 enabled: !imageEnhanced &&
-                                         Ui.AppStore.aiEnhanceEnabled &&
+                                         Ui.ChatDisplayStore.aiEnhanceEnabled &&
                                          hasLocalUrl(fileUrl)
                                 width: imageContextMenu.compactWidth
                                 implicitWidth: imageContextMenu.compactWidth
@@ -2980,7 +2991,7 @@ Item {
                                     font.pixelSize: 12
                                     color: parent.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
                                 }
-                                onTriggered: Ui.AppStore.setChatBackgroundForCurrentChat(fileUrl)
+                                onTriggered: Ui.ChatDisplayStore.setChatBackgroundForCurrentChat(fileUrl)
                             }
                             MenuItem {
                                 text: Ui.I18n.t("chat.recall")
@@ -2997,11 +3008,11 @@ Item {
                                     font.pixelSize: 12
                                     color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                                 }
-                                onTriggered: Ui.AppStore.requestRecallMessage(
-                                                 Ui.ChatStore.currentChatId,
+                                onTriggered: Ui.ChatDisplayStore.requestRecallMessage(
+                                                 Ui.ChatDisplayStore.currentChatId,
                                                  msgId,
                                                  timestampMs,
-                                                 Ui.ChatStore.currentChatType === "group")
+                                                 Ui.ChatDisplayStore.currentChatType === "group")
                             }
                         }
                         MouseArea {
@@ -3155,7 +3166,7 @@ Item {
                                 color: Ui.Style.hoverBg
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "FILE"
+                                    text: Ui.I18n.t("right.files").toUpperCase()
                                     font.pixelSize: 9
                                     color: Ui.Style.textMuted
                                 }
@@ -3173,6 +3184,7 @@ Item {
                                     text: fileSize > 0 ? (Math.round(fileSize / 1024) + " KB") : ""
                                     font.pixelSize: 10
                                     color: Ui.Style.textMuted
+                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -3245,11 +3257,11 @@ Item {
                                     font.pixelSize: 12
                                     color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                                 }
-                                onTriggered: Ui.AppStore.requestRecallMessage(
-                                                 Ui.ChatStore.currentChatId,
+                                onTriggered: Ui.ChatDisplayStore.requestRecallMessage(
+                                                 Ui.ChatDisplayStore.currentChatId,
                                                  msgId,
                                                  timestampMs,
-                                                 Ui.ChatStore.currentChatType === "group")
+                                                 Ui.ChatDisplayStore.currentChatType === "group")
                             }
                         }
                         MouseArea {
@@ -3291,7 +3303,10 @@ Item {
                                 elide: Text.ElideRight
                             }
                             Text {
-                                text: "lat:" + Number(locationLat).toFixed(5) + ", lon:" + Number(locationLon).toFixed(5)
+                                text: Ui.I18n.t("attach.locationLat") + ":" +
+                                      Number(locationLat).toFixed(5) + ", " +
+                                      Ui.I18n.t("attach.locationLon") + ":" +
+                                      Number(locationLon).toFixed(5)
                                 font.pixelSize: 10
                                 color: Ui.Style.textMuted
                                 elide: Text.ElideRight
@@ -3371,13 +3386,13 @@ Item {
                                 Components.GhostButton {
                                     text: Ui.I18n.t("chat.contactCopy")
                                     Layout.fillWidth: true
-                                    onClicked: Ui.AppStore.setInternalClipboard(contactUsername)
+                                    onClicked: Ui.ChatDisplayStore.setInternalClipboard(contactUsername)
                                 }
                                 Components.PrimaryButton {
                                     text: Ui.I18n.t("chat.contactOpen")
                                     Layout.fillWidth: true
                                     enabled: contactUsername.length > 0
-                                    onClicked: Ui.AppStore.openChatFromContact(contactUsername)
+                                    onClicked: Ui.ChatDisplayStore.openChatFromContact(contactUsername)
                                 }
                             }
                         }
@@ -3406,11 +3421,11 @@ Item {
                             font.pixelSize: 12
                             color: recallEligible ? Ui.Style.textPrimary : Ui.Style.textMuted
                         }
-                        onTriggered: Ui.AppStore.requestRecallMessage(
-                                         Ui.ChatStore.currentChatId,
+                        onTriggered: Ui.ChatDisplayStore.requestRecallMessage(
+                                         Ui.ChatDisplayStore.currentChatId,
                                          msgId,
                                          timestampMs,
-                                         Ui.ChatStore.currentChatType === "group")
+                                         Ui.ChatDisplayStore.currentChatType === "group")
                     }
                 }
 

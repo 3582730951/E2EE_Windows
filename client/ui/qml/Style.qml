@@ -1,10 +1,30 @@
 pragma Singleton
 import QtQuick 2.15
 import QtCore
+import "qrc:/mi/e2ee/ui/qml" as Ui
 
 Item {
     id: style
-    property string fontFamily: "Segoe UI Variable"
+    readonly property var sansFontStacksZhCn: [
+        "Microsoft YaHei UI",
+        "Segoe UI Variable",
+        "Segoe UI"
+    ]
+    readonly property var sansFontStacksEnUs: [
+        "Segoe UI Variable",
+        "Segoe UI",
+        "Microsoft YaHei UI"
+    ]
+    readonly property var monoFontStacks: [
+        "JetBrains Mono",
+        "Consolas",
+        "Cascadia Mono"
+    ]
+    readonly property var activeSansFontStack: Ui.I18n.usesCjkLocale
+                                               ? sansFontStacksZhCn
+                                               : sansFontStacksEnUs
+    property string fontFamily: activeSansFontStack[0]
+    property string monoFontFamily: monoFontStacks[0]
 
     Settings {
         id: styleSettings
@@ -16,6 +36,9 @@ Item {
         id: systemPalette
     }
 
+    readonly property string smokeThemeMode: typeof uiSmokeTheme !== "undefined"
+                                             ? (uiSmokeTheme || "")
+                                             : ""
     property string themeMode: (styleSettings.storedThemeMode === "dark" ||
                                 styleSettings.storedThemeMode === "light" ||
                                 styleSettings.storedThemeMode === "system")
@@ -26,7 +49,10 @@ Item {
         var luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
         return luminance < 0.55
     }
-    property bool isDark: themeMode === "dark" || (themeMode === "system" && systemDark)
+    property bool isDark: {
+        var activeTheme = smokeThemeMode.length > 0 ? smokeThemeMode : themeMode
+        return activeTheme === "dark" || (activeTheme === "system" && systemDark)
+    }
 
     onThemeModeChanged: {
         if (styleSettings.storedThemeMode !== themeMode) {
@@ -173,6 +199,63 @@ Item {
     property int iconButtonSize: 32
     property int iconButtonSmall: 26
     property int microTextSize: 13
+
+    readonly property var overflowRoles: ({
+        display: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        title: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        subtitle: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        caption: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        button_label: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        code_inline: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        value_single: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },
+        detail: { elide: Text.ElideRight, wrapMode: Text.WordWrap, maximumLineCount: 2 },
+        supporting: { elide: Text.ElideRight, wrapMode: Text.WordWrap, maximumLineCount: 2 },
+        message_body: { elide: Text.ElideNone, wrapMode: Text.WordWrap, maximumLineCount: 0, metaInsetBottom: 20 }
+    })
+
+    function overflowRole(roleName) {
+        return overflowRoles[roleName] || overflowRoles.supporting
+    }
+
+    function overflowMetaInsetBottom(roleName) {
+        var role = overflowRole(roleName)
+        return role.metaInsetBottom || 0
+    }
+
+    function fontPixelSize(roleName) {
+        switch (roleName) {
+        case "display":
+            return 24
+        case "title":
+            return 20
+        case "subtitle":
+            return 16
+        case "caption":
+        case "button_label":
+        case "code_inline":
+            return 12
+        case "detail":
+        case "supporting":
+        case "message_body":
+            return 15
+        default:
+            return 14
+        }
+    }
+
+    function fontWeight(roleName) {
+        switch (roleName) {
+        case "display":
+        case "title":
+            return Font.DemiBold
+        case "subtitle":
+        case "caption":
+        case "button_label":
+            return Font.Medium
+        default:
+            return Font.Normal
+        }
+    }
 
     function avatarColor(key) {
         var palette = ["#3D8AC7", "#5F7EA8", "#2F6EA5", "#3A6B8C", "#2F7A77", "#5B7A64", "#7A6B5B", "#6B5B7A"]
