@@ -8,10 +8,16 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 ApplicationWindow {
     id: root
     property var ownerWindow: null
+    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    readonly property bool smokeFixtureMode: smokeMode && Ui.SmokeSceneStore.securityCenterScene
     signal requestManageDevices()
     visible: false
-    width: 720
-    height: 540
+    width: smokeFixtureMode ? Ui.SmokeSceneStore.viewportWidth(false) : 720
+    height: smokeFixtureMode ? Ui.SmokeSceneStore.viewportHeight() : 540
+    minimumWidth: width
+    minimumHeight: height
+    maximumWidth: width
+    maximumHeight: height
     transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
     title: Ui.I18n.t("dialog.securityCenter.title")

@@ -11,6 +11,13 @@ ApplicationWindow {
     property bool authMode: Ui.SessionStore.currentPage === 0
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     property string smokeScene: typeof uiSmokeScene !== "undefined" ? (uiSmokeScene || "") : ""
+    readonly property bool smokeLoginScene: smokeMode && Ui.SmokeSceneStore.loginScene
+    readonly property int smokeViewportWidth: smokeMode
+                                            ? Ui.SmokeSceneStore.viewportWidth(smokeLoginScene)
+                                            : 0
+    readonly property int smokeViewportHeight: smokeMode
+                                             ? Ui.SmokeSceneStore.viewportHeight()
+                                             : 0
     property bool authReady: !!(authLoader
                                 && authLoader.active
                                 && authLoader.status === Loader.Ready)
@@ -22,21 +29,21 @@ ApplicationWindow {
     property int authWidth: 840
     property int authHeight: 620
 
-    width: authMode
-           ? authWidth
-           : (smokeMode ? Ui.SmokeSceneStore.viewportWidth(false) : 1200)
-    height: authMode
-            ? authHeight
-            : (smokeMode ? Ui.SmokeSceneStore.viewportHeight() : 760)
-    minimumWidth: authMode ? authWidth : width
-    minimumHeight: authMode ? authHeight : height
+    width: smokeMode
+           ? smokeViewportWidth
+           : (authMode ? authWidth : 1200)
+    height: smokeMode
+            ? smokeViewportHeight
+            : (authMode ? authHeight : 760)
+    minimumWidth: smokeMode ? width : (authMode ? authWidth : width)
+    minimumHeight: smokeMode ? height : (authMode ? authHeight : height)
     maximumWidth: smokeMode ? width : (authMode ? authWidth : 16384)
     maximumHeight: smokeMode ? height : (authMode ? authHeight : 16384)
     flags: Qt.FramelessWindowHint | Qt.Window
     visible: true
     title: Ui.I18n.t("app.title")
     color: smokeMode
-           ? (authMode ? Ui.Style.authBackdropBottom : Ui.Style.windowBg)
+           ? (smokeLoginScene ? Ui.Style.authBackdropBottom : Ui.Style.windowBg)
            : "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
