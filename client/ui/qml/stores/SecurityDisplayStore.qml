@@ -40,9 +40,7 @@ QtObject {
     readonly property int aiEnhancePerfScale: Ui.PreferenceStore.aiEnhancePerfScale
     readonly property int aiEnhanceQualityScale: Ui.PreferenceStore.aiEnhanceQualityScale
 
-    ListModel {
-        id: devicesModelObject
-    }
+    property ListModel devicesModelObject: ListModel {}
 
     function themeModeIndex(mode) {
         for (var i = 0; i < themeOptions.length; ++i) {
