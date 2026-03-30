@@ -16,6 +16,7 @@
 #include <QQuickWindow>
 #include <QScreen>
 #include <QSet>
+#include <QSize>
 #include <QTextStream>
 #include <QTimer>
 
@@ -100,6 +101,13 @@ QString SmokeCapturePath(const QString& captureDir, const QString& name) {
         QFileInfo(name).completeBaseName() + QStringLiteral(".png"));
 }
 
+QSize SmokeViewportForScene(const QString& scene) {
+    if (scene == QStringLiteral("login")) {
+        return QSize(840, 620);
+    }
+    return QSize(900, 620);
+}
+
 void AppendSmokeLog(const QString& captureDir, const QString& message) {
     qCritical().noquote() << message;
     if (captureDir.isEmpty()) {
@@ -178,6 +186,34 @@ bool IsInformativeSmokeImage(const QImage& image) {
         }
     }
     return samples.size() >= 12 && (maxLuma - minLuma) >= 18;
+}
+
+void ForceSmokeViewport(QQuickWindow* window,
+                        const QString& scene,
+                        const QString& captureDir,
+                        const QString& label) {
+    if (!window) {
+        return;
+    }
+    const QSize viewport = SmokeViewportForScene(scene);
+    if (!viewport.isValid()) {
+        return;
+    }
+    window->setProperty("width", viewport.width());
+    window->setProperty("height", viewport.height());
+    window->setProperty("minimumWidth", viewport.width());
+    window->setProperty("minimumHeight", viewport.height());
+    window->setProperty("maximumWidth", viewport.width());
+    window->setProperty("maximumHeight", viewport.height());
+    window->setMinimumSize(viewport);
+    window->setMaximumSize(viewport);
+    window->resize(viewport);
+    AppendSmokeLog(
+        captureDir,
+        QStringLiteral("UI smoke viewport forced (%1=%2x%3)")
+            .arg(label)
+            .arg(viewport.width())
+            .arg(viewport.height()));
 }
 
 #ifdef Q_OS_WIN
@@ -767,6 +803,9 @@ int main(int argc, char* argv[]) {
                                     smokeWindow ? reinterpret_cast<HWND>(smokeWindow->winId())
                                                 : nullptr;
                                 if (securityCenterScene && smokeHwnd) {
+                                    ForceSmokeViewport(
+                                        smokeWindow.data(), smokeScene, smokeCaptureDir,
+                                        QStringLiteral("main-window"));
                                     const bool opened = rootObject &&
                                         QMetaObject::invokeMethod(
                                             rootObject, "openShellSecurityCenter");
@@ -809,6 +848,10 @@ int main(int argc, char* argv[]) {
                                             securityDialogTimer->deleteLater();
                                             const bool dialogVisible = dialogWindow != nullptr;
                                             if (dialogVisible) {
+                                                ForceSmokeViewport(
+                                                    dialogWindow, smokeScene,
+                                                    smokeCaptureDir,
+                                                    QStringLiteral("security-dialog"));
                                                 dialogWindow->update();
                                                 AppendSmokeLog(
                                                     smokeCaptureDir,
@@ -852,6 +895,10 @@ int main(int argc, char* argv[]) {
                                 }
                                 if (smokeHwnd) {
                                     if (smokeWindow) {
+                                        ForceSmokeViewport(
+                                            smokeWindow.data(), smokeScene,
+                                            smokeCaptureDir,
+                                            QStringLiteral("main-window"));
                                         smokeWindow->update();
                                     }
                                     const int nativeCaptureDelayMs =
