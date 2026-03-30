@@ -834,7 +834,8 @@ int main(int argc, char* argv[]) {
                                         securityDialogTimer, &QTimer::timeout, &app,
                                         [smokeWindow, securityDialogTimer, dialogPollCount,
                                          maxSecurityDialogPolls, smokeCaptureDir,
-                                         captureName, shellReady, nativeCaptureDelayMs,
+                                         captureName, smokeScene, shellReady,
+                                         nativeCaptureDelayMs,
                                          smokeHwnd, &smokeTimer]() mutable {
                                             *dialogPollCount += 1;
                                             QQuickWindow* dialogWindow =
