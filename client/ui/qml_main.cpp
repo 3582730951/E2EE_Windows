@@ -9,6 +9,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QRect>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlError>
@@ -163,12 +164,48 @@ bool SaveSmokeImage(const QImage& image, const QString& captureDir, const QStrin
     return image.save(SmokeCapturePath(captureDir, name));
 }
 
-bool IsInformativeSmokeImage(const QImage& image) {
+QImage SmokeContentBoundsImage(const QImage& image) {
     if (image.isNull()) {
-        return false;
+        return {};
     }
     const QImage argb = image.convertToFormat(QImage::Format_ARGB32);
     if (argb.isNull()) {
+        return {};
+    }
+    constexpr int kNearBlackThreshold = 8;
+    int left = argb.width();
+    int top = argb.height();
+    int right = -1;
+    int bottom = -1;
+    for (int y = 0; y < argb.height(); ++y) {
+        const QRgb* row =
+            reinterpret_cast<const QRgb*>(argb.constScanLine(y));
+        for (int x = 0; x < argb.width(); ++x) {
+            const QRgb pixel = row[x];
+            if (qRed(pixel) <= kNearBlackThreshold &&
+                qGreen(pixel) <= kNearBlackThreshold &&
+                qBlue(pixel) <= kNearBlackThreshold) {
+                continue;
+            }
+            left = std::min(left, x);
+            top = std::min(top, y);
+            right = std::max(right, x);
+            bottom = std::max(bottom, y);
+        }
+    }
+    if (right < left || bottom < top) {
+        return {};
+    }
+    const QRect bounds(left, top, right - left + 1, bottom - top + 1);
+    if (bounds.size() == argb.size()) {
+        return argb;
+    }
+    return argb.copy(bounds);
+}
+
+bool IsInformativeSmokeImage(const QImage& image) {
+    const QImage argb = SmokeContentBoundsImage(image);
+    if (argb.isNull() || argb.width() < 64 || argb.height() < 64) {
         return false;
     }
     const int stepX = std::max(1, argb.width() / 24);
