@@ -145,6 +145,9 @@
     "calls_rooms": "Group rooms",
     "calls_open": "Open",
     "calls_join": "Join",
+    "calls_live_short": "Live",
+    "calls_attention_short": "Attention",
+    "calls_recent_short": "Recent",
     "calls_empty_title": "No active calls",
     "calls_empty_subtitle": "Call status and group rooms appear here.",
 

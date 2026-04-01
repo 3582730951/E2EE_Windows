@@ -145,6 +145,9 @@
     "calls_rooms": "群通话房间",
     "calls_open": "打开",
     "calls_join": "加入",
+    "calls_live_short": "进行中",
+    "calls_attention_short": "待处理",
+    "calls_recent_short": "最近",
     "calls_empty_title": "暂无活跃通话",
     "calls_empty_subtitle": "通话状态和群通话房间会显示在这里。",
 

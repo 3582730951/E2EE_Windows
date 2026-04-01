@@ -166,6 +166,7 @@ Item {
 
         var primaryChatId = "smoke-design-ops"
         var secondChatId = "smoke-alex"
+        var lightChatId = "smoke-platform"
         var now = Date.now()
 
         dialogsModel.append({
@@ -214,14 +215,14 @@ Item {
             lastSenderAvatarKey: ""
         })
         dialogsModel.append({
-            chatId: "smoke-platform",
+            chatId: lightChatId,
             title: "Platform",
             type: "group",
             memberCount: 8,
             avatarKey: "Platform",
-            preview: "The iOS screenshot gate is green again.",
-            timeText: "Yesterday",
-            unread: 1,
+            preview: "Light mode now follows the Platform rollout notes.",
+            timeText: "09:26",
+            unread: 0,
             pinned: false,
             muted: false,
             stealth: false,
@@ -316,10 +317,17 @@ Item {
             { memberId: "sophia", displayName: "Sophia", role: Ui.I18n.t("role.member"), avatarKey: "Sophia" },
             { memberId: "jules", displayName: "Jules", role: Ui.I18n.t("role.member"), avatarKey: "Jules" }
         ]
+        var platformMembers = [
+            { memberId: "rhea", displayName: "Rhea", role: Ui.I18n.t("role.owner"), avatarKey: "Rhea" },
+            { memberId: "jules", displayName: "Jules", role: Ui.I18n.t("role.admin"), avatarKey: "Jules" },
+            { memberId: "mina", displayName: "Mina", role: Ui.I18n.t("role.member"), avatarKey: "Mina" },
+            { memberId: "alex", displayName: "Alex", role: Ui.I18n.t("role.member"), avatarKey: "Alex" }
+        ]
         for (var i = 0; i < members.length; ++i) {
             membersModel.append(members[i])
         }
         membersByChatId[primaryChatId] = members
+        membersByChatId[lightChatId] = platformMembers
 
         var model = messagesModel(primaryChatId)
         model.clear()
@@ -498,6 +506,154 @@ Item {
             animateEmoji: false
         })
 
+        var lightModel = messagesModel(lightChatId)
+        lightModel.clear()
+        lightModel.append({
+            chatId: lightChatId,
+            msgId: "smoke-platform-date-1",
+            kind: "date",
+            contentKind: "text",
+            senderName: "",
+            text: "Today",
+            timeText: "",
+            timestampMs: now - 3300000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        lightModel.append({
+            chatId: lightChatId,
+            msgId: "smoke-platform-msg-1",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Rhea",
+            text: "The iOS screenshot gate is green again, and the new light shell is stable.",
+            timeText: "09:23",
+            timestampMs: now - 210000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        lightModel.append({
+            chatId: lightChatId,
+            msgId: "smoke-platform-msg-2",
+            kind: "out",
+            contentKind: "text",
+            senderName: Ui.I18n.t("chat.you"),
+            text: "Good. Keep the desktop frame identical and switch the active thread only.",
+            timeText: "09:24",
+            timestampMs: now - 155000,
+            statusTicks: "read",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        lightModel.append({
+            chatId: lightChatId,
+            msgId: "smoke-platform-msg-3",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Jules",
+            text: "Light mode now follows the Platform rollout notes. No blank center pane, no fake search diff.",
+            timeText: "09:25",
+            timestampMs: now - 94000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        lightModel.append({
+            chatId: lightChatId,
+            msgId: "smoke-platform-msg-4",
+            kind: "out",
+            contentKind: "text",
+            senderName: Ui.I18n.t("chat.you"),
+            text: "Ship this thread as the light smoke sample.",
+            timeText: "09:26",
+            timestampMs: now - 35000,
+            statusTicks: "read",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+
         currentChatId = primaryChatId
         currentChatTitle = "Design Ops"
         currentChatSubtitle = Ui.I18n.format("chat.members", 6)
@@ -507,12 +663,12 @@ Item {
         syncDomainStores()
     }
 
-    function applySmokeConversationScene(statusText) {
-        currentChatId = "smoke-design-ops"
-        currentChatTitle = "Design Ops"
-        currentChatSubtitle = Ui.I18n.format("chat.members", 6)
-        currentChatType = "group"
-        currentChatMembers = 6
+    function applySmokeConversationScene(chatId, title, subtitle, type, members, statusText) {
+        currentChatId = chatId
+        currentChatTitle = title
+        currentChatSubtitle = subtitle
+        currentChatType = type
+        currentChatMembers = members
         rightPaneVisible = false
         searchQuery = ""
         currentLeftTab = 0
@@ -551,11 +707,26 @@ Item {
             currentLeftTab = 0
             statusMessage = "Conversation inbox ready"
         } else if (scene === "chat_detail") {
-            applySmokeConversationScene("Secure detail view ready")
+            applySmokeConversationScene("smoke-design-ops",
+                                        "Design Ops",
+                                        Ui.I18n.format("chat.members", 6),
+                                        "group",
+                                        6,
+                                        "Secure detail view ready")
         } else if (scene === "post_login") {
-            applySmokeConversationScene("Post-login conversation ready")
+            applySmokeConversationScene("smoke-design-ops",
+                                        "Design Ops",
+                                        Ui.I18n.format("chat.members", 6),
+                                        "group",
+                                        6,
+                                        "Post-login conversation ready")
         } else if (scene === "post_login_light") {
-            applySmokeConversationScene("Post-login conversation ready")
+            applySmokeConversationScene("smoke-platform",
+                                        "Platform",
+                                        Ui.I18n.format("chat.members", 8),
+                                        "group",
+                                        8,
+                                        "Light post-login conversation ready")
         } else if (scene === "calls_home") {
             currentChatId = "smoke-alex"
             currentChatTitle = "Alex"
