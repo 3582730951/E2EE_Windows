@@ -34,6 +34,9 @@ ApplicationWindow {
     property string currentDeviceDisplay: ""
     property string gatewayState: ""
     property string gatewayInfo: ""
+    readonly property bool effectiveTransportHealthy: smokeFixtureMode
+                                                     ? true
+                                                     : Ui.SecurityDisplayStore.transportHealthy
     readonly property var smokeLinkedDevices: [
         {
             maskedDeviceDisplayId: "win-23..ac91",
@@ -46,6 +49,10 @@ ApplicationWindow {
         {
             maskedDeviceDisplayId: "mac-51..1d42",
             lastSeenDisplay: "MacBook Air · Yesterday"
+        },
+        {
+            maskedDeviceDisplayId: "ios-88..9b31",
+            lastSeenDisplay: "iPhone 15 Pro · Yesterday"
         }
     ]
     readonly property string fallbackCurrentDeviceDisplay: "eb7f..0c0e"
@@ -55,34 +62,45 @@ ApplicationWindow {
     readonly property string effectiveCurrentDeviceDisplay: currentDeviceDisplay.length > 0
                                                             ? currentDeviceDisplay
                                                             : fallbackCurrentDeviceDisplay
-    readonly property string transportHeadline: Ui.SecurityDisplayStore.transportHealthy
+    readonly property string transportHeadline: effectiveTransportHealthy
                                                ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
                                                : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
     readonly property string transportDetail: {
+        if (smokeFixtureMode) {
+            return Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
+        }
         var detail = Ui.SecurityDisplayStore.connectionSummary()
         if (detail.length > 0) {
             return detail
         }
-        return Ui.SecurityDisplayStore.transportHealthy
+        return effectiveTransportHealthy
              ? Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
              : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
     }
-    readonly property string trustHeadline: gatewayState.length > 0
-                                            ? gatewayState
-                                            : (smokeFixtureMode
-                                               ? Ui.I18n.t("dialog.securityCenter.trustReady")
+    readonly property string trustHeadline: smokeFixtureMode
+                                            ? Ui.I18n.t("dialog.securityCenter.trustReady")
+                                            : (gatewayState.length > 0
+                                               ? gatewayState
                                                : Ui.I18n.t("dialog.securityCenter.trustReview"))
-    readonly property string trustDetail: gatewayInfo.length > 0
-                                          ? gatewayInfo
-                                          : (smokeFixtureMode
-                                             ? Ui.I18n.t("dialog.securityCenter.trustReadyHint")
+    readonly property string trustDetail: smokeFixtureMode
+                                          ? Ui.I18n.t("dialog.securityCenter.trustReadyHint")
+                                          : (gatewayInfo.length > 0
+                                             ? gatewayInfo
                                              : Ui.I18n.t("dialog.securityCenter.trustReviewHint"))
-    readonly property string serverDetail: gatewayInfo.length > 0
-                                           ? gatewayInfo
-                                           : Ui.I18n.t("dialog.securityCenter.serverHint")
+    readonly property string serverDetail: smokeFixtureMode
+                                           ? Ui.I18n.t("dialog.securityCenter.serverHint")
+                                           : (gatewayInfo.length > 0
+                                              ? gatewayInfo
+                                              : Ui.I18n.t("dialog.securityCenter.serverHint"))
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
 
     function refreshOverview() {
+        if (smokeFixtureMode) {
+            currentDeviceDisplay = ""
+            gatewayState = ""
+            gatewayInfo = ""
+            return
+        }
         Ui.SecurityDisplayStore.refresh()
         currentDeviceDisplay = Ui.SecurityDisplayStore.maskedCurrentDeviceId
         gatewayState = Ui.SecurityDisplayStore.gatewayDisplayState
@@ -183,7 +201,7 @@ ApplicationWindow {
                         width: 34
                         height: 34
                         radius: 17
-                        color: Ui.SecurityDisplayStore.transportHealthy
+                        color: root.effectiveTransportHealthy
                                ? Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.14)
                                : Qt.rgba(220 / 255, 38 / 255, 38 / 255, 0.12)
 
@@ -192,7 +210,7 @@ ApplicationWindow {
                             width: 16
                             height: 16
                             fillMode: Image.PreserveAspectFit
-                            source: Ui.SecurityDisplayStore.transportHealthy
+                            source: root.effectiveTransportHealthy
                                     ? "qrc:/mi/e2ee/ui/icons/check.svg"
                                     : "qrc:/mi/e2ee/ui/icons/info.svg"
                         }
@@ -355,7 +373,7 @@ ApplicationWindow {
                         ListView {
                             Layout.fillWidth: true
                             Layout.preferredHeight: linkedDeviceCountValue > 0
-                                                    ? Math.min(contentHeight, 152)
+                                                    ? Math.min(contentHeight, 184)
                                                     : 0
                             clip: true
                             interactive: false
@@ -367,6 +385,19 @@ ApplicationWindow {
 
                             delegate: Rectangle {
                                 width: ListView.view.width
+                                property var deviceEntry: root.smokeFixtureMode
+                                                          ? ((typeof modelData !== "undefined" && modelData)
+                                                             ? modelData
+                                                             : ({}))
+                                                          : model
+                                property string deviceDisplayId: deviceEntry &&
+                                                                 deviceEntry.maskedDeviceDisplayId
+                                                                 ? deviceEntry.maskedDeviceDisplayId
+                                                                 : ""
+                                property string deviceSeenText: deviceEntry &&
+                                                                deviceEntry.lastSeenDisplay
+                                                                ? deviceEntry.lastSeenDisplay
+                                                                : ""
                                 implicitHeight: deviceRow.implicitHeight + Ui.Style.paddingM * 2
                                 radius: Ui.Style.radiusMedium
                                 color: Ui.Style.panelBgAlt
@@ -398,13 +429,13 @@ ApplicationWindow {
                                         spacing: 2
 
                                         Components.UiText {
-                                            text: maskedDeviceDisplayId
+                                            text: deviceDisplayId
                                             textRole: "value_single"
                                             roleColor: Ui.Style.textPrimary
                                         }
 
                                         Components.UiText {
-                                            text: lastSeenDisplay
+                                            text: deviceSeenText
                                             textRole: "caption"
                                             roleColor: Ui.Style.textMuted
                                         }

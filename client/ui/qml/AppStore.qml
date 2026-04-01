@@ -806,6 +806,21 @@ Item {
         statusMessage = statusText || "Post-login conversation ready"
     }
 
+    function applySmokeSettingsScene() {
+        clearSmokeConversationScene("Settings dialog ready")
+        clipboardIsolationEnabled = true
+        internalImeEnabled = false
+        historySaveEnabled = true
+        aiEnhanceEnabled = true
+        aiEnhanceQualityLevel = 4
+        aiEnhanceX4Confirmed = true
+        aiEnhanceGpuAvailable = true
+        aiEnhanceGpuName = "NVIDIA RTX 4060"
+        aiEnhanceGpuSeries = 40
+        aiEnhancePerfScale = 2
+        aiEnhanceQualityScale = 4
+    }
+
     function seedSmokeScene(sceneName) {
         var scene = (sceneName || "").toLowerCase()
         var validScene = scene.length === 0 ||
@@ -867,7 +882,7 @@ Item {
             incomingCallVideo = true
             statusMessage = "Calls surface ready"
         } else if (scene === "settings_home") {
-            clearSmokeConversationScene("Settings surface ready")
+            applySmokeSettingsScene()
         } else if (scene === "security_center") {
             clearSmokeConversationScene("Security Center ready")
         }
