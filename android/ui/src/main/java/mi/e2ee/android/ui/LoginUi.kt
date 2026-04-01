@@ -168,13 +168,13 @@ fun LoginScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.weight(1f))
             AuthFooterRow(
                 leftText = tr("login_new_here", "New here? Create an account"),
                 onLeftClick = onRegister,
                 rightPrefix = tr("login_privacy_prefix", "By continuing you agree to"),
                 rightLink = tr("login_privacy_policy", "Privacy Policy")
             )
-            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }

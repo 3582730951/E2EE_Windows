@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -104,9 +103,7 @@ fun CallsHomeScreen(
                     },
                     meta = tr("call_incoming_title", "Incoming call"),
                     icon = if (pendingCall.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
-                    tone = UiIconTone.Warning,
-                    actionLabel = tr("calls_open", "Open"),
-                    onAction = {}
+                    tone = UiIconTone.Warning
                 )
             )
         }
@@ -219,25 +216,29 @@ private fun CallSummaryStrip(
     attentionCount: Int,
     recentCount: Int
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (activeCount > 0) {
-            LabeledChip(
-                label = tr("calls_live_now", "Live now") + " · $activeCount",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        if (attentionCount > 0) {
-            LabeledChip(
-                label = tr("calls_section_attention", "Needs attention") + " · $attentionCount",
-                tint = MaterialTheme.colorScheme.error
-            )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (activeCount > 0) {
+                LabeledChip(
+                    label = tr("calls_live_short", "Live") + " · $activeCount",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (attentionCount > 0) {
+                LabeledChip(
+                    label = tr("calls_attention_short", "Attention") + " · $attentionCount",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
         }
         if (recentCount > 0) {
             LabeledChip(
-                label = tr("calls_recent", "Recent") + " · $recentCount",
+                label = tr("calls_recent_short", "Recent") + " · $recentCount",
                 tint = MaterialTheme.colorScheme.secondary
             )
         }
@@ -298,6 +299,7 @@ private fun CallActivityRow(
             ) {
                 Text(
                     text = entry.title,
+                    modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

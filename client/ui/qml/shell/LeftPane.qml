@@ -40,81 +40,50 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Ui.Style.paddingM
-        spacing: Ui.Style.paddingS
+        anchors.margins: Ui.Style.paddingS + 2
+        spacing: 6
 
         Rectangle {
             Layout.fillWidth: true
-            radius: Ui.Style.radiusLarge
+            radius: Ui.Style.radiusMedium
             color: Ui.Style.railHeaderBg
             border.width: 1
             border.color: Ui.Style.borderSubtle
-            implicitHeight: railHeaderColumn.implicitHeight + Ui.Style.paddingM * 2
+            implicitHeight: railHeaderColumn.implicitHeight + 20
 
             ColumnLayout {
                 id: railHeaderColumn
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingM
-                spacing: Ui.Style.paddingS
+                anchors.margins: 10
+                spacing: 6
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: Ui.Style.paddingS
+                    spacing: 6
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: Ui.I18n.t("app.title")
-                            color: Ui.Style.textPrimary
-                            font.pixelSize: 17
-                            font.weight: Font.DemiBold
-                        }
-
-                        Text {
-                            text: Ui.I18n.t("auth.hero.badge")
-                            color: Ui.Style.textSecondary
-                            font.pixelSize: 11
-                            font.weight: Font.Medium
-                        }
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: Ui.I18n.t("app.title")
+                        color: Ui.Style.textPrimary
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
                     }
-
-                    Components.IconButton {
-                        id: menuButton
-                        icon.source: Ui.Style.isDark
-                                     ? "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
-                                     : "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
-                        buttonSize: Ui.Style.iconButtonSize
-                        iconSize: 16
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
-                        ToolTip.visible: hovered && !menuPopup.visible
-                        ToolTip.text: Ui.I18n.t("left.menu")
-                    }
-
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Ui.Style.paddingS
 
                     Rectangle {
-                        Layout.preferredHeight: 22
-                        radius: 11
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitHeight: 20
+                        radius: 10
                         color: Ui.Style.railAccentBg
                         border.width: 1
                         border.color: Ui.Style.railAccentBorder
-                        implicitWidth: securePillText.implicitWidth + 14
+                        implicitWidth: securePillText.implicitWidth + 12
 
                         Text {
                             id: securePillText
                             anchors.centerIn: parent
                             text: Ui.I18n.t("chat.secureSession")
                             color: Ui.Style.accentSoft
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                             font.weight: Font.DemiBold
                         }
                     }
@@ -122,20 +91,20 @@ Item {
                     Item { Layout.fillWidth: true }
 
                     Item {
-                        Layout.preferredWidth: Ui.Style.iconButtonSize
-                        Layout.preferredHeight: Ui.Style.iconButtonSize
-                        Layout.minimumWidth: Ui.Style.iconButtonSize
-                        Layout.minimumHeight: Ui.Style.iconButtonSize
-                        Layout.maximumWidth: Ui.Style.iconButtonSize
-                        Layout.maximumHeight: Ui.Style.iconButtonSize
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        Layout.minimumWidth: 32
+                        Layout.minimumHeight: 32
+                        Layout.maximumWidth: 32
+                        Layout.maximumHeight: 32
                         clip: false
 
                         Components.IconButton {
                             id: notificationsButton
                             anchors.fill: parent
                             icon.source: "qrc:/mi/e2ee/ui/icons/bell.svg"
-                            buttonSize: Ui.Style.iconButtonSize
-                            iconSize: 16
+                            buttonSize: 32
+                            iconSize: 15
                             bgColor: Ui.Style.topBarPillBg
                             hoverBg: Ui.Style.hoverBg
                             pressedBg: Ui.Style.pressedBg
@@ -151,50 +120,59 @@ Item {
                             anchors.top: parent.top
                             anchors.rightMargin: -2
                             anchors.topMargin: -2
-                            radius: 9
+                            radius: 8
                             color: Ui.Style.danger
-                            width: Math.max(18, badgeText.paintedWidth + 10)
-                            height: 18
+                            width: Math.max(16, badgeText.paintedWidth + 8)
+                            height: 16
                             z: 3
                             Text {
                                 id: badgeText
                                 anchors.centerIn: parent
                                 text: Ui.ChatDisplayStore.notificationCount > 99 ? "99+" : Ui.ChatDisplayStore.notificationCount
                                 color: Ui.Style.unreadBadgeFg
-                                font.pixelSize: 10
+                                font.pixelSize: 9
                                 font.weight: Font.DemiBold
                             }
                         }
+                    }
+
+                    Components.IconButton {
+                        id: menuButton
+                        icon.source: Ui.Style.isDark
+                                     ? "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
+                                     : "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
+                        buttonSize: 32
+                        iconSize: 15
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
+                        onClicked: menuPopup.popup(menuButton, 0, menuButton.height)
+                        ToolTip.visible: hovered && !menuPopup.visible
+                        ToolTip.text: Ui.I18n.t("left.menu")
                     }
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: Ui.Style.paddingS
+                    spacing: 6
 
-                    Components.PrimaryButton {
-                        id: quickNewChatButton
+                    Components.SearchField {
+                        id: searchField
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 120
                         Layout.preferredHeight: 32
+                        placeholderText: Ui.I18n.t("left.search")
+                        text: Ui.ChatDisplayStore.searchQuery
+                        onTextEdited: Ui.ChatDisplayStore.setSearchQuery(text)
+                    }
+
+                    Components.GhostButton {
+                        id: quickNewChatButton
+                        Layout.preferredWidth: 86
+                        Layout.preferredHeight: 32
+                        text: Ui.I18n.t("left.newChat")
                         Accessible.name: Ui.I18n.t("left.newChat")
                         onClicked: root.requestNewChat()
-                        contentItem: RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 5
-                            Image {
-                                source: "qrc:/mi/e2ee/ui/icons/chat.svg"
-                                width: 12
-                                height: 12
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Text {
-                                text: Ui.I18n.t("left.newChat")
-                                color: "#FFFFFF"
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
-                            }
-                        }
                     }
 
                     Components.IconButton {
@@ -210,16 +188,6 @@ Item {
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.more")
                     }
-                }
-
-                Components.SearchField {
-                    id: searchField
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 120
-                    Layout.preferredHeight: 34
-                    placeholderText: Ui.I18n.t("left.search")
-                    text: Ui.ChatDisplayStore.searchQuery
-                    onTextEdited: Ui.ChatDisplayStore.setSearchQuery(text)
                 }
             }
         }
@@ -339,7 +307,7 @@ Item {
             Layout.fillWidth: true
             height: 1
             color: Ui.Style.borderSubtle
-            opacity: 0.4
+            opacity: 0.32
         }
 
         ListView {
@@ -350,7 +318,7 @@ Item {
             model: Ui.ChatDisplayStore.filteredDialogsModel
             boundsBehavior: Flickable.StopAtBounds
             cacheBuffer: 160
-            spacing: 2
+            spacing: 1
             delegate: dialogDelegate
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
         }
@@ -442,10 +410,10 @@ Item {
 
                 Rectangle {
                     anchors.left: parent.left
-                    anchors.leftMargin: 3
+                    anchors.leftMargin: 2
                     anchors.verticalCenter: parent.verticalCenter
                     width: 3
-                    height: parent.height - 14
+                    height: parent.height - 12
                     radius: 2
                     visible: selected
                     color: Ui.Style.tgUnreadBadge
@@ -464,9 +432,9 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingS
-                    anchors.rightMargin: Ui.Style.paddingS + Ui.Style.paddingXS
-                    spacing: Ui.Style.paddingS
+                    anchors.margins: 6
+                    anchors.rightMargin: 7
+                    spacing: 6
 
                 Rectangle {
                     width: Ui.Style.avatarSizeDialogRow
@@ -541,9 +509,9 @@ Item {
 
                 Item {
                     id: metaColumn
-                    Layout.preferredWidth: 52
-                    Layout.minimumWidth: 52
-                    Layout.maximumWidth: 52
+                    Layout.preferredWidth: 48
+                    Layout.minimumWidth: 48
+                    Layout.maximumWidth: 48
                     Layout.fillHeight: true
 
                     ColumnLayout {
@@ -578,10 +546,10 @@ Item {
                         Rectangle {
                             id: unreadBadge
                             visible: unread > 0
-                            radius: 10
+                            radius: 9
                             color: muted ? Ui.Style.tgMutedBadge : Ui.Style.tgUnreadBadge
-                            implicitWidth: Math.max(22, unreadText.paintedWidth + 12)
-                            implicitHeight: 20
+                            implicitWidth: Math.max(20, unreadText.paintedWidth + 10)
+                            implicitHeight: 18
                             Layout.alignment: Qt.AlignRight | Qt.AlignBottom
                             Text {
                                 id: unreadText

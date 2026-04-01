@@ -258,6 +258,36 @@ Item {
             lastSenderName: "Jules",
             lastSenderAvatarKey: "Jules"
         })
+        dialogsModel.append({
+            chatId: "smoke-release",
+            title: "Release",
+            type: "group",
+            memberCount: 4,
+            avatarKey: "Release",
+            preview: "Desktop light mode now keeps the active thread visible.",
+            timeText: "Sun",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "Nora",
+            lastSenderAvatarKey: "Nora"
+        })
+        dialogsModel.append({
+            chatId: "smoke-gateway",
+            title: "Gateway",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Gateway",
+            preview: "Pinned transport fingerprint rotated after maintenance.",
+            timeText: "Sun",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
 
         contactsModel.append({
             contactId: "mina",
@@ -409,6 +439,64 @@ Item {
             locationLon: 0,
             animateEmoji: true
         })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-4",
+            kind: "out",
+            contentKind: "text",
+            senderName: Ui.I18n.t("chat.you"),
+            text: "Light and dark now share the same conversation frame.",
+            timeText: "09:40",
+            timestampMs: now - 45000,
+            statusTicks: "read",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-5",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Mina",
+            text: "Good. Put devices and transport ahead of dashboard cards.",
+            timeText: "09:41",
+            timestampMs: now - 15000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
 
         currentChatId = primaryChatId
         currentChatTitle = "Design Ops"
@@ -417,6 +505,18 @@ Item {
         currentChatMembers = 6
         rebuildFiltered()
         syncDomainStores()
+    }
+
+    function applySmokeConversationScene(statusText) {
+        currentChatId = "smoke-design-ops"
+        currentChatTitle = "Design Ops"
+        currentChatSubtitle = Ui.I18n.format("chat.members", 6)
+        currentChatType = "group"
+        currentChatMembers = 6
+        rightPaneVisible = false
+        searchQuery = ""
+        currentLeftTab = 0
+        statusMessage = statusText || "Post-login conversation ready"
     }
 
     function seedSmokeScene(sceneName) {
@@ -451,35 +551,11 @@ Item {
             currentLeftTab = 0
             statusMessage = "Conversation inbox ready"
         } else if (scene === "chat_detail") {
-            currentChatId = "smoke-design-ops"
-            currentChatTitle = "Design Ops"
-            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
-            currentChatType = "group"
-            currentChatMembers = 6
-            rightPaneVisible = false
-            searchQuery = ""
-            currentLeftTab = 0
-            statusMessage = "Secure detail view ready"
+            applySmokeConversationScene("Secure detail view ready")
         } else if (scene === "post_login") {
-            currentChatId = "smoke-design-ops"
-            currentChatTitle = "Design Ops"
-            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
-            currentChatType = "group"
-            currentChatMembers = 6
-            rightPaneVisible = false
-            searchQuery = ""
-            currentLeftTab = 0
-            statusMessage = "Post-login conversation ready"
+            applySmokeConversationScene("Post-login conversation ready")
         } else if (scene === "post_login_light") {
-            currentChatId = "smoke-design-ops"
-            currentChatTitle = "Design Ops"
-            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
-            currentChatType = "group"
-            currentChatMembers = 6
-            rightPaneVisible = false
-            searchQuery = ""
-            currentLeftTab = 0
-            statusMessage = "Light post-login preview ready"
+            applySmokeConversationScene("Post-login conversation ready")
         } else if (scene === "calls_home") {
             currentChatId = "smoke-alex"
             currentChatTitle = "Alex"
