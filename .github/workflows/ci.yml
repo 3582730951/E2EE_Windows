@@ -1961,14 +1961,48 @@ jobs:
             done
             return 1
           }
-          capture_screenshot "login" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || true
-          capture_screenshot "chats" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
-            echo "Simulator screenshot failed; skip artifact" >&2
-            exit 0
+          capture_failed=0
+          capture_screenshot "login" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: login" >&2
+            capture_failed=1
           }
-          capture_screenshot "detail" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || true
-          capture_screenshot "settings" "build/ios_rootauth_artifacts/rootauth-ios-settings.png" || true
-          capture_screenshot "security" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || true
+          capture_screenshot "chats" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: chats/home" >&2
+            capture_failed=1
+          }
+          capture_screenshot "detail" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: detail" >&2
+            capture_failed=1
+          }
+          capture_screenshot "settings" "build/ios_rootauth_artifacts/rootauth-ios-settings.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: settings" >&2
+            capture_failed=1
+          }
+          capture_screenshot "security" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: security" >&2
+            capture_failed=1
+          }
+
+          required_screenshots=(
+            "build/ios_rootauth_artifacts/rootauth-ios-login.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-home.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-detail.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-settings.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-security.png"
+          )
+
+          missing_screenshots=0
+          for screenshot in "${required_screenshots[@]}"; do
+            if [ ! -s "$screenshot" ]; then
+              echo "Missing or empty RootAuth iOS screenshot: $screenshot" >&2
+              missing_screenshots=1
+            fi
+          done
+
+          if [ "$capture_failed" -ne 0 ] || [ "$missing_screenshots" -ne 0 ]; then
+            echo "RootAuth iOS screenshot capture is incomplete; failing workflow." >&2
+            exit 1
+          fi
 
       - name: Normalize RootAuth iOS screenshots
         if: always()

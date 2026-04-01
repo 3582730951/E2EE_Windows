@@ -400,7 +400,7 @@ Item {
             searchQuery = ""
             currentLeftTab = 0
             statusMessage = "Secure detail view ready"
-        } else if (scene === "post_login" || scene === "post_login_light") {
+        } else if (scene === "post_login") {
             currentChatId = ""
             currentChatTitle = ""
             currentChatSubtitle = ""
@@ -410,6 +410,16 @@ Item {
             searchQuery = ""
             currentLeftTab = 0
             statusMessage = "Post-login shell ready"
+        } else if (scene === "post_login_light") {
+            currentChatId = "smoke-alex"
+            currentChatTitle = "Alex"
+            currentChatSubtitle = "Online now"
+            currentChatType = "private"
+            currentChatMembers = 2
+            rightPaneVisible = true
+            searchQuery = "al"
+            currentLeftTab = 0
+            statusMessage = "Light post-login preview ready"
         } else if (scene === "calls_home") {
             currentChatId = "smoke-alex"
             currentChatTitle = "Alex"
