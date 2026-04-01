@@ -181,9 +181,9 @@ final class ClientWorkspaceStore: ObservableObject {
     private let bridge = MIClientBridge()
     private var pollTimer: Timer?
 
-    init() {
-        if ScreenshotScenario.current != .none {
-            loadScreenshotFixture()
+    init(screenshotScenario: ScreenshotScenario = .none) {
+        if screenshotScenario != .none {
+            loadScreenshotFixture(for: screenshotScenario)
             return
         }
         configureClient(resetSelection: true)
@@ -545,9 +545,8 @@ final class ClientWorkspaceStore: ObservableObject {
         return messageType.isEmpty ? "Event received" : "Event \(messageType)"
     }
 
-    private func loadScreenshotFixture() {
+    private func loadScreenshotFixture(for scenario: ScreenshotScenario) {
         isReady = true
-        let scenario = ScreenshotScenario.current
         isLoggedIn = scenario != .login
         remoteOK = scenario != .login
         deviceDisplayID = "ios-sim-01"
@@ -738,7 +737,7 @@ private enum AppTab: Hashable {
 struct AppShell: View {
     private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
-    @StateObject private var clientStore = ClientWorkspaceStore()
+    @StateObject private var clientStore: ClientWorkspaceStore
     @State private var selectedTab: AppTab
 
     private var presentsAuthShell: Bool {
@@ -760,6 +759,7 @@ struct AppShell: View {
     init() {
         let scenario = ScreenshotScenario.current
         screenshotScenario = scenario
+        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: scenario))
         let initialTab: AppTab
         switch scenario {
         case .calls:
