@@ -198,6 +198,66 @@ Item {
             lastSenderName: "",
             lastSenderAvatarKey: ""
         })
+        dialogsModel.append({
+            chatId: "smoke-mina",
+            title: "Mina",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Mina",
+            preview: "Security center hierarchy is cleaner now.",
+            timeText: "07:58",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
+        dialogsModel.append({
+            chatId: "smoke-platform",
+            title: "Platform",
+            type: "group",
+            memberCount: 8,
+            avatarKey: "Platform",
+            preview: "The iOS screenshot gate is green again.",
+            timeText: "Yesterday",
+            unread: 1,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "Rhea",
+            lastSenderAvatarKey: "Rhea"
+        })
+        dialogsModel.append({
+            chatId: "smoke-rhea",
+            title: "Rhea",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Rhea",
+            preview: "Android calls page feels closer to a real IM now.",
+            timeText: "Yesterday",
+            unread: 0,
+            pinned: false,
+            muted: true,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
+        dialogsModel.append({
+            chatId: "smoke-ops",
+            title: "Ops Sync",
+            type: "group",
+            memberCount: 5,
+            avatarKey: "Ops Sync",
+            preview: "TLS reconnect budget raised for the next smoke pass.",
+            timeText: "Mon",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "Jules",
+            lastSenderAvatarKey: "Jules"
+        })
 
         contactsModel.append({
             contactId: "mina",
@@ -396,7 +456,7 @@ Item {
             currentChatSubtitle = Ui.I18n.format("chat.members", 6)
             currentChatType = "group"
             currentChatMembers = 6
-            rightPaneVisible = true
+            rightPaneVisible = false
             searchQuery = ""
             currentLeftTab = 0
             statusMessage = "Secure detail view ready"
@@ -406,18 +466,18 @@ Item {
             currentChatSubtitle = Ui.I18n.format("chat.members", 6)
             currentChatType = "group"
             currentChatMembers = 6
-            rightPaneVisible = true
+            rightPaneVisible = false
             searchQuery = ""
             currentLeftTab = 0
             statusMessage = "Post-login conversation ready"
         } else if (scene === "post_login_light") {
-            currentChatId = "smoke-alex"
-            currentChatTitle = "Alex"
-            currentChatSubtitle = "Online now"
-            currentChatType = "private"
-            currentChatMembers = 2
-            rightPaneVisible = true
-            searchQuery = "al"
+            currentChatId = "smoke-design-ops"
+            currentChatTitle = "Design Ops"
+            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
+            currentChatType = "group"
+            currentChatMembers = 6
+            rightPaneVisible = false
+            searchQuery = ""
             currentLeftTab = 0
             statusMessage = "Light post-login preview ready"
         } else if (scene === "calls_home") {

@@ -26,9 +26,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.BorderStroke
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,8 +39,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -72,6 +73,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -222,7 +224,7 @@ fun ConversationListScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .padding(horizontal = 8.dp, vertical = 1.dp)
             ) {
                 CompactSearchField(
                     value = query.value,
@@ -233,7 +235,7 @@ fun ConversationListScreen(
                         .fillMaxWidth()
                         .testTag("conversation-search")
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 val search = query.value.trim()
                 val searched = if (search.isBlank()) {
                     conversations.filterNot { hiddenIds.contains(it.id) }
@@ -254,7 +256,7 @@ fun ConversationListScreen(
                             .thenByDescending { parseConversationTime(it.time) }
                     )
                 val hasResults = pinned.isNotEmpty() || others.isNotEmpty()
-                val useExtendedFooter = hasResults && searched.size <= 4
+                val useExtendedFooter = hasResults && searched.size <= 3
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
@@ -316,16 +318,12 @@ fun ConversationListScreen(
                     }
                     if (hasResults) {
                         item(key = "conversation-tail-state") {
-                            val tailModifier = if (useExtendedFooter) {
-                                Modifier.fillParentMaxHeight(0.18f)
-                            } else {
-                                Modifier.height(72.dp)
-                            }
+                            val tailModifier = if (useExtendedFooter) Modifier.height(44.dp) else Modifier.height(32.dp)
                             ConversationListTailState(
                                 totalCount = searched.size,
                                 modifier = tailModifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
                             )
                         }
                     } else {
@@ -421,12 +419,12 @@ private fun ConversationListTailState(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
             UiSemanticIcon(
                 icon = MiOwnedIcons.CheckDouble,
@@ -435,16 +433,16 @@ private fun ConversationListTailState(
                 size = ChatUiTokens.IconContainerSm,
                 iconSize = ChatUiTokens.IconGlyphSm
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = tr("conversations_list_end", "All chats loaded"),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.height(1.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = tr("conversations_list_count", "%d encrypted chats").format(totalCount),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -511,17 +509,10 @@ private fun ConversationTopBar(
     TopAppBar(
         modifier = modifier.fillMaxWidth(),
         title = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = tr("chat_secure_session", "Secure session"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium
+            )
         },
         actions = {
             UiToolbarIconButton(
@@ -627,32 +618,56 @@ private fun CompactSearchField(
     height: Dp,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        singleLine = true,
+    Surface(
         modifier = modifier.height(height),
-        placeholder = {
-            Text(
-                text = placeholder,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = MiOwnedIcons.Search,
-                contentDescription = tr("conversations_search_icon", "Search"),
-                modifier = Modifier.size(16.dp)
-            )
-        },
         shape = RoundedCornerShape(16.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
         )
-    )
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 18.sp
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = MiOwnedIcons.Search,
+                        contentDescription = tr("conversations_search_icon", "Search"),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = placeholder,
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            }
+        )
+    }
 }
 
 private fun conversationPriority(item: ConversationPreview): Int {
@@ -881,14 +896,14 @@ private fun ConversationRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
                     AvatarBadge(
                         initials = item.initials,
                         tint = MaterialTheme.colorScheme.primary,
-                        size = 48.dp
+                        size = 42.dp
                     )
                     if (item.isGroup) {
                         UiSemanticIcon(
@@ -905,15 +920,15 @@ private fun ConversationRow(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = item.name,
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     val previewText = when {
                         item.draft != null ->
                             tr("conversations_draft_prefix", "Draft: %s").format(item.draft)
@@ -927,7 +942,7 @@ private fun ConversationRow(
                     }
                     Text(
                         text = previewText,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = previewColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -940,7 +955,7 @@ private fun ConversationRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val hasBadges = item.isMuted || item.mentionCount > 0 || item.unreadCount > 0
                         if (item.isMuted) {
@@ -1238,6 +1253,31 @@ internal fun sampleConversations(): List<ConversationPreview> {
             isPinned = false,
             isMuted = true,
             isGroup = false,
+            isTyping = false
+        ),
+        ConversationPreview(
+            id = "c6",
+            initials = "OS",
+            name = "Ops Sync",
+            lastMessage = "Queue cap increased to 512.",
+            time = "08:12",
+            unreadCount = 5,
+            isPinned = false,
+            isMuted = false,
+            isGroup = true,
+            isTyping = false,
+            mentionCount = 2
+        ),
+        ConversationPreview(
+            id = "c7",
+            initials = "PT",
+            name = "Platform",
+            lastMessage = "Smoke gate passed on API33 with the latest fix.",
+            time = "07:42",
+            unreadCount = 0,
+            isPinned = false,
+            isMuted = false,
+            isGroup = true,
             isTyping = false
         )
     )

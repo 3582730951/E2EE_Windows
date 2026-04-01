@@ -45,17 +45,17 @@ Item {
 
         Rectangle {
             Layout.fillWidth: true
-            radius: Ui.Style.radiusXL
+            radius: Ui.Style.radiusLarge
             color: Ui.Style.railHeaderBg
             border.width: 1
             border.color: Ui.Style.borderSubtle
-            implicitHeight: railHeaderColumn.implicitHeight + Ui.Style.paddingL * 2
+            implicitHeight: railHeaderColumn.implicitHeight + Ui.Style.paddingM * 2
 
             ColumnLayout {
                 id: railHeaderColumn
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingL
-                spacing: Ui.Style.paddingM
+                anchors.margins: Ui.Style.paddingM
+                spacing: Ui.Style.paddingS
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -68,7 +68,7 @@ Item {
                         Text {
                             text: Ui.I18n.t("app.title")
                             color: Ui.Style.textPrimary
-                            font.pixelSize: 18
+                            font.pixelSize: 17
                             font.weight: Font.DemiBold
                         }
 
@@ -102,19 +102,19 @@ Item {
                     spacing: Ui.Style.paddingS
 
                     Rectangle {
-                        Layout.preferredHeight: 24
-                        radius: 12
+                        Layout.preferredHeight: 22
+                        radius: 11
                         color: Ui.Style.railAccentBg
                         border.width: 1
                         border.color: Ui.Style.railAccentBorder
-                        implicitWidth: securePillText.implicitWidth + 18
+                        implicitWidth: securePillText.implicitWidth + 14
 
                         Text {
                             id: securePillText
                             anchors.centerIn: parent
                             text: Ui.I18n.t("chat.secureSession")
                             color: Ui.Style.accentSoft
-                            font.pixelSize: Math.max(12, Ui.Style.microTextSize - 1)
+                            font.pixelSize: 11
                             font.weight: Font.DemiBold
                         }
                     }
@@ -175,22 +175,22 @@ Item {
                     Components.PrimaryButton {
                         id: quickNewChatButton
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 34
+                        Layout.preferredHeight: 32
                         Accessible.name: Ui.I18n.t("left.newChat")
                         onClicked: root.requestNewChat()
                         contentItem: RowLayout {
                             anchors.centerIn: parent
-                            spacing: 6
+                            spacing: 5
                             Image {
                                 source: "qrc:/mi/e2ee/ui/icons/chat.svg"
-                                width: 13
-                                height: 13
+                                width: 12
+                                height: 12
                                 fillMode: Image.PreserveAspectFit
                             }
                             Text {
                                 text: Ui.I18n.t("left.newChat")
                                 color: "#FFFFFF"
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                             }
@@ -201,8 +201,8 @@ Item {
                         id: quickComposeButton
                         Accessible.name: Ui.I18n.t("chat.more")
                         icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
-                        buttonSize: 34
-                        iconSize: 15
+                        buttonSize: 32
+                        iconSize: 14
                         bgColor: Ui.Style.topBarPillBg
                         hoverBg: Ui.Style.hoverBg
                         pressedBg: Ui.Style.pressedBg
@@ -216,6 +216,7 @@ Item {
                     id: searchField
                     Layout.fillWidth: true
                     Layout.minimumWidth: 120
+                    Layout.preferredHeight: 34
                     placeholderText: Ui.I18n.t("left.search")
                     text: Ui.ChatDisplayStore.searchQuery
                     onTextEdited: Ui.ChatDisplayStore.setSearchQuery(text)
@@ -338,7 +339,7 @@ Item {
             Layout.fillWidth: true
             height: 1
             color: Ui.Style.borderSubtle
-            opacity: 0.6
+            opacity: 0.4
         }
 
         ListView {

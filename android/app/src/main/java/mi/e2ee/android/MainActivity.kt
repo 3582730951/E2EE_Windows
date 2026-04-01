@@ -92,8 +92,9 @@ class MainActivity : ComponentActivity() {
 private fun MainScreenshotScene(mode: String, context: Context) {
     when (mode.lowercase()) {
         "login", "auth_login" -> LoginScreen(
-            statusMessage = "Secure workspace ready.",
-            remoteError = "Root authorization required for this device."
+            initialUsername = "aster@mi.internal",
+            initialPassword = "trust-build-2026",
+            statusMessage = "Pinned gateway verified."
         )
         "detail", "chat_detail" -> ChatScreen(items = SampleChat.items)
         "calls", "calls_home" -> CallsHomeScreen(

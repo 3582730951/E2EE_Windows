@@ -176,7 +176,7 @@ Item {
     property int paddingXL: 24
     property int avatarSizeDialogRow: 40
     property int avatarSizeTopBar: 34
-    property int dialogRowHeight: 68
+    property int dialogRowHeight: 64
     property int topBarHeight: 56
     property int authWindowTitleBarHeight: 26
     property int authWindowTitleTextSize: 12
@@ -190,7 +190,7 @@ Item {
     property int authFieldHeight: 40
     property int authPrimaryButtonHeight: 40
     property int leftPaneWidthMin: 280
-    property int leftPaneWidthDefault: 304
+    property int leftPaneWidthDefault: 296
     property int centerPaneWidthMin: 560
     property int rightPaneWidth: 336
     property int rightPaneWidthMin: 290

@@ -1984,12 +1984,106 @@ jobs:
             local first="$1"
             local second="$2"
             /usr/bin/python3 - "$first" "$second" <<'PY'
+          import struct
           import sys
-          from PIL import Image, ImageChops
+          import zlib
 
-          left = Image.open(sys.argv[1]).convert("RGB")
-          right = Image.open(sys.argv[2]).convert("RGB")
-          sys.exit(0 if ImageChops.difference(left, right).getbbox() else 1)
+          def decode_png_rgba(path: str):
+              data = open(path, "rb").read()
+              if data[:8] != b"\x89PNG\r\n\x1a\n":
+                  return None
+
+              idx = 8
+              idat = bytearray()
+              width = 0
+              height = 0
+              bit_depth = 0
+              color_type = 0
+              interlace = 0
+
+              while idx + 8 <= len(data):
+                  chunk_len = int.from_bytes(data[idx:idx + 4], "big")
+                  idx += 4
+                  chunk_type = data[idx:idx + 4]
+                  idx += 4
+                  chunk_data = data[idx:idx + chunk_len]
+                  idx += chunk_len
+                  idx += 4
+                  if chunk_type == b"IHDR":
+                      width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", chunk_data)
+                  elif chunk_type == b"IDAT":
+                      idat.extend(chunk_data)
+                  elif chunk_type == b"IEND":
+                      break
+
+              if not width or not height or bit_depth != 8 or color_type != 6 or interlace != 0:
+                  return None
+
+              raw = zlib.decompress(bytes(idat))
+              bytes_per_pixel = 4
+              stride = width * bytes_per_pixel
+              cursor = 0
+              prev = bytearray(stride)
+              rows = []
+
+              def paeth(a: int, b: int, c: int) -> int:
+                  p = a + b - c
+                  pa = abs(p - a)
+                  pb = abs(p - b)
+                  pc = abs(p - c)
+                  if pa <= pb and pa <= pc:
+                      return a
+                  if pb <= pc:
+                      return b
+                  return c
+
+              for _ in range(height):
+                  if cursor >= len(raw):
+                      return None
+                  filter_type = raw[cursor]
+                  cursor += 1
+                  row = bytearray(raw[cursor:cursor + stride])
+                  if len(row) != stride:
+                      return None
+                  cursor += stride
+
+                  if filter_type == 1:
+                      for x in range(stride):
+                          row[x] = (row[x] + (row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0)) & 0xFF
+                  elif filter_type == 2:
+                      for x in range(stride):
+                          row[x] = (row[x] + prev[x]) & 0xFF
+                  elif filter_type == 3:
+                      for x in range(stride):
+                          left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                          row[x] = (row[x] + ((left + prev[x]) // 2)) & 0xFF
+                  elif filter_type == 4:
+                      for x in range(stride):
+                          left = row[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                          up = prev[x]
+                          up_left = prev[x - bytes_per_pixel] if x >= bytes_per_pixel else 0
+                          row[x] = (row[x] + paeth(left, up, up_left)) & 0xFF
+                  elif filter_type != 0:
+                      return None
+
+                  rows.append(bytes(row))
+                  prev = row
+
+              return width, height, rows
+
+          left = decode_png_rgba(sys.argv[1])
+          right = decode_png_rgba(sys.argv[2])
+          if left is None or right is None:
+              sys.exit(1)
+          if left[0] != right[0] or left[1] != right[1]:
+              sys.exit(0)
+
+          for left_row, right_row in zip(left[2], right[2]):
+              for offset in range(0, len(left_row), 4):
+                  if left_row[offset:offset + 3] != right_row[offset:offset + 3]:
+                      sys.exit(0)
+
+          sys.exit(1)
           PY
           }
           capture_failed=0

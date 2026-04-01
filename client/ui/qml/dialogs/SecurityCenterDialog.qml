@@ -33,12 +33,14 @@ ApplicationWindow {
 
     property var overviewCards: []
     property string currentDeviceDisplay: ""
+    property string gatewayState: ""
     property string gatewayInfo: ""
 
     function refreshOverview() {
         Ui.SecurityDisplayStore.refresh()
         overviewCards = Ui.SecurityDisplayStore.overviewCards
         currentDeviceDisplay = Ui.SecurityDisplayStore.maskedCurrentDeviceId
+        gatewayState = Ui.SecurityDisplayStore.gatewayDisplayState
         gatewayInfo = Ui.SecurityDisplayStore.gatewayDisplayDetail
     }
 
@@ -179,66 +181,76 @@ ApplicationWindow {
                 }
             }
 
-            GridLayout {
+            Rectangle {
                 Layout.fillWidth: true
-                columns: 2
-                rowSpacing: Ui.Style.paddingM
-                columnSpacing: Ui.Style.paddingM
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.panelBg
+                border.color: Ui.Style.borderSubtle
+                implicitHeight: transportColumn.implicitHeight + Ui.Style.paddingM * 2
 
-                Repeater {
-                    model: root.overviewCards
+                ColumnLayout {
+                    id: transportColumn
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingM
+                    spacing: 4
 
-                    delegate: Rectangle {
+                    Components.UiText {
+                        text: Ui.I18n.t("dialog.securityCenter.transportTitle")
+                        textRole: "caption"
+                        roleColor: Ui.Style.textSecondary
+                    }
+
+                    Components.UiText {
+                        text: Ui.SecurityDisplayStore.transportHealthy
+                              ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
+                              : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
+                        textRole: "value_single"
+                        roleColor: Ui.Style.textPrimary
+                    }
+
+                    Components.UiText {
+                        text: Ui.SecurityDisplayStore.connectionSummary()
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 108
-                        radius: Ui.Style.radiusMedium
-                        color: Ui.Style.panelBg
-                        border.color: Ui.Style.borderSubtle
+                        textRole: "detail"
+                        roleColor: Ui.Style.textMuted
+                    }
+                }
+            }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: Ui.Style.paddingM
-                            spacing: Ui.Style.paddingM
+            Rectangle {
+                Layout.fillWidth: true
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.panelBg
+                border.color: Ui.Style.borderSubtle
+                implicitHeight: trustColumn.implicitHeight + Ui.Style.paddingM * 2
 
-                            Rectangle {
-                                width: 40
-                                height: 40
-                                radius: 20
-                                color: Ui.Style.dialogSelectedBg
+                ColumnLayout {
+                    id: trustColumn
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingM
+                    spacing: 4
 
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 18
-                                    height: 18
-                                    fillMode: Image.PreserveAspectFit
-                                    source: modelData.icon
-                                }
-                            }
+                    Components.UiText {
+                        text: Ui.I18n.t("dialog.securityCenter.trustTitle")
+                        textRole: "caption"
+                        roleColor: Ui.Style.textSecondary
+                    }
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
+                    Components.UiText {
+                        text: root.gatewayState.length > 0
+                              ? root.gatewayState
+                              : Ui.I18n.t("dialog.securityCenter.trustReview")
+                        textRole: "value_single"
+                        roleColor: Ui.Style.textPrimary
+                    }
 
-                                Components.UiText {
-                                    text: modelData.title
-                                    textRole: "caption"
-                                    roleColor: Ui.Style.textSecondary
-                                }
-
-                                Components.UiText {
-                                    text: modelData.value
-                                    textRole: "value_single"
-                                    roleColor: Ui.Style.textPrimary
-                                }
-
-                                Components.UiText {
-                                    text: modelData.detail
-                                    Layout.fillWidth: true
-                                    textRole: "detail"
-                                    roleColor: Ui.Style.textMuted
-                                }
-                            }
-                        }
+                    Components.UiText {
+                        text: root.gatewayInfo.length > 0
+                              ? root.gatewayInfo
+                              : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+                        Layout.fillWidth: true
+                        textRole: "detail"
+                        roleColor: Ui.Style.textMuted
                     }
                 }
             }
@@ -256,10 +268,11 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        spacing: Ui.Style.paddingM
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 2
+                            spacing: 4
 
                             Components.UiText {
                                 text: Ui.I18n.t("dialog.securityCenter.currentDevice")
@@ -268,16 +281,56 @@ ApplicationWindow {
                             }
 
                             Components.UiText {
-                                text: root.currentDeviceDisplay
+                                text: root.currentDeviceDisplay.length > 0 ? root.currentDeviceDisplay : "--"
+                                Layout.fillWidth: true
                                 textRole: "value_single"
                                 roleColor: Ui.Style.textPrimary
                             }
                         }
 
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Components.UiText {
+                                text: Ui.I18n.t("dialog.securityCenter.serverTitle")
+                                textRole: "caption"
+                                roleColor: Ui.Style.textSecondary
+                            }
+
+                            Components.UiText {
+                                text: root.gatewayInfo.length > 0
+                                      ? root.gatewayInfo
+                                      : Ui.I18n.t("dialog.securityCenter.serverHint")
+                                Layout.fillWidth: true
+                                textRole: "detail"
+                                roleColor: Ui.Style.textMuted
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Ui.Style.borderSubtle
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Ui.Style.paddingM
+
                         Components.UiText {
-                            text: gatewayInfo
-                            textRole: "caption"
-                            roleColor: Ui.Style.textMuted
+                            text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                            textRole: "subtitle"
+                            roleColor: Ui.Style.textPrimary
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Components.GhostButton {
+                            text: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                            Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                            onClicked: root.requestManageDevices()
                         }
                     }
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -51,40 +53,48 @@ fun LoginScreen(
     onLogin: (String, String, String) -> Unit = { _, _, _ -> },
     onShowQr: (String) -> Unit = {},
     onScanQr: () -> Unit = {},
+    initialUsername: String = "",
+    initialPassword: String = "",
+    initialRootCode: String = "",
     errorMessage: String? = null,
     statusMessage: String? = null,
     remoteError: String? = null
 ) {
-    val email = remember { mutableStateOf("") }
-    val password = remember { mutableStateOf("") }
-    val rootCode = remember { mutableStateOf("") }
+    val email = remember { mutableStateOf(initialUsername) }
+    val password = remember { mutableStateOf(initialPassword) }
+    val rootCode = remember { mutableStateOf(initialRootCode) }
     val bannerMessage = when {
         !errorMessage.isNullOrBlank() -> errorMessage
         !remoteError.isNullOrBlank() -> remoteError
         !statusMessage.isNullOrBlank() -> statusMessage
         else -> null
     }
-    val bannerIsError = !errorMessage.isNullOrBlank()
+    val bannerIsError = !errorMessage.isNullOrBlank() || !remoteError.isNullOrBlank()
+    val headerStatus = bannerMessage?.takeIf { !bannerIsError }
+    val cardStatus = bannerMessage?.takeIf { bannerIsError }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LoginBackground()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppMark()
                 Text(
                     text = tr("login_title", "Welcome back"),
-                    style = MaterialTheme.typography.displayLarge
+                    style = MaterialTheme.typography.headlineMedium
                 )
                 Text(
                     text = tr("login_subtitle", "Secure sign-in for private conversations."),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!headerStatus.isNullOrBlank()) {
+                    LoginStatusChip(message = headerStatus)
+                }
             }
 
             SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
@@ -92,14 +102,10 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (!bannerMessage.isNullOrBlank()) {
-                        if (bannerIsError) {
-                            LoginErrorBanner(errorCode = bannerMessage)
-                        } else {
-                            LoginStatusBanner(message = bannerMessage)
-                        }
+                    if (!cardStatus.isNullOrBlank()) {
+                        LoginErrorBanner(errorCode = cardStatus)
                     }
 
                     LoginInputField(
@@ -110,7 +116,8 @@ fun LoginScreen(
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
-                        )
+                        ),
+                        singleLine = true
                     )
                     LoginInputField(
                         label = tr("login_password", "Password"),
@@ -177,55 +184,53 @@ private fun LoginErrorBanner(errorCode: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.10f))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        Row(
-            modifier = Modifier.align(Alignment.Center),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             UiTokenIcon(
                 label = "!",
-                size = 20.dp,
+                size = 18.dp,
                 cornerRadius = 6.dp,
-                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
+                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
                 contentColor = MaterialTheme.colorScheme.error
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = tr("login_error", "Login failed - %s").format(errorCode),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2
             )
         }
     }
 }
 
 @Composable
-private fun LoginStatusBanner(message: String) {
-    Box(
+private fun LoginStatusChip(message: String) {
+    Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(999.dp))
             .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            UiTokenIcon(
-                label = "i",
-                size = 20.dp,
-                cornerRadius = 6.dp,
-                containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
-                contentColor = MaterialTheme.colorScheme.secondary
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary
-            )
-        }
+        UiTokenIcon(
+            label = "i",
+            size = 16.dp,
+            cornerRadius = 5.dp,
+            containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
+            contentColor = MaterialTheme.colorScheme.secondary
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -236,7 +241,7 @@ private fun LoginInputField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     keyboardOptions: KeyboardOptions,
-    singleLine: Boolean = false,
+    singleLine: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     Column(
@@ -251,7 +256,9 @@ private fun LoginInputField(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 50.dp),
             placeholder = { Text(placeholder) },
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
@@ -266,17 +273,17 @@ private fun AppMark() {
     Row(verticalAlignment = Alignment.CenterVertically) {
         UiTokenIcon(
             label = "MI",
-            size = 48.dp,
-            cornerRadius = 14.dp,
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+            size = 36.dp,
+            cornerRadius = 12.dp,
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
             contentColor = MaterialTheme.colorScheme.primary
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Column {
-            Text(text = tr("app_name", "MI Secure"), style = MaterialTheme.typography.titleLarge)
+            Text(text = tr("app_name", "MI Secure"), style = MaterialTheme.typography.titleSmall)
             Text(
                 text = tr("app_tagline", "Private chat"),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -287,8 +294,8 @@ private fun AppMark() {
 private fun LoginBackground() {
     val base = MaterialTheme.colorScheme.background
     val isDark = base.luminance() < 0.3f
-    val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.12f else 0.15f)
-    val accent = MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.08f else 0.1f)
+    val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.07f else 0.09f)
+    val accent = MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.05f else 0.06f)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -302,15 +309,15 @@ private fun LoginBackground() {
     ) {
         Box(
             modifier = Modifier
-                .size(180.dp)
-                .offset(x = 170.dp, y = (-32).dp)
+                .size(88.dp)
+                .offset(x = 250.dp, y = (-18).dp)
                 .clip(CircleShape)
                 .background(tint)
         )
         Box(
             modifier = Modifier
-                .size(150.dp)
-                .offset(x = (-52).dp, y = 500.dp)
+                .size(72.dp)
+                .offset(x = (-26).dp, y = 600.dp)
                 .clip(CircleShape)
                 .background(accent)
         )
@@ -326,7 +333,7 @@ private fun LoginUtilityButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.height(42.dp),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
         colors = ButtonDefaults.outlinedButtonColors(
@@ -343,7 +350,7 @@ private fun LoginUtilityButton(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall
+            style = MaterialTheme.typography.bodyMedium
         )
     }
 }
