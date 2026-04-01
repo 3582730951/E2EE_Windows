@@ -93,6 +93,31 @@ ApplicationWindow {
                                               ? gatewayInfo
                                               : Ui.I18n.t("dialog.securityCenter.serverHint"))
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
+    readonly property var previewLinkedDevice: {
+        if (smokeFixtureMode) {
+            return smokeLinkedDevices.length > 0 ? smokeLinkedDevices[0] : null
+        }
+        if (Ui.SecurityDisplayStore.devicesModel && Ui.SecurityDisplayStore.devicesModel.count > 0) {
+            return Ui.SecurityDisplayStore.devicesModel.get(0)
+        }
+        return null
+    }
+    readonly property string previewLinkedDeviceId: previewLinkedDevice &&
+                                                    previewLinkedDevice.maskedDeviceDisplayId
+                                                    ? previewLinkedDevice.maskedDeviceDisplayId
+                                                    : ""
+    readonly property string previewLinkedDeviceSeen: previewLinkedDevice &&
+                                                      previewLinkedDevice.lastSeenDisplay
+                                                      ? previewLinkedDevice.lastSeenDisplay
+                                                      : ""
+    readonly property color smokeSummaryBg: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.08)
+    readonly property color smokeSummaryBorder: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.24)
+    readonly property color smokeDeviceBg: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.08)
+    readonly property color smokeDeviceBorder: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.24)
+    readonly property color smokeTrustBg: Qt.rgba(245 / 255, 158 / 255, 11 / 255, 0.10)
+    readonly property color smokeTrustBorder: Qt.rgba(245 / 255, 158 / 255, 11 / 255, 0.22)
+    readonly property color smokeServerBg: Qt.rgba(99 / 255, 102 / 255, 241 / 255, 0.08)
+    readonly property color smokeServerBorder: Qt.rgba(99 / 255, 102 / 255, 241 / 255, 0.20)
 
     function refreshOverview() {
         if (smokeFixtureMode) {
@@ -176,26 +201,28 @@ ApplicationWindow {
 
     ScrollView {
         anchors.fill: parent
-        anchors.margins: Ui.Style.paddingM
-        anchors.topMargin: Ui.Style.topBarHeight + Ui.Style.paddingM
+        anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+        anchors.topMargin: Ui.Style.topBarHeight + (smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM)
         clip: true
 
         ColumnLayout {
             width: root.width - Ui.Style.paddingM * 2
-            spacing: Ui.Style.paddingS + 2
+            spacing: smokeFixtureMode ? Ui.Style.paddingS : Ui.Style.paddingS + 2
 
             Rectangle {
                 Layout.fillWidth: true
                 radius: Ui.Style.radiusMedium
-                color: Ui.Style.panelBg
-                border.color: Ui.Style.borderSubtle
-                implicitHeight: summaryRow.implicitHeight + Ui.Style.paddingM * 2
+                color: smokeFixtureMode ? root.smokeSummaryBg : Ui.Style.panelBg
+                border.color: smokeFixtureMode ? root.smokeSummaryBorder : Ui.Style.borderSubtle
+                implicitHeight: summaryRow.implicitHeight + (smokeFixtureMode
+                                                             ? Ui.Style.paddingS * 2
+                                                             : Ui.Style.paddingM * 2)
 
                 RowLayout {
                     id: summaryRow
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingM
-                    spacing: Ui.Style.paddingM
+                    anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+                    spacing: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
 
                     Rectangle {
                         width: 34
@@ -217,8 +244,9 @@ ApplicationWindow {
                     }
 
                     ColumnLayout {
+                        id: summaryColumn
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: smokeFixtureMode ? 4 : 2
 
                         Components.UiText {
                             text: root.transportHeadline
@@ -272,6 +300,54 @@ ApplicationWindow {
                                 }
                             }
                         }
+
+                        Rectangle {
+                            visible: root.previewLinkedDeviceId.length > 0
+                            Layout.fillWidth: true
+                            radius: Ui.Style.radiusMedium
+                            color: smokeFixtureMode ? root.smokeDeviceBg : Ui.Style.panelBgAlt
+                            border.color: smokeFixtureMode ? root.smokeDeviceBorder : Ui.Style.borderSubtle
+                            implicitHeight: previewDeviceRow.implicitHeight + Ui.Style.paddingS * 2
+
+                            RowLayout {
+                                id: previewDeviceRow
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingS
+                                spacing: Ui.Style.paddingS
+
+                                Rectangle {
+                                    width: 28
+                                    height: 28
+                                    radius: 14
+                                    color: Ui.Style.dialogSelectedBg
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 14
+                                        height: 14
+                                        fillMode: Image.PreserveAspectFit
+                                        source: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+
+                                    Components.UiText {
+                                        text: root.previewLinkedDeviceId
+                                        textRole: "value_single"
+                                        roleColor: Ui.Style.textPrimary
+                                    }
+
+                                    Components.UiText {
+                                        text: root.previewLinkedDeviceSeen
+                                        textRole: "caption"
+                                        roleColor: Ui.Style.textMuted
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -283,18 +359,21 @@ ApplicationWindow {
 
                 Rectangle {
                     id: devicesCard
+                    Layout.preferredWidth: smokeFixtureMode ? 500 : -1
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
-                    color: Ui.Style.panelBg
-                    border.color: Ui.Style.borderSubtle
-                    implicitHeight: devicesColumn.implicitHeight + Ui.Style.paddingM * 2
+                    color: smokeFixtureMode ? root.smokeDeviceBg : Ui.Style.panelBg
+                    border.color: smokeFixtureMode ? root.smokeDeviceBorder : Ui.Style.borderSubtle
+                    implicitHeight: devicesColumn.implicitHeight + (smokeFixtureMode
+                                                                    ? Ui.Style.paddingS * 2
+                                                                    : Ui.Style.paddingM * 2)
 
                     ColumnLayout {
                         id: devicesColumn
                         anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingM
-                        spacing: Ui.Style.paddingS
+                        anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+                        spacing: smokeFixtureMode ? Ui.Style.paddingXS + 2 : Ui.Style.paddingS
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -330,15 +409,17 @@ ApplicationWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Ui.Style.radiusMedium
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
-                            implicitHeight: currentDeviceColumn.implicitHeight + Ui.Style.paddingM * 2
+                            color: smokeFixtureMode ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.12) : Ui.Style.panelBgAlt
+                            border.color: smokeFixtureMode ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.24) : Ui.Style.borderSubtle
+                            implicitHeight: currentDeviceColumn.implicitHeight + (smokeFixtureMode
+                                                                                  ? Ui.Style.paddingS * 2
+                                                                                  : Ui.Style.paddingM * 2)
 
                             ColumnLayout {
                                 id: currentDeviceColumn
                                 anchors.fill: parent
-                                anchors.margins: Ui.Style.paddingM
-                                spacing: 4
+                                anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+                                spacing: 3
 
                                 Components.UiText {
                                     text: Ui.I18n.t("dialog.securityCenter.currentDevice")
@@ -373,7 +454,9 @@ ApplicationWindow {
                         ListView {
                             Layout.fillWidth: true
                             Layout.preferredHeight: linkedDeviceCountValue > 0
-                                                    ? Math.min(contentHeight, 184)
+                                                    ? (smokeFixtureMode
+                                                       ? Math.min(contentHeight, 124)
+                                                       : Math.min(contentHeight, 184))
                                                     : 0
                             clip: true
                             interactive: false
@@ -400,8 +483,16 @@ ApplicationWindow {
                                                                 : ""
                                 implicitHeight: deviceRow.implicitHeight + Ui.Style.paddingM * 2
                                 radius: Ui.Style.radiusMedium
-                                color: Ui.Style.panelBgAlt
-                                border.color: Ui.Style.borderSubtle
+                                color: root.smokeFixtureMode
+                                       ? (index % 2 === 0
+                                          ? Qt.rgba(59 / 255, 130 / 255, 246 / 255, 0.10)
+                                          : Qt.rgba(14 / 255, 165 / 255, 233 / 255, 0.08))
+                                       : Ui.Style.panelBgAlt
+                                border.color: root.smokeFixtureMode
+                                              ? (index % 2 === 0
+                                                 ? Qt.rgba(59 / 255, 130 / 255, 246 / 255, 0.24)
+                                                 : Qt.rgba(14 / 255, 165 / 255, 233 / 255, 0.22))
+                                              : Ui.Style.borderSubtle
 
                                 RowLayout {
                                     id: deviceRow
@@ -413,7 +504,11 @@ ApplicationWindow {
                                         width: 34
                                         height: 34
                                         radius: 17
-                                        color: Ui.Style.dialogSelectedBg
+                                        color: root.smokeFixtureMode
+                                               ? (index % 2 === 0
+                                                  ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18)
+                                                  : Qt.rgba(6 / 255, 182 / 255, 212 / 255, 0.18))
+                                               : Ui.Style.dialogSelectedBg
 
                                         Image {
                                             anchors.centerIn: parent
@@ -455,19 +550,20 @@ ApplicationWindow {
 
                 Rectangle {
                     id: statusCard
-                    Layout.preferredWidth: 264
-                    Layout.fillWidth: true
+                    Layout.preferredWidth: smokeFixtureMode ? 300 : 264
                     Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
-                    color: Ui.Style.panelBg
-                    border.color: Ui.Style.borderSubtle
-                    implicitHeight: statusColumn.implicitHeight + Ui.Style.paddingM * 2
+                    color: smokeFixtureMode ? Qt.rgba(248 / 255, 250 / 255, 252 / 255, 0.98) : Ui.Style.panelBg
+                    border.color: smokeFixtureMode ? Qt.rgba(203 / 255, 213 / 255, 225 / 255, 0.85) : Ui.Style.borderSubtle
+                    implicitHeight: statusColumn.implicitHeight + (smokeFixtureMode
+                                                                   ? Ui.Style.paddingS * 2
+                                                                   : Ui.Style.paddingM * 2)
 
                     ColumnLayout {
                         id: statusColumn
                         anchors.fill: parent
-                        anchors.margins: Ui.Style.paddingM
-                        spacing: Ui.Style.paddingS
+                        anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+                        spacing: smokeFixtureMode ? Ui.Style.paddingXS + 2 : Ui.Style.paddingS
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -476,8 +572,8 @@ ApplicationWindow {
                             Rectangle {
                                 Layout.fillWidth: true
                                 radius: Ui.Style.radiusMedium
-                                color: Ui.Style.panelBgAlt
-                                border.color: Ui.Style.borderSubtle
+                                color: smokeFixtureMode ? root.smokeSummaryBg : Ui.Style.panelBgAlt
+                                border.color: smokeFixtureMode ? root.smokeSummaryBorder : Ui.Style.borderSubtle
                                 implicitHeight: trustMetricColumn.implicitHeight + Ui.Style.paddingS * 2
 
                                 ColumnLayout {
@@ -503,8 +599,8 @@ ApplicationWindow {
                             Rectangle {
                                 Layout.fillWidth: true
                                 radius: Ui.Style.radiusMedium
-                                color: Ui.Style.panelBgAlt
-                                border.color: Ui.Style.borderSubtle
+                                color: smokeFixtureMode ? root.smokeDeviceBg : Ui.Style.panelBgAlt
+                                border.color: smokeFixtureMode ? root.smokeDeviceBorder : Ui.Style.borderSubtle
                                 implicitHeight: deviceMetricColumn.implicitHeight + Ui.Style.paddingS * 2
 
                                 ColumnLayout {
@@ -528,27 +624,37 @@ ApplicationWindow {
                             }
                         }
 
-                        ColumnLayout {
+                        Rectangle {
                             Layout.fillWidth: true
-                            spacing: 4
+                            radius: Ui.Style.radiusMedium
+                            color: smokeFixtureMode ? root.smokeTrustBg : "transparent"
+                            border.color: smokeFixtureMode ? root.smokeTrustBorder : "transparent"
+                            implicitHeight: trustColumn.implicitHeight + (smokeFixtureMode ? Ui.Style.paddingS * 2 : 0)
 
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.transportTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
+                            ColumnLayout {
+                                id: trustColumn
+                                anchors.fill: parent
+                                anchors.margins: smokeFixtureMode ? Ui.Style.paddingS : 0
+                                spacing: 4
 
-                            Components.UiText {
-                                text: root.transportHeadline
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
+                                Components.UiText {
+                                    text: Ui.I18n.t("dialog.securityCenter.trustTitle")
+                                    textRole: "caption"
+                                    roleColor: Ui.Style.textSecondary
+                                }
 
-                            Components.UiText {
-                                text: root.transportDetail
-                                Layout.fillWidth: true
-                                textRole: "detail"
-                                roleColor: Ui.Style.textMuted
+                                Components.UiText {
+                                    text: root.trustHeadline
+                                    textRole: "value_single"
+                                    roleColor: Ui.Style.textPrimary
+                                }
+
+                                Components.UiText {
+                                    text: root.trustDetail
+                                    Layout.fillWidth: true
+                                    textRole: "detail"
+                                    roleColor: Ui.Style.textMuted
+                                }
                             }
                         }
 
@@ -558,51 +664,31 @@ ApplicationWindow {
                             color: Ui.Style.borderSubtle
                         }
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.trustTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.trustHeadline
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
-
-                            Components.UiText {
-                                text: root.trustDetail
-                                Layout.fillWidth: true
-                                textRole: "detail"
-                                roleColor: Ui.Style.textMuted
-                            }
-                        }
-
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
-                            color: Ui.Style.borderSubtle
-                        }
+                            radius: Ui.Style.radiusMedium
+                            color: smokeFixtureMode ? root.smokeServerBg : "transparent"
+                            border.color: smokeFixtureMode ? root.smokeServerBorder : "transparent"
+                            implicitHeight: serverColumn.implicitHeight + (smokeFixtureMode ? Ui.Style.paddingS * 2 : 0)
 
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
+                            ColumnLayout {
+                                id: serverColumn
+                                anchors.fill: parent
+                                anchors.margins: smokeFixtureMode ? Ui.Style.paddingS : 0
+                                spacing: 4
 
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.serverTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
+                                Components.UiText {
+                                    text: Ui.I18n.t("dialog.securityCenter.serverTitle")
+                                    textRole: "caption"
+                                    roleColor: Ui.Style.textSecondary
+                                }
 
-                            Components.UiText {
-                                text: root.serverDetail
-                                Layout.fillWidth: true
-                                textRole: "detail"
-                                roleColor: Ui.Style.textMuted
+                                Components.UiText {
+                                    text: root.serverDetail
+                                    Layout.fillWidth: true
+                                    textRole: "detail"
+                                    roleColor: Ui.Style.textMuted
+                                }
                             }
                         }
                     }
@@ -612,15 +698,17 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 radius: Ui.Style.radiusMedium
-                color: Ui.Style.panelBg
-                border.color: Ui.Style.borderSubtle
-                implicitHeight: actionRow.implicitHeight + Ui.Style.paddingM * 2
+                color: smokeFixtureMode ? root.smokeDeviceBg : Ui.Style.panelBg
+                border.color: smokeFixtureMode ? root.smokeDeviceBorder : Ui.Style.borderSubtle
+                implicitHeight: actionRow.implicitHeight + (smokeFixtureMode
+                                                            ? Ui.Style.paddingS * 2
+                                                            : Ui.Style.paddingM * 2)
 
                 RowLayout {
                     id: actionRow
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingM
-                    spacing: Ui.Style.paddingM
+                    anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
+                    spacing: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
 
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -644,7 +732,7 @@ ApplicationWindow {
                         text: Ui.I18n.t("dialog.securityCenter.manageDevices")
                         Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
                         Layout.preferredWidth: 148
-                        Layout.preferredHeight: 34
+                        Layout.preferredHeight: smokeFixtureMode ? 32 : 34
                         onClicked: root.requestManageDevices()
                     }
                 }
