@@ -63,7 +63,23 @@ QString SmokeCaptureDir() {
 }
 
 QString SmokeScene() {
-    return QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_SCENE")).trimmed().toLower();
+    const QString raw = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_SCENE")).trimmed().toLower();
+    if (raw == QStringLiteral("auth_login")) {
+        return QStringLiteral("login");
+    }
+    if (raw == QStringLiteral("chat_list") ||
+        raw == QStringLiteral("chat_detail") ||
+        raw == QStringLiteral("settings_home") ||
+        raw == QStringLiteral("calls_home")) {
+        return QStringLiteral("post_login");
+    }
+    if (raw == QStringLiteral("chat_list_light")) {
+        return QStringLiteral("post_login_light");
+    }
+    if (raw == QStringLiteral("security_center")) {
+        return QStringLiteral("security_center");
+    }
+    return raw;
 }
 
 QString SmokeLocale() {

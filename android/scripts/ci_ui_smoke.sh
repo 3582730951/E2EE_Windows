@@ -105,6 +105,24 @@ capture_ui_artifacts() {
   capture_scene detail "$workspace/build/android_ui_artifacts/android-detail.png"
   capture_scene calls "$workspace/build/android_ui_artifacts/android-calls.png"
   capture_scene settings "$workspace/build/android_ui_artifacts/android-settings.png"
+
+  local missing=0
+  local required=(
+    "$workspace/build/android_ui_artifacts/android-login.png"
+    "$workspace/build/android_ui_artifacts/android-chats.png"
+    "$workspace/build/android_ui_artifacts/android-detail.png"
+    "$workspace/build/android_ui_artifacts/android-calls.png"
+    "$workspace/build/android_ui_artifacts/android-settings.png"
+  )
+  for png in "${required[@]}"; do
+    if [ ! -s "$png" ]; then
+      echo "Required Android UI smoke capture missing: $png" >&2
+      missing=1
+    fi
+  done
+  if [ "$missing" -ne 0 ]; then
+    return 1
+  fi
 }
 
 main() {
@@ -115,5 +133,9 @@ main() {
 
 status=0
 main || status=$?
-capture_ui_artifacts || true
+capture_status=0
+capture_ui_artifacts || capture_status=$?
+if [ "$capture_status" -ne 0 ] && [ "$status" -eq 0 ]; then
+  status=$capture_status
+fi
 exit "$status"

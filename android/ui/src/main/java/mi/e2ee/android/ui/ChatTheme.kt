@@ -15,24 +15,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mi.e2ee.android.R
 
-private val Primary = Color(0xFF2F67E8)
-private val PrimaryDark = Color(0xFF2249A9)
-private val Accent = Color(0xFF1D9771)
-private val Warning = Color(0xFFC88A3A)
-private val Danger = Color(0xFFD35C61)
-private val Background = Color(0xFFF4EFE8)
-private val Surface = Color(0xFFFCFAF7)
-private val SurfaceVariant = Color(0xFFEAE3D9)
-private val TextPrimary = Color(0xFF1F242C)
-private val TextSecondary = Color(0xFF6A6F79)
-private val Divider = Color(0xFFD9D2C8)
+private val Primary = Color(0xFF2563EB)
+private val PrimaryDark = Color(0xFF1D4ED8)
+private val Accent = Color(0xFF059669)
+private val Warning = Color(0xFFD97706)
+private val Danger = Color(0xFFDC2626)
+private val Background = Color(0xFFF8FAFC)
+private val Surface = Color(0xFFFFFFFF)
+private val SurfaceVariant = Color(0xFFF1F5FD)
+private val TextPrimary = Color(0xFF0F172A)
+private val TextSecondary = Color(0xFF64748B)
+private val Divider = Color(0xFFE2E8F0)
 
 private val DarkPrimary = Color(0xFF4E7FFF)
-private val DarkPrimaryContainer = Color(0xFF1B3569)
-private val DarkAccent = Color(0xFF35B38A)
-private val DarkWarning = Color(0xFFD9A25A)
-private val DarkDanger = Color(0xFFF07C7C)
-private val DarkBackground = Color(0xFF091117)
+private val DarkPrimaryContainer = Color(0xFF17336E)
+private val DarkAccent = Color(0xFF10B981)
+private val DarkWarning = Color(0xFFF59E0B)
+private val DarkDanger = Color(0xFFF87171)
+private val DarkBackground = Color(0xFF0F172A)
 private val DarkSurface = Color(0xFF101922)
 private val DarkSurfaceVariant = Color(0xFF182431)
 private val DarkTextPrimary = Color(0xFFE8EDF4)
@@ -56,37 +56,37 @@ private val ChatTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 30.sp,
-        lineHeight = 34.sp
+        fontSize = 28.sp,
+        lineHeight = 32.sp
     ),
     headlineMedium = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 26.sp,
-        lineHeight = 32.sp
+        fontSize = 24.sp,
+        lineHeight = 30.sp
     ),
     headlineSmall = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp
+        fontSize = 20.sp,
+        lineHeight = 26.sp
     ),
     titleLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 21.sp,
-        lineHeight = 27.sp
+        fontSize = 20.sp,
+        lineHeight = 24.sp
     ),
     titleMedium = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Medium,
-        fontSize = 17.sp,
-        lineHeight = 23.sp
+        fontSize = 16.sp,
+        lineHeight = 22.sp
     ),
     titleSmall = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
+        fontSize = 13.sp,
         lineHeight = 18.sp
     ),
     bodyLarge = TextStyle(
@@ -173,26 +173,26 @@ object ThemeMode {
 }
 
 object ChatUiTokens {
-    val CornerSmall = 14.dp
-    val CornerMedium = 18.dp
-    val CornerLarge = 22.dp
+    val CornerSmall = 12.dp
+    val CornerMedium = 16.dp
+    val CornerLarge = 20.dp
     val IconContainerXs = 20.dp
-    val IconContainerSm = 28.dp
-    val IconContainerMd = 32.dp
-    val IconContainerLg = 36.dp
+    val IconContainerSm = 36.dp
+    val IconContainerMd = 40.dp
+    val IconContainerLg = 44.dp
     val IconGlyphXs = 11.dp
-    val IconGlyphSm = 13.dp
-    val IconGlyphMd = 15.dp
-    val IconGlyphLg = 17.dp
+    val IconGlyphSm = 14.dp
+    val IconGlyphMd = 16.dp
+    val IconGlyphLg = 18.dp
     val BadgeCorner = 8.dp
-    val IconSize = 32.dp
-    val IconCorner = 9.dp
+    val IconSize = 40.dp
+    val IconCorner = 12.dp
     val SectionSpacing = 12.dp
     val ItemSpacing = 8.dp
-    const val IconContainerAlpha = 0.1f
-    const val SurfaceBorderAlpha = 0.16f
-    const val MotionFastMs = 160
-    const val MotionStandardMs = 220
+    const val IconContainerAlpha = 0.08f
+    const val SurfaceBorderAlpha = 0.12f
+    const val MotionFastMs = 120
+    const val MotionStandardMs = 180
 }
 
 @Composable

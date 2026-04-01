@@ -9,12 +9,12 @@ Rectangle {
     property string labelText: ""
     property string detailText: ""
 
-    radius: 14
+    radius: 12
     color: Ui.Style.authBadgeBg
     border.width: 1
     border.color: Ui.Style.authBadgeBorder
-    implicitHeight: badgeRow.implicitHeight + 10
-    implicitWidth: badgeRow.implicitWidth + 18
+    implicitHeight: badgeRow.implicitHeight + 8
+    implicitWidth: badgeRow.implicitWidth + 16
 
     RowLayout {
         id: badgeRow
@@ -22,9 +22,9 @@ Rectangle {
         spacing: 6
 
         Rectangle {
-            width: 8
-            height: 8
-            radius: 4
+            width: 6
+            height: 6
+            radius: 3
             color: Ui.Style.success
         }
 

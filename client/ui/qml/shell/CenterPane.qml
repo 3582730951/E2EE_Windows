@@ -631,9 +631,9 @@ Item {
                     spacing: Ui.Style.paddingM
 
                     Rectangle {
-                        Layout.preferredWidth: 38
-                        Layout.preferredHeight: 38
-                        radius: 19
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        radius: 18
                         color: Ui.Style.avatarColor(Ui.ChatDisplayStore.currentChatId)
                         border.width: 1
                         border.color: Ui.Style.borderStrong
@@ -644,7 +644,7 @@ Item {
                                   ? Ui.ChatDisplayStore.currentChatTitle.charAt(0).toUpperCase()
                                   : "?"
                             color: Ui.Style.textPrimary
-                            font.pixelSize: 14
+                            font.pixelSize: 13
                             font.weight: Font.DemiBold
                         }
                     }
@@ -656,7 +656,7 @@ Item {
                             text: Ui.ChatDisplayStore.currentChatTitle.length > 0
                                   ? Ui.ChatDisplayStore.currentChatTitle
                                   : Ui.I18n.t("chat.selectChat")
-                            font.pixelSize: 14
+                            font.pixelSize: 16
                             font.weight: Font.DemiBold
                             color: Ui.Style.textPrimary
                             elide: Text.ElideRight
@@ -666,18 +666,18 @@ Item {
                             spacing: 6
 
                             Rectangle {
-                                Layout.preferredHeight: 22
-                                radius: 11
+                                Layout.preferredHeight: 20
+                                radius: 10
                                 color: Ui.Style.topBarPillBg
                                 border.width: 1
                                 border.color: Ui.Style.topBarPillBorder
-                                implicitWidth: statusPillText.implicitWidth + 18
+                                implicitWidth: statusPillText.implicitWidth + 16
 
                                 Text {
                                     id: statusPillText
                                     anchors.centerIn: parent
                                     text: Ui.I18n.t("chat.secureSession")
-                                    font.pixelSize: Ui.Style.microTextSize
+                                    font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     color: Ui.Style.accentSoft
                                 }
@@ -703,7 +703,7 @@ Item {
                     Components.SearchField {
                         id: chatSearchField
                         visible: chatSearchVisible
-                        Layout.preferredWidth: 160
+                        Layout.preferredWidth: 148
                         placeholderText: Ui.I18n.t("chat.searchInChat")
                         onInputActiveFocusChanged: {
                             if (!inputActiveFocus && text.length === 0) {
@@ -851,7 +851,7 @@ Item {
                 mipmap: true
                 cache: true
                 asynchronous: true
-                opacity: 0.35
+                opacity: 0.10
                 visible: messageArea.hasChatBackground
             }
 
@@ -859,7 +859,7 @@ Item {
                 anchors.fill: parent
                 source: "qrc:/mi/e2ee/ui/qml/assets/wallpaper_tile.svg"
                 fillMode: Image.Tile
-                opacity: 0.14
+                opacity: Ui.Style.isDark ? 0.08 : 0.06
                 smooth: true
                 visible: !messageArea.hasChatBackground
             }

@@ -68,14 +68,14 @@ Item {
                         Text {
                             text: Ui.I18n.t("app.title")
                             color: Ui.Style.textPrimary
-                            font.pixelSize: 19
+                            font.pixelSize: 18
                             font.weight: Font.DemiBold
                         }
 
                         Text {
                             text: Ui.I18n.t("auth.hero.badge")
                             color: Ui.Style.textSecondary
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             font.weight: Font.Medium
                         }
                     }
@@ -95,18 +95,6 @@ Item {
                         ToolTip.text: Ui.I18n.t("left.menu")
                     }
 
-                    Components.IconButton {
-                        id: deviceButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/device.svg"
-                        buttonSize: Ui.Style.iconButtonSize
-                        iconSize: 16
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        onClicked: root.requestDeviceManager()
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("left.deviceManager")
-                    }
                 }
 
                 RowLayout {
@@ -114,12 +102,12 @@ Item {
                     spacing: Ui.Style.paddingS
 
                     Rectangle {
-                        Layout.preferredHeight: 28
-                        radius: 14
+                        Layout.preferredHeight: 24
+                        radius: 12
                         color: Ui.Style.railAccentBg
                         border.width: 1
                         border.color: Ui.Style.railAccentBorder
-                        implicitWidth: securePillText.implicitWidth + 22
+                        implicitWidth: securePillText.implicitWidth + 18
 
                         Text {
                             id: securePillText
@@ -184,20 +172,12 @@ Item {
                     Layout.fillWidth: true
                     spacing: Ui.Style.paddingS
 
-                    Button {
+                    Components.PrimaryButton {
                         id: quickNewChatButton
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 32
+                        Layout.preferredHeight: 34
                         Accessible.name: Ui.I18n.t("left.newChat")
                         onClicked: root.requestNewChat()
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: quickNewChatButton.down
-                                   ? Ui.Style.pressedBg
-                                   : (quickNewChatButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
-                            border.width: 1
-                            border.color: Ui.Style.topBarPillBorder
-                        }
                         contentItem: RowLayout {
                             anchors.centerIn: parent
                             spacing: 6
@@ -209,78 +189,26 @@ Item {
                             }
                             Text {
                                 text: Ui.I18n.t("left.newChat")
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 11
-                                font.weight: Font.Medium
+                                color: "#FFFFFF"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                             }
                         }
                     }
 
-                    Button {
-                        id: quickNewGroupButton
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 32
-                        Accessible.name: Ui.I18n.t("left.newGroup")
-                        onClicked: root.requestCreateGroup()
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: quickNewGroupButton.down
-                                   ? Ui.Style.pressedBg
-                                   : (quickNewGroupButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
-                            border.width: 1
-                            border.color: Ui.Style.topBarPillBorder
-                        }
-                        contentItem: RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 6
-                            Image {
-                                source: "qrc:/mi/e2ee/ui/icons/group.svg"
-                                width: 13
-                                height: 13
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Text {
-                                text: Ui.I18n.t("left.newGroup")
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 11
-                                font.weight: Font.Medium
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
-
-                    Button {
-                        id: quickAddContactButton
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 32
-                        Accessible.name: Ui.I18n.t("left.addContact")
-                        onClicked: root.requestAddContact()
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: quickAddContactButton.down
-                                   ? Ui.Style.pressedBg
-                                   : (quickAddContactButton.hovered ? Ui.Style.hoverBg : Ui.Style.topBarPillBg)
-                            border.width: 1
-                            border.color: Ui.Style.topBarPillBorder
-                        }
-                        contentItem: RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 6
-                            Image {
-                                source: "qrc:/mi/e2ee/ui/icons/plus.svg"
-                                width: 13
-                                height: 13
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Text {
-                                text: Ui.I18n.t("left.addContact")
-                                color: Ui.Style.textPrimary
-                                font.pixelSize: 11
-                                font.weight: Font.Medium
-                                elide: Text.ElideRight
-                            }
-                        }
+                    Components.IconButton {
+                        id: quickComposeButton
+                        Accessible.name: Ui.I18n.t("chat.more")
+                        icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
+                        buttonSize: 34
+                        iconSize: 15
+                        bgColor: Ui.Style.topBarPillBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
+                        onClicked: composePopup.popup(quickComposeButton, 0, quickComposeButton.height + 4)
+                        ToolTip.visible: hovered
+                        ToolTip.text: Ui.I18n.t("chat.more")
                     }
                 }
 
@@ -305,6 +233,49 @@ Item {
             padding: 3
             implicitWidth: compactWidth
             width: compactWidth
+            MenuItem {
+                id: menuNewGroup
+                text: Ui.I18n.t("left.newGroup")
+                implicitHeight: menuPopup.compactItemHeight
+                height: menuPopup.compactItemHeight
+                padding: menuPopup.compactPadding
+                spacing: menuPopup.compactSpacing
+                onTriggered: root.requestCreateGroup()
+                contentItem: Text {
+                    anchors.fill: parent
+                    text: menuNewGroup.text
+                    color: menuNewGroup.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    font.pixelSize: menuPopup.compactFontSize
+                    font.family: Ui.Style.fontFamily
+                    renderType: Text.NativeRendering
+                    antialiasing: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
+            MenuItem {
+                id: menuAddContact
+                text: Ui.I18n.t("left.addContact")
+                implicitHeight: menuPopup.compactItemHeight
+                height: menuPopup.compactItemHeight
+                padding: menuPopup.compactPadding
+                spacing: menuPopup.compactSpacing
+                onTriggered: root.requestAddContact()
+                contentItem: Text {
+                    anchors.fill: parent
+                    text: menuAddContact.text
+                    color: menuAddContact.enabled ? Ui.Style.textPrimary : Ui.Style.textMuted
+                    font.pixelSize: menuPopup.compactFontSize
+                    font.family: Ui.Style.fontFamily
+                    renderType: Text.NativeRendering
+                    antialiasing: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
+            MenuSeparator { }
             MenuItem {
                 id: menuDeviceManager
                 text: Ui.I18n.t("left.deviceManager")
@@ -346,6 +317,20 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
+            }
+        }
+
+        Menu {
+            id: composePopup
+            width: 170
+
+            MenuItem {
+                text: Ui.I18n.t("left.newGroup")
+                onTriggered: root.requestCreateGroup()
+            }
+            MenuItem {
+                text: Ui.I18n.t("left.addContact")
+                onTriggered: root.requestAddContact()
             }
         }
 

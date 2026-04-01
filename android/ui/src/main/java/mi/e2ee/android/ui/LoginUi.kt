@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
@@ -56,16 +58,23 @@ fun LoginScreen(
     val email = remember { mutableStateOf("") }
     val password = remember { mutableStateOf("") }
     val rootCode = remember { mutableStateOf("") }
+    val bannerMessage = when {
+        !errorMessage.isNullOrBlank() -> errorMessage
+        !remoteError.isNullOrBlank() -> remoteError
+        !statusMessage.isNullOrBlank() -> statusMessage
+        else -> null
+    }
+    val bannerIsError = !errorMessage.isNullOrBlank()
 
     Box(modifier = Modifier.fillMaxSize()) {
         LoginBackground()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 AppMark()
                 Text(
                     text = tr("login_title", "Welcome back"),
@@ -82,17 +91,15 @@ fun LoginScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(vertical = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (!errorMessage.isNullOrBlank()) {
-                        LoginErrorBanner(errorCode = errorMessage)
-                    }
-                    if (!remoteError.isNullOrBlank()) {
-                        LoginStatusBanner(message = remoteError)
-                    }
-                    if (!statusMessage.isNullOrBlank()) {
-                        LoginStatusBanner(message = statusMessage)
+                    if (!bannerMessage.isNullOrBlank()) {
+                        if (bannerIsError) {
+                            LoginErrorBanner(errorCode = bannerMessage)
+                        } else {
+                            LoginStatusBanner(message = bannerMessage)
+                        }
                     }
 
                     LoginInputField(
@@ -113,7 +120,8 @@ fun LoginScreen(
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
-                        )
+                        ),
+                        visualTransformation = PasswordVisualTransformation()
                     )
                     LoginInputField(
                         label = tr("login_root_code_short", "Root auth (optional)"),
@@ -228,7 +236,8 @@ private fun LoginInputField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     keyboardOptions: KeyboardOptions,
-    singleLine: Boolean = false
+    singleLine: Boolean = false,
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -245,6 +254,7 @@ private fun LoginInputField(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder) },
             keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
             shape = RoundedCornerShape(16.dp),
             singleLine = singleLine
         )
@@ -292,15 +302,15 @@ private fun LoginBackground() {
     ) {
         Box(
             modifier = Modifier
-                .size(240.dp)
-                .offset(x = 140.dp, y = (-40).dp)
+                .size(180.dp)
+                .offset(x = 170.dp, y = (-32).dp)
                 .clip(CircleShape)
                 .background(tint)
         )
         Box(
             modifier = Modifier
-                .size(200.dp)
-                .offset(x = (-80).dp, y = 440.dp)
+                .size(150.dp)
+                .offset(x = (-52).dp, y = 500.dp)
                 .clip(CircleShape)
                 .background(accent)
         )

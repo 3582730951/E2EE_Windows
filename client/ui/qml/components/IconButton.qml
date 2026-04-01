@@ -11,7 +11,7 @@ ToolButton {
     property color bgColor: "transparent"
     property color hoverBg: Ui.Style.hoverBg
     property color pressedBg: Ui.Style.pressedBg
-    property int buttonSize: 32
+    property int buttonSize: 36
     property int iconSize: 18
     signal rightClicked
 

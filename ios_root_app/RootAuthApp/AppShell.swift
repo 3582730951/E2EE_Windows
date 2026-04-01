@@ -7,6 +7,7 @@ private enum ScreenshotScenario: String {
     case login
     case chats
     case detail
+    case calls
     case settings
     case security
 
@@ -14,7 +15,22 @@ private enum ScreenshotScenario: String {
         let raw = ProcessInfo.processInfo.environment["MI_E2EE_IOS_SCREENSHOT_MODE"]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
-        return ScreenshotScenario(rawValue: raw) ?? .none
+        switch raw {
+        case "login", "auth_login":
+            return .login
+        case "chats", "chat_list":
+            return .chats
+        case "detail", "chat_detail":
+            return .detail
+        case "calls", "calls_home":
+            return .calls
+        case "settings", "settings_home":
+            return .settings
+        case "security", "security_center":
+            return .security
+        default:
+            return ScreenshotScenario(rawValue: raw) ?? .none
+        }
     }
 }
 
@@ -613,6 +629,14 @@ final class ClientWorkspaceStore: ObservableObject {
                     timestampMS: now - 360_000
                 ),
                 ClientMessage(
+                    id: "m2c",
+                    conversationID: "c-aster",
+                    sender: "Aster Stone",
+                    text: "The updated chat list is denser and the settings shell is no longer carrying auth UI.",
+                    outgoing: false,
+                    timestampMS: now - 300_000
+                ),
+                ClientMessage(
                     id: "m3",
                     conversationID: "c-aster",
                     sender: "Aster Stone",
@@ -627,6 +651,22 @@ final class ClientWorkspaceStore: ObservableObject {
                     text: "I also tightened the settings hierarchy so Security Center sits under the main product shell.",
                     outgoing: false,
                     timestampMS: now - 120_000
+                ),
+                ClientMessage(
+                    id: "m5",
+                    conversationID: "c-aster",
+                    sender: "You",
+                    text: "Good. Keep the composer compact and the transport status quiet by default.",
+                    outgoing: true,
+                    timestampMS: now - 90_000
+                ),
+                ClientMessage(
+                    id: "m6",
+                    conversationID: "c-aster",
+                    sender: "Aster Stone",
+                    text: "Acknowledged. The release screenshots now separate chat, settings, and security clearly.",
+                    outgoing: false,
+                    timestampMS: now - 45_000
                 )
             ],
             "c-ops": [
@@ -701,6 +741,10 @@ struct AppShell: View {
     @StateObject private var clientStore = ClientWorkspaceStore()
     @State private var selectedTab: AppTab
 
+    private var presentsAuthShell: Bool {
+        screenshotScenario == .login || !clientStore.isLoggedIn
+    }
+
     private var shellBackground: some View {
         SecureSceneBackground()
             .background(SecurePalette.backgroundBottom)
@@ -711,6 +755,8 @@ struct AppShell: View {
         screenshotScenario = scenario
         let initialTab: AppTab
         switch scenario {
+        case .calls:
+            initialTab = .calls
         case .settings, .security:
             initialTab = .settings
         case .none, .login, .chats, .detail:
@@ -727,58 +773,64 @@ struct AppShell: View {
             shellBackground
                 .ignoresSafeArea()
 
-            TabView(selection: $selectedTab) {
+            if presentsAuthShell {
                 NavigationStack {
-                    if screenshotScenario == .detail,
-                       let conversation = clientStore.primaryConversation {
-                        ClientConversationDetailView(store: clientStore, conversation: conversation)
-                    } else {
-                        ClientWorkspaceView(store: clientStore)
+                    ClientAuthShellView(store: clientStore)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
+            } else {
+                TabView(selection: $selectedTab) {
+                    NavigationStack {
+                        if screenshotScenario == .detail,
+                           let conversation = clientStore.primaryConversation {
+                            ClientConversationDetailView(store: clientStore, conversation: conversation)
+                        } else {
+                            ClientWorkspaceView(store: clientStore)
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(shellBackground)
-                .tabItem {
-                    Label("Chats", systemImage: "message.fill")
-                }
-                .tag(AppTab.chats)
-
-                NavigationStack {
-                    ContactsHomeView(store: clientStore)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(shellBackground)
-                .tabItem {
-                    Label("Contacts", systemImage: "person.2.fill")
-                }
-                .tag(AppTab.contacts)
-
-                NavigationStack {
-                    CallsHomeView(store: clientStore)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(shellBackground)
-                .tabItem {
-                    Label("Calls", systemImage: "phone.fill")
-                }
-                .tag(AppTab.calls)
-
-                NavigationStack {
-                    if screenshotScenario == .security {
-                        SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                    } else {
-                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(shellBackground)
+                    .tabItem {
+                        Label("Chats", systemImage: "message.fill")
                     }
+                    .tag(AppTab.chats)
+
+                    NavigationStack {
+                        ContactsHomeView(store: clientStore)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(shellBackground)
+                    .tabItem {
+                        Label("Contacts", systemImage: "person.2.fill")
+                    }
+                    .tag(AppTab.contacts)
+
+                    NavigationStack {
+                        CallsHomeView(store: clientStore)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(shellBackground)
+                    .tabItem {
+                        Label("Calls", systemImage: "phone.fill")
+                    }
+                    .tag(AppTab.calls)
+
+                    NavigationStack {
+                        if screenshotScenario == .security {
+                            SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                        } else {
+                            SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(shellBackground)
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape.fill")
+                    }
+                    .tag(AppTab.settings)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(shellBackground)
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(AppTab.settings)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(shellBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(shellBackground)

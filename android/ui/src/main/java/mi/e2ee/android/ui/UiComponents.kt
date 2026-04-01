@@ -73,7 +73,7 @@ private data class UiBadgePalette(
 
 @Composable
 private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
-    val emphasizedAlpha = if (active) 0.12f else 0.05f
+    val emphasizedAlpha = if (active) 0.10f else 0.04f
     return when (tone) {
         UiIconTone.Primary -> UiIconPalette(
             container = MaterialTheme.colorScheme.primary.copy(alpha = emphasizedAlpha),
@@ -96,7 +96,7 @@ private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
             border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.2f else 0.12f)
         )
         UiIconTone.Neutral -> UiIconPalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.14f else 0.06f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.18f else 0.08f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
             border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.2f else 0.12f)
         )
@@ -127,7 +127,7 @@ private fun badgePalette(tone: UiBadgeTone): UiBadgePalette {
             border = MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
         )
         UiBadgeTone.Neutral -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
             border = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
         )
@@ -234,7 +234,7 @@ fun SurfaceSectionCard(
     Card(
         shape = RoundedCornerShape(ChatUiTokens.CornerLarge),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
         ),
         border = BorderStroke(1.dp, borderColor),
         modifier = modifier
@@ -260,7 +260,7 @@ fun PrimaryButton(
     Button(
         modifier = modifier
             .then(widthModifier)
-            .height(52.dp),
+            .height(48.dp),
         shape = RoundedCornerShape(ChatUiTokens.CornerMedium),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
@@ -273,7 +273,7 @@ fun PrimaryButton(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -290,13 +290,13 @@ fun SecondaryButton(
     OutlinedButton(
         modifier = modifier
             .then(widthModifier)
-            .height(52.dp),
+            .height(48.dp),
         shape = RoundedCornerShape(ChatUiTokens.CornerMedium),
         onClick = onClick
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Medium
         )
     }
@@ -455,7 +455,7 @@ fun UiChevron(
 }
 
 @Composable
-fun AvatarBadge(initials: String, tint: Color, size: Dp = 44.dp) {
+fun AvatarBadge(initials: String, tint: Color, size: Dp = 40.dp) {
     val brush = Brush.linearGradient(
         colors = listOf(tint, tint.copy(alpha = 0.7f))
     )

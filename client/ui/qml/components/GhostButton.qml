@@ -9,6 +9,8 @@ Button {
     property color hoverBg: Ui.Style.hoverBg
     property color pressedBg: Ui.Style.pressedBg
 
+    implicitHeight: 34
+
     background: Rectangle {
         radius: Ui.Style.radiusMedium
         border.color: root.borderColor
@@ -19,6 +21,7 @@ Button {
         text: root.text
         color: root.textColor
         font.pixelSize: 12
+        font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }

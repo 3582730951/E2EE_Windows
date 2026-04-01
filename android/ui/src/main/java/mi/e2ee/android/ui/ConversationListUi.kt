@@ -121,9 +121,8 @@ fun ConversationListScreen(
     val density = LocalDensity.current
     val maxSearchPx = with(density) { maxSearchHeight.toPx() }
     var pullOffsetPx by remember { mutableStateOf(0f) }
-    val showSearch = pullOffsetPx > 2f
     val searchHeight by animateDpAsState(
-        targetValue = if (showSearch) maxSearchHeight else 0.dp,
+        targetValue = maxSearchHeight,
         animationSpec = tween(140)
     )
     val nestedScrollConnection = remember(listState, maxSearchPx) {
@@ -225,7 +224,6 @@ fun ConversationListScreen(
                     .fillMaxSize()
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
-                val showSearchNow = searchHeight > 0.dp
                 CompactSearchField(
                     value = query.value,
                     onValueChange = { query.value = it },
@@ -235,9 +233,7 @@ fun ConversationListScreen(
                         .fillMaxWidth()
                         .testTag("conversation-search")
                 )
-                if (showSearchNow) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+                Spacer(modifier = Modifier.height(10.dp))
                 val search = query.value.trim()
                 val searched = if (search.isBlank()) {
                     conversations.filterNot { hiddenIds.contains(it.id) }
@@ -515,10 +511,17 @@ private fun ConversationTopBar(
     TopAppBar(
         modifier = modifier.fillMaxWidth(),
         title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = tr("chat_secure_session", "Secure session"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         },
         actions = {
             UiToolbarIconButton(
@@ -592,13 +595,13 @@ private fun RowScope.ConversationBottomNavItem(
     Column(
         modifier = Modifier
             .weight(1f)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
                 else Color.Transparent
             )
-            .padding(vertical = 8.dp),
+            .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
@@ -607,14 +610,12 @@ private fun RowScope.ConversationBottomNavItem(
             tint = contentColor,
             modifier = Modifier.size(ChatUiTokens.IconGlyphLg)
         )
-        if (selected) {
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor
-            )
-        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor
+        )
     }
 }
 
@@ -640,13 +641,14 @@ private fun CompactSearchField(
         leadingIcon = {
             Icon(
                 imageVector = MiOwnedIcons.Search,
-                contentDescription = tr("conversations_search_icon", "Search")
+                contentDescription = tr("conversations_search_icon", "Search"),
+                modifier = Modifier.size(16.dp)
             )
         },
         shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
             focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
         )
@@ -879,11 +881,15 @@ private fun ConversationRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
-                    AvatarBadge(initials = item.initials, tint = MaterialTheme.colorScheme.primary)
+                    AvatarBadge(
+                        initials = item.initials,
+                        tint = MaterialTheme.colorScheme.primary,
+                        size = 48.dp
+                    )
                     if (item.isGroup) {
                         UiSemanticIcon(
                             icon = MiOwnedIcons.Group,
@@ -975,7 +981,7 @@ private fun ConversationRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
             )
         }
     }

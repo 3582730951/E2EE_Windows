@@ -338,7 +338,7 @@ private fun UiHost(
             onOpenCalls = { resetTo(FlowScreen.Calls) },
             onOpenContacts = { resetTo(FlowScreen.AddFriend) }
         )
-        FlowScreen.SecurityCenter -> AccountScreen(
+        FlowScreen.SecurityCenter -> SecurityCenterScreen(
             sdk = sdk,
             title = tr("security_center_title", "Security Center"),
             onBack = { goBack() }

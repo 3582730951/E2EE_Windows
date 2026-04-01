@@ -16,29 +16,29 @@ Item {
     }
 
     implicitWidth: 200
-    implicitHeight: 34
+    implicitHeight: 36
 
     SecureTextField {
         id: field
         anchors.fill: parent
-        leftPadding: Ui.Style.paddingM + 14
+        leftPadding: Ui.Style.paddingM + 16
         rightPadding: Ui.Style.paddingM
-        font.pixelSize: 12
+        font.pixelSize: 13
         color: Ui.Style.textPrimary
         placeholderTextColor: Ui.Style.textMuted
         background: Rectangle {
-            radius: 16
+            radius: Ui.Style.radiusLarge
             color: Ui.Style.searchBg
-            border.color: Ui.Style.inputFocus
-            border.width: field.activeFocus ? 1 : 0
+            border.color: field.activeFocus ? Ui.Style.inputFocus : Ui.Style.searchBorder
+            border.width: 1
         }
         onTextEdited: root.textEdited(text)
     }
 
     Image {
         source: "qrc:/mi/e2ee/ui/icons/search.svg"
-        width: 14
-        height: 14
+        width: 15
+        height: 15
         anchors.left: parent.left
         anchors.leftMargin: Ui.Style.paddingM
         anchors.verticalCenter: parent.verticalCenter

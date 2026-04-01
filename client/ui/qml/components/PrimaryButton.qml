@@ -8,7 +8,9 @@ Button {
     property color fillHover: Ui.Style.accentHover
     property color fillPressed: Ui.Style.accentPressed
     property color fillDisabled: Ui.Style.pressedBg
-    property color textColor: Ui.Style.textPrimary
+    property color textColor: "#FFFFFF"
+
+    implicitHeight: 36
 
     background: Rectangle {
         radius: Ui.Style.radiusMedium
@@ -19,7 +21,7 @@ Button {
     contentItem: Text {
         text: root.text
         color: root.textColor
-        font.pixelSize: 13
+        font.pixelSize: 12
         font.weight: Font.DemiBold
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

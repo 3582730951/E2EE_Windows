@@ -360,16 +360,101 @@ Item {
     }
 
     function seedSmokeScene(sceneName) {
-        seedSmokePreview()
-        if ((sceneName || "") === "security_center") {
-            rightPaneVisible = false
+        var scene = (sceneName || "").toLowerCase()
+        var validScene = scene.length === 0 ||
+                         scene === "chat_list" ||
+                         scene === "chat_list_light" ||
+                         scene === "chat_detail" ||
+                         scene === "post_login" ||
+                         scene === "post_login_light" ||
+                         scene === "calls_home" ||
+                         scene === "settings_home" ||
+                         scene === "security_center"
+        if (!validScene) {
+            resetSmokePreviewState()
+            statusMessage = "Invalid smoke scene"
+            rebuildFiltered()
+            syncDomainStores()
+            return false
         }
+
+        seedSmokePreview()
+
+        if (scene === "chat_list" || scene === "chat_list_light") {
+            currentChatId = ""
+            currentChatTitle = ""
+            currentChatSubtitle = ""
+            currentChatType = "private"
+            currentChatMembers = 0
+            rightPaneVisible = false
+            searchQuery = "design"
+            currentLeftTab = 0
+            statusMessage = "Conversation inbox ready"
+        } else if (scene === "chat_detail") {
+            currentChatId = "smoke-design-ops"
+            currentChatTitle = "Design Ops"
+            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
+            currentChatType = "group"
+            currentChatMembers = 6
+            rightPaneVisible = true
+            searchQuery = ""
+            currentLeftTab = 0
+            statusMessage = "Secure detail view ready"
+        } else if (scene === "post_login" || scene === "post_login_light") {
+            currentChatId = ""
+            currentChatTitle = ""
+            currentChatSubtitle = ""
+            currentChatType = "private"
+            currentChatMembers = 0
+            rightPaneVisible = false
+            searchQuery = ""
+            currentLeftTab = 0
+            statusMessage = "Post-login shell ready"
+        } else if (scene === "calls_home") {
+            currentChatId = "smoke-alex"
+            currentChatTitle = "Alex"
+            currentChatSubtitle = "Incoming secure video call"
+            currentChatType = "private"
+            currentChatMembers = 2
+            rightPaneVisible = false
+            currentLeftTab = 0
+            incomingCallActive = true
+            incomingCallPeer = "Alex"
+            incomingCallId = "smoke-call-1"
+            incomingCallVideo = true
+            statusMessage = "Calls surface ready"
+        } else if (scene === "settings_home") {
+            currentChatId = ""
+            currentChatTitle = ""
+            currentChatSubtitle = ""
+            currentChatType = "private"
+            currentChatMembers = 0
+            rightPaneVisible = false
+            searchQuery = "settings"
+            statusMessage = "Settings surface ready"
+        } else if (scene === "security_center") {
+            currentChatId = ""
+            currentChatTitle = ""
+            currentChatSubtitle = ""
+            currentChatType = "private"
+            currentChatMembers = 0
+            rightPaneVisible = false
+            searchQuery = "security"
+            currentLeftTab = 0
+            statusMessage = "Security Center ready"
+        }
+        rebuildFiltered()
+        syncDomainStores()
+        return true
     }
 
     function enterSmokeShellPreview(sceneName) {
-        seedSmokeScene(sceneName || "")
+        if (!seedSmokeScene(sceneName || "")) {
+            return false
+        }
         currentPage = 1
         syncDomainStores()
+        return true
     }
 
     function isEmojiBase(code) {

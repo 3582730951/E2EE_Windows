@@ -9,43 +9,52 @@ enum SecurePalette {
     }
 
     static let backgroundTopUIColor = dynamicUIColor(
-        light: UIColor(red: 0.95, green: 0.97, blue: 1.00, alpha: 1.0),
-        dark: UIColor(red: 0.10, green: 0.14, blue: 0.22, alpha: 1.0)
+        light: UIColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1.0),
+        dark: UIColor(red: 0.09, green: 0.13, blue: 0.18, alpha: 1.0)
     )
     static let backgroundBottomUIColor = dynamicUIColor(
-        light: UIColor(red: 0.91, green: 0.94, blue: 0.99, alpha: 1.0),
-        dark: UIColor(red: 0.07, green: 0.10, blue: 0.17, alpha: 1.0)
+        light: UIColor(red: 0.94, green: 0.96, blue: 0.99, alpha: 1.0),
+        dark: UIColor(red: 0.06, green: 0.10, blue: 0.16, alpha: 1.0)
     )
 
     static let backgroundTop = Color(uiColor: backgroundTopUIColor)
     static let backgroundBottom = Color(uiColor: backgroundBottomUIColor)
     static let surface = Color(uiColor: dynamicUIColor(
-        light: UIColor.white.withAlphaComponent(0.84),
-        dark: UIColor.secondarySystemBackground.withAlphaComponent(0.88)
+        light: UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.94),
+        dark: UIColor(red: 0.07, green: 0.10, blue: 0.15, alpha: 0.94)
     ))
     static let surfaceRaised = Color(uiColor: dynamicUIColor(
-        light: UIColor.white.withAlphaComponent(0.94),
-        dark: UIColor.tertiarySystemBackground.withAlphaComponent(0.90)
+        light: UIColor(red: 0.95, green: 0.97, blue: 0.99, alpha: 0.98),
+        dark: UIColor(red: 0.10, green: 0.14, blue: 0.19, alpha: 0.98)
     ))
     static let border = Color(uiColor: dynamicUIColor(
-        light: UIColor.separator.withAlphaComponent(0.40),
-        dark: UIColor.separator.withAlphaComponent(0.65)
+        light: UIColor(red: 0.89, green: 0.93, blue: 0.99, alpha: 1.0),
+        dark: UIColor.white.withAlphaComponent(0.08)
     ))
     static let borderStrong = Color(uiColor: dynamicUIColor(
-        light: UIColor.separator.withAlphaComponent(0.62),
-        dark: UIColor.separator.withAlphaComponent(0.82)
+        light: UIColor(red: 0.82, green: 0.88, blue: 0.97, alpha: 1.0),
+        dark: UIColor.white.withAlphaComponent(0.14)
     ))
-    static let textPrimary = Color(uiColor: .label)
-    static let textSecondary = Color(uiColor: .secondaryLabel)
-    static let textMuted = Color(uiColor: .tertiaryLabel)
-    static let accent = Color(uiColor: .systemBlue)
+    static let textPrimary = Color(uiColor: dynamicUIColor(
+        light: UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 1.0),
+        dark: UIColor(red: 0.91, green: 0.93, blue: 0.96, alpha: 1.0)
+    ))
+    static let textSecondary = Color(uiColor: dynamicUIColor(
+        light: UIColor(red: 0.39, green: 0.47, blue: 0.58, alpha: 1.0),
+        dark: UIColor(red: 0.62, green: 0.68, blue: 0.74, alpha: 1.0)
+    ))
+    static let textMuted = Color(uiColor: dynamicUIColor(
+        light: UIColor(red: 0.48, green: 0.56, blue: 0.66, alpha: 1.0),
+        dark: UIColor(red: 0.51, green: 0.57, blue: 0.64, alpha: 1.0)
+    ))
+    static let accent = Color(uiColor: UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 1.0))
     static let accentSoft = Color(uiColor: dynamicUIColor(
-        light: UIColor.systemBlue.withAlphaComponent(0.16),
-        dark: UIColor.systemBlue.withAlphaComponent(0.24)
+        light: UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 0.12),
+        dark: UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 0.22)
     ))
-    static let success = Color(uiColor: .systemGreen)
-    static let warning = Color(uiColor: .systemOrange)
-    static let danger = Color(uiColor: .systemRed)
+    static let success = Color(uiColor: UIColor(red: 0.02, green: 0.59, blue: 0.41, alpha: 1.0))
+    static let warning = Color(uiColor: UIColor(red: 0.85, green: 0.56, blue: 0.12, alpha: 1.0))
+    static let danger = Color(uiColor: UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1.0))
 }
 
 enum SecureBannerTone {
@@ -81,15 +90,15 @@ struct SecureSceneBackground: View {
                 endPoint: .bottomTrailing
             )
             Circle()
-                .fill(SecurePalette.accent.opacity(0.10))
-                .frame(width: 260, height: 260)
-                .blur(radius: 90)
-                .offset(x: 120, y: -170)
+                .fill(SecurePalette.accent.opacity(0.08))
+                .frame(width: 220, height: 220)
+                .blur(radius: 84)
+                .offset(x: 120, y: -180)
             Circle()
-                .fill(SecurePalette.success.opacity(0.07))
-                .frame(width: 190, height: 190)
-                .blur(radius: 85)
-                .offset(x: -130, y: 200)
+                .fill(SecurePalette.success.opacity(0.05))
+                .frame(width: 160, height: 160)
+                .blur(radius: 72)
+                .offset(x: -120, y: 210)
         }
         .ignoresSafeArea()
     }
@@ -224,28 +233,28 @@ struct SecureCardModifier: ViewModifier {
         content
             .padding(padding)
             .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(SecurePalette.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(SecurePalette.border, lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
     }
 }
 
 struct SecureInputModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(SecurePalette.surfaceRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(SecurePalette.borderStrong, lineWidth: 1)
             )
             .foregroundStyle(SecurePalette.textPrimary)
@@ -271,9 +280,9 @@ struct SecureStatusBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(tone.accent)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(
                     Circle()
                         .fill(tone.accent.opacity(0.18))
@@ -292,13 +301,13 @@ struct SecureStatusBanner: View {
 
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(tone.fill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(tone.accent.opacity(0.35), lineWidth: 1)
         )
     }
@@ -352,13 +361,13 @@ struct SecureMetricTile: View {
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(SecurePalette.surfaceRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -367,13 +376,13 @@ struct SecureMetricTile: View {
 struct SecurePrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.weight(.semibold))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(Color.white)
             .padding(.horizontal, 18)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(configuration.isPressed ? SecurePalette.accent.opacity(0.85) : SecurePalette.accent)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
@@ -387,14 +396,14 @@ struct SecureSecondaryButtonStyle: ButtonStyle {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(SecurePalette.textPrimary)
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 11)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(configuration.isPressed ? SecurePalette.surfaceRaised.opacity(0.85) : SecurePalette.surfaceRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(SecurePalette.borderStrong, lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.985 : 1.0)

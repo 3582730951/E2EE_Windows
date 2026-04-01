@@ -474,6 +474,7 @@ fun ChatScreen(
     screenState: ChatScreenState = ChatScreenState.Content,
     onBack: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
+    onSearch: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStartCall: () -> Unit = {},
     onStartVideoCall: () -> Unit = {},
@@ -686,9 +687,9 @@ fun ChatScreen(
                 selfInitials = selfInitials,
                 onBack = onBack,
                 onSelfClick = onOpenAccount,
+                onSearch = onSearch,
                 onSettings = onOpenSettings,
                 onCall = onStartCall,
-                onVideoCall = onStartVideoCall,
                 onTools = { openTools() },
                 modifier = Modifier
                     .alpha(headerAlpha)
@@ -1276,9 +1277,9 @@ private fun ChatTopBar(
     selfInitials: String,
     onBack: () -> Unit,
     onSelfClick: () -> Unit,
+    onSearch: () -> Unit,
     onSettings: () -> Unit,
     onCall: () -> Unit,
-    onVideoCall: () -> Unit,
     onTools: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1286,7 +1287,7 @@ private fun ChatTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         tonalElevation = 0.dp
     ) {
         TopAppBar(
@@ -1295,7 +1296,7 @@ private fun ChatTopBar(
                 .padding(horizontal = 6.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
+                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 36.dp)
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
@@ -1311,13 +1312,6 @@ private fun ChatTopBar(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            UiStatusIconBadge(
-                                icon = MiOwnedIcons.Lock,
-                                contentDescription = tr("chat_encrypted", "Encrypted"),
-                                tone = UiIconTone.Neutral,
-                                framed = true
-                            )
                         }
                     }
                 }
@@ -1331,6 +1325,13 @@ private fun ChatTopBar(
             },
             actions = {
                 TopBarActionIcon(
+                    icon = MiOwnedIcons.Search,
+                    contentDescription = tr("conversations_search", "Search chats"),
+                    tone = UiIconTone.Neutral,
+                    onClick = onSearch
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                TopBarActionIcon(
                     icon = MiOwnedIcons.Call,
                     contentDescription = tr("chat_call", "Call"),
                     tone = UiIconTone.Accent,
@@ -1338,43 +1339,14 @@ private fun ChatTopBar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 TopBarActionIcon(
-                    icon = MiOwnedIcons.Video,
-                    contentDescription = tr("chat_video_call", "Video call"),
-                    tone = UiIconTone.Primary,
-                    onClick = onVideoCall
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                TopBarActionIcon(
-                    icon = MiOwnedIcons.Settings,
-                    contentDescription = tr("settings_title", "Settings"),
+                    icon = MiOwnedIcons.MoreVertical,
+                    contentDescription = tr("chat_more", "More"),
                     tone = UiIconTone.Neutral,
-                    onClick = onSettings
+                    onClick = if (BuildConfig.DEBUG) onTools else onSettings
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                IconButton(
-                    onClick = onSelfClick,
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.secondary
-                    )
-                ) {
-                    AvatarBadge(
-                        initials = selfInitials,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        size = 22.dp
-                    )
-                }
-                if (BuildConfig.DEBUG) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    TopBarActionIcon(
-                        icon = MiOwnedIcons.Bug,
-                        contentDescription = tr("chat_tools", "Tools"),
-                        tone = UiIconTone.Warning,
-                        onClick = onTools
-                    )
-                }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                 titleContentColor = MaterialTheme.colorScheme.onSurface
             )
         )
@@ -1417,7 +1389,7 @@ private fun MessageList(
         modifier = Modifier.fillMaxSize(),
         state = listState,
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
             when (item) {
@@ -1511,10 +1483,10 @@ private fun MessageRow(
                         AvatarBadge(
                             initials = message.sender.take(2).uppercase(),
                             tint = MaterialTheme.colorScheme.primary,
-                            size = 32.dp
+                            size = 28.dp
                         )
                     } else {
-                        Spacer(modifier = Modifier.width(32.dp))
+                        Spacer(modifier = Modifier.width(28.dp))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                 }
@@ -1645,16 +1617,16 @@ private fun MessageBubble(
     )
     val bubbleShape = if (message.isMine) {
         RoundedCornerShape(
-            topStart = 18.dp,
+            topStart = 16.dp,
             topEnd = if (isGroupedAbove) 6.dp else 18.dp,
             bottomEnd = if (isGroupedBelow) 6.dp else 18.dp,
-            bottomStart = 18.dp
+            bottomStart = 16.dp
         )
     } else {
         RoundedCornerShape(
             topStart = if (isGroupedAbove) 6.dp else 18.dp,
-            topEnd = 18.dp,
-            bottomEnd = 18.dp,
+            topEnd = 16.dp,
+            bottomEnd = 16.dp,
             bottomStart = if (isGroupedBelow) 6.dp else 18.dp
         )
     }
@@ -1662,7 +1634,7 @@ private fun MessageBubble(
     val baseBubbleColor = if (message.isMine) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.surfaceVariant
+        MaterialTheme.colorScheme.surface
     }
     val bubbleColor = if (message.isRevoked) {
         MaterialTheme.colorScheme.surfaceVariant
@@ -1676,13 +1648,13 @@ private fun MessageBubble(
     }
 
     val showTail = !isGroupedBelow
-    Box(modifier = Modifier.widthIn(max = 280.dp)) {
+    Box(modifier = Modifier.widthIn(max = 272.dp)) {
         Column(
             modifier = Modifier
                 .clip(bubbleShape)
                 .border(
-                    width = 1.5.dp,
-                    color = highlightColor.copy(alpha = 0.35f * highlightAlpha),
+                    width = 1.dp,
+                    color = highlightColor.copy(alpha = 0.28f * highlightAlpha),
                     shape = bubbleShape
                 )
                 .background(bubbleColor)
@@ -1693,7 +1665,7 @@ private fun MessageBubble(
                         onLongPress()
                     }
                 )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             if (message.isRevoked) {
                 RevokedMessageRow(
@@ -3021,10 +2993,14 @@ fun ComposerBar(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         tonalElevation = 1.dp
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 7.dp)
+        ) {
             if (showQuickActions) {
                 Row(
                     modifier = Modifier
@@ -3088,7 +3064,7 @@ fun ComposerBar(
                         contentDescription = tr("chat_attach", "Attach")
                     )
                 }
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 CompactMessageField(
                     value = message,
                     onValueChange = onMessageChange,
@@ -3107,7 +3083,7 @@ fun ComposerBar(
                         }
                     )
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 if (message.isNotBlank()) {
                     FilledIconButton(
                         onClick = onSend,
@@ -3153,7 +3129,7 @@ private fun CompactMessageField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.heightIn(min = 56.dp, max = 132.dp),
+        modifier = modifier.heightIn(min = 40.dp, max = 120.dp),
         placeholder = {
             Text(
                 text = placeholder,
@@ -3172,12 +3148,12 @@ private fun CompactMessageField(
                 )
             }
         },
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
             focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
         )
@@ -3221,8 +3197,8 @@ private fun ChatBackground() {
     val base = MaterialTheme.colorScheme.background
     val mist = MaterialTheme.colorScheme.surfaceVariant
     val isDark = base.luminance() < 0.3f
-    val teal = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.12f else 0.25f)
-    val coral = MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.08f else 0.18f)
+    val teal = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.08f else 0.12f)
+    val coral = MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.05f else 0.08f)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -3237,19 +3213,19 @@ private fun ChatBackground() {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            drawCircle(color = teal, radius = w * 0.5f, center = Offset(w * 0.1f, h * 0.1f))
-            drawCircle(color = coral, radius = w * 0.6f, center = Offset(w * 0.9f, h * 0.2f))
+            drawCircle(color = teal, radius = w * 0.42f, center = Offset(w * 0.12f, h * 0.08f))
+            drawCircle(color = coral, radius = w * 0.46f, center = Offset(w * 0.92f, h * 0.18f))
             drawCircle(
-                color = Color.White.copy(alpha = if (isDark) 0.08f else 0.3f),
-                radius = w * 0.35f,
+                color = Color.White.copy(alpha = if (isDark) 0.04f else 0.08f),
+                radius = w * 0.26f,
                 center = Offset(w * 0.8f, h * 0.85f)
             )
-            for (i in 0..18) {
-                val x = w * (0.1f + i * 0.045f)
-                val y = h * (0.25f + (i % 5) * 0.06f)
+            for (i in 0..10) {
+                val x = w * (0.12f + i * 0.065f)
+                val y = h * (0.28f + (i % 4) * 0.07f)
                 drawCircle(
-                    color = Color.White.copy(alpha = if (isDark) 0.08f else 0.18f),
-                    radius = 3f,
+                    color = Color.White.copy(alpha = if (isDark) 0.04f else 0.08f),
+                    radius = 2.5f,
                     center = Offset(x, y)
                 )
             }

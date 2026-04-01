@@ -24,6 +24,7 @@ import mi.e2ee.android.ui.LoginScreen
 import mi.e2ee.android.ui.PeerCallState
 import mi.e2ee.android.ui.ProvideLocalization
 import mi.e2ee.android.ui.SampleChat
+import mi.e2ee.android.ui.SecurityCenterScreen
 import mi.e2ee.android.ui.SdkBridge
 import mi.e2ee.android.ui.SettingsScreen
 import mi.e2ee.android.ui.ThemeMode
@@ -90,12 +91,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreenshotScene(mode: String, context: Context) {
     when (mode.lowercase()) {
-        "login" -> LoginScreen(
+        "login", "auth_login" -> LoginScreen(
             statusMessage = "Secure workspace ready.",
             remoteError = "Root authorization required for this device."
         )
-        "detail" -> ChatScreen(items = SampleChat.items)
-        "calls" -> CallsHomeScreen(
+        "detail", "chat_detail" -> ChatScreen(items = SampleChat.items)
+        "calls", "calls_home" -> CallsHomeScreen(
             pendingCall = IncomingCall(
                 peerUsername = "Mira Chen",
                 callId = byteArrayOf(0x01, 0x02),
@@ -112,8 +113,27 @@ private fun MainScreenshotScene(mode: String, context: Context) {
             activeGroupCall = null,
             groupRooms = previewCallRooms()
         )
-        "settings" -> SettingsScreen(sdk = remember(context) { SdkBridge(context) })
-        "chats" -> ConversationListScreen(conversations = previewConversations())
+        "security_center" -> SecurityCenterScreen(
+            sdk = remember(context) { SdkBridge(context) },
+            title = "Security Center",
+            previewMode = true
+        )
+        "settings", "settings_home" ->
+            SettingsScreen(
+                sdk = remember(context) { SdkBridge(context) },
+                themeMode = ThemeMode.FollowSystem,
+                onThemeModeChange = {},
+                showBackButton = false,
+                onBack = {},
+                onOpenSecurityCenter = {},
+                onOpenAccount = {},
+                onOpenPrivacy = {},
+                onOpenDiagnostics = {},
+                onOpenChats = {},
+                onOpenCalls = {},
+                onOpenContacts = {}
+            )
+        "chats", "chat_list" -> ConversationListScreen(conversations = previewConversations())
         else -> ConversationListScreen(conversations = previewConversations())
     }
 }

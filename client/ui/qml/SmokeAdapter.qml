@@ -27,6 +27,30 @@ Item {
         appShell.openSecurityCenter()
     }
 
+    function openSettings() {
+        if (securityCoordinator) {
+            securityCoordinator.openSettings()
+        }
+    }
+
+    function applySceneDialogs() {
+        if (!shellReady) {
+            return
+        }
+        var scene = Ui.SmokeSceneStore.sceneName
+        if (scene === "settings_home") {
+            Qt.callLater(function() {
+                openSettings()
+            })
+            return
+        }
+        if (scene === "security_center") {
+            Qt.callLater(function() {
+                openSecurityCenter()
+            })
+        }
+    }
+
     function applySmokeOverrides() {
         if (!smokeMode) {
             return
@@ -38,10 +62,16 @@ Item {
         }
         if (Ui.SmokeSceneStore.postLoginScene) {
             Ui.SmokeSceneStore.activatePreview()
+            applySceneDialogs()
         }
     }
 
     Component.onCompleted: applySmokeOverrides()
+    onShellReadyChanged: {
+        if (shellReady) {
+            applySceneDialogs()
+        }
+    }
 
     Ui.SecurityDialogCoordinator {
         id: securityCoordinator

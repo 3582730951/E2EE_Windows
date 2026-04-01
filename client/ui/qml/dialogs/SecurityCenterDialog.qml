@@ -119,6 +119,66 @@ ApplicationWindow {
             width: root.width - Ui.Style.paddingM * 2
             spacing: Ui.Style.paddingM
 
+            Rectangle {
+                Layout.fillWidth: true
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.panelBg
+                border.color: Ui.Style.borderSubtle
+                implicitHeight: summaryRow.implicitHeight + Ui.Style.paddingM * 2
+
+                RowLayout {
+                    id: summaryRow
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingM
+                    spacing: Ui.Style.paddingM
+
+                    Rectangle {
+                        width: 34
+                        height: 34
+                        radius: 17
+                        color: Ui.SecurityDisplayStore.transportHealthy
+                               ? Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.14)
+                               : Qt.rgba(220 / 255, 38 / 255, 38 / 255, 0.12)
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: 16
+                            height: 16
+                            fillMode: Image.PreserveAspectFit
+                            source: Ui.SecurityDisplayStore.transportHealthy
+                                    ? "qrc:/mi/e2ee/ui/icons/check.svg"
+                                    : "qrc:/mi/e2ee/ui/icons/info.svg"
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Components.UiText {
+                            text: Ui.SecurityDisplayStore.transportHealthy
+                                  ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
+                                  : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
+                            textRole: "subtitle"
+                            roleColor: Ui.Style.textPrimary
+                        }
+
+                        Components.UiText {
+                            text: Ui.SecurityDisplayStore.connectionSummary()
+                            Layout.fillWidth: true
+                            textRole: "detail"
+                            roleColor: Ui.Style.textSecondary
+                        }
+                    }
+
+                    Components.GhostButton {
+                        text: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                        Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                        onClicked: root.requestManageDevices()
+                    }
+                }
+            }
+
             GridLayout {
                 Layout.fillWidth: true
                 columns: 2
@@ -130,7 +190,7 @@ ApplicationWindow {
 
                     delegate: Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 122
+                        Layout.preferredHeight: 108
                         radius: Ui.Style.radiusMedium
                         color: Ui.Style.panelBg
                         border.color: Ui.Style.borderSubtle
@@ -214,10 +274,10 @@ ApplicationWindow {
                             }
                         }
 
-                        Components.GhostButton {
-                            text: Ui.I18n.t("dialog.securityCenter.manageDevices")
-                            Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
-                            onClicked: root.requestManageDevices()
+                        Components.UiText {
+                            text: gatewayInfo
+                            textRole: "caption"
+                            roleColor: Ui.Style.textMuted
                         }
                     }
 
