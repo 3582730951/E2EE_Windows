@@ -654,6 +654,125 @@ Item {
             animateEmoji: false
         })
 
+        var alexModel = messagesModel(secondChatId)
+        alexModel.clear()
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-date-1",
+            kind: "date",
+            contentKind: "text",
+            senderName: "",
+            text: "Today",
+            timeText: "",
+            timestampMs: now - 2700000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-msg-1",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Alex",
+            text: "Ship the package after the Windows security center reads like a real desktop client.",
+            timeText: "08:09",
+            timestampMs: now - 260000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-msg-2",
+            kind: "out",
+            contentKind: "text",
+            senderName: Ui.I18n.t("chat.you"),
+            text: "Understood. The shell keeps density, and the detail thread opens with the side pane visible.",
+            timeText: "08:10",
+            timestampMs: now - 190000,
+            statusTicks: "read",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-msg-3",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Alex",
+            text: "Good. That makes chat detail distinct from the general post-login shell.",
+            timeText: "08:12",
+            timestampMs: now - 120000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+
         currentChatId = primaryChatId
         currentChatTitle = "Design Ops"
         currentChatSubtitle = Ui.I18n.format("chat.members", 6)
@@ -663,13 +782,25 @@ Item {
         syncDomainStores()
     }
 
-    function applySmokeConversationScene(chatId, title, subtitle, type, members, statusText) {
+    function clearSmokeConversationScene(statusText) {
+        currentChatId = ""
+        currentChatTitle = ""
+        currentChatSubtitle = ""
+        currentChatType = "private"
+        currentChatMembers = 0
+        rightPaneVisible = false
+        searchQuery = ""
+        currentLeftTab = 0
+        statusMessage = statusText || "Conversation inbox ready"
+    }
+
+    function applySmokeConversationScene(chatId, title, subtitle, type, members, statusText, showDetailsPane) {
         currentChatId = chatId
         currentChatTitle = title
         currentChatSubtitle = subtitle
         currentChatType = type
         currentChatMembers = members
-        rightPaneVisible = false
+        rightPaneVisible = showDetailsPane === true
         searchQuery = ""
         currentLeftTab = 0
         statusMessage = statusText || "Post-login conversation ready"
@@ -697,36 +828,31 @@ Item {
         seedSmokePreview()
 
         if (scene === "chat_list" || scene === "chat_list_light") {
-            currentChatId = ""
-            currentChatTitle = ""
-            currentChatSubtitle = ""
-            currentChatType = "private"
-            currentChatMembers = 0
-            rightPaneVisible = false
-            searchQuery = "design"
-            currentLeftTab = 0
-            statusMessage = "Conversation inbox ready"
+            clearSmokeConversationScene("Conversation inbox ready")
         } else if (scene === "chat_detail") {
-            applySmokeConversationScene("smoke-design-ops",
-                                        "Design Ops",
-                                        Ui.I18n.format("chat.members", 6),
-                                        "group",
-                                        6,
-                                        "Secure detail view ready")
+            applySmokeConversationScene("smoke-alex",
+                                        "Alex",
+                                        "Secure review thread",
+                                        "private",
+                                        2,
+                                        "Secure detail view ready",
+                                        true)
         } else if (scene === "post_login") {
             applySmokeConversationScene("smoke-design-ops",
                                         "Design Ops",
                                         Ui.I18n.format("chat.members", 6),
                                         "group",
                                         6,
-                                        "Post-login conversation ready")
+                                        "Post-login conversation ready",
+                                        false)
         } else if (scene === "post_login_light") {
             applySmokeConversationScene("smoke-platform",
                                         "Platform",
                                         Ui.I18n.format("chat.members", 8),
                                         "group",
                                         8,
-                                        "Light post-login conversation ready")
+                                        "Light post-login conversation ready",
+                                        false)
         } else if (scene === "calls_home") {
             currentChatId = "smoke-alex"
             currentChatTitle = "Alex"
@@ -741,24 +867,9 @@ Item {
             incomingCallVideo = true
             statusMessage = "Calls surface ready"
         } else if (scene === "settings_home") {
-            currentChatId = ""
-            currentChatTitle = ""
-            currentChatSubtitle = ""
-            currentChatType = "private"
-            currentChatMembers = 0
-            rightPaneVisible = false
-            searchQuery = "settings"
-            statusMessage = "Settings surface ready"
+            clearSmokeConversationScene("Settings surface ready")
         } else if (scene === "security_center") {
-            currentChatId = ""
-            currentChatTitle = ""
-            currentChatSubtitle = ""
-            currentChatType = "private"
-            currentChatMembers = 0
-            rightPaneVisible = false
-            searchQuery = "security"
-            currentLeftTab = 0
-            statusMessage = "Security Center ready"
+            clearSmokeConversationScene("Security Center ready")
         }
         rebuildFiltered()
         syncDomainStores()

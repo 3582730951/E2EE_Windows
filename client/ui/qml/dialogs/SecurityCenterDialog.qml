@@ -34,20 +34,53 @@ ApplicationWindow {
     property string currentDeviceDisplay: ""
     property string gatewayState: ""
     property string gatewayInfo: ""
+    readonly property var smokeLinkedDevices: [
+        {
+            maskedDeviceDisplayId: "win-23..ac91",
+            lastSeenDisplay: "Windows desktop · 2m ago"
+        },
+        {
+            maskedDeviceDisplayId: "ipad-b2..77fe",
+            lastSeenDisplay: "iPad Pro · 18m ago"
+        },
+        {
+            maskedDeviceDisplayId: "mac-51..1d42",
+            lastSeenDisplay: "MacBook Air · Yesterday"
+        }
+    ]
+    readonly property string fallbackCurrentDeviceDisplay: "eb7f..0c0e"
+    readonly property int linkedDeviceCountValue: smokeFixtureMode
+                                                ? smokeLinkedDevices.length
+                                                : Ui.SecurityDisplayStore.linkedDeviceCount
+    readonly property string effectiveCurrentDeviceDisplay: currentDeviceDisplay.length > 0
+                                                            ? currentDeviceDisplay
+                                                            : fallbackCurrentDeviceDisplay
     readonly property string transportHeadline: Ui.SecurityDisplayStore.transportHealthy
                                                ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
                                                : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
-    readonly property string transportDetail: Ui.SecurityDisplayStore.connectionSummary()
+    readonly property string transportDetail: {
+        var detail = Ui.SecurityDisplayStore.connectionSummary()
+        if (detail.length > 0) {
+            return detail
+        }
+        return Ui.SecurityDisplayStore.transportHealthy
+             ? Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
+             : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
+    }
     readonly property string trustHeadline: gatewayState.length > 0
                                             ? gatewayState
-                                            : Ui.I18n.t("dialog.securityCenter.trustReview")
+                                            : (smokeFixtureMode
+                                               ? Ui.I18n.t("dialog.securityCenter.trustReady")
+                                               : Ui.I18n.t("dialog.securityCenter.trustReview"))
     readonly property string trustDetail: gatewayInfo.length > 0
                                           ? gatewayInfo
-                                          : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+                                          : (smokeFixtureMode
+                                             ? Ui.I18n.t("dialog.securityCenter.trustReadyHint")
+                                             : Ui.I18n.t("dialog.securityCenter.trustReviewHint"))
     readonly property string serverDetail: gatewayInfo.length > 0
                                            ? gatewayInfo
                                            : Ui.I18n.t("dialog.securityCenter.serverHint")
-    readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(Ui.SecurityDisplayStore.linkedDeviceCount)
+    readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
 
     function refreshOverview() {
         Ui.SecurityDisplayStore.refresh()
@@ -196,7 +229,7 @@ ApplicationWindow {
                                 Text {
                                     id: summaryDeviceText
                                     anchors.centerIn: parent
-                                    text: root.currentDeviceDisplay.length > 0 ? root.currentDeviceDisplay : "--"
+                                    text: root.effectiveCurrentDeviceDisplay
                                     color: Ui.Style.accentSoft
                                     font.pixelSize: 10
                                     font.weight: Font.DemiBold
@@ -226,16 +259,21 @@ ApplicationWindow {
             }
 
             RowLayout {
+                implicitHeight: Math.max(devicesCard.implicitHeight, statusCard.implicitHeight)
                 Layout.fillWidth: true
                 spacing: Ui.Style.paddingM
 
                 Rectangle {
+                    id: devicesCard
                     Layout.fillWidth: true
+                    Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
                     color: Ui.Style.panelBg
                     border.color: Ui.Style.borderSubtle
+                    implicitHeight: devicesColumn.implicitHeight + Ui.Style.paddingM * 2
 
                     ColumnLayout {
+                        id: devicesColumn
                         anchors.fill: parent
                         anchors.margins: Ui.Style.paddingM
                         spacing: Ui.Style.paddingS
@@ -291,10 +329,19 @@ ApplicationWindow {
                                 }
 
                                 Components.UiText {
-                                    text: root.currentDeviceDisplay.length > 0 ? root.currentDeviceDisplay : "--"
+                                    text: root.effectiveCurrentDeviceDisplay
                                     Layout.fillWidth: true
                                     textRole: "value_single"
                                     roleColor: Ui.Style.textPrimary
+                                }
+
+                                Components.UiText {
+                                    text: smokeFixtureMode
+                                          ? "Primary endpoint · trusted this session"
+                                          : Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
+                                    Layout.fillWidth: true
+                                    textRole: "detail"
+                                    roleColor: Ui.Style.textMuted
                                 }
                             }
                         }
@@ -307,13 +354,15 @@ ApplicationWindow {
 
                         ListView {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Ui.SecurityDisplayStore.linkedDeviceCount > 0
+                            Layout.preferredHeight: linkedDeviceCountValue > 0
                                                     ? Math.min(contentHeight, 152)
                                                     : 0
                             clip: true
                             interactive: false
-                            visible: Ui.SecurityDisplayStore.linkedDeviceCount > 0
-                            model: Ui.SecurityDisplayStore.devicesModel
+                            visible: linkedDeviceCountValue > 0
+                            model: smokeFixtureMode
+                                   ? root.smokeLinkedDevices
+                                   : Ui.SecurityDisplayStore.devicesModel
                             spacing: Ui.Style.paddingS
 
                             delegate: Rectangle {
@@ -365,7 +414,7 @@ ApplicationWindow {
                         }
 
                         Components.UiText {
-                            visible: Ui.SecurityDisplayStore.linkedDeviceCount === 0
+                            visible: linkedDeviceCountValue === 0
                             text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
                             textRole: "supporting"
                             roleColor: Ui.Style.textMuted
@@ -374,16 +423,79 @@ ApplicationWindow {
                 }
 
                 Rectangle {
+                    id: statusCard
                     Layout.preferredWidth: 264
                     Layout.fillWidth: true
+                    Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
                     color: Ui.Style.panelBg
                     border.color: Ui.Style.borderSubtle
+                    implicitHeight: statusColumn.implicitHeight + Ui.Style.paddingM * 2
 
                     ColumnLayout {
+                        id: statusColumn
                         anchors.fill: parent
                         anchors.margins: Ui.Style.paddingM
                         spacing: Ui.Style.paddingS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                radius: Ui.Style.radiusMedium
+                                color: Ui.Style.panelBgAlt
+                                border.color: Ui.Style.borderSubtle
+                                implicitHeight: trustMetricColumn.implicitHeight + Ui.Style.paddingS * 2
+
+                                ColumnLayout {
+                                    id: trustMetricColumn
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingS
+                                    spacing: 2
+
+                                    Components.UiText {
+                                        text: Ui.I18n.t("dialog.securityCenter.transportTitle")
+                                        textRole: "caption"
+                                        roleColor: Ui.Style.textSecondary
+                                    }
+
+                                    Components.UiText {
+                                        text: root.transportHeadline
+                                        textRole: "value_single"
+                                        roleColor: Ui.Style.textPrimary
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                radius: Ui.Style.radiusMedium
+                                color: Ui.Style.panelBgAlt
+                                border.color: Ui.Style.borderSubtle
+                                implicitHeight: deviceMetricColumn.implicitHeight + Ui.Style.paddingS * 2
+
+                                ColumnLayout {
+                                    id: deviceMetricColumn
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingS
+                                    spacing: 2
+
+                                    Components.UiText {
+                                        text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                                        textRole: "caption"
+                                        roleColor: Ui.Style.textSecondary
+                                    }
+
+                                    Components.UiText {
+                                        text: root.linkedDevicesSummary
+                                        textRole: "value_single"
+                                        roleColor: Ui.Style.textPrimary
+                                    }
+                                }
+                            }
+                        }
 
                         ColumnLayout {
                             Layout.fillWidth: true
