@@ -742,7 +742,14 @@ struct AppShell: View {
     @State private var selectedTab: AppTab
 
     private var presentsAuthShell: Bool {
-        screenshotScenario == .login || !clientStore.isLoggedIn
+        switch screenshotScenario {
+        case .none:
+            return !clientStore.isLoggedIn
+        case .login:
+            return true
+        case .chats, .detail, .calls, .settings, .security:
+            return false
+        }
     }
 
     private var shellBackground: some View {

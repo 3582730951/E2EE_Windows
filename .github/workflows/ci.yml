@@ -1943,6 +1943,7 @@ jobs:
               settle_seconds=6
             fi
             for attempt in 1 2 3; do
+              rm -f "$output"
               xcrun simctl terminate "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
               xcrun simctl keypress "$udid" HOME >/dev/null 2>&1 || true
               xcrun simctl keypress "$udid" HOME >/dev/null 2>&1 || true
@@ -1960,6 +1961,18 @@ jobs:
               return 0
             done
             return 1
+          }
+          screenshots_visibly_differ() {
+            local first="$1"
+            local second="$2"
+            /usr/bin/python3 - "$first" "$second" <<'PY'
+          import sys
+          from PIL import Image, ImageChops
+
+          left = Image.open(sys.argv[1]).convert("RGB")
+          right = Image.open(sys.argv[2]).convert("RGB")
+          sys.exit(0 if ImageChops.difference(left, right).getbbox() else 1)
+          PY
           }
           capture_failed=0
           capture_screenshot "login" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || {
@@ -2001,6 +2014,13 @@ jobs:
 
           if [ "$capture_failed" -ne 0 ] || [ "$missing_screenshots" -ne 0 ]; then
             echo "RootAuth iOS screenshot capture is incomplete; failing workflow." >&2
+            exit 1
+          fi
+
+          if ! screenshots_visibly_differ \
+            "build/ios_rootauth_artifacts/rootauth-ios-login.png" \
+            "build/ios_rootauth_artifacts/rootauth-ios-detail.png"; then
+            echo "RootAuth iOS detail screenshot matches login screenshot; failing workflow." >&2
             exit 1
           fi
 
