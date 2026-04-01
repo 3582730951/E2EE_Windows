@@ -93,23 +93,6 @@ ApplicationWindow {
                                               ? gatewayInfo
                                               : Ui.I18n.t("dialog.securityCenter.serverHint"))
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
-    readonly property var previewLinkedDevice: {
-        if (smokeFixtureMode) {
-            return smokeLinkedDevices.length > 0 ? smokeLinkedDevices[0] : null
-        }
-        if (Ui.SecurityDisplayStore.devicesModel && Ui.SecurityDisplayStore.devicesModel.count > 0) {
-            return Ui.SecurityDisplayStore.devicesModel.get(0)
-        }
-        return null
-    }
-    readonly property string previewLinkedDeviceId: previewLinkedDevice &&
-                                                    previewLinkedDevice.maskedDeviceDisplayId
-                                                    ? previewLinkedDevice.maskedDeviceDisplayId
-                                                    : ""
-    readonly property string previewLinkedDeviceSeen: previewLinkedDevice &&
-                                                      previewLinkedDevice.lastSeenDisplay
-                                                      ? previewLinkedDevice.lastSeenDisplay
-                                                      : ""
     readonly property color smokeSummaryBg: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.08)
     readonly property color smokeSummaryBorder: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.24)
     readonly property color smokeDeviceBg: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.08)
@@ -152,7 +135,7 @@ ApplicationWindow {
     }
 
     header: Rectangle {
-        height: smokeFixtureMode ? Math.max(46, Ui.Style.topBarHeight - 10) : Ui.Style.topBarHeight
+        height: smokeFixtureMode ? 44 : Ui.Style.topBarHeight
         color: Ui.Style.panelBgAlt
         border.color: Ui.Style.borderSubtle
 
@@ -168,10 +151,10 @@ ApplicationWindow {
 
         RowLayout {
             anchors.fill: parent
-            anchors.margins: Ui.Style.paddingM
+            anchors.margins: smokeFixtureMode ? Ui.Style.paddingS + 2 : Ui.Style.paddingM
 
             ColumnLayout {
-                spacing: 2
+                spacing: smokeFixtureMode ? 0 : 2
 
                 Components.UiText {
                     text: root.title
@@ -179,6 +162,7 @@ ApplicationWindow {
                 }
 
                 Components.UiText {
+                    visible: !smokeFixtureMode
                     text: Ui.I18n.t("dialog.securityCenter.subtitle")
                     textRole: "caption"
                     roleColor: Ui.Style.textMuted
@@ -206,7 +190,9 @@ ApplicationWindow {
         clip: true
 
         ColumnLayout {
-            width: root.width - Ui.Style.paddingM * 2
+            width: root.width - (smokeFixtureMode
+                                 ? (Ui.Style.paddingS + 2) * 2
+                                 : Ui.Style.paddingM * 2)
             spacing: smokeFixtureMode ? Ui.Style.paddingS : Ui.Style.paddingS + 2
 
             Rectangle {
@@ -217,7 +203,6 @@ ApplicationWindow {
                 implicitHeight: (smokeFixtureMode
                                  ? smokeSummaryRow.implicitHeight + Ui.Style.paddingS * 2
                                  : summaryRow.implicitHeight + Ui.Style.paddingM * 2)
-                visible: true
 
                 RowLayout {
                     id: smokeSummaryRow
@@ -227,83 +212,71 @@ ApplicationWindow {
                     spacing: Ui.Style.paddingS
 
                     Rectangle {
+                        width: 30
+                        height: 30
+                        radius: 15
+                        color: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.16)
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: 14
+                            height: 14
+                            fillMode: Image.PreserveAspectFit
+                            source: "qrc:/mi/e2ee/ui/icons/check.svg"
+                        }
+                    }
+
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        radius: Ui.Style.radiusMedium
-                        color: root.smokeSummaryBg
-                        border.color: root.smokeSummaryBorder
-                        implicitHeight: smokeTransportColumn.implicitHeight + Ui.Style.paddingS * 2
+                        spacing: 1
 
-                        ColumnLayout {
-                            id: smokeTransportColumn
-                            anchors.fill: parent
-                            anchors.margins: Ui.Style.paddingS
-                            spacing: 2
+                        Components.UiText {
+                            text: root.transportHeadline
+                            textRole: "subtitle"
+                            roleColor: Ui.Style.textPrimary
+                        }
 
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.transportTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.transportHeadline
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
+                        Components.UiText {
+                            text: root.transportDetail
+                            Layout.fillWidth: true
+                            textRole: "caption"
+                            roleColor: Ui.Style.textSecondary
                         }
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 164
-                        radius: Ui.Style.radiusMedium
+                        radius: 10
+                        implicitHeight: 22
+                        implicitWidth: smokeCurrentText.implicitWidth + 14
                         color: root.smokeDeviceBg
+                        border.width: 1
                         border.color: root.smokeDeviceBorder
-                        implicitHeight: smokeCurrentColumn.implicitHeight + Ui.Style.paddingS * 2
 
-                        ColumnLayout {
-                            id: smokeCurrentColumn
-                            anchors.fill: parent
-                            anchors.margins: Ui.Style.paddingS
-                            spacing: 2
-
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.currentDevice")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.effectiveCurrentDeviceDisplay
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
+                        Text {
+                            id: smokeCurrentText
+                            anchors.centerIn: parent
+                            text: root.effectiveCurrentDeviceDisplay
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
                         }
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 126
-                        radius: Ui.Style.radiusMedium
+                        radius: 10
+                        implicitHeight: 22
+                        implicitWidth: smokeLinkedText.implicitWidth + 14
                         color: root.smokeTrustBg
+                        border.width: 1
                         border.color: root.smokeTrustBorder
-                        implicitHeight: smokeCountColumn.implicitHeight + Ui.Style.paddingS * 2
 
-                        ColumnLayout {
-                            id: smokeCountColumn
-                            anchors.fill: parent
-                            anchors.margins: Ui.Style.paddingS
-                            spacing: 2
-
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.linkedDevicesSummary
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
+                        Text {
+                            id: smokeLinkedText
+                            anchors.centerIn: parent
+                            text: root.linkedDevicesSummary
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 11
+                            font.weight: Font.Medium
                         }
                     }
                 }
@@ -395,13 +368,16 @@ ApplicationWindow {
             }
 
             RowLayout {
-                implicitHeight: Math.max(devicesCard.implicitHeight, statusCard.implicitHeight)
+                implicitHeight: smokeFixtureMode
+                                ? 272
+                                : Math.max(devicesCard.implicitHeight, statusCard.implicitHeight)
                 Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
                 spacing: smokeFixtureMode ? Ui.Style.paddingS : Ui.Style.paddingM
 
                 Rectangle {
                     id: devicesCard
-                    Layout.preferredWidth: smokeFixtureMode ? 500 : -1
+                    Layout.preferredWidth: smokeFixtureMode ? 520 : -1
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
@@ -488,12 +464,79 @@ ApplicationWindow {
                         }
 
                         Rectangle {
+                            visible: !smokeFixtureMode
                             Layout.fillWidth: true
                             height: 1
                             color: Ui.Style.borderSubtle
                         }
 
+                        Components.UiText {
+                            visible: smokeFixtureMode
+                            text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                            textRole: "caption"
+                            roleColor: Ui.Style.textSecondary
+                        }
+
+                        Repeater {
+                            model: smokeFixtureMode ? Math.min(root.smokeLinkedDevices.length, 3) : 0
+
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                property var deviceEntry: root.smokeLinkedDevices[index]
+                                radius: Ui.Style.radiusMedium
+                                implicitHeight: smokeLinkedRow.implicitHeight + Ui.Style.paddingS * 2
+                                color: index % 2 === 0
+                                       ? Qt.rgba(59 / 255, 130 / 255, 246 / 255, 0.10)
+                                       : Qt.rgba(14 / 255, 165 / 255, 233 / 255, 0.08)
+                                border.color: index % 2 === 0
+                                              ? Qt.rgba(59 / 255, 130 / 255, 246 / 255, 0.24)
+                                              : Qt.rgba(14 / 255, 165 / 255, 233 / 255, 0.22)
+
+                                RowLayout {
+                                    id: smokeLinkedRow
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingS + 2
+                                    spacing: Ui.Style.paddingS + 2
+
+                                    Rectangle {
+                                        width: 30
+                                        height: 30
+                                        radius: 15
+                                        color: index % 2 === 0
+                                               ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18)
+                                               : Qt.rgba(6 / 255, 182 / 255, 212 / 255, 0.18)
+
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 14
+                                            height: 14
+                                            fillMode: Image.PreserveAspectFit
+                                            source: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+
+                                        Components.UiText {
+                                            text: deviceEntry.maskedDeviceDisplayId
+                                            textRole: "value_single"
+                                            roleColor: Ui.Style.textPrimary
+                                        }
+
+                                        Components.UiText {
+                                            text: deviceEntry.lastSeenDisplay
+                                            textRole: "caption"
+                                            roleColor: Ui.Style.textMuted
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         ListView {
+                            visible: !smokeFixtureMode && linkedDeviceCountValue > 0
                             Layout.fillWidth: true
                             Layout.preferredHeight: linkedDeviceCountValue > 0
                                                     ? (smokeFixtureMode
@@ -502,7 +545,6 @@ ApplicationWindow {
                                                     : 0
                             clip: true
                             interactive: false
-                            visible: linkedDeviceCountValue > 0
                             model: smokeFixtureMode
                                    ? root.smokeLinkedDevices
                                    : Ui.SecurityDisplayStore.devicesModel
@@ -594,7 +636,7 @@ ApplicationWindow {
 
                 Rectangle {
                     id: statusCard
-                    Layout.preferredWidth: smokeFixtureMode ? 300 : 264
+                    Layout.preferredWidth: smokeFixtureMode ? 252 : 264
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
@@ -852,7 +894,7 @@ ApplicationWindow {
 
                         Components.UiText {
                             text: smokeFixtureMode
-                                  ? "Review trusted devices and transport before handing off access."
+                                  ? "Review linked devices and trust before handing off access."
                                   : Ui.I18n.t("dialog.securityCenter.devicesHint")
                             Layout.fillWidth: true
                             textRole: "detail"
@@ -863,7 +905,7 @@ ApplicationWindow {
                     Components.PrimaryButton {
                         text: Ui.I18n.t("dialog.securityCenter.manageDevices")
                         Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
-                        Layout.preferredWidth: smokeFixtureMode ? 154 : 148
+                        Layout.preferredWidth: smokeFixtureMode ? 160 : 148
                         Layout.preferredHeight: smokeFixtureMode ? 32 : 34
                         onClicked: root.requestManageDevices()
                     }
