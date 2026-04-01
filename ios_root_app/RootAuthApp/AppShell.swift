@@ -159,7 +159,6 @@ func dictionaryArray(_ value: Any?) -> [[String: Any]] {
 
 @MainActor
 final class ClientWorkspaceStore: ObservableObject {
-    let screenshotScenario: ScreenshotScenario
     @Published var serverHost: String = "127.0.0.1"
     @Published var serverPort: String = "9000"
     @Published var useTLS: Bool = true
@@ -182,8 +181,7 @@ final class ClientWorkspaceStore: ObservableObject {
     private let bridge = MIClientBridge()
     private var pollTimer: Timer?
 
-    init(screenshotScenario: ScreenshotScenario = .none) {
-        self.screenshotScenario = screenshotScenario
+    fileprivate init(screenshotScenario: ScreenshotScenario = .none) {
         if screenshotScenario != .none {
             loadScreenshotFixture(for: screenshotScenario)
             return
@@ -737,13 +735,10 @@ private enum AppTab: Hashable {
 }
 
 struct AppShell: View {
+    private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
     @StateObject private var clientStore: ClientWorkspaceStore
     @State private var selectedTab: AppTab
-
-    private var screenshotScenario: ScreenshotScenario {
-        clientStore.screenshotScenario
-    }
 
     private var presentsAuthShell: Bool {
         switch screenshotScenario {
@@ -772,9 +767,11 @@ struct AppShell: View {
             .background(SecurePalette.backgroundBottom)
     }
 
-    init(screenshotScenario: ScreenshotScenario = .current) {
-        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: screenshotScenario))
-        _selectedTab = State(initialValue: Self.initialTab(for: screenshotScenario))
+    init() {
+        let scenario = ScreenshotScenario.current
+        screenshotScenario = scenario
+        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: scenario))
+        _selectedTab = State(initialValue: Self.initialTab(for: scenario))
         Self.configureTabBarAppearance()
         Self.configureNavigationBarAppearance()
     }
