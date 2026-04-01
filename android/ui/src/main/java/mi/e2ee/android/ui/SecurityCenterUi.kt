@@ -65,6 +65,7 @@ fun SecurityCenterScreen(
     onBack: () -> Unit = {}
 ) {
     val clipboard = LocalClipboardManager.current
+    val invalidRootAuthText = tr("security_center_root_auth_invalid", "Invalid public key")
     var rootAuthPubkey by remember { mutableStateOf(sdk.rootAuthPubkey().orEmpty()) }
     var rootAuthCode by remember { mutableStateOf(sdk.currentRootAuthCode().orEmpty()) }
     var rootCountdown by remember { mutableIntStateOf(0) }
@@ -184,9 +185,7 @@ fun SecurityCenterScreen(
                             rootAuthInput = ""
                             showRootAuthDialog = false
                         } else {
-                            rootAuthError = sdk.lastError.ifBlank {
-                                tr("security_center_root_auth_invalid", "Invalid public key")
-                            }
+                            rootAuthError = sdk.lastError.ifBlank { invalidRootAuthText }
                         }
                     }
                 ) {
@@ -739,6 +738,7 @@ private fun SecurityDivider() {
     )
 }
 
+@Composable
 private fun formatSecurityLastSeen(seconds: Int): String {
     return when {
         seconds <= 0 -> tr("security_center_active_now", "Active now")

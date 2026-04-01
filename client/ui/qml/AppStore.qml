@@ -401,15 +401,15 @@ Item {
             currentLeftTab = 0
             statusMessage = "Secure detail view ready"
         } else if (scene === "post_login") {
-            currentChatId = ""
-            currentChatTitle = ""
-            currentChatSubtitle = ""
-            currentChatType = "private"
-            currentChatMembers = 0
-            rightPaneVisible = false
+            currentChatId = "smoke-design-ops"
+            currentChatTitle = "Design Ops"
+            currentChatSubtitle = Ui.I18n.format("chat.members", 6)
+            currentChatType = "group"
+            currentChatMembers = 6
+            rightPaneVisible = true
             searchQuery = ""
             currentLeftTab = 0
-            statusMessage = "Post-login shell ready"
+            statusMessage = "Post-login conversation ready"
         } else if (scene === "post_login_light") {
             currentChatId = "smoke-alex"
             currentChatTitle = "Alex"

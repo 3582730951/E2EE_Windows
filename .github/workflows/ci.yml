@@ -914,6 +914,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           @'
           import struct
+          import shutil
           import zlib
           from pathlib import Path
 
@@ -1087,11 +1088,28 @@ jobs:
               return True
 
           roots = [Path("build/ui_smoke_artifacts")]
+          canonical_aliases = {
+              "login.png": "login-zh-CN-light-100.png",
+              "post-login.png": "post-login-zh-CN-light-100.png",
+              "post-login-light.png": "post-login-light-zh-CN-light-100.png",
+              "security-center.png": "security-center-zh-CN-light-100.png",
+          }
           for root in roots:
               if not root.exists():
                   continue
               for image in sorted(root.rglob("*.png")):
                   trim_black_frame(image)
+              scope_dirs = [root]
+              scope_dirs.extend(
+                  candidate
+                  for candidate in root.rglob("*")
+                  if candidate.is_dir()
+              )
+              for scope in scope_dirs:
+                  for alias_name, source_name in canonical_aliases.items():
+                      source = scope / source_name
+                      if source.exists():
+                          shutil.copyfile(source, scope / alias_name)
           '@ | python -
 
       - name: Perf baseline (dist)
@@ -2688,7 +2706,7 @@ jobs:
         with:
           name: mi_e2ee_android_ui_smoke
           path: build/android_ui_artifacts/*.png
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   final-acceptance:
     if: always()

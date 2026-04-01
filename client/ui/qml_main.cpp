@@ -29,6 +29,9 @@
 #include <vector>
 
 #ifdef Q_OS_WIN
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -117,6 +120,9 @@ QString SmokeCapturePath(const QString& captureDir, const QString& name) {
     return QDir(captureDir).filePath(
         QFileInfo(name).completeBaseName() + QStringLiteral(".png"));
 }
+
+QImage SmokeContentBoundsImage(const QImage& image);
+bool IsInformativeSmokeImage(const QImage& image);
 
 QSize SmokeViewportForScene(const QString& scene) {
     if (scene == QStringLiteral("login")) {
@@ -300,35 +306,78 @@ QImage CaptureSmokeWindowNative(HWND hwnd) {
         return {};
     }
     HGDIOBJ oldBitmap = SelectObject(memoryDc, bitmap);
-    const BOOL bltOk =
-        BitBlt(memoryDc, 0, 0, width, height, screenDc, rect.left, rect.top, SRCCOPY | CAPTUREBLT);
+    HBRUSH backgroundBrush = CreateSolidBrush(RGB(248, 250, 252));
+    const RECT paintRect{0, 0, width, height};
 
-    BITMAPINFO bmi{};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = width;
-    bmi.bmiHeader.biHeight = -height;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
+    const auto readBitmap = [&]() -> QImage {
+        BITMAPINFO bmi{};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = width;
+        bmi.bmiHeader.biHeight = -height;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
 
-    std::vector<uchar> pixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0);
-    const bool dibOk = bltOk &&
-        GetDIBits(memoryDc, bitmap, 0, static_cast<UINT>(height), pixels.data(), &bmi,
-                  DIB_RGB_COLORS) != 0;
+        std::vector<uchar> pixels(
+            static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0);
+        const bool dibOk =
+            GetDIBits(memoryDc, bitmap, 0, static_cast<UINT>(height), pixels.data(),
+                      &bmi, DIB_RGB_COLORS) != 0;
+        if (!dibOk) {
+            return {};
+        }
+        for (size_t i = 0; i < pixels.size() / 4; ++i) {
+            pixels[i * 4 + 3] = 0xFF;
+        }
+        QImage image(pixels.data(), width, height, QImage::Format_ARGB32);
+        return image.copy();
+    };
+
+    auto prepareSurface = [&]() {
+        FillRect(memoryDc, &paintRect, backgroundBrush);
+    };
+
+    QImage bestImage;
+
+    prepareSurface();
+    BOOL printOk = PrintWindow(hwnd, memoryDc, PW_RENDERFULLCONTENT);
+    if (!printOk) {
+        prepareSurface();
+        printOk = PrintWindow(hwnd, memoryDc, 0);
+    }
+    if (printOk) {
+        QImage printed = readBitmap();
+        if (!printed.isNull()) {
+            bestImage = printed;
+            if (IsInformativeSmokeImage(printed)) {
+                SelectObject(memoryDc, oldBitmap);
+                DeleteObject(backgroundBrush);
+                DeleteObject(bitmap);
+                DeleteDC(memoryDc);
+                ReleaseDC(nullptr, screenDc);
+                return printed;
+            }
+        }
+    }
+
+    prepareSurface();
+    const BOOL bltOk = BitBlt(
+        memoryDc, 0, 0, width, height, screenDc, rect.left, rect.top,
+        SRCCOPY | CAPTUREBLT);
+    if (bltOk) {
+        QImage fallback = readBitmap();
+        if (!fallback.isNull()) {
+            bestImage = fallback;
+        }
+    }
 
     SelectObject(memoryDc, oldBitmap);
+    DeleteObject(backgroundBrush);
     DeleteObject(bitmap);
     DeleteDC(memoryDc);
     ReleaseDC(nullptr, screenDc);
 
-    if (!dibOk) {
-        return {};
-    }
-    for (size_t i = 0; i < pixels.size() / 4; ++i) {
-        pixels[i * 4 + 3] = 0xFF;
-    }
-    QImage image(pixels.data(), width, height, QImage::Format_ARGB32);
-    return image.copy();
+    return bestImage;
 }
 
 void ScheduleWindowsSmokeCaptureAndExit(HWND hwnd,

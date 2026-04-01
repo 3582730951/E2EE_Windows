@@ -159,6 +159,7 @@ func dictionaryArray(_ value: Any?) -> [[String: Any]] {
 
 @MainActor
 final class ClientWorkspaceStore: ObservableObject {
+    let screenshotScenario: ScreenshotScenario
     @Published var serverHost: String = "127.0.0.1"
     @Published var serverPort: String = "9000"
     @Published var useTLS: Bool = true
@@ -182,6 +183,7 @@ final class ClientWorkspaceStore: ObservableObject {
     private var pollTimer: Timer?
 
     init(screenshotScenario: ScreenshotScenario = .none) {
+        self.screenshotScenario = screenshotScenario
         if screenshotScenario != .none {
             loadScreenshotFixture(for: screenshotScenario)
             return
@@ -735,10 +737,13 @@ private enum AppTab: Hashable {
 }
 
 struct AppShell: View {
-    private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
     @StateObject private var clientStore: ClientWorkspaceStore
     @State private var selectedTab: AppTab
+
+    private var screenshotScenario: ScreenshotScenario {
+        clientStore.screenshotScenario
+    }
 
     private var presentsAuthShell: Bool {
         switch screenshotScenario {
@@ -751,25 +756,25 @@ struct AppShell: View {
         }
     }
 
+    private static func initialTab(for scenario: ScreenshotScenario) -> AppTab {
+        switch scenario {
+        case .calls:
+            return .calls
+        case .settings, .security:
+            return .settings
+        case .none, .login, .chats, .detail:
+            return .chats
+        }
+    }
+
     private var shellBackground: some View {
         SecureSceneBackground()
             .background(SecurePalette.backgroundBottom)
     }
 
-    init() {
-        let scenario = ScreenshotScenario.current
-        screenshotScenario = scenario
-        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: scenario))
-        let initialTab: AppTab
-        switch scenario {
-        case .calls:
-            initialTab = .calls
-        case .settings, .security:
-            initialTab = .settings
-        case .none, .login, .chats, .detail:
-            initialTab = .chats
-        }
-        _selectedTab = State(initialValue: initialTab)
+    init(screenshotScenario: ScreenshotScenario = .current) {
+        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: screenshotScenario))
+        _selectedTab = State(initialValue: Self.initialTab(for: screenshotScenario))
         Self.configureTabBarAppearance()
         Self.configureNavigationBarAppearance()
     }
