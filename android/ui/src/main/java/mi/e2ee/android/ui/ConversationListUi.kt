@@ -30,7 +30,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -256,7 +255,6 @@ fun ConversationListScreen(
                             .thenByDescending { parseConversationTime(it.time) }
                     )
                 val hasResults = pinned.isNotEmpty() || others.isNotEmpty()
-                val useExtendedFooter = hasResults && searched.size <= 3
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier
@@ -316,17 +314,7 @@ fun ConversationListScreen(
                             )
                         }
                     }
-                    if (hasResults) {
-                        item(key = "conversation-tail-state") {
-                            val tailModifier = if (useExtendedFooter) Modifier.height(44.dp) else Modifier.height(32.dp)
-                            ConversationListTailState(
-                                totalCount = searched.size,
-                                modifier = tailModifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
-                        }
-                    } else {
+                    if (!hasResults) {
                         item(key = "conversation-empty-state") {
                             ConversationListEmptyState(
                                 query = search,
@@ -407,46 +395,6 @@ enum class ConversationTab {
     Chats,
     Calls,
     Settings
-}
-
-@Composable
-private fun ConversationListTailState(
-    totalCount: Int,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            UiSemanticIcon(
-                icon = MiOwnedIcons.CheckDouble,
-                contentDescription = tr("conversations_list_end", "End of list"),
-                tone = UiIconTone.Primary,
-                size = ChatUiTokens.IconContainerSm,
-                iconSize = ChatUiTokens.IconGlyphSm
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = tr("conversations_list_end", "All chats loaded"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = tr("conversations_list_count", "%d encrypted chats").format(totalCount),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
 }
 
 @Composable
@@ -622,7 +570,7 @@ private fun CompactSearchField(
         modifier = modifier.height(height),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-        border = BorderStroke(
+        border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
         )
