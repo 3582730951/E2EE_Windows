@@ -239,6 +239,9 @@ ApplicationWindow {
                                 color: Ui.Style.textPrimary
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
+                                wrapMode: Text.NoWrap
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
                             }
                             Item { Layout.fillWidth: true }
                             Slider {
@@ -259,6 +262,9 @@ ApplicationWindow {
                                 color: Ui.Style.textPrimary
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
+                                wrapMode: Text.NoWrap
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
                             }
                             Item { Layout.fillWidth: true }
                             ComboBox {
@@ -304,6 +310,9 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
+                                    wrapMode: Text.NoWrap
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                                 Item { Layout.fillWidth: true }
                                 Components.GhostButton {
@@ -324,6 +333,9 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
+                                    wrapMode: Text.NoWrap
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                                 Item { Layout.fillWidth: true }
                                 Switch {
@@ -343,6 +355,9 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
+                                    wrapMode: Text.NoWrap
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                                 Item { Layout.fillWidth: true }
                                 Switch {
@@ -362,6 +377,9 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
+                                    wrapMode: Text.NoWrap
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                                 Item { Layout.fillWidth: true }
                                 Switch {
@@ -381,6 +399,9 @@ ApplicationWindow {
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
+                                    wrapMode: Text.NoWrap
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
                                 Item { Layout.fillWidth: true }
                                 Switch {

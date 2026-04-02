@@ -569,6 +569,9 @@ Item {
                 color: Ui.Style.textPrimary
                 font.pixelSize: 18
                 font.weight: Font.DemiBold
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                maximumLineCount: 1
                 horizontalAlignment: Text.AlignHCenter
             }
 
