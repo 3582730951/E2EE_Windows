@@ -8,8 +8,30 @@ Item {
     id: root
 
     property int windowWidth: 0
+    property bool previewActivationScheduled: false
     readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     readonly property bool shellReady: appShell.shellReady
+
+    function activatePreview() {
+        if (!smokeMode || !Ui.SmokeSceneStore.postLoginScene) {
+            return
+        }
+        Ui.SmokeSceneStore.activatePreview()
+        if (shellReady) {
+            applySceneDialogs()
+        }
+    }
+
+    function schedulePreviewActivation() {
+        if (!smokeMode || !Ui.SmokeSceneStore.postLoginScene || previewActivationScheduled) {
+            return
+        }
+        previewActivationScheduled = true
+        Qt.callLater(function() {
+            previewActivationScheduled = false
+            activatePreview()
+        })
+    }
 
     function focusSearch() {
         appShell.focusSearch()
@@ -61,15 +83,14 @@ Item {
             Ui.Style.themeMode = "dark"
         }
         if (Ui.SmokeSceneStore.postLoginScene) {
-            Ui.SmokeSceneStore.activatePreview()
-            applySceneDialogs()
+            schedulePreviewActivation()
         }
     }
 
     Component.onCompleted: applySmokeOverrides()
     onShellReadyChanged: {
         if (shellReady) {
-            applySceneDialogs()
+            schedulePreviewActivation()
         }
     }
 

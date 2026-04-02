@@ -59,10 +59,10 @@ QtObject {
                                            themeOverride === "dark"
 
     function activatePreview() {
-        if (!smokeMode || !postLoginScene || Ui.SessionStore.currentPage !== 0) {
-            return
+        if (!smokeMode || !postLoginScene) {
+            return false
         }
-        Ui.AppStore.enterSmokeShellPreview(sceneName || normalizedScene)
+        return Ui.AppStore.enterSmokeShellPreview(sceneName || normalizedScene)
     }
 
     function viewportWidth(includeAuthFallback) {
