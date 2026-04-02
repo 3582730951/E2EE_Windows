@@ -530,7 +530,7 @@ ApplicationWindow {
 
                         Components.UiText {
                             visible: smokeFixtureMode
-                            text: "Linked devices"
+                            text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
                             textRole: "caption"
                             roleColor: Ui.Style.textSecondary
                         }
