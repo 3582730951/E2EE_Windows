@@ -95,7 +95,7 @@ fun SettingsScreen(
         }
         onThemeModeChange(next)
     }
-    val cycleLanguage = {
+    val cycleLanguage: () -> Unit = {
         languageController?.let { controller ->
             if (controller.packs.isNotEmpty()) {
                 val currentIndex = controller.packs.indexOfFirst { it.code == controller.current.code }

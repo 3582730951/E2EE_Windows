@@ -261,7 +261,7 @@ private fun OngoingCallStrip(entry: OngoingCallEntry) {
             .padding(start = 52.dp)
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
-    }
+    )
 }
 
 @Composable
