@@ -415,22 +415,14 @@ private struct ClientSecuritySummaryCard: View {
 
             Spacer(minLength: 8)
 
-            Button(action: { store.refreshNow() }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(SecurePalette.textPrimary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        Circle()
-                            .fill(SecurePalette.surfaceRaised)
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(SecurePalette.borderStrong, lineWidth: 1)
-                    )
+            SecureCircularIconButton(
+                systemImage: "arrow.clockwise",
+                accessibilityLabel: "Refresh secure session status",
+                iconSize: 13,
+                buttonSize: 44
+            ) {
+                store.refreshNow()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Refresh secure session status")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -479,19 +471,15 @@ private struct ClientInlineSecurityStatus: View {
 
             Spacer(minLength: 8)
 
-            Button(action: { store.refreshNow() }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(SecurePalette.accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(SecurePalette.surfaceRaised)
-                    )
+            SecureCircularIconButton(
+                systemImage: "arrow.clockwise",
+                accessibilityLabel: "Refresh session state",
+                iconSize: 12,
+                buttonSize: 36,
+                foreground: SecurePalette.accent
+            ) {
+                store.refreshNow()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Refresh session state")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

@@ -410,3 +410,34 @@ struct SecureSecondaryButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
+
+struct SecureCircularIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    var iconSize: CGFloat = 15
+    var buttonSize: CGFloat = 44
+    var foreground: Color = SecurePalette.textPrimary
+    var fill: Color = SecurePalette.surfaceRaised
+    var stroke: Color = SecurePalette.borderStrong
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(foreground)
+                .frame(width: buttonSize, height: buttonSize)
+                .background(
+                    Circle()
+                        .fill(fill)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(stroke, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel(accessibilityLabel)
+    }
+}

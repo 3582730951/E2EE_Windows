@@ -206,22 +206,14 @@ struct SecurityCenterView: View {
 
             Spacer(minLength: 8)
 
-            Button(action: { clientStore.refreshNow() }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(SecurePalette.textPrimary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        Circle()
-                            .fill(SecurePalette.surfaceRaised)
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(SecurePalette.borderStrong, lineWidth: 1)
-                    )
+            SecureCircularIconButton(
+                systemImage: "arrow.clockwise",
+                accessibilityLabel: "Refresh security state",
+                iconSize: 14,
+                buttonSize: 44
+            ) {
+                clientStore.refreshNow()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Refresh security state")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
