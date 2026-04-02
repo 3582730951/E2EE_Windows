@@ -1,6 +1,7 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,16 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -41,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
@@ -88,11 +81,28 @@ fun SettingsScreen(
 ) {
     val languageController = LocalLanguageController.current
     var notificationsEnabled by remember { mutableStateOf(true) }
-    val themeSummary = when (themeMode) {
+    val themeModeLabel = when (themeMode) {
         ThemeMode.FollowSystem -> tr("settings_theme_system", "System")
         ThemeMode.ForceLight -> tr("settings_theme_light", "Light")
         ThemeMode.ForceDark -> tr("settings_theme_dark", "Dark")
         else -> tr("settings_theme_system", "System")
+    }
+    val cycleThemeMode = {
+        val next = when (themeMode) {
+            ThemeMode.FollowSystem -> ThemeMode.ForceDark
+            ThemeMode.ForceDark -> ThemeMode.ForceLight
+            else -> ThemeMode.FollowSystem
+        }
+        onThemeModeChange(next)
+    }
+    val cycleLanguage = {
+        languageController?.let { controller ->
+            if (controller.packs.isNotEmpty()) {
+                val currentIndex = controller.packs.indexOfFirst { it.code == controller.current.code }
+                val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % controller.packs.size
+                controller.setLanguage(controller.packs[nextIndex].code)
+            }
+        }
     }
     val accountSettings = listOf(
         SettingEntry(
@@ -150,18 +160,24 @@ fun SettingsScreen(
         )
         add(
             SettingEntry(
-                title = tr("settings_appearance", "Appearance"),
+                title = tr("settings_theme_mode", "Theme mode"),
                 subtitle = tr("settings_appearance_subtitle", "Theme and reading comfort"),
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Settings, tone = UiIconTone.Neutral) },
-                trailing = {
-                    Text(
-                        text = themeSummary,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                trailing = { SettingsTrailingValue(text = themeModeLabel) },
+                onClick = cycleThemeMode
             )
         )
+        if (languageController != null && languageController.packs.isNotEmpty()) {
+            add(
+                SettingEntry(
+                    title = tr("settings_language", "Language"),
+                    subtitle = tr("settings_language_subtitle", "App language"),
+                    icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Link, tone = UiIconTone.Primary) },
+                    trailing = { SettingsTrailingValue(text = languageController.current.label) },
+                    onClick = cycleLanguage
+                )
+            )
+        }
         if (BuildConfig.DEBUG) {
             add(
                 SettingEntry(
@@ -244,17 +260,6 @@ fun SettingsScreen(
             item {
                 SectionHeader(text = tr("settings_preferences_section", "Preferences"))
                 Spacer(modifier = Modifier.height(6.dp))
-                ThemeModeSection(
-                    mode = themeMode,
-                    onModeChange = onThemeModeChange
-                )
-                if (languageController != null && languageController.packs.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LanguageSection(
-                        controller = languageController
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSection(entries = appSettings)
                 Spacer(modifier = Modifier.height(8.dp))
                 SectionHeader(text = tr("settings_connection", "Connection"))
@@ -272,7 +277,7 @@ private fun SettingsHeader(
     deviceId: String,
     remoteOk: Boolean
 ) {
-    SurfaceSectionCard {
+    GroupedSettingsContainer {
         Row(
             modifier = Modifier
                 .fillMaxWidth(),
@@ -311,76 +316,13 @@ private fun SettingsHeader(
 }
 
 @Composable
-private fun ThemeModeSection(
-    mode: Int,
-    onModeChange: (Int) -> Unit
-) {
-    val options = listOf(
-        ThemeModeOption(ThemeMode.FollowSystem, tr("settings_theme_system", "System")),
-        ThemeModeOption(ThemeMode.ForceDark, tr("settings_theme_dark", "Dark")),
-        ThemeModeOption(ThemeMode.ForceLight, tr("settings_theme_light", "Light"))
+private fun SettingsTrailingValue(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    val activeLabel = when (mode) {
-        ThemeMode.FollowSystem -> tr("settings_theme_system", "System")
-        ThemeMode.ForceLight -> tr("settings_theme_light", "Light")
-        ThemeMode.ForceDark -> tr("settings_theme_dark", "Dark")
-        else -> tr("settings_theme_system", "System")
-    }
-
-    SurfaceSectionCard {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UiSemanticIcon(
-                    icon = MiOwnedIcons.Settings,
-                    contentDescription = tr("settings_theme_mode", "Theme mode"),
-                    tone = UiIconTone.Neutral,
-                    framed = false
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = tr("settings_theme_mode", "Theme mode"), style = MaterialTheme.typography.titleMedium)
-                }
-                UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Neutral)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
-            ) {
-                options.forEach { option ->
-                    val selected = option.mode == mode
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onModeChange(option.mode) },
-                        label = { Text(option.label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        ),
-                        leadingIcon = if (selected) {
-                            {
-                                Icon(
-                                    imageVector = MiOwnedIcons.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else {
-                            null
-                        }
-                    )
-                }
-            }
-        }
-    }
 }
-
-private data class ThemeModeOption(
-    val mode: Int,
-    val label: String
-)
 
 @Composable
 private fun SettingsLeadingIcon(
@@ -396,58 +338,6 @@ private fun SettingsLeadingIcon(
     )
 }
 
-@Composable
-private fun LanguageSection(controller: LanguageController) {
-    SurfaceSectionCard {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                UiSemanticIcon(
-                    icon = MiOwnedIcons.Link,
-                    contentDescription = tr("settings_language", "Language"),
-                    tone = UiIconTone.Primary,
-                    framed = false
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = tr("settings_language", "Language"), style = MaterialTheme.typography.titleMedium)
-                }
-                UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Neutral)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
-            ) {
-                controller.packs.forEach { pack ->
-                    val selected = pack.code == controller.current.code
-                    FilterChip(
-                        selected = selected,
-                        onClick = { controller.setLanguage(pack.code) },
-                        label = { Text(pack.label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                        ),
-                        leadingIcon = if (selected) {
-                            {
-                                Icon(
-                                    imageVector = MiOwnedIcons.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-                        } else {
-                            null
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsTopBar(
@@ -459,6 +349,7 @@ private fun SettingsTopBar(
     TopAppBar(
         modifier = modifier
             .fillMaxWidth()
+            .height(56.dp)
             .statusBarsPadding(),
         navigationIcon = {
             if (showBackButton) {
@@ -486,7 +377,7 @@ private fun SettingsTopBar(
 
 @Composable
 private fun SettingsSection(entries: List<SettingEntry>) {
-    SurfaceSectionCard {
+    GroupedSettingsContainer {
         Column(modifier = Modifier.fillMaxWidth()) {
             entries.forEachIndexed { index, entry ->
                 SettingsRow(entry)
@@ -504,6 +395,25 @@ private fun SettingsSection(entries: List<SettingEntry>) {
 }
 
 @Composable
+private fun GroupedSettingsContainer(content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(ChatUiTokens.CornerLarge)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = ChatUiTokens.SurfaceBorderAlpha),
+                shape = shape
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun SettingsRow(entry: SettingEntry) {
     val clickableModifier = if (entry.onClick != null) {
         Modifier.clickable { entry.onClick.invoke() }
@@ -515,7 +425,7 @@ private fun SettingsRow(entry: SettingEntry) {
             .fillMaxWidth()
             .then(clickableModifier)
             .clip(RoundedCornerShape(12.dp))
-            .padding(horizontal = 4.dp, vertical = 10.dp),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         entry.icon()
@@ -536,7 +446,7 @@ private fun SettingsRow(entry: SettingEntry) {
     }
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
 @Composable
 private fun SettingsPreview() {
     SettingsApp()

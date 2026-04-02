@@ -21,15 +21,14 @@ Item {
     property bool hasChat: Ui.ChatDisplayStore.currentChatId.length > 0
     readonly property bool adaptiveThreeColumn: (hostWindow ? hostWindow.width : width) >= Ui.Style.threeColumnMinWidth
     readonly property bool detailsPaneActive: hasChat && (adaptiveThreeColumn || Ui.ChatDisplayStore.rightPaneVisible)
-    property real actionScale: 1.32
-    property real topBarScale: 0.72
-    property int actionButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
-    property int actionIconSize: Math.round(15 * actionScale)
-    property int inputButtonSize: Math.round(Ui.Style.iconButtonSmall * actionScale)
-    property int inputIconSize: Math.round(16 * actionScale)
-    property int composerCornerSafeInset: Math.max(Ui.Style.paddingL, Ui.Style.radiusXL + 10)
-    property int actionTopBarHeight: Math.round(Math.max(Ui.Style.topBarHeight * topBarScale,
-                                                        actionButtonSize + Ui.Style.paddingS * 2 * topBarScale))
+    property real actionScale: 1.0
+    property real topBarScale: 1.0
+    property int actionButtonSize: 32
+    property int actionIconSize: 16
+    property int inputButtonSize: 32
+    property int inputIconSize: 16
+    property int composerCornerSafeInset: Ui.Style.paddingS
+    property int actionTopBarHeight: Ui.Style.topBarHeight
     property bool emojiLoaded: false
     property int emojiPopupWidth: 280
     property int emojiPopupHeight: 220
@@ -626,7 +625,10 @@ Item {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingS * topBarScale
+                anchors.leftMargin: Ui.Style.paddingM
+                anchors.rightMargin: Ui.Style.paddingM
+                anchors.topMargin: 8
+                anchors.bottomMargin: 8
                 spacing: Ui.Style.paddingM
                 RowLayout {
                     Layout.fillWidth: true
@@ -668,18 +670,18 @@ Item {
                             spacing: 6
 
                             Rectangle {
-                                Layout.preferredHeight: 20
-                                radius: 10
+                                Layout.preferredHeight: 18
+                                radius: 9
                                 color: Ui.Style.topBarPillBg
                                 border.width: 1
                                 border.color: Ui.Style.topBarPillBorder
-                                implicitWidth: statusPillText.implicitWidth + 16
+                                implicitWidth: statusPillText.implicitWidth + 14
 
                                 Text {
                                     id: statusPillText
                                     anchors.centerIn: parent
                                     text: Ui.I18n.t("chat.secureSession")
-                                    font.pixelSize: 12
+                                    font.pixelSize: 11
                                     font.weight: Font.DemiBold
                                     color: Ui.Style.accentSoft
                                 }
@@ -861,101 +863,16 @@ Item {
                 anchors.fill: parent
                 source: "qrc:/mi/e2ee/ui/qml/assets/wallpaper_tile.svg"
                 fillMode: Image.Tile
-                opacity: Ui.Style.isDark ? 0.08 : 0.06
+                opacity: Ui.Style.isDark ? 0.04 : 0.02
                 smooth: true
                 visible: !messageArea.hasChatBackground
-            }
-
-            Item {
-                anchors.fill: parent
-                visible: root.smokePostLoginScene || root.smokePostLoginLightScene
-
-                Rectangle {
-                    visible: root.smokePostLoginScene
-                    width: parent.width * 0.36
-                    height: 160
-                    x: parent.width - width - 72
-                    y: 40
-                    radius: 32
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.12) }
-                        GradientStop { position: 1.0; color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.02) }
-                    }
-                    border.width: 1
-                    border.color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.18)
-                    rotation: -8
-                }
-
-                Rectangle {
-                    visible: root.smokePostLoginScene
-                    width: 220
-                    height: 220
-                    x: -48
-                    y: parent.height - 286
-                    radius: 110
-                    color: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.06)
-                    border.width: 1
-                    border.color: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.10)
-                }
-
-                Rectangle {
-                    visible: root.smokePostLoginScene
-                    width: 160
-                    height: 44
-                    x: parent.width - width - 92
-                    y: parent.height - 168
-                    radius: 22
-                    color: Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.05)
-                    border.width: 1
-                    border.color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.10)
-                }
-
-                Rectangle {
-                    visible: root.smokePostLoginLightScene
-                    width: parent.width * 0.42
-                    height: 172
-                    x: 36
-                    y: 56
-                    radius: 34
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.11) }
-                        GradientStop { position: 1.0; color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.02) }
-                    }
-                    border.width: 1
-                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.16)
-                    rotation: 5
-                }
-
-                Rectangle {
-                    visible: root.smokePostLoginLightScene
-                    width: 248
-                    height: 248
-                    x: parent.width - 222
-                    y: parent.height - 302
-                    radius: 124
-                    color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.05)
-                    border.width: 1
-                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.10)
-                }
-
-                Rectangle {
-                    visible: root.smokePostLoginLightScene
-                    width: 176
-                    height: 36
-                    x: 68
-                    y: parent.height - 154
-                    radius: 18
-                    color: Qt.rgba(255 / 255, 255 / 255, 255 / 255, 0.32)
-                    border.width: 1
-                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.12)
-                }
             }
 
             Rectangle {
                 id: groupCallBanner
                 property var callInfo: Ui.ChatDisplayStore.groupCallInfo(Ui.ChatDisplayStore.currentChatId)
                 visible: Ui.ChatDisplayStore.currentChatType === "group" && callInfo
-                height: visible ? 48 : 0
+                height: visible ? 44 : 0
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -968,8 +885,32 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingS
+                    anchors.leftMargin: Ui.Style.paddingS
+                    anchors.rightMargin: Ui.Style.paddingS
+                    anchors.topMargin: 6
+                    anchors.bottomMargin: 6
                     spacing: Ui.Style.paddingS
+
+                    Rectangle {
+                        width: 28
+                        height: 28
+                        radius: 14
+                        color: Ui.Style.railAccentBg
+                        border.width: 1
+                        border.color: Ui.Style.railAccentBorder
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: 14
+                            height: 14
+                            fillMode: Image.PreserveAspectFit
+                            source: groupCallBanner.callInfo && groupCallBanner.callInfo.video
+                                    ? "qrc:/mi/e2ee/ui/icons/video.svg"
+                                    : "qrc:/mi/e2ee/ui/icons/phone.svg"
+                        }
+                    }
+
                     Text {
                         text: groupCallBanner.callInfo && groupCallBanner.callInfo.video
                               ? Ui.I18n.t("chat.groupCallActiveVideo")
@@ -980,9 +921,21 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         elide: Text.ElideRight
                     }
+
+                    Text {
+                        text: Ui.I18n.t("chat.callDuration")
+                              .arg(formatCallDuration(callDurationSec))
+                        color: Ui.Style.textSecondary
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
+                        Layout.alignment: Qt.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+
                     Item { Layout.fillWidth: true }
                     Components.GhostButton {
                         text: Ui.I18n.t("chat.groupCallJoin")
+                        Layout.preferredHeight: 32
                         visible: !Ui.CallDisplayStore.groupCallActive
                         onClicked: Ui.ChatDisplayStore.joinGroupCall(
                                        groupCallBanner.callInfo &&
@@ -990,6 +943,7 @@ Item {
                     }
                     Components.PrimaryButton {
                         text: Ui.I18n.t("chat.groupCallLeave")
+                        Layout.preferredHeight: 32
                         visible: Ui.CallDisplayStore.groupCallActive &&
                                  Ui.CallDisplayStore.activeGroupCallGroup === Ui.ChatDisplayStore.currentChatId
                         onClicked: Ui.ChatDisplayStore.leaveGroupCall()
@@ -1001,9 +955,9 @@ Item {
                 id: messageList
                 anchors.fill: parent
                 anchors.leftMargin: Ui.Style.paddingL
-                anchors.rightMargin: Ui.Style.paddingXL
-                anchors.bottomMargin: Ui.Style.paddingL
-                anchors.topMargin: Ui.Style.paddingL +
+                anchors.rightMargin: Ui.Style.paddingL
+                anchors.bottomMargin: Ui.Style.paddingS + 2
+                anchors.topMargin: Ui.Style.paddingM +
                                    (groupCallBanner.visible
                                     ? groupCallBanner.height + Ui.Style.paddingS
                                     : 0)
@@ -1566,17 +1520,17 @@ Item {
             Layout.maximumHeight: hasChat ? implicitHeight : 0
             visible: hasChat
             color: Ui.Style.panelBg
-            implicitHeight: inputColumn.implicitHeight + Ui.Style.paddingM * 2
-            property int inputFieldHeight: 0
+            implicitHeight: 48
+            property int inputFieldHeight: 36
 
             ColumnLayout {
                 id: inputColumn
                 anchors.fill: parent
-                anchors.margins: Ui.Style.paddingM
-                spacing: Ui.Style.paddingS
+                anchors.margins: 6
+                spacing: 0
 
                 Text {
-                    visible: Ui.ChatDisplayStore.sendErrorMessage.length > 0
+                    visible: false
                     text: Ui.ChatDisplayStore.sendErrorMessage
                     color: Ui.Style.danger
                     font.pixelSize: 11
@@ -1586,8 +1540,8 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.rightMargin: composerCornerSafeInset
-                    Layout.bottomMargin: Ui.Style.paddingS
+                    Layout.rightMargin: 0
+                    Layout.bottomMargin: 0
                     spacing: Ui.Style.paddingS
 
                     Components.IconButton {
@@ -1732,7 +1686,7 @@ Item {
                         id: sendButton
                         property bool hasDraft: messageInput.text.trim().length > 0
                         Layout.preferredWidth: 86
-                        Layout.preferredHeight: Math.max(34, inputButtonSize)
+                        Layout.preferredHeight: 36
                         Layout.alignment: Qt.AlignVCenter
                         Accessible.name: Ui.I18n.t("chat.send")
                         enabled: Ui.ChatDisplayStore.currentChatId.length > 0
@@ -1881,10 +1835,7 @@ Item {
             }
 
             function updateInputHeight() {
-                var minHeight = 40
-                var maxHeight = 160
-                var textHeight = Math.min(maxHeight, Math.max(minHeight, messageInput.implicitHeight))
-                inputFieldHeight = textHeight + Ui.Style.paddingS * 2
+                inputFieldHeight = 36
                 Qt.callLater(ensureCursorVisible)
             }
 
@@ -2917,7 +2868,7 @@ Item {
                                                              (ListView.view ? ListView.view.width : root.width)
                                                              - bubbleEdgeInset * 2)
                 property real maxBubbleWidth: Math.min(Math.max(isOutgoing ? 216 : 224,
-                                                                availableBubbleWidth * (isOutgoing ? 0.48 : 0.52)),
+                                                                availableBubbleWidth * (isOutgoing ? 0.64 : 0.60)),
                                                        Math.max(208,
                                                                 availableBubbleWidth - (transparentBubble
                                                                                         ? 0

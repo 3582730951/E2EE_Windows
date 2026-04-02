@@ -734,11 +734,18 @@ private enum AppTab: Hashable {
     case settings
 }
 
+private enum AppShellRoute: Hashable {
+    case detail
+    case security
+}
+
 struct AppShell: View {
     private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
     @StateObject private var clientStore: ClientWorkspaceStore
     @State private var selectedTab: AppTab
+    @State private var chatsPath: [AppShellRoute]
+    @State private var settingsPath: [AppShellRoute]
 
     private var presentsAuthShell: Bool {
         switch screenshotScenario {
@@ -772,6 +779,8 @@ struct AppShell: View {
         screenshotScenario = scenario
         _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: scenario))
         _selectedTab = State(initialValue: Self.initialTab(for: scenario))
+        _chatsPath = State(initialValue: scenario == .detail ? [.detail] : [])
+        _settingsPath = State(initialValue: scenario == .security ? [.security] : [])
         Self.configureTabBarAppearance()
         Self.configureNavigationBarAppearance()
     }
@@ -790,13 +799,23 @@ struct AppShell: View {
                 .background(shellBackground)
             } else {
                 TabView(selection: $selectedTab) {
-                    NavigationStack {
-                        if screenshotScenario == .detail,
-                           let conversation = clientStore.primaryConversation {
-                            ClientConversationDetailView(store: clientStore, conversation: conversation)
-                        } else {
-                            ClientWorkspaceView(store: clientStore)
-                        }
+                    NavigationStack(path: $chatsPath) {
+                        ClientWorkspaceView(store: clientStore)
+                            .navigationDestination(for: AppShellRoute.self) { route in
+                                switch route {
+                                case .detail:
+                                    if let conversation = clientStore.primaryConversation {
+                                        ClientConversationDetailView(store: clientStore, conversation: conversation)
+                                    }
+                                case .security:
+                                    EmptyView()
+                                }
+                            }
+                            .onAppear {
+                                if screenshotScenario == .detail && chatsPath.isEmpty {
+                                    chatsPath = [.detail]
+                                }
+                            }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)
@@ -825,12 +844,21 @@ struct AppShell: View {
                     }
                     .tag(AppTab.calls)
 
-                    NavigationStack {
-                        if screenshotScenario == .security {
-                            SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                        } else {
-                            SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
-                        }
+                    NavigationStack(path: $settingsPath) {
+                        SettingsHomeView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                            .navigationDestination(for: AppShellRoute.self) { route in
+                                switch route {
+                                case .security:
+                                    SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
+                                case .detail:
+                                    EmptyView()
+                                }
+                            }
+                            .onAppear {
+                                if screenshotScenario == .security && settingsPath.isEmpty {
+                                    settingsPath = [.security]
+                                }
+                            }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)

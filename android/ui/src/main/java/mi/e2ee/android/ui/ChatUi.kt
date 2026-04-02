@@ -73,7 +73,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -497,6 +496,7 @@ fun ChatScreen(
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var composerReply by remember { mutableStateOf<ReplyPreview?>(null) }
     var composerText by remember { mutableStateOf("") }
+    var composerQuickActionsVisible by remember { mutableStateOf(false) }
     var composerDialog by remember { mutableStateOf<ComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingMessageDelete?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -661,16 +661,6 @@ fun ChatScreen(
         }
     }
 
-    val unreadCount = visibleMessages.filterIsInstance<UnreadMarker>().firstOrNull()?.count ?: 0
-    val showJumpToBottom by remember(listState, unreadCount) {
-        derivedStateOf {
-            if (unreadCount <= 0) return@derivedStateOf false
-            val total = listState.layoutInfo.totalItemsCount
-            if (total <= 0) return@derivedStateOf false
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible < total - 2
-        }
-    }
     val effectiveState = when {
         screenState != ChatScreenState.Content -> screenState
         visibleMessages.filterIsInstance<ChatMessage>().isEmpty() -> ChatScreenState.Empty
@@ -699,7 +689,6 @@ fun ChatScreen(
         bottomBar = if (showComposer) {
             {
                 ComposerBar(
-                    replyPreview = composerReply,
                     message = composerText,
                     onMessageChange = { composerText = it },
                     onSend = {
@@ -707,14 +696,13 @@ fun ChatScreen(
                         if (ok) {
                             composerText = ""
                             composerReply = null
+                            composerQuickActionsVisible = false
                         }
                     },
-                    onReplyDismiss = { composerReply = null },
-                    onAttachFile = { composerDialog = ComposerDialog.File },
-                    onAttachPhoto = { composerDialog = ComposerDialog.File },
-                    onAttachLocation = { composerDialog = ComposerDialog.Location },
-                    onAttachSticker = { composerDialog = ComposerDialog.Sticker },
-                    onAttachContact = { composerDialog = ComposerDialog.Contact },
+                    showQuickActions = composerQuickActionsVisible,
+                    onToggleQuickActions = {
+                        composerQuickActionsVisible = !composerQuickActionsVisible
+                    },
                     onEmoji = { composerDialog = ComposerDialog.Sticker },
                     modifier = Modifier
                         .alpha(inputAlpha)
@@ -726,10 +714,16 @@ fun ChatScreen(
         },
         containerColor = Color.Transparent
     ) { padding ->
+        val composerOverlayHeight = when {
+            composerReply != null && composerQuickActionsVisible -> 68.dp
+            composerReply != null -> 36.dp
+            composerQuickActionsVisible -> 32.dp
+            else -> 0.dp
+        }
         val composerInset = if (showComposer) {
-            padding.calculateBottomPadding() + 14.dp
+            padding.calculateBottomPadding() + composerOverlayHeight + 8.dp
         } else {
-            12.dp
+            10.dp
         }
         Box(
             modifier = Modifier
@@ -775,20 +769,47 @@ fun ChatScreen(
                     },
                     onAttachmentClick = onDownloadAttachment,
                     contentPadding = PaddingValues(
-                        top = padding.calculateTopPadding() + 8.dp,
+                        top = padding.calculateTopPadding() + 6.dp,
                         bottom = composerInset,
-                        start = 12.dp,
-                        end = 12.dp
+                        start = 10.dp,
+                        end = 10.dp
                     )
                 )
-                if (showJumpToBottom) {
-                    JumpToBottomButton(
-                        count = unreadCount,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 12.dp, bottom = composerInset + 16.dp)
-                    )
-                }
+            }
+            if (showComposer && (composerReply != null || composerQuickActionsVisible)) {
+                ComposerAssistOverlay(
+                    replyPreview = composerReply,
+                    showQuickActions = composerQuickActionsVisible,
+                    onReplyDismiss = { composerReply = null },
+                    onAttachPhoto = {
+                        composerQuickActionsVisible = false
+                        composerDialog = ComposerDialog.File
+                    },
+                    onAttachFile = {
+                        composerQuickActionsVisible = false
+                        composerDialog = ComposerDialog.File
+                    },
+                    onAttachLocation = {
+                        composerQuickActionsVisible = false
+                        composerDialog = ComposerDialog.Location
+                    },
+                    onAttachContact = {
+                        composerQuickActionsVisible = false
+                        composerDialog = ComposerDialog.Contact
+                    },
+                    onAttachSticker = {
+                        composerQuickActionsVisible = false
+                        composerDialog = ComposerDialog.Sticker
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .alpha(inputAlpha)
+                        .padding(
+                            start = 6.dp,
+                            end = 6.dp,
+                            bottom = padding.calculateBottomPadding() + 4.dp + inputOffset
+                        )
+                )
             }
             if (effectiveState == ChatScreenState.Empty) {
                 ChatEmptyState(
@@ -1293,11 +1314,12 @@ private fun ChatTopBar(
         TopAppBar(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(56.dp)
                 .padding(horizontal = 2.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 32.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
+                    Spacer(modifier = Modifier.width(7.dp))
                     Column {
                         Text(
                             text = title,
@@ -1473,7 +1495,7 @@ private fun MessageRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = if (isGroupedAbove) 1.dp else 6.dp)
+                    .padding(top = if (isGroupedAbove) 1.dp else 5.dp)
                     .then(swipeModifier),
                 horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.Bottom
@@ -1483,12 +1505,12 @@ private fun MessageRow(
                         AvatarBadge(
                             initials = message.sender.take(2).uppercase(),
                             tint = MaterialTheme.colorScheme.primary,
-                            size = 24.dp
+                            size = 22.dp
                         )
                     } else {
-                        Spacer(modifier = Modifier.width(24.dp))
+                        Spacer(modifier = Modifier.width(22.dp))
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                 }
                 Column(
                     horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
@@ -1504,7 +1526,7 @@ private fun MessageRow(
                         onAttachmentClick = onAttachmentClick
                     )
                     if (message.reactions.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(5.dp))
                         ReactionRow(
                             reactions = message.reactions,
                             alignEnd = message.isMine
@@ -1639,16 +1661,16 @@ private fun MessageBubble(
         MaterialTheme.colorScheme.secondary
     }
 
-    Box(modifier = Modifier.widthIn(max = 266.dp)) {
+    Box(modifier = Modifier.widthIn(max = 260.dp)) {
         Column(
             modifier = Modifier
                 .clip(bubbleShape)
                 .border(
                     width = 1.dp,
                     color = if (message.isMine) {
-                        highlightColor.copy(alpha = 0.16f * highlightAlpha)
+                        highlightColor.copy(alpha = 0.12f * highlightAlpha)
                     } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.12f + 0.10f * highlightAlpha)
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.08f + 0.04f * highlightAlpha)
                     },
                     shape = bubbleShape
                 )
@@ -1742,33 +1764,34 @@ private fun ReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .height(32.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(30.dp)
+                .height(18.dp)
                 .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
         )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = tr("chat_replying_to", "Replying to %s").format(reply.sender),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = reply.snippet,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        IconButton(onClick = onDismiss) {
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = tr("chat_replying_to", "Replying to %s").format(reply.sender),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = reply.snippet,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
             Icon(
                 imageVector = MiOwnedIcons.Close,
                 contentDescription = tr("chat_dismiss", "Dismiss"),
@@ -2431,7 +2454,7 @@ private fun TypingIndicator() {
 @Composable
 private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.shadow(4.dp, RoundedCornerShape(12.dp)),
+        modifier = modifier.shadow(2.dp, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
@@ -2838,7 +2861,7 @@ private fun ToastPill(text: String, modifier: Modifier = Modifier) {
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 6.dp
+        shadowElevation = 2.dp
     ) {
         Text(
             text = text,
@@ -2860,7 +2883,7 @@ private fun UndoPill(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 6.dp
+        shadowElevation = 2.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -2958,146 +2981,159 @@ private fun VoiceWaveform(modifier: Modifier = Modifier, tint: Color) {
 @Composable
 fun ComposerBar(
     modifier: Modifier = Modifier,
-    replyPreview: ReplyPreview? = null,
     message: String,
     onMessageChange: (String) -> Unit,
     onSend: () -> Unit = {},
-    onReplyDismiss: () -> Unit = {},
-    onAttachPhoto: () -> Unit = {},
-    onAttachFile: () -> Unit = {},
-    onAttachLocation: () -> Unit = {},
-    onAttachContact: () -> Unit = {},
-    onAttachSticker: () -> Unit = {},
+    showQuickActions: Boolean,
+    onToggleQuickActions: () -> Unit,
     onEmoji: () -> Unit = {}
 ) {
-    var showQuickActions by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .imePadding(),
+            .imePadding()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .height(52.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
         tonalElevation = 0.dp
     ) {
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 6.dp)
+                .fillMaxSize()
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (showQuickActions) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    QuickActionButton(
-                        icon = MiOwnedIcons.Photo,
-                        label = tr("chat_quick_photo", "Photo"),
-                        onClick = onAttachPhoto
-                    )
-                    QuickActionButton(
-                        icon = MiOwnedIcons.File,
-                        label = tr("chat_quick_file", "File"),
-                        onClick = onAttachFile
-                    )
-                    QuickActionButton(
-                        icon = MiOwnedIcons.Location,
-                        label = tr("chat_quick_location", "Location"),
-                        onClick = onAttachLocation
-                    )
-                    QuickActionButton(
-                        icon = MiOwnedIcons.PersonAdd,
-                        label = tr("chat_quick_contact", "Contact"),
-                        onClick = onAttachContact
-                    )
-                    QuickActionButton(
-                        icon = MiOwnedIcons.Emoji,
-                        label = tr("chat_quick_sticker", "Sticker"),
-                        onClick = onAttachSticker
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-            }
-            if (replyPreview != null) {
-                ReplyComposerRow(
-                    reply = replyPreview,
-                    onDismiss = onReplyDismiss
+            FilledTonalIconButton(
+                onClick = onToggleQuickActions,
+                modifier = Modifier.size(36.dp),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (showQuickActions) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    contentColor = if (showQuickActions) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+            ) {
+                Icon(
+                    imageVector = MiOwnedIcons.Attach,
+                    contentDescription = tr("chat_attach", "Attach")
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(
-                    onClick = { showQuickActions = !showQuickActions },
-                    modifier = Modifier.size(40.dp),
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = if (showQuickActions) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        contentColor = if (showQuickActions) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(modifier = Modifier.width(6.dp))
+            CompactMessageField(
+                value = message,
+                onValueChange = onMessageChange,
+                placeholder = tr("chat_placeholder", "Write a message..."),
+                modifier = Modifier.weight(1f),
+                onEmoji = onEmoji,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Send
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (message.isNotBlank()) {
+                            onSend()
                         }
+                    }
+                )
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            if (message.isNotBlank()) {
+                FilledIconButton(
+                    onClick = onSend,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Icon(
-                        imageVector = MiOwnedIcons.Attach,
-                        contentDescription = tr("chat_attach", "Attach")
+                        imageVector = MiOwnedIcons.Send,
+                        contentDescription = tr("chat_send", "Send")
                     )
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                CompactMessageField(
-                    value = message,
-                    onValueChange = onMessageChange,
-                    placeholder = tr("chat_placeholder", "Write a message..."),
-                    modifier = Modifier.weight(1f),
-                    onEmoji = onEmoji,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Send
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (message.isNotBlank()) {
-                                onSend()
-                            }
-                        }
+            } else {
+                FilledTonalIconButton(
+                    onClick = {},
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                if (message.isNotBlank()) {
-                    FilledIconButton(
-                        onClick = onSend,
-                        modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Icon(
-                            imageVector = MiOwnedIcons.Send,
-                            contentDescription = tr("chat_send", "Send")
-                        )
-                    }
-                } else {
-                    FilledTonalIconButton(
-                        onClick = {},
-                        modifier = Modifier.size(40.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Icon(
-                            imageVector = MiOwnedIcons.Mic,
-                            contentDescription = tr("chat_voice", "Voice input")
-                        )
-                    }
+                ) {
+                    Icon(
+                        imageVector = MiOwnedIcons.Mic,
+                        contentDescription = tr("chat_voice", "Voice input")
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ComposerAssistOverlay(
+    replyPreview: ReplyPreview?,
+    showQuickActions: Boolean,
+    onReplyDismiss: () -> Unit,
+    onAttachPhoto: () -> Unit,
+    onAttachFile: () -> Unit,
+    onAttachLocation: () -> Unit,
+    onAttachContact: () -> Unit,
+    onAttachSticker: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (showQuickActions) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                QuickActionButton(
+                    icon = MiOwnedIcons.Photo,
+                    label = tr("chat_quick_photo", "Photo"),
+                    onClick = onAttachPhoto
+                )
+                QuickActionButton(
+                    icon = MiOwnedIcons.File,
+                    label = tr("chat_quick_file", "File"),
+                    onClick = onAttachFile
+                )
+                QuickActionButton(
+                    icon = MiOwnedIcons.Location,
+                    label = tr("chat_quick_location", "Location"),
+                    onClick = onAttachLocation
+                )
+                QuickActionButton(
+                    icon = MiOwnedIcons.PersonAdd,
+                    label = tr("chat_quick_contact", "Contact"),
+                    onClick = onAttachContact
+                )
+                QuickActionButton(
+                    icon = MiOwnedIcons.Emoji,
+                    label = tr("chat_quick_sticker", "Sticker"),
+                    onClick = onAttachSticker
+                )
+            }
+        }
+        if (replyPreview != null) {
+            ReplyComposerRow(
+                reply = replyPreview,
+                onDismiss = onReplyDismiss
+            )
         }
     }
 }
@@ -3115,7 +3151,7 @@ private fun CompactMessageField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.heightIn(min = 40.dp, max = 100.dp),
+        modifier = modifier.height(40.dp),
         placeholder = {
             Text(
                 text = placeholder,
@@ -3123,11 +3159,11 @@ private fun CompactMessageField(
             )
         },
         textStyle = MaterialTheme.typography.bodyMedium,
-        singleLine = false,
+        singleLine = true,
         minLines = 1,
-        maxLines = 4,
+        maxLines = 1,
         trailingIcon = {
-            IconButton(onClick = onEmoji) {
+            IconButton(onClick = onEmoji, modifier = Modifier.size(28.dp)) {
                 Icon(
                     imageVector = MiOwnedIcons.Emoji,
                     contentDescription = tr("chat_emoji", "Emoji")
@@ -3140,8 +3176,8 @@ private fun CompactMessageField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
         )
     )
 }
@@ -3155,7 +3191,7 @@ private fun QuickActionButton(
 ) {
     AssistChip(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.height(28.dp),
         shape = RoundedCornerShape(12.dp),
         leadingIcon = {
             Icon(
@@ -3192,7 +3228,7 @@ private fun ChatBackground() {
     )
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
 @Composable
 private fun ChatScreenPreview() {
     ChatApp()

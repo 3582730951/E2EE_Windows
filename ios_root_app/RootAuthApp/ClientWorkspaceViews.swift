@@ -47,11 +47,11 @@ private struct SecureNavigationRow<Destination: View>: View {
 
     var body: some View {
         NavigationLink(destination: destination) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(SecurePalette.accent)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
@@ -74,6 +74,7 @@ private struct SecureNavigationRow<Destination: View>: View {
                     Text(detail)
                         .font(.footnote)
                         .foregroundStyle(SecurePalette.textSecondary)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 12)
@@ -83,7 +84,7 @@ private struct SecureNavigationRow<Destination: View>: View {
                     .foregroundStyle(SecurePalette.textMuted)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 13)
+            .frame(minHeight: 54, alignment: .center)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -181,7 +182,6 @@ struct ClientStatusCard: View {
 
 struct ClientLoginCard: View {
     @ObservedObject var store: ClientWorkspaceStore
-    @State private var showsConnectionOptions = false
     @State private var showsAdvancedApproval = false
 
     private var transportSummary: String {
@@ -189,26 +189,16 @@ struct ClientLoginCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             SecureSectionHeader(
                 eyebrow: "Access",
                 title: "Sign in to your secure chats",
-                detail: "Use your account credentials first. Transport and approval options stay available below when you need them."
+                detail: "Use your account credentials first."
             )
 
-            if !store.lastError.isEmpty {
-                SecureStatusBanner(
-                    title: "Sign-in issue",
-                    detail: store.lastError,
-                    tone: .danger,
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-            }
+            ClientSecuritySummaryCard(store: store)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Credentials")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SecurePalette.textSecondary)
+            VStack(alignment: .leading, spacing: 6) {
                 TextField("Username", text: $store.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
@@ -222,116 +212,82 @@ struct ClientLoginCard: View {
             }
             .buttonStyle(SecurePrimaryButtonStyle())
 
-            Button(action: { store.registerAccount() }) {
-                Label("Create account", systemImage: "person.badge.plus")
-            }
-            .buttonStyle(SecureSecondaryButtonStyle())
-
-            VStack(spacing: 0) {
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        showsConnectionOptions.toggle()
-                    }
-                }) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "server.rack")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(SecurePalette.accent)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connection options")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(SecurePalette.textPrimary)
-                            Text(transportSummary)
-                                .font(.caption)
-                                .foregroundStyle(SecurePalette.textSecondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 8)
-                        Image(systemName: showsConnectionOptions ? "chevron.up" : "chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(SecurePalette.textMuted)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
+            HStack {
+                Button(action: { store.registerAccount() }) {
+                    Text("Create account")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(SecurePalette.accent)
+                        .padding(.vertical, 2)
                 }
                 .buttonStyle(.plain)
 
-                if showsConnectionOptions {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Divider()
-                            .overlay(SecurePalette.border)
-                        TextField("Server host", text: $store.serverHost)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
+                Spacer(minLength: 12)
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        showsAdvancedApproval.toggle()
+                    }
+                }) {
+                    Text("Advanced sign-in")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(SecurePalette.textMuted)
+                        .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if showsAdvancedApproval {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(transportSummary)
+                        .font(.caption)
+                        .foregroundStyle(SecurePalette.textSecondary)
+                        .lineLimit(1)
+
+                    TextField("Server host", text: $store.serverHost)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .secureInput()
+
+                    HStack(spacing: 10) {
+                        TextField("Server port", text: $store.serverPort)
+                            .keyboardType(.numberPad)
                             .secureInput()
 
-                        HStack(spacing: 10) {
-                            TextField("Server port", text: $store.serverPort)
-                                .keyboardType(.numberPad)
-                                .secureInput()
-
-                            Toggle(isOn: $store.useTLS) {
-                                Text("TLS")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(SecurePalette.textPrimary)
-                            }
-                            .tint(SecurePalette.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(SecurePalette.surfaceRaised)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(SecurePalette.borderStrong, lineWidth: 1)
-                            )
+                        Toggle(isOn: $store.useTLS) {
+                            Text("TLS")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(SecurePalette.textPrimary)
                         }
+                        .tint(SecurePalette.accent)
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(SecurePalette.surfaceRaised)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(SecurePalette.borderStrong, lineWidth: 1)
+                        )
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 12)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(SecurePalette.surfaceRaised.opacity(0.75))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(SecurePalette.border, lineWidth: 1)
-            )
 
-            DisclosureGroup(isExpanded: $showsAdvancedApproval) {
-                VStack(alignment: .leading, spacing: 8) {
                     TextField("Approval string", text: $store.rootCode)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
                         .secureInput()
-                    Text("Only use this when the server explicitly requests root approval for this sign-in.")
-                        .font(.caption)
-                        .foregroundStyle(SecurePalette.textSecondary)
                 }
-                .padding(.top, 8)
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Advanced sign-in")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(SecurePalette.textPrimary)
-                    Text("Optional root approval")
-                        .font(.caption)
-                        .foregroundStyle(SecurePalette.textSecondary)
-                }
-            }
-            .tint(SecurePalette.accent)
-
-            if !store.statusText.isEmpty {
-                Text(store.statusText)
-                    .font(.caption)
-                    .foregroundStyle(SecurePalette.textSecondary)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(SecurePalette.surfaceRaised.opacity(0.72))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(SecurePalette.border, lineWidth: 1)
+                )
             }
         }
-        .secureCard(padding: 18)
+        .secureCard(padding: 14)
     }
 }
 
@@ -340,11 +296,10 @@ struct ClientAuthShellView: View {
 
     var body: some View {
         SecureFullscreenScrollPage(horizontalPadding: 14,
-                                   verticalPadding: 18,
+                                   verticalPadding: 10,
                                    showsIndicators: false) {
-            VStack(spacing: 14) {
+            VStack(spacing: 8) {
                 ClientAuthHeader()
-                ClientSecuritySummaryCard(store: store)
                 ClientLoginCard(store: store)
             }
             .frame(maxWidth: 420, alignment: .top)
@@ -357,14 +312,14 @@ struct ClientAuthShellView: View {
 
 private struct ClientAuthHeader: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(SecurePalette.accentSoft)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 36, height: 36)
                     Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(SecurePalette.accent)
                 }
 
@@ -395,9 +350,9 @@ private struct ClientSecuritySummaryCard: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: store.remoteOK ? "lock.shield.fill" : "wave.3.right.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(store.remoteOK ? SecurePalette.success : SecurePalette.warning)
-                .frame(width: 26, height: 26)
+                .frame(width: 18, height: 18)
                 .background(
                     Circle()
                         .fill(SecurePalette.surfaceRaised)
@@ -405,10 +360,10 @@ private struct ClientSecuritySummaryCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.remoteOK ? "Secure transport healthy" : "Secure transport checking")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(SecurePalette.textPrimary)
                 Text(statusText)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(SecurePalette.textSecondary)
                     .lineLimit(1)
             }
@@ -418,20 +373,21 @@ private struct ClientSecuritySummaryCard: View {
             SecureCircularIconButton(
                 systemImage: "arrow.clockwise",
                 accessibilityLabel: "Refresh secure session status",
-                iconSize: 13,
-                buttonSize: 44
+                iconSize: 10,
+                buttonSize: 28,
+                foreground: SecurePalette.accent
             ) {
                 store.refreshNow()
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 10)
+        .frame(height: 36)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(SecurePalette.surface.opacity(0.92))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -458,7 +414,7 @@ private struct ClientInlineSecurityStatus: View {
         HStack(spacing: 8) {
             Circle()
                 .fill(tint)
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
 
             Text(store.remoteOK ? "Secure" : "Checking")
                 .font(.caption.weight(.semibold))
@@ -474,21 +430,21 @@ private struct ClientInlineSecurityStatus: View {
             SecureCircularIconButton(
                 systemImage: "arrow.clockwise",
                 accessibilityLabel: "Refresh session state",
-                iconSize: 12,
-                buttonSize: 36,
+                iconSize: 11,
+                buttonSize: 26,
                 foreground: SecurePalette.accent
             ) {
                 store.refreshNow()
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .frame(height: 28)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.88))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(SecurePalette.surface.opacity(0.90))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -544,7 +500,7 @@ private struct ClientConversationRow: View {
                             SecurePalette.accent.opacity(0.58)
                         ], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 44)
                 Text(avatarText)
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(Color.white)
@@ -585,11 +541,11 @@ private struct ClientConversationRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 6)
+        .frame(height: 68)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(isSelected ? SecurePalette.surface.opacity(0.96) : Color.clear)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isSelected ? SecurePalette.selectedRow : Color.clear)
         )
         .contentShape(Rectangle())
     }
@@ -627,11 +583,26 @@ private struct ClientConversationListCard: View {
     var body: some View {
         let rows = filteredConversations
 
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("Search conversations", text: $query)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-                .secureInput()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SecurePalette.textMuted)
+                TextField("Search conversations", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .font(.system(size: 15))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(SecurePalette.surfaceRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(SecurePalette.borderStrong, lineWidth: 1)
+            )
 
             ClientInlineSecurityStatus(store: store)
 
@@ -674,7 +645,7 @@ private struct ClientConversationListCard: View {
                 }
             }
         }
-        .padding(.top, 2)
+        .padding(.top, 0)
     }
 }
 
@@ -682,42 +653,13 @@ private struct ClientConversationTitleView: View {
     let conversation: ClientConversation
     let status: String
 
-    private var avatarText: String {
-        let trimmed = conversation.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first else {
-            return "#"
-        }
-        return String(first).uppercased()
-    }
-
     var body: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(colors: [
-                            SecurePalette.accent.opacity(0.88),
-                            SecurePalette.accent.opacity(0.58)
-                        ], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                Text(avatarText)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.white)
-            }
-            .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(conversation.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SecurePalette.textPrimary)
-                    .lineLimit(1)
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(SecurePalette.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: 200)
+        Text(conversation.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(SecurePalette.textPrimary)
+            .lineLimit(1)
+            .frame(maxWidth: 184, alignment: .center)
+            .accessibilityLabel("\(conversation.title), \(status)")
     }
 }
 
@@ -727,7 +669,7 @@ struct ClientConversationDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var conversationStatus: String {
-        conversation.isGroup ? "Encrypted group chat" : "Last seen recently"
+        conversation.isGroup ? "Secure group" : "Last seen"
     }
 
     var body: some View {
@@ -736,17 +678,15 @@ struct ClientConversationDetailView: View {
                 .ignoresSafeArea()
 
             ClientMessagesCard(store: store, showsThreadHeader: false)
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .safeAreaInset(edge: .bottom) {
             ClientComposerCard(store: store, compact: true)
-                .padding(.horizontal, 10)
-                .padding(.top, 4)
-                .padding(.bottom, 4)
+                .padding(.horizontal, 8)
                 .background(
-                    SecurePalette.backgroundBottom.opacity(0.92)
+                    SecurePalette.composerSurface.opacity(0.98)
                         .ignoresSafeArea(edges: .bottom)
                 )
         }
@@ -761,7 +701,7 @@ struct ClientConversationDetailView: View {
                         Image(systemName: "chevron.left")
                             .font(.footnote.weight(.semibold))
                         Text("Chats")
-                            .font(.subheadline)
+                            .font(.footnote)
                     }
                 }
                 .accessibilityLabel("Back to chats")
@@ -777,16 +717,19 @@ struct ClientConversationDetailView: View {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button(action: {}) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .semibold))
                 }
                 .accessibilityLabel("Search conversation")
 
                 Button(action: {}) {
                     Image(systemName: "phone")
+                        .font(.system(size: 15, weight: .semibold))
                 }
                 .accessibilityLabel("Start secure call")
 
                 Button(action: { store.refreshNow() }) {
                     Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 16, weight: .semibold))
                 }
                 .accessibilityLabel("More conversation actions")
             }
@@ -809,7 +752,7 @@ struct ClientMessagesCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             if showsThreadHeader {
                 HStack {
                     Text(store.currentConversationTitle)
@@ -837,14 +780,14 @@ struct ClientMessagesCard: View {
                 )
             } else {
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: 4) {
                         ForEach(store.currentMessages) { message in
                             HStack {
                                 if message.outgoing {
-                                    Spacer(minLength: 72)
+                                    Spacer(minLength: 48)
                                 }
 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 8) {
                                         Text(message.outgoing ? "You" : message.sender)
                                             .font(.caption2.weight(.semibold))
@@ -855,24 +798,24 @@ struct ClientMessagesCard: View {
                                     }
 
                                     Text(message.text)
-                                        .font(.system(size: 16))
+                                        .font(.system(size: 15))
                                         .foregroundStyle(message.outgoing ? Color.white : SecurePalette.textPrimary)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: 258, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: 252, alignment: .leading)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill(message.outgoing ? SecurePalette.accent : SecurePalette.surfaceRaised)
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(message.outgoing ? SecurePalette.outgoingBubble : SecurePalette.surfaceRaised)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                                         .stroke(message.outgoing ? Color.white.opacity(0.12) : SecurePalette.border, lineWidth: 1)
                                 )
 
                                 if !message.outgoing {
-                                    Spacer(minLength: 72)
+                                    Spacer(minLength: 48)
                                 }
                             }
                         }
@@ -896,15 +839,15 @@ struct ClientComposerCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: compact ? 8 : 10) {
+        HStack(alignment: .center, spacing: compact ? 6 : 10) {
             Button(action: {}) {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(SecurePalette.textPrimary)
-                    .frame(width: compact ? 34 : 38, height: compact ? 34 : 38)
+                    .frame(width: compact ? 32 : 36, height: compact ? 32 : 36)
                     .background(
                         Circle()
-                            .fill(SecurePalette.surfaceRaised)
+                            .fill(SecurePalette.composerSurface)
                     )
                     .overlay(
                         Circle()
@@ -914,16 +857,16 @@ struct ClientComposerCard: View {
             .buttonStyle(.plain)
 
             TextField("Message", text: $store.draft, axis: .vertical)
-                .lineLimit(1...4)
-                .frame(minHeight: compact ? 34 : 40)
-                .padding(.horizontal, compact ? 11 : 12)
-                .padding(.vertical, compact ? 7 : 9)
+                .lineLimit(1...1)
+                .frame(minHeight: compact ? 32 : 38)
+                .padding(.horizontal, compact ? 10 : 12)
+                .padding(.vertical, compact ? 0 : 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(SecurePalette.surfaceRaised)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(SecurePalette.composerSurface)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(SecurePalette.borderStrong, lineWidth: 1)
                 )
                 .foregroundStyle(SecurePalette.textPrimary)
@@ -932,24 +875,17 @@ struct ClientComposerCard: View {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: compact ? 14 : 16, weight: .semibold))
                     .foregroundStyle(Color.white)
-                    .frame(width: compact ? 34 : 40, height: compact ? 34 : 40)
+                    .frame(width: compact ? 32 : 38, height: compact ? 32 : 38)
                     .background(
                         Circle()
-                            .fill(canSend ? SecurePalette.accent : SecurePalette.accent.opacity(0.45))
+                            .fill(canSend ? SecurePalette.outgoingBubble : SecurePalette.outgoingBubble.opacity(0.45))
                     )
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
         }
-        .padding(compact ? 6 : 8)
-        .background(
-            RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.94))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous)
-                .stroke(SecurePalette.border, lineWidth: 1)
-        )
+        .frame(height: compact ? 44 : 52)
+        .padding(.horizontal, compact ? 0 : 7)
     }
 }
 
@@ -1023,11 +959,11 @@ private struct SettingsGroupContainer<Content: View>: View {
             content()
         }
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(SecurePalette.surface.opacity(0.96))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -1050,9 +986,9 @@ private struct SettingsStaticRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(SecurePalette.accent)
-                .frame(width: 24, height: 24)
+                .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -1071,7 +1007,7 @@ private struct SettingsStaticRow: View {
                 .foregroundStyle(SecurePalette.textMuted)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 13)
+        .frame(minHeight: 54)
         .contentShape(Rectangle())
     }
 }
@@ -1087,9 +1023,9 @@ private struct SettingsActionRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(isDestructive ? SecurePalette.danger : SecurePalette.accent)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -1098,12 +1034,13 @@ private struct SettingsActionRow: View {
                     Text(detail)
                         .font(.footnote)
                         .foregroundStyle(SecurePalette.textSecondary)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 12)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 13)
+            .frame(minHeight: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1115,7 +1052,7 @@ struct ClientWorkspaceView: View {
 
     var body: some View {
         SecureFullscreenScrollPage(horizontalPadding: 12,
-                                   verticalPadding: 10,
+                                   verticalPadding: 4,
                                    showsIndicators: false) {
             ClientConversationListCard(store: store)
         }
@@ -1192,63 +1129,128 @@ struct CallsHomeView: View {
 
     var body: some View {
         SecureFullscreenScrollPage(horizontalPadding: 12,
-                                   verticalPadding: 12,
+                                   verticalPadding: 8,
                                    showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                SecureStatusBanner(
-                    title: store.isLoggedIn ? "Ready for secure calls" : "Sign in required",
-                    detail: store.isLoggedIn
-                        ? "Call controls stay available without leaving the main chat shell."
-                        : "Call controls unlock after the secure session is established.",
-                    tone: store.isLoggedIn ? .success : .warning,
-                    systemImage: store.isLoggedIn ? "phone.connection.fill" : "phone.down.waves.left.and.right"
-                )
-
-                SettingsStaticRow(
-                    title: "Recent peer call",
-                    detail: "Aster Stone",
-                    systemImage: "phone.fill",
-                    trailingValue: "Video"
-                )
-
-                SettingsStaticRow(
-                    title: "Team room",
-                    detail: "Threat Guild",
-                    systemImage: "person.3.fill",
-                    trailingValue: "Join"
-                )
-
-                SettingsStaticRow(
-                    title: "Active device",
-                    detail: store.deviceDisplayID.isEmpty ? "Pending" : store.deviceDisplayID,
-                    systemImage: "iphone.gen3",
-                    trailingValue: store.isLoggedIn ? "Online" : "Idle"
-                )
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsGroupContainer {
+                    callRow(
+                        title: "Aster Stone",
+                        detail: "Recent video call",
+                        systemImage: "phone.fill",
+                        trailingValue: "01:26"
+                    )
+                    SettingsRowDivider()
+                    callRow(
+                        title: "Threat Guild",
+                        detail: "Recent room call",
+                        systemImage: "person.3.fill",
+                        trailingValue: "01:24"
+                    )
+                    SettingsRowDivider()
+                    callRow(
+                        title: "Ops Sync",
+                        detail: "Recent voice call",
+                        systemImage: "phone.arrow.up.right",
+                        trailingValue: "Yesterday"
+                    )
+                }
             }
         }
         .navigationTitle("Calls")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func callRow(title: String,
+                         detail: String,
+                         systemImage: String,
+                         trailingValue: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(SecurePalette.accent)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textPrimary)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            Text(trailingValue)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(SecurePalette.textMuted)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
     }
 }
 
 struct TransportStatusView: View {
     @ObservedObject var store: ClientWorkspaceStore
 
-    var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 14,
-                                   verticalPadding: 16,
-                                   showsIndicators: false) {
-            VStack(spacing: 14) {
-                SecureSectionHeader(
-                    eyebrow: "Transport",
-                    title: "Connection, session, and device status",
-                    detail: "Keep session health visible from Settings without pushing the full chat workspace into the settings stack."
-                )
+    private var transportDetail: String {
+        if !store.lastError.isEmpty {
+            return "Session needs attention."
+        }
+        return store.remoteOK ? "Encrypted session active." : "Waiting for secure transport."
+    }
 
-                ClientStatusCard(store: store)
+    private var gatewayDetail: String {
+        store.serverHost.isEmpty ? "Not configured" : store.serverHost
+    }
+
+    private var deviceDetail: String {
+        store.deviceDisplayID.isEmpty ? "Unavailable" : store.deviceDisplayID
+    }
+
+    var body: some View {
+        SecureFullscreenScrollPage(horizontalPadding: 12,
+                                   verticalPadding: 10,
+                                   showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                ClientInlineSecurityStatus(store: store)
+
+                SettingsGroupLabel(title: "Transport")
+                SettingsGroupContainer {
+                    SettingsStaticRow(
+                        title: "Session",
+                        detail: transportDetail,
+                        systemImage: "lock.shield.fill",
+                        trailingValue: store.remoteOK ? "Healthy" : "Review"
+                    )
+                    SettingsRowDivider()
+                    SettingsStaticRow(
+                        title: "Gateway",
+                        detail: gatewayDetail,
+                        systemImage: "server.rack",
+                        trailingValue: "\(store.serverPort) \(store.useTLS ? "TLS" : "TCP")"
+                    )
+                    SettingsRowDivider()
+                    SettingsStaticRow(
+                        title: "This device",
+                        detail: deviceDetail,
+                        systemImage: "iphone.gen3",
+                        trailingValue: store.isLoggedIn ? "Active" : "Sign in"
+                    )
+                }
 
                 if !store.isLoggedIn {
-                    ClientLoginCard(store: store)
+                    SettingsGroupLabel(title: "Access")
+                    SettingsGroupContainer {
+                        SettingsStaticRow(
+                            title: "Sign in required",
+                            detail: "Return to sign in to reconnect this device.",
+                            systemImage: "rectangle.portrait.and.arrow.right",
+                            trailingValue: "Required"
+                        )
+                    }
                 }
             }
         }
@@ -1263,9 +1265,9 @@ struct SettingsHomeView: View {
 
     var body: some View {
         SecureFullscreenScrollPage(horizontalPadding: 12,
-                                   verticalPadding: 12,
+                                   verticalPadding: 10,
                                    showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 SettingsGroupLabel(title: "Trust & Access")
 
                 SettingsGroupContainer {

@@ -149,7 +149,7 @@ Item {
             anchors.centerIn: parent
             radius: Ui.Style.radiusXL * 2
             color: Ui.Style.authGlowPrimary
-            opacity: 0.16
+            opacity: 0.10
         }
 
         Item {
@@ -173,7 +173,7 @@ Item {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: Ui.Style.paddingL
-                    spacing: Ui.Style.paddingS
+                    spacing: 6
 
                     Label {
                         Layout.fillWidth: true
@@ -194,13 +194,6 @@ Item {
                         wrapMode: Text.WordWrap
                     }
 
-                    Components.SecurityBadge {
-                        labelText: Ui.AuthDisplayStore.gatewayState.length > 0
-                                   ? Ui.AuthDisplayStore.gatewayState
-                                   : Ui.I18n.t("auth.hero.badge")
-                        detailText: Ui.AuthDisplayStore.gatewayDetail
-                    }
-
                     Label {
                         Layout.fillWidth: true
                         text: Ui.I18n.t("auth.subtitle")
@@ -211,398 +204,427 @@ Item {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: Ui.Style.authTitleBarBorder
-                    }
+                        Layout.preferredHeight: 30
+                        radius: 15
+                        border.width: 1
+                        border.color: statusTone() === "danger"
+                                      ? Ui.Style.authDangerBorder
+                                      : Ui.Style.authContextBorder
+                        color: statusTone() === "danger"
+                               ? Ui.Style.authDangerBg
+                               : Ui.Style.authContextBg
 
-                    TabBar {
-                        id: authTabBar
-                        Layout.fillWidth: true
-                        currentIndex: 0
-                        spacing: Ui.Style.paddingXS
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: Ui.Style.authTabRail
-                            border.width: 1
-                            border.color: Ui.Style.authContextBorder
-                        }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Ui.Style.paddingS
+                            anchors.rightMargin: Ui.Style.paddingS
+                            spacing: 6
 
-                        TabButton {
-                            text: Ui.I18n.t("auth.login")
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: authTabBar.currentIndex === 0 ? Ui.Style.dialogSelectedBg : "transparent"
+                            Rectangle {
+                                width: 6
+                                height: 6
+                                radius: 3
+                                color: statusTone() === "danger"
+                                       ? Ui.Style.danger
+                                       : Ui.Style.accent
+                                Layout.alignment: Qt.AlignVCenter
                             }
-                            contentItem: Text {
-                                text: parent.text
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
+
+                            Text {
+                                text: statusTitle()
+                                Layout.preferredWidth: Math.min(108, implicitWidth)
+                                font.pixelSize: 11
                                 font.weight: Font.DemiBold
-                                color: authTabBar.currentIndex === 0 ? Ui.Style.textPrimary : Ui.Style.textSecondary
+                                color: Ui.Style.textPrimary
+                                elide: Text.ElideRight
                             }
-                        }
 
-                        TabButton {
-                            text: Ui.I18n.t("auth.registerAccount")
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: authTabBar.currentIndex === 1 ? Ui.Style.dialogSelectedBg : "transparent"
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                font.weight: Font.DemiBold
-                                color: authTabBar.currentIndex === 1 ? Ui.Style.textPrimary : Ui.Style.textSecondary
-                            }
-                        }
-
-                        TabButton {
-                            text: Ui.I18n.t("auth.qrLogin")
-                            background: Rectangle {
-                                radius: Ui.Style.radiusMedium
-                                color: authTabBar.currentIndex === 2 ? Ui.Style.dialogSelectedBg : "transparent"
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                font.weight: Font.DemiBold
-                                color: authTabBar.currentIndex === 2 ? Ui.Style.textPrimary : Ui.Style.textSecondary
-                            }
-                        }
-
-                        onCurrentIndexChanged: {
-                            if (loginStack.currentIndex !== currentIndex) {
-                                loginStack.currentIndex = currentIndex
+                            Text {
+                                text: statusDetail()
+                                Layout.fillWidth: true
+                                font.pixelSize: 11
+                                color: Ui.Style.textSecondary
+                                elide: Text.ElideRight
                             }
                         }
                     }
 
                     Item {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
+                        implicitHeight: loginPageLayout.implicitHeight
 
-                        StackLayout {
-                            id: loginStack
-                            anchors.fill: parent
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                errorText = ""
-                                if (authTabBar.currentIndex !== currentIndex) {
-                                    authTabBar.currentIndex = currentIndex
+                        ColumnLayout {
+                            id: loginPageLayout
+                            width: parent.width
+                            spacing: Ui.Style.paddingS
+
+                            Label {
+                                text: Ui.I18n.t("auth.placeholder.account")
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.Medium
+                                color: Ui.Style.authLabelText
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            Components.SecureTextField {
+                                id: accountField
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Ui.Style.authFieldHeight
+                                placeholderText: Ui.I18n.t("auth.placeholder.account")
+                                font.pixelSize: Ui.Style.authBodyTextSize
+                                color: Ui.Style.textPrimary
+                                placeholderTextColor: Ui.Style.authPlaceholderText
+                                Accessible.name: Ui.I18n.t("auth.placeholder.account")
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    color: Ui.Style.authFieldBg
+                                    border.width: 1
+                                    border.color: accountField.activeFocus
+                                                  ? Ui.Style.authFieldFocus
+                                                  : Ui.Style.authFieldBorder
                                 }
-                                if (currentIndex === 2) {
-                                    startQrLogin()
-                                } else {
-                                    stopQrLogin()
+                                onTextChanged: accountInput = text
+                            }
+
+                            Label {
+                                text: Ui.I18n.t("auth.placeholder.password")
+                                font.pixelSize: Ui.Style.authSubtitleTextSize
+                                font.weight: Font.Medium
+                                color: Ui.Style.authLabelText
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            Components.SecureTextField {
+                                id: passwordField
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Ui.Style.authFieldHeight
+                                echoMode: TextInput.Password
+                                placeholderText: Ui.I18n.t("auth.placeholder.password")
+                                font.pixelSize: Ui.Style.authBodyTextSize
+                                color: Ui.Style.textPrimary
+                                placeholderTextColor: Ui.Style.authPlaceholderText
+                                Accessible.name: Ui.I18n.t("auth.placeholder.password")
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    color: Ui.Style.authFieldBg
+                                    border.width: 1
+                                    border.color: passwordField.activeFocus
+                                                  ? Ui.Style.authFieldFocus
+                                                  : Ui.Style.authFieldBorder
+                                }
+                                onTextChanged: passwordInput = text
+                            }
+
+                            Components.RootAuthCodeCard {
+                                id: rootCodeFieldCard
+                                Layout.fillWidth: true
+                                labelText: Ui.I18n.t("auth.placeholder.rootCode")
+                                placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+                                onTextChanged: rootCodeInput = text
+                            }
+
+                            Button {
+                                id: loginButton
+                                text: Ui.I18n.t("auth.login")
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
+                                Accessible.name: Ui.I18n.t("auth.login")
+                                background: Rectangle {
+                                    radius: Ui.Style.radiusMedium
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.0; color: loginButton.down ? Ui.Style.accentPressed : Ui.Style.accentHover }
+                                        GradientStop { position: 1.0; color: loginButton.down ? Ui.Style.accent : Ui.Style.accent }
+                                    }
+                                    border.width: 1
+                                    border.color: Ui.Style.authBadgeBorder
+                                }
+                                contentItem: Text {
+                                    text: Ui.I18n.t("auth.login")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 16
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                onClicked: {
+                                    if (accountInput.length === 0 || passwordInput.length === 0) {
+                                        errorText = Ui.I18n.t("auth.error.login")
+                                        return
+                                    }
+                                    errorText = ""
+                                    lastLoginAccount = accountInput
+                                    lastLoginPassword = passwordInput
+                                    lastLoginRootCode = rootCodeInput
+                                    attemptLogin(accountInput, passwordInput, rootCodeInput, false)
                                 }
                             }
 
-                            Item {
-                                Layout.fillWidth: true
-                                implicitHeight: loginPageLayout.implicitHeight
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: Ui.Style.paddingS
 
-                                    ColumnLayout {
-                                        id: loginPageLayout
-                                        width: parent.width
-                                        spacing: Ui.Style.paddingS
-
-                                        Label {
-                                            text: Ui.I18n.t("auth.placeholder.account")
-                                            font.pixelSize: Ui.Style.authSubtitleTextSize
-                                            font.weight: Font.Medium
-                                            color: Ui.Style.authLabelText
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Components.SecureTextField {
-                                            id: accountField
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            placeholderText: Ui.I18n.t("auth.placeholder.account")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            Accessible.name: Ui.I18n.t("auth.placeholder.account")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: accountField.activeFocus
-                                                              ? Ui.Style.authFieldFocus
-                                                              : Ui.Style.authFieldBorder
-                                            }
-                                            onTextChanged: accountInput = text
-                                        }
-
-                                        Label {
-                                            text: Ui.I18n.t("auth.placeholder.password")
-                                            font.pixelSize: Ui.Style.authSubtitleTextSize
-                                            font.weight: Font.Medium
-                                            color: Ui.Style.authLabelText
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Components.SecureTextField {
-                                            id: passwordField
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            echoMode: TextInput.Password
-                                            placeholderText: Ui.I18n.t("auth.placeholder.password")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            Accessible.name: Ui.I18n.t("auth.placeholder.password")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: passwordField.activeFocus
-                                                              ? Ui.Style.authFieldFocus
-                                                              : Ui.Style.authFieldBorder
-                                            }
-                                            onTextChanged: passwordInput = text
-                                        }
-
-                                        Components.RootAuthCodeCard {
-                                            id: rootCodeFieldCard
-                                            Layout.fillWidth: true
-                                            labelText: Ui.I18n.t("auth.placeholder.rootCode")
-                                            placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
-                                            onTextChanged: rootCodeInput = text
-                                        }
-
-                                        Button {
-                                            id: loginButton
-                                            text: Ui.I18n.t("auth.login")
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
-                                            Accessible.name: Ui.I18n.t("auth.login")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                gradient: Gradient {
-                                                    GradientStop { position: 0.0; color: loginButton.down ? Ui.Style.accentPressed : Ui.Style.accentHover }
-                                                    GradientStop { position: 1.0; color: loginButton.down ? Ui.Style.accent : Ui.Style.accent }
-                                                }
-                                                border.width: 1
-                                                border.color: Ui.Style.authBadgeBorder
-                                            }
-                                            contentItem: Text {
-                                                text: Ui.I18n.t("auth.login")
-                                                color: Ui.Style.textPrimary
-                                                font.pixelSize: 16
-                                                font.weight: Font.DemiBold
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                            onClicked: {
-                                                if (accountInput.length === 0 || passwordInput.length === 0) {
-                                                    errorText = Ui.I18n.t("auth.error.login")
-                                                    return
-                                                }
-                                                errorText = ""
-                                                lastLoginAccount = accountInput
-                                                lastLoginPassword = passwordInput
-                                                lastLoginRootCode = rootCodeInput
-                                                attemptLogin(accountInput, passwordInput, rootCodeInput, false)
-                                            }
-                                        }
-
+                                Button {
+                                    text: Ui.I18n.t("auth.registerAccount")
+                                    flat: true
+                                    Accessible.name: Ui.I18n.t("auth.registerAccount")
+                                    onClicked: registerPopup.open()
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: Ui.Style.link
+                                        font.pixelSize: 12
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
                                     }
+                                    background: Rectangle { color: "transparent" }
                                 }
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    implicitHeight: registerPageLayout.implicitHeight
-
-                                    ColumnLayout {
-                                        id: registerPageLayout
-                                        width: parent.width
-                                        spacing: Ui.Style.paddingS
-
-                                        Components.SecureTextField {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            placeholderText: Ui.I18n.t("auth.register.placeholder.account")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.account")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: Ui.Style.authFieldBorder
-                                            }
-                                            onTextChanged: registerAccount = text
-                                        }
-
-                                        Components.SecureTextField {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            echoMode: TextInput.Password
-                                            placeholderText: Ui.I18n.t("auth.register.placeholder.password")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.password")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: Ui.Style.authFieldBorder
-                                            }
-                                            onTextChanged: registerPassword = text
-                                        }
-
-                                        Components.SecureTextField {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authFieldHeight
-                                            echoMode: TextInput.Password
-                                            placeholderText: Ui.I18n.t("auth.register.placeholder.confirm")
-                                            font.pixelSize: Ui.Style.authBodyTextSize
-                                            color: Ui.Style.textPrimary
-                                            placeholderTextColor: Ui.Style.authPlaceholderText
-                                            Accessible.name: Ui.I18n.t("auth.register.placeholder.confirm")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.authFieldBg
-                                                border.width: 1
-                                                border.color: Ui.Style.authFieldBorder
-                                            }
-                                            onTextChanged: registerConfirm = text
-                                        }
-
-                                        Button {
-                                            text: Ui.I18n.t("auth.register")
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
-                                            Accessible.name: Ui.I18n.t("auth.register")
-                                            background: Rectangle {
-                                                radius: Ui.Style.radiusMedium
-                                                color: Ui.Style.accent
-                                                border.width: 1
-                                                border.color: Ui.Style.authBadgeBorder
-                                            }
-                                            contentItem: Text {
-                                                text: Ui.I18n.t("auth.register")
-                                                color: Ui.Style.textPrimary
-                                                font.pixelSize: 16
-                                                font.weight: Font.DemiBold
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-                                            onClicked: {
-                                                if (registerAccount.length === 0 || registerPassword.length === 0 || registerConfirm.length === 0) {
-                                                    errorText = Ui.I18n.t("auth.error.registerIncomplete")
-                                                    return
-                                                }
-                                                if (registerPassword !== registerConfirm) {
-                                                    errorText = Ui.I18n.t("auth.error.passwordMismatch")
-                                                    return
-                                                }
-                                                errorText = ""
-                                                if (!Ui.AuthDisplayStore.registerAccount(registerAccount, registerPassword)) {
-                                                    errorText = Ui.AuthDisplayStore.errorText.length > 0
-                                                        ? Ui.AuthDisplayStore.errorText
-                                                        : Ui.I18n.t("auth.error.registerIncomplete")
-                                                    return
-                                                }
-                                                errorText = ""
-                                                loginStack.currentIndex = 0
-                                            }
-                                        }
-
-                                    }
+                                Rectangle {
+                                    width: 1
+                                    height: 12
+                                    radius: 1
+                                    color: Ui.Style.borderSubtle
+                                    Layout.alignment: Qt.AlignVCenter
                                 }
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    implicitHeight: qrPageLayout.implicitHeight
-
-                                    ColumnLayout {
-                                        id: qrPageLayout
-                                        width: parent.width
-                                        spacing: Ui.Style.paddingS
-
-                                        Rectangle {
-                                            id: qrBox
-                                            Layout.alignment: Qt.AlignHCenter
-                                            width: 200
-                                            height: 200
-                                            radius: Ui.Style.radiusMedium
-                                            color: Ui.Style.authFieldBg
-                                            border.width: 1
-                                            border.color: Ui.Style.authFieldBorder
-
-                                            Image {
-                                                anchors.fill: parent
-                                                fillMode: Image.PreserveAspectFit
-                                                source: Ui.AuthDisplayStore.qrLoginPayload.length > 0
-                                                        ? Ui.AuthDisplayStore.qrLoginImage(qrBox.width)
-                                                        : ""
-                                                visible: source.length > 0
-                                            }
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Ui.I18n.t("auth.qr.placeholder")
-                                                color: Ui.Style.textMuted
-                                                font.pixelSize: Ui.Style.authMetaTextSize
-                                                visible: !(Ui.AuthDisplayStore.qrLoginPayload.length > 0)
-                                            }
-                                        }
-
-                                        Text {
-                                            text: qrSeconds > 0
-                                                  ? Ui.I18n.format("auth.qr.refreshIn", qrSeconds)
-                                                  : Ui.I18n.t("auth.qr.expired")
-                                            color: qrSeconds > 0 ? Ui.Style.textSecondary : Ui.Style.link
-                                            font.pixelSize: Ui.Style.authSubtitleTextSize
-                                            horizontalAlignment: Text.AlignHCenter
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: Ui.Style.paddingS
-                                            Item { Layout.fillWidth: true }
-
-                                            Button {
-                                                text: Ui.I18n.t("auth.qr.refresh")
-                                                flat: true
-                                                Accessible.name: Ui.I18n.t("auth.qr.refresh")
-                                                onClicked: startQrLogin()
-                                                contentItem: Text {
-                                                    text: Ui.I18n.t("auth.qr.refresh")
-                                                    color: Ui.Style.link
-                                                    font.pixelSize: Ui.Style.authBodyTextSize
-                                                }
-                                                background: Rectangle { color: "transparent" }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-                                        }
-
+                                Button {
+                                    text: Ui.I18n.t("auth.qrLogin")
+                                    flat: true
+                                    Accessible.name: Ui.I18n.t("auth.qrLogin")
+                                    onClicked: qrPopup.open()
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: Ui.Style.link
+                                        font.pixelSize: 12
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
                                     }
+                                    background: Rectangle { color: "transparent" }
                                 }
                             }
                         }
-
-                    Components.StatusBanner {
-                        Layout.fillWidth: true
-                        tone: statusTone()
-                        titleText: statusTitle()
-                        detailText: statusDetail()
                     }
                 }
+            }
+        }
+    }
+
+    Popup {
+        id: registerPopup
+        parent: Overlay.overlay
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: Math.min(root.width - Ui.Style.paddingXL * 2, 332)
+        padding: Ui.Style.paddingL
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - implicitHeight) / 2)
+
+        background: Rectangle {
+            radius: Ui.Style.radiusLarge
+            color: Ui.Style.authCardBg
+            border.width: 1
+            border.color: Ui.Style.authCardBorder
+        }
+
+        contentItem: ColumnLayout {
+            spacing: Ui.Style.paddingS
+
+            Label {
+                Layout.fillWidth: true
+                text: Ui.I18n.t("auth.registerAccount")
+                color: Ui.Style.textPrimary
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                wrapMode: Text.WordWrap
+            }
+
+            Components.SecureTextField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Ui.Style.authFieldHeight
+                placeholderText: Ui.I18n.t("auth.register.placeholder.account")
+                font.pixelSize: Ui.Style.authBodyTextSize
+                color: Ui.Style.textPrimary
+                placeholderTextColor: Ui.Style.authPlaceholderText
+                Accessible.name: Ui.I18n.t("auth.register.placeholder.account")
+                background: Rectangle {
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.authFieldBg
+                    border.width: 1
+                    border.color: Ui.Style.authFieldBorder
+                }
+                onTextChanged: registerAccount = text
+            }
+
+            Components.SecureTextField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Ui.Style.authFieldHeight
+                echoMode: TextInput.Password
+                placeholderText: Ui.I18n.t("auth.register.placeholder.password")
+                font.pixelSize: Ui.Style.authBodyTextSize
+                color: Ui.Style.textPrimary
+                placeholderTextColor: Ui.Style.authPlaceholderText
+                Accessible.name: Ui.I18n.t("auth.register.placeholder.password")
+                background: Rectangle {
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.authFieldBg
+                    border.width: 1
+                    border.color: Ui.Style.authFieldBorder
+                }
+                onTextChanged: registerPassword = text
+            }
+
+            Components.SecureTextField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Ui.Style.authFieldHeight
+                echoMode: TextInput.Password
+                placeholderText: Ui.I18n.t("auth.register.placeholder.confirm")
+                font.pixelSize: Ui.Style.authBodyTextSize
+                color: Ui.Style.textPrimary
+                placeholderTextColor: Ui.Style.authPlaceholderText
+                Accessible.name: Ui.I18n.t("auth.register.placeholder.confirm")
+                background: Rectangle {
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.authFieldBg
+                    border.width: 1
+                    border.color: Ui.Style.authFieldBorder
+                }
+                onTextChanged: registerConfirm = text
+            }
+
+            Button {
+                text: Ui.I18n.t("auth.register")
+                Layout.fillWidth: true
+                Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
+                Accessible.name: Ui.I18n.t("auth.register")
+                background: Rectangle {
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.accent
+                    border.width: 1
+                    border.color: Ui.Style.authBadgeBorder
+                }
+                contentItem: Text {
+                    text: Ui.I18n.t("auth.register")
+                    color: Ui.Style.textPrimary
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                onClicked: {
+                    if (registerAccount.length === 0 || registerPassword.length === 0 || registerConfirm.length === 0) {
+                        errorText = Ui.I18n.t("auth.error.registerIncomplete")
+                        return
+                    }
+                    if (registerPassword !== registerConfirm) {
+                        errorText = Ui.I18n.t("auth.error.passwordMismatch")
+                        return
+                    }
+                    errorText = ""
+                    if (!Ui.AuthDisplayStore.registerAccount(registerAccount, registerPassword)) {
+                        errorText = Ui.AuthDisplayStore.errorText.length > 0
+                            ? Ui.AuthDisplayStore.errorText
+                            : Ui.I18n.t("auth.error.registerIncomplete")
+                        return
+                    }
+                    errorText = ""
+                    registerPopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: qrPopup
+        parent: Overlay.overlay
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: Math.min(root.width - Ui.Style.paddingXL * 2, 300)
+        padding: Ui.Style.paddingL
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - implicitHeight) / 2)
+        onOpened: {
+            errorText = ""
+            startQrLogin()
+        }
+        onClosed: stopQrLogin()
+
+        background: Rectangle {
+            radius: Ui.Style.radiusLarge
+            color: Ui.Style.authCardBg
+            border.width: 1
+            border.color: Ui.Style.authCardBorder
+        }
+
+        contentItem: ColumnLayout {
+            spacing: Ui.Style.paddingS
+
+            Label {
+                Layout.fillWidth: true
+                text: Ui.I18n.t("auth.qrLogin")
+                color: Ui.Style.textPrimary
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Rectangle {
+                id: qrBox
+                Layout.alignment: Qt.AlignHCenter
+                width: 196
+                height: 196
+                radius: Ui.Style.radiusMedium
+                color: Ui.Style.authFieldBg
+                border.width: 1
+                border.color: Ui.Style.authFieldBorder
+
+                Image {
+                    anchors.fill: parent
+                    fillMode: Image.PreserveAspectFit
+                    source: Ui.AuthDisplayStore.qrLoginPayload.length > 0
+                            ? Ui.AuthDisplayStore.qrLoginImage(qrBox.width)
+                            : ""
+                    visible: source.length > 0
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: Ui.I18n.t("auth.qr.placeholder")
+                    color: Ui.Style.textMuted
+                    font.pixelSize: Ui.Style.authMetaTextSize
+                    visible: !(Ui.AuthDisplayStore.qrLoginPayload.length > 0)
+                }
+            }
+
+            Text {
+                text: qrSeconds > 0
+                      ? Ui.I18n.format("auth.qr.refreshIn", qrSeconds)
+                      : Ui.I18n.t("auth.qr.expired")
+                color: qrSeconds > 0 ? Ui.Style.textSecondary : Ui.Style.link
+                font.pixelSize: Ui.Style.authSubtitleTextSize
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
+
+            Button {
+                text: Ui.I18n.t("auth.qr.refresh")
+                flat: true
+                Layout.alignment: Qt.AlignHCenter
+                Accessible.name: Ui.I18n.t("auth.qr.refresh")
+                onClicked: startQrLogin()
+                contentItem: Text {
+                    text: Ui.I18n.t("auth.qr.refresh")
+                    color: Ui.Style.link
+                    font.pixelSize: Ui.Style.authBodyTextSize
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle { color: "transparent" }
             }
         }
     }

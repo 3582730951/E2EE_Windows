@@ -178,29 +178,97 @@ ApplicationWindow {
             currentIndex: sectionList.currentIndex
 
             Item {
-                ColumnLayout {
+                Rectangle {
                     anchors.fill: parent
-                    spacing: Ui.Style.paddingS
-                    Text { text: Ui.I18n.t("settings.theme"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
-                    ComboBox {
-                        model: themeOptions
-                        textRole: "label"
-                        Layout.preferredWidth: 220
-                        currentIndex: themeModeIndex(Ui.Style.themeMode)
-                        onActivated: Ui.Style.themeMode = model[currentIndex].mode
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.panelBg
+                    border.color: Ui.Style.borderSubtle
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: 0
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            Text {
+                                text: Ui.I18n.t("settings.theme")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Item { Layout.fillWidth: true }
+                            ComboBox {
+                                model: themeOptions
+                                textRole: "label"
+                                Layout.preferredWidth: 184
+                                currentIndex: themeModeIndex(Ui.Style.themeMode)
+                                onActivated: Ui.Style.themeMode = model[currentIndex].mode
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            Text {
+                                text: Ui.I18n.t("settings.language")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Item { Layout.fillWidth: true }
+                            ComboBox {
+                                model: localeOptions
+                                textRole: "name"
+                                Layout.preferredWidth: 184
+                                currentIndex: localeModeIndex(Ui.I18n.localeMode)
+                                onActivated: Ui.I18n.setLocaleMode(model[currentIndex].code)
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            Text {
+                                text: Ui.I18n.t("settings.fontSize")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Item { Layout.fillWidth: true }
+                            Slider {
+                                from: 12
+                                to: 16
+                                value: 13
+                                Layout.preferredWidth: 184
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            Text {
+                                text: Ui.I18n.t("settings.messageDensity")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Item { Layout.fillWidth: true }
+                            ComboBox {
+                                model: [Ui.I18n.t("settings.density.normal"), Ui.I18n.t("settings.density.compact")]
+                                Layout.preferredWidth: 184
+                            }
+                        }
+
+                        Item { Layout.fillHeight: true }
                     }
-                    Text { text: Ui.I18n.t("settings.language"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
-                    ComboBox {
-                        model: localeOptions
-                        textRole: "name"
-                        Layout.preferredWidth: 220
-                        currentIndex: localeModeIndex(Ui.I18n.localeMode)
-                        onActivated: Ui.I18n.setLocaleMode(model[currentIndex].code)
-                    }
-                    Text { text: Ui.I18n.t("settings.fontSize"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
-                    Slider { from: 12; to: 16; value: 13 }
-                    Text { text: Ui.I18n.t("settings.messageDensity"); color: Ui.Style.textSecondary; font.pixelSize: 12; elide: Text.ElideRight }
-                    ComboBox { model: [Ui.I18n.t("settings.density.normal"), Ui.I18n.t("settings.density.compact")] }
                 }
             }
 
@@ -222,181 +290,144 @@ ApplicationWindow {
                         radius: Ui.Style.radiusMedium
                         color: Ui.Style.panelBg
                         border.color: Ui.Style.borderSubtle
-
-                        RowLayout {
+                        ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: Ui.Style.paddingM
-                            spacing: Ui.Style.paddingM
+                            spacing: 0
 
-                            Rectangle {
-                                width: 38
-                                height: 38
-                                radius: 19
-                                color: Ui.Style.dialogSelectedBg
-
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 18
-                                    height: 18
-                                    fillMode: Image.PreserveAspectFit
-                                    source: "qrc:/mi/e2ee/ui/icons/check.svg"
-                                }
-                            }
-
-                            ColumnLayout {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 2
+                                Layout.preferredHeight: 52
 
                                 Text {
                                     text: Ui.I18n.t("settings.securityCenter.title")
                                     color: Ui.Style.textPrimary
                                     font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
+                                    font.weight: Font.Medium
                                 }
+                                Item { Layout.fillWidth: true }
+                                Components.GhostButton {
+                                    text: Ui.I18n.t("settings.securityCenter.open")
+                                    Layout.preferredHeight: 32
+                                    onClicked: root.requestSecurityCenter()
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: Ui.Style.paddingM
                                 Text {
-                                    text: Ui.I18n.t("settings.securityCenter.detail")
-                                    color: Ui.Style.textMuted
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("settings.privacy.clipboardIsolation")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                }
+                                Item { Layout.fillWidth: true }
+                                Switch {
+                                    checked: Ui.PreferenceStore.clipboardIsolationEnabled
+                                    onToggled: Ui.PreferenceStore.setClipboardIsolationEnabled(checked)
                                 }
                             }
 
-                            Components.GhostButton {
-                                text: Ui.I18n.t("settings.securityCenter.open")
-                                Layout.alignment: Qt.AlignVCenter
-                                onClicked: root.requestSecurityCenter()
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: Ui.Style.paddingM
+                                Text {
+                                    text: Ui.I18n.t("settings.privacy.internalIme")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                }
+                                Item { Layout.fillWidth: true }
+                                Switch {
+                                    checked: Ui.PreferenceStore.internalImeEnabled
+                                    onToggled: Ui.PreferenceStore.setInternalImeEnabled(checked)
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: Ui.Style.paddingM
+                                Text {
+                                    text: Ui.I18n.t("settings.privacy.saveHistory")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                }
+                                Item { Layout.fillWidth: true }
+                                Switch {
+                                    checked: Ui.PreferenceStore.historySaveEnabled
+                                    onToggled: Ui.PreferenceStore.setHistorySaveEnabled(checked)
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Ui.Style.borderSubtle }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: Ui.Style.paddingM
+                                Text {
+                                    text: Ui.I18n.t("settings.privacy.aiEnhance")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                }
+                                Item { Layout.fillWidth: true }
+                                Switch {
+                                    checked: Ui.PreferenceStore.aiEnhanceEnabled
+                                    onToggled: Ui.PreferenceStore.setAiEnhanceEnabled(checked)
+                                }
                             }
                         }
                     }
 
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.clipboardIsolation")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: Ui.I18n.t("settings.privacy.clipboardIsolationHint")
-                            color: Ui.Style.textMuted
-                            font.pixelSize: 11
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                        Switch {
-                            checked: Ui.PreferenceStore.clipboardIsolationEnabled
-                            onToggled: Ui.PreferenceStore.setClipboardIsolationEnabled(checked)
-                        }
-                    }
-
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.internalIme")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: Ui.I18n.t("settings.privacy.internalImeHint")
-                            color: Ui.Style.textMuted
-                            font.pixelSize: 11
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                        Switch {
-                            checked: Ui.PreferenceStore.internalImeEnabled
-                            onToggled: Ui.PreferenceStore.setInternalImeEnabled(checked)
-                        }
-                    }
-
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.saveHistory")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: Ui.I18n.t("settings.privacy.saveHistoryHint")
-                            color: Ui.Style.textMuted
-                            font.pixelSize: 11
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                        Switch {
-                            checked: Ui.PreferenceStore.historySaveEnabled
-                            onToggled: Ui.PreferenceStore.setHistorySaveEnabled(checked)
-                        }
-                    }
-
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhance")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: Ui.I18n.t("settings.privacy.aiEnhanceHint")
-                            color: Ui.Style.textMuted
-                            font.pixelSize: 11
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                        }
-                        Switch {
-                            checked: Ui.PreferenceStore.aiEnhanceEnabled
-                            onToggled: Ui.PreferenceStore.setAiEnhanceEnabled(checked)
-                        }
-                    }
                     Item { Layout.fillHeight: true }
                 }
             }
 
             Item {
-                ColumnLayout {
+                Rectangle {
                     anchors.fill: parent
-                    spacing: Ui.Style.paddingM
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.panelBg
+                    border.color: Ui.Style.borderSubtle
 
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhance")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                    }
-                    Text {
-                        text: Ui.I18n.t("settings.privacy.aiEnhanceHint")
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                    }
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        spacing: Ui.Style.paddingXS
-                        enabled: Ui.PreferenceStore.aiEnhanceEnabled
-                        opacity: Ui.PreferenceStore.aiEnhanceEnabled ? 1.0 : 0.45
-                        Text {
-                            text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
-                            color: Ui.Style.textSecondary
-                            font.pixelSize: 12
-                        }
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: 8
+
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 52
+                            Text {
+                                text: Ui.I18n.t("settings.privacy.aiEnhanceQuality")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+                            Item { Layout.fillWidth: true }
                             ComboBox {
                                 id: aiQualityCombo
                                 model: aiQualityOptions
                                 textRole: "label"
-                                Layout.preferredWidth: 220
+                                Layout.preferredWidth: 184
                                 enabled: Ui.PreferenceStore.aiEnhanceEnabled
                                 currentIndex: aiQualityIndex(Ui.PreferenceStore.aiEnhanceQualityLevel)
                                 onActivated: requestAiQuality(model[currentIndex].scale)
                             }
                         }
+
                         Text {
                             text: Ui.PreferenceStore.aiEnhanceGpuName.length > 0
                                   ? Ui.I18n.t("settings.privacy.aiEnhanceGpu").arg(
@@ -409,7 +440,9 @@ ApplicationWindow {
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
+
                         Text {
                             text: Ui.PreferenceStore.aiEnhanceGpuAvailable
                                   ? ""
@@ -418,46 +451,61 @@ ApplicationWindow {
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
+
                         Text {
                             text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendPerf")
                                   .arg(Ui.PreferenceStore.aiEnhancePerfScale)
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
+
                         Text {
                             text: Ui.I18n.t("settings.privacy.aiEnhanceRecommendQuality")
                                   .arg(Ui.PreferenceStore.aiEnhanceQualityScale)
                             color: Ui.Style.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
+
+                        Item { Layout.fillHeight: true }
                     }
-                    Item { Layout.fillHeight: true }
                 }
             }
 
             Item {
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    spacing: Ui.Style.paddingS
-                    Text { text: Ui.I18n.t("settings.about.appName"); color: Ui.Style.textPrimary; font.pixelSize: 16 }
-                    Text { text: Ui.I18n.t("settings.about.build"); color: Ui.Style.textMuted; font.pixelSize: 12 }
-                    Text {
-                        text: Ui.SecurityDisplayStore.gatewayDisplayDetail
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                    }
-                    Text {
-                        text: Ui.SecurityDisplayStore.versionText
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
-                    }
-                    Text {
-                        text: Ui.SecurityDisplayStore.connectionSummary()
-                        color: Ui.Style.textMuted
-                        font.pixelSize: 11
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Ui.Style.radiusMedium
+                    color: Ui.Style.panelBg
+                    border.color: Ui.Style.borderSubtle
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: 8
+                        Text { text: Ui.I18n.t("settings.about.appName"); color: Ui.Style.textPrimary; font.pixelSize: 16 }
+                        Text { text: Ui.I18n.t("settings.about.build"); color: Ui.Style.textMuted; font.pixelSize: 12 }
+                        Text {
+                            text: Ui.SecurityDisplayStore.gatewayDisplayDetail
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            text: Ui.SecurityDisplayStore.versionText
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            text: Ui.SecurityDisplayStore.connectionSummary()
+                            color: Ui.Style.textMuted
+                            font.pixelSize: 11
+                        }
+                        Item { Layout.fillHeight: true }
                     }
                 }
             }

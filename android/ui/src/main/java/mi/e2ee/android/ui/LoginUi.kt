@@ -1,11 +1,11 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,10 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,8 +77,8 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 AppMark()
@@ -100,7 +101,7 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (!cardStatus.isNullOrBlank()) {
                         LoginErrorBanner(errorCode = cardStatus)
@@ -155,18 +156,22 @@ fun LoginScreen(
                         enabled = email.value.isNotBlank() && password.value.isNotBlank(),
                         onClick = { onLogin(email.value.trim(), password.value, rootCode.value) }
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         LoginUtilityButton(
                             label = tr("login_qr_show", "Show QR"),
                             token = "QR",
                             onClick = { onShowQr(email.value.trim()) },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
                         )
                         LoginUtilityButton(
                             label = tr("login_scan_qr", "Scan QR"),
                             token = "SC",
                             onClick = onScanQr,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
                         )
                     }
                 }
@@ -272,6 +277,7 @@ private fun LoginStatusChip(message: String) {
 @Composable
 private fun LoginSupportStatusRow(message: String) {
     Row(
+        modifier = Modifier.height(24.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -322,7 +328,13 @@ private fun LoginInputField(
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
             shape = RoundedCornerShape(14.dp),
-            singleLine = singleLine
+            singleLine = singleLine,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+            )
         )
     }
 }
@@ -372,31 +384,31 @@ private fun LoginUtilityButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedButton(
+    TextButton(
         onClick = onClick,
-        modifier = modifier.height(40.dp),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        modifier = modifier.height(28.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.primary
+        ),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
     ) {
         UiTokenIcon(
             label = token,
-            size = 18.dp,
+            size = 16.dp,
             cornerRadius = 6.dp,
             containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
             contentColor = MaterialTheme.colorScheme.primary
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable
 private fun LoginPreview() {
     LoginApp()

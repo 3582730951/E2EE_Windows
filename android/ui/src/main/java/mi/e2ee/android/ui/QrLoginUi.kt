@@ -30,14 +30,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -129,8 +124,8 @@ fun QrLoginDisplayScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -141,14 +136,9 @@ fun QrLoginDisplayScreen(
                 style = MaterialTheme.typography.titleLarge
             )
         }
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -166,19 +156,19 @@ fun QrLoginDisplayScreen(
                     )
                 }
                 if (!payload.isNullOrBlank()) {
-                    val qrBitmap = rememberQrBitmap(payload ?: "", 240)
+                    val qrBitmap = rememberQrBitmap(payload ?: "", 208)
                     Image(
                         bitmap = qrBitmap,
                         contentDescription = "QR",
                         modifier = Modifier
-                            .size(240.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(208.dp)
+                            .clip(RoundedCornerShape(14.dp))
                     )
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(240.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .size(208.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
@@ -188,7 +178,7 @@ fun QrLoginDisplayScreen(
                         )
                     }
                 }
-                OutlinedButton(onClick = onBack) {
+                TextButton(onClick = onBack) {
                     Text(t("qr_login_cancel", "Cancel"))
                 }
             }
@@ -266,17 +256,15 @@ fun QrLoginScanScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = t("qr_scan_login_required", "Please sign in to approve login."),
                 style = MaterialTheme.typography.titleMedium
             )
-            Button(onClick = onBack) {
-                Text(t("qr_scan_back", "Back"))
-            }
+            TextButton(onClick = onBack) { Text(t("qr_scan_back", "Back")) }
         }
         return
     }
@@ -306,8 +294,8 @@ fun QrLoginScanScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -329,14 +317,9 @@ fun QrLoginScanScreen(
             return
         }
 
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
+        SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (scanError != null) {
@@ -375,7 +358,7 @@ fun QrLoginScanScreen(
                     )
                     if (scanError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(onClick = {
+                        TextButton(onClick = {
                             scanError = null
                             scanned = null
                             approved = false
@@ -390,14 +373,9 @@ fun QrLoginScanScreen(
 
         scanned?.let { payload ->
             val deviceLabel = payload.deviceId?.takeLast(8) ?: "?"
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
+            SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
@@ -430,17 +408,26 @@ fun QrLoginScanScreen(
                         ),
                         singleLine = true
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = {
-                            scanned = null
-                            scanError = null
-                            approved = false
-                            rootCodeInput = ""
-                            scanKey += 1
-                        }) {
-                            Text(t("qr_scan_rescan", "Rescan"))
-                        }
-                        Button(
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SecondaryButton(
+                            label = t("qr_scan_rescan", "Rescan"),
+                            modifier = Modifier.weight(1f),
+                            fillMaxWidth = false,
+                            onClick = {
+                                scanned = null
+                                scanError = null
+                                approved = false
+                                rootCodeInput = ""
+                                scanKey += 1
+                            }
+                        )
+                        PrimaryButton(
+                            label = t("qr_scan_approve", "Approve"),
+                            modifier = Modifier.weight(1f),
+                            fillMaxWidth = false,
                             onClick = {
                                 val code = rootCodeInput.trim().ifBlank { null }
                                 val ok = sdk.approveQrLogin(payload.qrId, payload.secret, code)
@@ -453,13 +440,8 @@ fun QrLoginScanScreen(
                                         t("qr_scan_failed", "Approval failed")
                                     }
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text(t("qr_scan_approve", "Approve"))
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -471,21 +453,15 @@ fun QrLoginScanScreen(
 
 @Composable
 private fun PermissionNotice(title: String, body: String, onRetry: () -> Unit) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
+    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+                .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
             Text(text = body, style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = onRetry) {
-                Text(tr("qr_scan_retry", "Grant permission"))
-            }
+            TextButton(onClick = onRetry) { Text(tr("qr_scan_retry", "Grant permission")) }
         }
     }
 }
@@ -495,14 +471,19 @@ private fun StatusBanner(message: String, icon: androidx.compose.ui.graphics.vec
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(tint.copy(alpha = 0.12f))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(999.dp))
+            .background(tint.copy(alpha = 0.08f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(icon, contentDescription = null, tint = tint)
-        Text(text = message, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
     }
 }
 

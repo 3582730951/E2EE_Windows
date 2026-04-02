@@ -53,71 +53,65 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Ui.Style.paddingS + 2
-        spacing: 6
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        anchors.topMargin: 0
+        anchors.bottomMargin: 12
+        spacing: 0
 
-        Rectangle {
+        Item {
             Layout.fillWidth: true
-            radius: Ui.Style.radiusMedium
-            color: Ui.Style.railHeaderBg
-            border.width: 1
-            border.color: Ui.Style.borderSubtle
-            implicitHeight: railHeaderColumn.implicitHeight + 20
+            Layout.preferredHeight: 132
+            Layout.minimumHeight: 132
+            Layout.maximumHeight: 132
 
             ColumnLayout {
-                id: railHeaderColumn
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 6
+                anchors.topMargin: 12
+                anchors.leftMargin: 0
+                anchors.rightMargin: 0
+                anchors.bottomMargin: 20
+                spacing: 12
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 52
                     spacing: 6
 
-                    Text {
+                    ColumnLayout {
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
-                        text: Ui.I18n.t("app.title")
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 16
-                        font.weight: Font.DemiBold
-                    }
-
-                    Rectangle {
-                        Layout.alignment: Qt.AlignVCenter
-                        implicitHeight: 20
-                        radius: 10
-                        color: Ui.Style.railAccentBg
-                        border.width: 1
-                        border.color: Ui.Style.railAccentBorder
-                        implicitWidth: securePillText.implicitWidth + 12
+                        spacing: 1
 
                         Text {
-                            id: securePillText
-                            anchors.centerIn: parent
+                            text: Ui.I18n.t("app.title")
+                            color: Ui.Style.textPrimary
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
                             text: root.smokeRailBadgeText
                             color: Ui.Style.accentSoft
                             font.pixelSize: 10
-                            font.weight: Font.DemiBold
+                            font.weight: Font.Medium
+                            elide: Text.ElideRight
                         }
                     }
 
-                    Item { Layout.fillWidth: true }
-
                     Item {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
-                        Layout.minimumWidth: 32
-                        Layout.minimumHeight: 32
-                        Layout.maximumWidth: 32
-                        Layout.maximumHeight: 32
+                        Layout.preferredWidth: 30
+                        Layout.preferredHeight: 30
+                        Layout.alignment: Qt.AlignVCenter
                         clip: false
 
                         Components.IconButton {
                             id: notificationsButton
                             anchors.fill: parent
                             icon.source: "qrc:/mi/e2ee/ui/icons/bell.svg"
-                            buttonSize: 32
-                            iconSize: 15
+                            buttonSize: 30
+                            iconSize: 14
                             bgColor: Ui.Style.topBarPillBg
                             hoverBg: Ui.Style.hoverBg
                             pressedBg: Ui.Style.pressedBg
@@ -138,6 +132,7 @@ Item {
                             width: Math.max(16, badgeText.paintedWidth + 8)
                             height: 16
                             z: 3
+
                             Text {
                                 id: badgeText
                                 anchors.centerIn: parent
@@ -151,11 +146,12 @@ Item {
 
                     Components.IconButton {
                         id: menuButton
+                        Layout.alignment: Qt.AlignVCenter
                         icon.source: Ui.Style.isDark
                                      ? "qrc:/mi/e2ee/ui/icons/menu-lines.svg"
                                      : "qrc:/mi/e2ee/ui/icons/menu-lines-dark.svg"
-                        buttonSize: 32
-                        iconSize: 15
+                        buttonSize: 30
+                        iconSize: 14
                         bgColor: Ui.Style.topBarPillBg
                         hoverBg: Ui.Style.hoverBg
                         pressedBg: Ui.Style.pressedBg
@@ -167,13 +163,14 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 36
                     spacing: 6
 
                     Components.SearchField {
                         id: searchField
                         Layout.fillWidth: true
                         Layout.minimumWidth: 120
-                        Layout.preferredHeight: 32
+                        Layout.preferredHeight: 36
                         placeholderText: Ui.I18n.t("left.search")
                         text: Ui.ChatDisplayStore.searchQuery
                         onTextEdited: Ui.ChatDisplayStore.setSearchQuery(text)
@@ -181,8 +178,8 @@ Item {
 
                     Components.GhostButton {
                         id: quickNewChatButton
-                        Layout.preferredWidth: 86
-                        Layout.preferredHeight: 32
+                        Layout.preferredWidth: 84
+                        Layout.preferredHeight: 36
                         text: Ui.I18n.t("left.newChat")
                         Accessible.name: Ui.I18n.t("left.newChat")
                         onClicked: root.requestNewChat()
@@ -192,7 +189,7 @@ Item {
                         id: quickComposeButton
                         Accessible.name: Ui.I18n.t("chat.more")
                         icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
-                        buttonSize: 32
+                        buttonSize: 36
                         iconSize: 14
                         bgColor: Ui.Style.topBarPillBg
                         hoverBg: Ui.Style.hoverBg
@@ -341,69 +338,42 @@ Item {
             Layout.fillHeight: true
             visible: Ui.ChatDisplayStore.filteredDialogsModel.count === 0
 
-            Rectangle {
+            ColumnLayout {
                 anchors.centerIn: parent
-                width: Math.min(parent.width - 12, 248)
-                radius: Ui.Style.radiusXL
-                color: Ui.Style.panelBgRaised
-                border.width: 1
-                border.color: Ui.Style.borderSubtle
-                implicitHeight: emptyCardLayout.implicitHeight + 28
+                width: Math.min(parent.width - 24, 248)
+                spacing: 10
 
-                ColumnLayout {
-                    id: emptyCardLayout
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 10
+                Text {
+                    Layout.fillWidth: true
+                    text: Ui.I18n.t("left.emptyTitle")
+                    color: Ui.Style.textPrimary
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
 
-                    Rectangle {
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 44
-                        Layout.preferredHeight: 44
-                        radius: 22
-                        color: Qt.rgba(59 / 255, 125 / 255, 216 / 255, 0.18)
+                Text {
+                    Layout.fillWidth: true
+                    text: Ui.I18n.t("left.emptyBody")
+                    color: Ui.Style.textSecondary
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
 
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 14
-                            height: 14
-                            radius: 7
-                            color: Ui.Style.accent
-                        }
-                    }
+                Components.PrimaryButton {
+                    text: Ui.I18n.t("left.newChat")
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    onClicked: root.requestNewChat()
+                }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: Ui.I18n.t("left.emptyTitle")
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: Ui.I18n.t("left.emptyBody")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: 12
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Components.PrimaryButton {
-                        text: Ui.I18n.t("left.newChat")
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 40
-                        onClicked: root.requestNewChat()
-                    }
-
-                    Components.GhostButton {
-                        text: Ui.I18n.t("left.addContact")
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 38
-                        onClicked: root.requestAddContact()
-                    }
+                Components.GhostButton {
+                    text: Ui.I18n.t("left.addContact")
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    onClicked: root.requestAddContact()
                 }
             }
         }

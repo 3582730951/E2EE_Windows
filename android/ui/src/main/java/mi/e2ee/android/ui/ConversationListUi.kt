@@ -234,7 +234,7 @@ fun ConversationListScreen(
                         .fillMaxWidth()
                         .testTag("conversation-search")
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(1.dp))
                 val search = query.value.trim()
                 val searched = if (search.isBlank()) {
                     conversations.filterNot { hiddenIds.contains(it.id) }
@@ -455,7 +455,9 @@ private fun ConversationTopBar(
     modifier: Modifier = Modifier
 ) {
     TopAppBar(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
         title = {
             Text(
                 text = title,
@@ -490,7 +492,7 @@ fun ConversationBottomBar(
     NavigationBar(
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(56.dp)
             .navigationBarsPadding(),
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         tonalElevation = 0.dp
@@ -538,10 +540,10 @@ private fun RowScope.ConversationBottomNavItem(
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
                 else Color.Transparent
             )
-            .padding(vertical = 4.dp),
+            .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
@@ -573,7 +575,7 @@ private fun CompactSearchField(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
         border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
         )
     ) {
         BasicTextField(
@@ -845,14 +847,15 @@ private fun ConversationRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .height(72.dp)
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
                     AvatarBadge(
                         initials = item.initials,
                         tint = MaterialTheme.colorScheme.primary,
-                        size = 40.dp
+                        size = 48.dp
                     )
                     if (item.isGroup) {
                         UiSemanticIcon(
@@ -860,11 +863,11 @@ private fun ConversationRow(
                             contentDescription = tr("conversations_group", "Group"),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(14.dp),
+                                .size(16.dp),
                             tone = UiIconTone.Primary,
-                            size = 14.dp,
-                            cornerRadius = 7.dp,
-                            iconSize = 9.dp,
+                            size = 16.dp,
+                            cornerRadius = 8.dp,
+                            iconSize = 10.dp,
                             framed = false
                         )
                     }
@@ -893,7 +896,7 @@ private fun ConversationRow(
                     }
                     Text(
                         text = previewText,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = previewColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -1097,7 +1100,7 @@ private fun ToastPill(text: String, modifier: Modifier = Modifier) {
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 6.dp
+        shadowElevation = 2.dp
     ) {
         Text(
             text = text,
@@ -1119,7 +1122,7 @@ private fun UndoPill(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 6.dp
+        shadowElevation = 2.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1234,7 +1237,7 @@ internal fun sampleConversations(): List<ConversationPreview> {
     )
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
 @Composable
 private fun ConversationListPreview() {
     ChatTheme { ConversationListScreen(conversations = sampleConversations()) }

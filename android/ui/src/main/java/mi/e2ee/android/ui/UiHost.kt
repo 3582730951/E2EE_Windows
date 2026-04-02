@@ -1,13 +1,9 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -20,12 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import java.io.File
 import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupMemberRole
@@ -154,6 +147,12 @@ private fun UiHost(
             groupRooms = sdk.groupCallRooms,
             onOpenPeerCall = { state -> navigate(FlowScreen.PeerCall(state.callIdHex)) },
             onOpenGroupCall = { state -> navigate(FlowScreen.GroupCall(state.groupId, state.callIdHex)) },
+            onAcceptPendingCall = {
+                val state = facade.acceptIncomingCall()
+                if (state != null) {
+                    navigate(FlowScreen.PeerCall(state.callIdHex))
+                }
+            },
             onJoinGroupRoom = { room ->
                 val info = sdk.joinGroupCallHex(room.groupId, room.callId, room.video)
                 val active = sdk.activeGroupCall
@@ -502,7 +501,6 @@ private fun UiHost(
 @Composable
 private fun AppBackdrop() {
     val background = MaterialTheme.colorScheme.background
-    val isDark = background.luminance() < 0.3f
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -510,32 +508,17 @@ private fun AppBackdrop() {
                 Brush.verticalGradient(
                     colors = listOf(
                         background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.86f else 0.68f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.03f),
                         background
                     ),
                     startY = 0f,
                     endY = 1800f
                 )
             )
-    ) {
-        Box(
-            modifier = Modifier
-                .size(240.dp)
-                .offset(x = 220.dp, y = (-48).dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.14f else 0.12f))
-        )
-        Box(
-            modifier = Modifier
-                .size(190.dp)
-                .offset(x = (-36).dp, y = 560.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.09f else 0.08f))
-        )
-    }
+    )
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
 @Composable
 private fun UiHostPreview() {
     val context = LocalContext.current

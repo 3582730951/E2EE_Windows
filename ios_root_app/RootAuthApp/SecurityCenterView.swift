@@ -68,9 +68,9 @@ struct SecurityCenterView: View {
 
     var body: some View {
         SecureFullscreenScrollPage(horizontalPadding: 12,
-                                   verticalPadding: 12,
+                                   verticalPadding: 8,
                                    showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
                 summaryStrip
 
                 sectionLabel("Devices")
@@ -90,7 +90,8 @@ struct SecurityCenterView: View {
                             title: "Linked devices",
                             detail: "No additional trusted devices are currently active.",
                             systemImage: "macbook.and.iphone",
-                            trailing: "0"
+                            trailing: "0",
+                            lineLimit: 2
                         )
                     } else {
                         ForEach(Array(linkedDeviceSummaries.prefix(3).enumerated()), id: \.offset) { index, summary in
@@ -98,7 +99,8 @@ struct SecurityCenterView: View {
                                 title: index == 0 ? "Linked devices" : " ",
                                 detail: summary,
                                 systemImage: "ipad.and.iphone",
-                                trailing: "Trusted"
+                                trailing: "Trusted",
+                                lineLimit: 2
                             )
 
                             if index < min(linkedDeviceSummaries.count, 3) - 1 {
@@ -149,9 +151,9 @@ struct SecurityCenterView: View {
                                                            embeddedTitle: "Root authorization tools")) {
                         HStack(spacing: 12) {
                             Image(systemName: "qrcode.viewfinder")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(SecurePalette.accent)
-                                .frame(width: 24, height: 24)
+                                .frame(width: 22, height: 22)
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Open approval tools")
@@ -169,7 +171,7 @@ struct SecurityCenterView: View {
                                 .foregroundStyle(SecurePalette.textMuted)
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 13)
+                        .frame(minHeight: 54)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -182,47 +184,40 @@ struct SecurityCenterView: View {
     }
 
     private var summaryStrip: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Image(systemName: transportIcon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(transportTone.accent)
-                .frame(width: 28, height: 28)
+                .frame(width: 18, height: 18)
                 .background(
                     Circle()
                         .fill(transportTone.fill)
                 )
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(clientStore.remoteOK ? "No security action needed" : transportTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SecurePalette.textPrimary)
-                Text(clientStore.remoteOK
-                     ? "This device, transport, and approval tools look normal."
-                     : transportDetail)
-                    .font(.caption)
-                    .foregroundStyle(SecurePalette.textSecondary)
-                    .lineLimit(2)
-            }
+            Text(clientStore.remoteOK ? "No security action needed" : transportTitle)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(SecurePalette.textPrimary)
+                .lineLimit(1)
 
             Spacer(minLength: 8)
 
             SecureCircularIconButton(
                 systemImage: "arrow.clockwise",
                 accessibilityLabel: "Refresh security state",
-                iconSize: 14,
-                buttonSize: 44
+                iconSize: 11,
+                buttonSize: 28
             ) {
                 clientStore.refreshNow()
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .frame(height: 36)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(SecurePalette.surface.opacity(0.94))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -240,11 +235,11 @@ struct SecurityCenterView: View {
             content()
         }
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(SecurePalette.surface.opacity(0.96))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(SecurePalette.border, lineWidth: 1)
         )
     }
@@ -259,12 +254,13 @@ struct SecurityCenterView: View {
                                  detail: String,
                                  systemImage: String,
                                  trailing: String,
-                                 monospaced: Bool = false) -> some View {
+                                 monospaced: Bool = false,
+                                 lineLimit: Int = 2) -> some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(SecurePalette.accent)
-                .frame(width: 24, height: 24)
+                .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -273,7 +269,7 @@ struct SecurityCenterView: View {
                 Text(detail)
                     .font(monospaced ? .system(.footnote, design: .monospaced) : .footnote)
                     .foregroundStyle(SecurePalette.textSecondary)
-                    .lineLimit(2)
+                    .lineLimit(lineLimit)
             }
 
             Spacer(minLength: 12)
@@ -284,6 +280,6 @@ struct SecurityCenterView: View {
                 .multilineTextAlignment(.trailing)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 13)
+        .frame(minHeight: 54)
     }
 }

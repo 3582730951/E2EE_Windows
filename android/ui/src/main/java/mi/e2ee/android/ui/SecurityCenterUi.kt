@@ -1,9 +1,11 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,10 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -256,11 +258,20 @@ private fun SecurityCenterScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                modifier = Modifier.height(56.dp),
+                title = {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
                 navigationIcon = {
                     if (showBackButton) {
                         IconButton(onClick = onBack) {
-                            Icon(MiOwnedIcons.ArrowBack, contentDescription = "Back")
+                            Icon(
+                                MiOwnedIcons.ArrowBack,
+                                contentDescription = tr("security_center_back", "Back")
+                            )
                         }
                     }
                 },
@@ -276,327 +287,273 @@ private fun SecurityCenterScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 14.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "summary") {
-                SecuritySummaryCard(snapshot = snapshot, onRefresh = onRefresh)
+                SecuritySummaryStrip(snapshot = snapshot, onRefresh = onRefresh)
             }
             item(key = "devices-header") {
                 SectionHeader(text = tr("security_center_devices", "Devices and sessions"))
             }
             item(key = "devices-card") {
-                SecurityDevicesCard(snapshot = snapshot, onKickDevice = onKickDevice)
+                SecurityDevicesSection(snapshot = snapshot, onKickDevice = onKickDevice)
             }
-            item(key = "transport-header") {
-                SectionHeader(text = tr("security_center_transport", "Transport"))
+            item(key = "transport-trust-header") {
+                SectionHeader(text = tr("security_center_transport_trust", "Transport and trust"))
             }
-            item(key = "transport-card") {
-                SecurityTransportCard(
+            item(key = "transport-trust-card") {
+                SecurityTransportTrustSection(
                     snapshot = snapshot,
                     onReconnect = onReconnect,
-                    onCopyDevice = onCopyDevice
-                )
-            }
-            item(key = "root-auth-header") {
-                SectionHeader(text = tr("security_center_root_auth", "Root Auth"))
-            }
-            item(key = "root-auth-card") {
-                SecurityRootAuthCard(
-                    snapshot = snapshot,
+                    onCopyDevice = onCopyDevice,
+                    onOpenRootAuthSetup = onOpenRootAuthSetup,
                     onCopyCode = onCopyCode,
                     onCopyKey = onCopyKey,
-                    onOpenRootAuthSetup = onOpenRootAuthSetup,
                     onClearRootAuth = onClearRootAuth
                 )
             }
             item(key = "bottom-spacer") {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
 }
 
 @Composable
-private fun SecuritySummaryCard(
+private fun SecuritySummaryStrip(
     snapshot: SecurityCenterSnapshot,
     onRefresh: () -> Unit
 ) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = tr("security_center_title_overline", "SECURITY CENTER"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = tr("security_center_summary_title", "Trust, devices, and session health"),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = tr(
-                            "security_center_summary_body",
-                            "Default state stays quiet. Review transport, devices, and approval identity only when you need proof."
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                UiSemanticIcon(
-                    icon = MiOwnedIcons.CheckCircle,
-                    contentDescription = tr("security_center_refresh", "Refresh state"),
-                    tone = if (snapshot.transportHealthy) UiIconTone.Primary else UiIconTone.Warning,
-                    onClick = onRefresh
-                )
-            }
-
-            SecurityStatusStrip(
-                title = if (snapshot.transportHealthy) {
-                    tr("security_center_status_healthy", "Secure transport healthy")
-                } else {
-                    tr("security_center_status_review", "Transport attention required")
-                },
-                detail = snapshot.transportDetail,
-                tone = if (snapshot.transportHealthy) UiIconTone.Primary else UiIconTone.Warning,
-                icon = if (snapshot.transportHealthy) MiOwnedIcons.ShieldCheck else MiOwnedIcons.Shield
+    val toneColor = if (snapshot.transportHealthy) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+    val summary = if (snapshot.transportHealthy) {
+        tr("security_center_status_healthy", "Secure transport healthy")
+    } else {
+        tr("security_center_status_review", "Transport attention required")
+    }
+    val deviceSummary = tr(
+        "security_center_device_count",
+        "%d active devices"
+    ).format(snapshot.linkedDeviceCount)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                toneColor.copy(alpha = 0.08f),
+                RoundedCornerShape(999.dp)
             )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecurityMetricTile(
-                    modifier = Modifier.weight(1f),
-                    icon = MiOwnedIcons.Devices,
-                    label = tr("security_center_metric_device", "Current device"),
-                    value = snapshot.deviceDisplayId,
-                    tone = UiIconTone.Primary,
-                    monospaced = true
-                )
-                SecurityMetricTile(
-                    modifier = Modifier.weight(1f),
-                    icon = MiOwnedIcons.Group,
-                    label = tr("security_center_metric_linked", "Linked devices"),
-                    value = tr("security_center_metric_count", "%d devices")
-                        .format(snapshot.linkedDeviceCount),
-                    tone = UiIconTone.Accent
-                )
-                SecurityMetricTile(
-                    modifier = Modifier.weight(1f),
-                    icon = MiOwnedIcons.Key,
-                    label = tr("security_center_metric_root_auth", "Root auth"),
-                    value = if (snapshot.rootAuthPubkey.isBlank()) {
-                        tr("security_center_metric_not_set", "Not set")
-                    } else {
-                        tr("security_center_metric_active", "Active")
-                    },
-                    tone = if (snapshot.rootAuthPubkey.isBlank()) UiIconTone.Warning else UiIconTone.Primary
-                )
-            }
+            .height(40.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        UiTokenIcon(
+            label = if (snapshot.transportHealthy) "OK" else "!",
+            size = 18.dp,
+            cornerRadius = 6.dp,
+            containerColor = toneColor.copy(alpha = 0.10f),
+            contentColor = toneColor,
+            textStyle = MaterialTheme.typography.labelSmall
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "$summary • $deviceSummary",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        TextButton(
+            onClick = onRefresh,
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+        ) {
+            Text(tr("security_center_refresh_short", "Refresh"))
         }
     }
 }
 
 @Composable
-private fun SecurityDevicesCard(
+private fun SecurityDevicesSection(
     snapshot: SecurityCenterSnapshot,
     onKickDevice: (String) -> Unit
 ) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (snapshot.devices.isEmpty()) {
-                SecurityStatusStrip(
-                    title = tr("security_center_devices_single", "Only this device is active"),
-                    detail = tr(
-                        "security_center_devices_single_body",
-                        "No additional linked sessions are available from the client bridge."
-                    ),
-                    tone = UiIconTone.Neutral,
-                    icon = MiOwnedIcons.Devices
+    val currentDevice = snapshot.devices.firstOrNull { it.displayId == snapshot.deviceDisplayId }
+        ?: DeviceUi("current-device", snapshot.deviceDisplayId, 0)
+    val linkedDevices = snapshot.devices.filterNot { it.displayId == snapshot.deviceDisplayId }
+    SecurityPrimaryGroup {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = tr("security_center_current_device", "Current device"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SecurityDeviceRow(
+                device = currentDevice,
+                isCurrent = true,
+                onKickDevice = onKickDevice
+            )
+            if (linkedDevices.isNotEmpty()) {
+                SecurityDivider()
+                Text(
+                    text = tr("security_center_linked_devices", "Linked devices"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                snapshot.devices.forEachIndexed { index, device ->
+                linkedDevices.forEachIndexed { index, device ->
                     SecurityDeviceRow(
                         device = device,
-                        isCurrent = device.displayId == snapshot.deviceDisplayId,
+                        isCurrent = false,
                         onKickDevice = onKickDevice
                     )
-                    if (index < snapshot.devices.lastIndex) {
+                    if (index < linkedDevices.lastIndex) {
                         SecurityDivider()
                     }
                 }
+            } else {
+                SecurityInfoLine(
+                    label = tr("security_center_devices_single", "No linked devices"),
+                    value = tr(
+                        "security_center_devices_single_body",
+                        "Only this phone is active right now."
+                    )
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SecurityTransportCard(
+private fun SecurityTransportTrustSection(
     snapshot: SecurityCenterSnapshot,
     onReconnect: () -> Unit,
-    onCopyDevice: () -> Unit
+    onCopyDevice: () -> Unit,
+    onOpenRootAuthSetup: () -> Unit,
+    onCopyCode: () -> Unit,
+    onCopyKey: () -> Unit,
+    onClearRootAuth: () -> Unit
 ) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = tr(
-                    "security_center_transport_body",
-                    "Chat keeps this state compact. Open this page when you need transport detail or a reconnect action."
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SecurityInfoLine(
+            label = tr("security_center_transport", "Transport"),
+            value = snapshot.transportLabel
+        )
+        SecurityDivider()
+        SecurityInfoLine(
+            label = tr("security_center_transport_detail", "Transport detail"),
+            value = snapshot.transportDetail,
+            multiline = true
+        )
+        SecurityDivider()
+        SecurityInfoLine(
+            label = tr("security_center_gateway", "Gateway"),
+            value = snapshot.deviceDisplayId,
+            monospaced = true
+        )
+        SecurityDivider()
+        if (snapshot.rootAuthPubkey.isBlank()) {
+            SecurityInfoLine(
+                label = tr("security_center_trust", "Trust"),
+                value = tr(
+                    "security_center_root_auth_missing_body",
+                    "Initialize a signing identity before approving linked-device requests from this phone."
                 ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                multiline = true
             )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecurityMetricTile(
-                    modifier = Modifier.weight(1f),
-                    icon = MiOwnedIcons.Lock,
-                    label = tr("security_center_transport_session", "Session"),
-                    value = snapshot.transportLabel,
-                    tone = if (snapshot.transportHealthy) UiIconTone.Primary else UiIconTone.Warning
-                )
-                SecurityMetricTile(
-                    modifier = Modifier.weight(1f),
-                    icon = MiOwnedIcons.Check,
-                    label = tr("security_center_transport_alerts", "Alerts"),
-                    value = if (snapshot.transportHealthy) {
-                        tr("security_center_transport_none", "No alerts")
-                    } else {
-                        tr("security_center_transport_attention", "Needs review")
-                    },
-                    tone = if (snapshot.transportHealthy) UiIconTone.Accent else UiIconTone.Warning
-                )
-            }
-
-            SecurityStatusStrip(
-                title = tr("security_center_transport_detail", "Transport detail"),
-                detail = snapshot.transportDetail,
-                tone = if (snapshot.transportHealthy) UiIconTone.Primary else UiIconTone.Warning,
-                icon = MiOwnedIcons.Link
+        } else {
+            SecurityInfoLine(
+                label = tr("security_center_root_auth_code", "Approval code"),
+                value = snapshot.rootAuthCode.ifBlank { "------" },
+                monospaced = true
             )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton(
-                    label = tr("security_center_reconnect", "Reconnect"),
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onReconnect
-                )
-                SecondaryButton(
-                    label = tr("security_center_copy_device", "Copy device ID"),
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onCopyDevice
-                )
-            }
+            SecurityDivider()
+            SecurityInfoLine(
+                label = tr("security_center_approval_identity", "Approval identity"),
+                value = shortHex(snapshot.rootAuthPubkey),
+                multiline = true,
+                monospaced = true
+            )
+            SecurityDivider()
+            SecurityInfoLine(
+                label = tr("security_center_root_auth_rotation", "Refresh"),
+                value = tr("security_center_root_auth_countdown", "%ds left")
+                    .format(snapshot.rootCountdown)
+            )
+        }
+        SecurityActionLinksRow(
+            primary = tr("security_center_reconnect", "Reconnect"),
+            secondary = tr("security_center_copy_device", "Copy device ID"),
+            tertiary = if (snapshot.rootAuthPubkey.isBlank()) {
+                tr("security_center_root_auth_add", "Set public key")
+            } else {
+                tr("security_center_root_auth_update", "Update key")
+            },
+            onPrimary = onReconnect,
+            onSecondary = onCopyDevice,
+            onTertiary = onOpenRootAuthSetup
+        )
+        if (snapshot.rootAuthPubkey.isNotBlank()) {
+            SecurityActionLinksRow(
+                primary = tr("security_center_root_auth_copy_code", "Copy code"),
+                secondary = tr("security_center_root_auth_copy_key", "Copy key"),
+                tertiary = tr("security_center_root_auth_clear", "Clear"),
+                onPrimary = onCopyCode,
+                onSecondary = onCopyKey,
+                onTertiary = onClearRootAuth
+            )
         }
     }
 }
 
 @Composable
-private fun SecurityRootAuthCard(
-    snapshot: SecurityCenterSnapshot,
-    onCopyCode: () -> Unit,
-    onCopyKey: () -> Unit,
-    onOpenRootAuthSetup: () -> Unit,
-    onClearRootAuth: () -> Unit
-) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = tr(
-                    "security_center_root_auth_body",
-                    "Root authorization remains available for device approval, but it no longer dominates the main shell."
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+private fun SecurityPrimaryGroup(content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(ChatUiTokens.CornerLarge)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = ChatUiTokens.SurfaceBorderAlpha),
+                shape = shape
             )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        content()
+    }
+}
 
-            if (snapshot.rootAuthPubkey.isBlank()) {
-                SecurityStatusStrip(
-                    title = tr("security_center_root_auth_missing", "Root auth not configured"),
-                    detail = tr(
-                        "security_center_root_auth_missing_body",
-                        "Initialize a signing identity before approving linked-device requests from this phone."
-                    ),
-                    tone = UiIconTone.Warning,
-                    icon = MiOwnedIcons.Key
-                )
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SecurityMetricTile(
-                        modifier = Modifier.weight(1f),
-                        icon = MiOwnedIcons.QrCode,
-                        label = tr("security_center_root_auth_code", "Approval code"),
-                        value = snapshot.rootAuthCode.ifBlank { "------" },
-                        tone = UiIconTone.Primary,
-                        monospaced = true
-                    )
-                    SecurityMetricTile(
-                        modifier = Modifier.weight(1f),
-                        icon = MiOwnedIcons.Clock,
-                        label = tr("security_center_root_auth_rotation", "Refresh"),
-                        value = tr("security_center_root_auth_countdown", "%ds left")
-                            .format(snapshot.rootCountdown),
-                        tone = UiIconTone.Accent,
-                        monospaced = true
-                    )
-                }
-
-                Text(
-                    text = shortHex(snapshot.rootAuthPubkey),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-                            RoundedCornerShape(16.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrimaryButton(
-                    label = if (snapshot.rootAuthPubkey.isBlank()) {
-                        tr("security_center_root_auth_add", "Set public key")
-                    } else {
-                        tr("security_center_root_auth_update", "Update key")
-                    },
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onOpenRootAuthSetup
-                )
-                SecondaryButton(
-                    label = tr("security_center_root_auth_clear", "Clear"),
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onClearRootAuth
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton(
-                    label = tr("security_center_root_auth_copy_code", "Copy code"),
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onCopyCode
-                )
-                SecondaryButton(
-                    label = tr("security_center_root_auth_copy_key", "Copy key"),
-                    modifier = Modifier.weight(1f),
-                    fillMaxWidth = false,
-                    onClick = onCopyKey
-                )
-            }
+@Composable
+private fun SecurityActionLinksRow(
+    primary: String,
+    secondary: String,
+    tertiary: String,
+    onPrimary: () -> Unit,
+    onSecondary: () -> Unit,
+    onTertiary: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TextButton(onClick = onPrimary, modifier = Modifier.weight(1f)) {
+            Text(primary)
+        }
+        TextButton(onClick = onSecondary, modifier = Modifier.weight(1f)) {
+            Text(secondary)
+        }
+        TextButton(onClick = onTertiary, modifier = Modifier.weight(1f)) {
+            Text(tertiary)
         }
     }
 }
@@ -608,28 +565,30 @@ private fun SecurityDeviceRow(
     onKickDevice: (String) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         UiSemanticIcon(
             icon = MiOwnedIcons.Devices,
             contentDescription = device.displayId.ifBlank { "Device" },
-            tone = if (isCurrent) UiIconTone.Primary else UiIconTone.Neutral,
-            size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm
+            tone = UiIconTone.Primary,
+            size = 32.dp,
+            iconSize = 14.dp
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = device.displayId.ifBlank { tr("security_center_device_unknown", "Unavailable") },
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = tr("security_center_device_last_seen", "Last seen %s")
                     .format(formatSecurityLastSeen(device.lastSeenSec)),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -650,30 +609,17 @@ private fun SecurityDeviceRow(
 }
 
 @Composable
-private fun SecurityMetricTile(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun SecurityInfoLine(
     label: String,
     value: String,
-    modifier: Modifier = Modifier,
-    tone: UiIconTone = UiIconTone.Primary,
+    multiline: Boolean = false,
     monospaced: Boolean = false
 ) {
     Column(
-        modifier = modifier
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
-                RoundedCornerShape(16.dp)
-            )
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
     ) {
-        UiSemanticIcon(
-            icon = icon,
-            contentDescription = label,
-            tone = tone,
-            size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm
-        )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -685,46 +631,9 @@ private fun SecurityMetricTile(
                 fontFamily = if (monospaced) FontFamily.Monospace else FontFamily.Default
             ),
             color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
+            maxLines = if (multiline) 4 else 1,
             overflow = TextOverflow.Ellipsis
         )
-    }
-}
-
-@Composable
-private fun SecurityStatusStrip(
-    title: String,
-    detail: String,
-    tone: UiIconTone,
-    icon: androidx.compose.ui.graphics.vector.ImageVector
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
-                RoundedCornerShape(16.dp)
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        UiSemanticIcon(
-            icon = icon,
-            contentDescription = title,
-            tone = tone,
-            size = ChatUiTokens.IconContainerSm,
-            iconSize = ChatUiTokens.IconGlyphSm
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 
@@ -734,7 +643,7 @@ private fun SecurityDivider() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.10f))
     )
 }
 
@@ -792,7 +701,7 @@ fun SecurityCenterPreviewScene() {
     )
 }
 
-@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
 @Composable
 private fun SecurityCenterPreview() {
     ChatTheme {

@@ -73,32 +73,32 @@ private data class UiBadgePalette(
 
 @Composable
 private fun iconPalette(tone: UiIconTone, active: Boolean): UiIconPalette {
-    val emphasizedAlpha = if (active) 0.10f else 0.04f
+    val emphasizedAlpha = if (active) 0.08f else 0.03f
     return when (tone) {
         UiIconTone.Primary -> UiIconPalette(
             container = MaterialTheme.colorScheme.primary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.primary,
-            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.2f else 0.12f)
+            border = MaterialTheme.colorScheme.primary.copy(alpha = if (active) 0.12f else 0.08f)
         )
         UiIconTone.Accent -> UiIconPalette(
             container = MaterialTheme.colorScheme.secondary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.secondary,
-            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.2f else 0.12f)
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = if (active) 0.12f else 0.08f)
         )
         UiIconTone.Warning -> UiIconPalette(
             container = MaterialTheme.colorScheme.tertiary.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.tertiary,
-            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.2f else 0.12f)
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = if (active) 0.12f else 0.08f)
         )
         UiIconTone.Danger -> UiIconPalette(
             container = MaterialTheme.colorScheme.error.copy(alpha = emphasizedAlpha),
             content = MaterialTheme.colorScheme.error,
-            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.2f else 0.12f)
+            border = MaterialTheme.colorScheme.error.copy(alpha = if (active) 0.12f else 0.08f)
         )
         UiIconTone.Neutral -> UiIconPalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.18f else 0.08f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.14f else 0.08f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.2f else 0.12f)
+            border = MaterialTheme.colorScheme.outline.copy(alpha = if (active) 0.12f else 0.08f)
         )
     }
 }
@@ -109,27 +109,27 @@ private fun badgePalette(tone: UiBadgeTone): UiBadgePalette {
         UiBadgeTone.Primary -> UiBadgePalette(
             container = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.primary,
-            border = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            border = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
         )
         UiBadgeTone.Accent -> UiBadgePalette(
             container = MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.secondary,
-            border = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
+            border = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
         )
         UiBadgeTone.Warning -> UiBadgePalette(
             container = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.tertiary,
-            border = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f)
+            border = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
         )
         UiBadgeTone.Danger -> UiBadgePalette(
             container = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
             content = MaterialTheme.colorScheme.error,
-            border = MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+            border = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
         )
         UiBadgeTone.Neutral -> UiBadgePalette(
-            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+            border = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
         )
     }
 }
@@ -234,7 +234,7 @@ fun SurfaceSectionCard(
     Card(
         shape = RoundedCornerShape(ChatUiTokens.CornerLarge),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+            containerColor = MaterialTheme.colorScheme.surface
         ),
         border = BorderStroke(1.dp, borderColor),
         modifier = modifier
@@ -242,7 +242,7 @@ fun SurfaceSectionCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             content = content
         )
     }
@@ -292,6 +292,14 @@ fun SecondaryButton(
             .then(widthModifier)
             .height(48.dp),
         shape = RoundedCornerShape(ChatUiTokens.CornerMedium),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = ChatUiTokens.SurfaceBorderAlpha)
+        ),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
         onClick = onClick
     ) {
         Text(
@@ -317,7 +325,7 @@ fun UiTokenIcon(
         size = size,
         cornerRadius = cornerRadius,
         containerColor = containerColor,
-        borderColor = contentColor.copy(alpha = 0.28f),
+        borderColor = contentColor.copy(alpha = ChatUiTokens.SurfaceBorderAlpha),
         framed = true
     ) {
         Text(
@@ -346,7 +354,7 @@ fun UiGlyphIcon(
         size = size,
         cornerRadius = cornerRadius,
         containerColor = containerColor,
-        borderColor = contentColor.copy(alpha = 0.28f),
+        borderColor = contentColor.copy(alpha = ChatUiTokens.SurfaceBorderAlpha),
         framed = true
     ) {
         Icon(
@@ -499,7 +507,7 @@ fun LabeledChip(label: String, tint: Color, modifier: Modifier = Modifier) {
         icon = {
             StatusDot(color = tint, size = 6.dp)
         },
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.2f)),
+        border = BorderStroke(1.dp, tint.copy(alpha = ChatUiTokens.SurfaceBorderAlpha)),
         colors = SuggestionChipDefaults.suggestionChipColors(
             containerColor = tint.copy(alpha = 0.1f),
             labelColor = tint,

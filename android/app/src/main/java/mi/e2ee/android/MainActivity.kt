@@ -322,5 +322,20 @@ private fun previewCallRooms(): List<GroupCallRoomUi> = listOf(
         groupId = "Ops Sync",
         callId = "room-b",
         video = false
+    ),
+    GroupCallRoomUi(
+        groupId = "Launch Crew",
+        callId = "room-c",
+        video = false
+    ),
+    GroupCallRoomUi(
+        groupId = "Platform",
+        callId = "room-d",
+        video = true
+    ),
+    GroupCallRoomUi(
+        groupId = "Design Review",
+        callId = "room-e",
+        video = false
     )
 )

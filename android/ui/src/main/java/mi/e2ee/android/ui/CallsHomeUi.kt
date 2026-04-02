@@ -4,18 +4,18 @@ package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -30,15 +30,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-private data class CallActivityEntry(
+private data class OngoingCallEntry(
     val id: String,
     val title: String,
-    val subtitle: String,
-    val meta: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val state: String,
+    val initials: String,
     val tone: UiIconTone,
-    val actionLabel: String? = null,
+    val actionLabel: String,
     val onAction: (() -> Unit)? = null
+)
+
+private data class RecentCallEntry(
+    val id: String,
+    val title: String,
+    val detail: String,
+    val trailing: String,
+    val initials: String,
+    val tone: UiIconTone,
+    val onOpen: (() -> Unit)? = null
 )
 
 @Composable
@@ -49,84 +58,72 @@ fun CallsHomeScreen(
     groupRooms: List<GroupCallRoomUi>,
     onOpenPeerCall: (PeerCallState) -> Unit = {},
     onOpenGroupCall: (GroupCallState) -> Unit = {},
+    onAcceptPendingCall: () -> Unit = {},
     onJoinGroupRoom: (GroupCallRoomUi) -> Unit = {},
     onOpenChats: () -> Unit = {},
     onOpenContacts: () -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
-    val activeEntries = buildList {
-        if (activePeerCall != null) {
-            add(
-                CallActivityEntry(
-                    id = "peer:${activePeerCall.callIdHex}",
-                    title = activePeerCall.peerUsername,
-                    subtitle = if (activePeerCall.video) {
-                        tr("call_video", "Video call")
-                    } else {
-                        tr("call_voice", "Voice call")
-                    },
-                    meta = tr("calls_live_now", "Live now"),
-                    icon = if (activePeerCall.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
-                    tone = UiIconTone.Primary,
-                    actionLabel = tr("calls_open", "Open"),
-                    onAction = { onOpenPeerCall(activePeerCall) }
-                )
-            )
-        }
-        if (activeGroupCall != null) {
-            add(
-                CallActivityEntry(
-                    id = "group:${activeGroupCall.callIdHex}",
-                    title = activeGroupCall.groupId,
-                    subtitle = if (activeGroupCall.video) {
-                        tr("call_group_video", "Group video call")
-                    } else {
-                        tr("call_group_voice", "Group voice call")
-                    },
-                    meta = tr("calls_live_now", "Live now"),
-                    icon = if (activeGroupCall.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
-                    tone = UiIconTone.Accent,
-                    actionLabel = tr("calls_open", "Open"),
-                    onAction = { onOpenGroupCall(activeGroupCall) }
-                )
-            )
-        }
+    val ongoingEntry = when {
+        pendingCall != null -> OngoingCallEntry(
+            id = "pending:${pendingCall.callIdHex}",
+            title = pendingCall.peerUsername,
+            state = if (pendingCall.video) {
+                tr("call_incoming_video", "Incoming video call")
+            } else {
+                tr("call_incoming_voice", "Incoming voice call")
+            },
+            initials = pendingCall.peerUsername.take(2).uppercase(),
+            tone = UiIconTone.Warning,
+            actionLabel = tr("calls_answer", "Answer"),
+            onAction = onAcceptPendingCall
+        )
+        activePeerCall != null -> OngoingCallEntry(
+            id = "peer:${activePeerCall.callIdHex}",
+            title = activePeerCall.peerUsername,
+            state = if (activePeerCall.video) {
+                tr("call_video_live", "Video call in progress")
+            } else {
+                tr("call_voice_live", "Voice call in progress")
+            },
+            initials = activePeerCall.peerUsername.take(2).uppercase(),
+            tone = UiIconTone.Primary,
+            actionLabel = tr("calls_open", "Open"),
+            onAction = { onOpenPeerCall(activePeerCall) }
+        )
+        activeGroupCall != null -> OngoingCallEntry(
+            id = "group:${activeGroupCall.callIdHex}",
+            title = activeGroupCall.groupId,
+            state = if (activeGroupCall.video) {
+                tr("call_group_video_live", "Group video call in progress")
+            } else {
+                tr("call_group_voice_live", "Group voice call in progress")
+            },
+            initials = activeGroupCall.groupId.take(2).uppercase(),
+            tone = UiIconTone.Accent,
+            actionLabel = tr("calls_open", "Open"),
+            onAction = { onOpenGroupCall(activeGroupCall) }
+        )
+        else -> null
     }
-    val attentionEntries = buildList {
-        if (pendingCall != null) {
-            add(
-                CallActivityEntry(
-                    id = "pending:${pendingCall.callIdHex}",
-                    title = pendingCall.peerUsername,
-                    subtitle = if (pendingCall.video) {
-                        tr("call_video", "Video call")
-                    } else {
-                        tr("call_voice", "Voice call")
-                    },
-                    meta = tr("call_incoming_title", "Incoming call"),
-                    icon = if (pendingCall.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
-                    tone = UiIconTone.Warning
-                )
-            )
-        }
-    }
-    val recentEntries = groupRooms.mapIndexed { index, room ->
-        CallActivityEntry(
+    val recentEntries = groupRooms
+        .filterNot { room -> activeGroupCall != null && room.callId == activeGroupCall.callIdHex }
+        .mapIndexed { index, room ->
+        RecentCallEntry(
             id = "room:${room.callId}:$index",
             title = room.groupId,
-            subtitle = if (room.video) {
+            detail = if (room.video) {
                 tr("call_group_video", "Group video call")
             } else {
                 tr("call_group_voice", "Group voice call")
             },
-            meta = tr("calls_recent_room", "Recent room"),
-            icon = if (room.video) MiOwnedIcons.Video else MiOwnedIcons.Call,
+            trailing = tr("calls_recent_room", "Recent room"),
+            initials = room.groupId.take(2).uppercase(),
             tone = UiIconTone.Neutral,
-            actionLabel = tr("calls_join", "Join"),
-            onAction = { onJoinGroupRoom(room) }
+            onOpen = { onJoinGroupRoom(room) }
         )
-    }
-    val isEmpty = activeEntries.isEmpty() && attentionEntries.isEmpty() && recentEntries.isEmpty()
+        }
+    val isEmpty = ongoingEntry == null && recentEntries.isEmpty()
 
     Scaffold(
         topBar = {
@@ -154,49 +151,37 @@ fun CallsHomeScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        LazyColumn(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (activeEntries.isNotEmpty()) {
-                item(key = "calls-active-title") {
-                    SectionHeader(
-                        text = "${tr("calls_section_ongoing", "In progress")} · ${activeEntries.size}",
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-                item(key = "calls-active-group") {
-                    CallSection(entries = activeEntries, emphasized = true)
-                }
-            }
-            if (attentionEntries.isNotEmpty()) {
-                item(key = "calls-attention-title") {
-                    SectionHeader(
-                        text = "${tr("calls_section_attention", "Needs attention")} · ${attentionEntries.size}",
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-                item(key = "calls-attention-group") {
-                    CallSection(entries = attentionEntries, emphasized = false)
-                }
-            }
-            if (recentEntries.isNotEmpty()) {
-                item(key = "calls-recent-title") {
-                    SectionHeader(
-                        text = "${tr("calls_recent", "Recent")} · ${recentEntries.size}",
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-                item(key = "calls-recent-group") {
-                    CallSection(entries = recentEntries, emphasized = false)
-                }
-            }
             if (isEmpty) {
-                item(key = "calls-empty") {
-                    CallEmptyState(onOpenChats = onOpenChats)
+                CallEmptyState(
+                    onOpenChats = onOpenChats,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxHeight * 0.35f)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    if (ongoingEntry != null) {
+                        item(key = ongoingEntry.id) {
+                            OngoingCallStrip(entry = ongoingEntry)
+                        }
+                    }
+                    items(
+                        items = recentEntries,
+                        key = { it.id }
+                    ) { entry ->
+                        RecentCallRow(entry = entry)
+                    }
                 }
             }
         }
@@ -204,221 +189,186 @@ fun CallsHomeScreen(
 }
 
 @Composable
-private fun CallSummaryStrip(
-    activeCount: Int,
-    attentionCount: Int,
-    recentCount: Int
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (activeCount > 0) {
-                LabeledChip(
-                    label = tr("calls_live_short", "Live") + " · $activeCount",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (attentionCount > 0) {
-                LabeledChip(
-                    label = tr("calls_attention_short", "Attention") + " · $attentionCount",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
-        }
-        if (recentCount > 0) {
-            LabeledChip(
-                label = tr("calls_recent_short", "Recent") + " · $recentCount",
-                tint = MaterialTheme.colorScheme.secondary
-            )
-        }
-    }
-}
-
-@Composable
-private fun CallSection(
-    entries: List<CallActivityEntry>,
-    emphasized: Boolean
-) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            entries.forEachIndexed { index, entry ->
-                CallActivityRow(
-                    entry = entry,
-                    emphasized = emphasized
-                )
-                if (index != entries.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 54.dp)
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CallActivityRow(
-    entry: CallActivityEntry,
-    emphasized: Boolean
-) {
+private fun OngoingCallStrip(entry: OngoingCallEntry) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = entry.onAction != null) { entry.onAction?.invoke() }
-            .padding(horizontal = 0.dp, vertical = 3.dp),
+            .height(56.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AvatarBadge(
-            initials = entry.title.take(2).uppercase(),
-            tint = MaterialTheme.colorScheme.primary,
-            size = 36.dp
+            initials = entry.initials,
+            tint = when (entry.tone) {
+                UiIconTone.Primary -> MaterialTheme.colorScheme.primary
+                UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
+                UiIconTone.Warning -> MaterialTheme.colorScheme.error
+                UiIconTone.Danger -> MaterialTheme.colorScheme.error
+                UiIconTone.Neutral -> MaterialTheme.colorScheme.primary
+            },
+            size = 40.dp
         )
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 10.dp, end = 8.dp)
+                .padding(start = 12.dp, end = 8.dp),
+            verticalArrangement = Arrangement.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = entry.title,
-                    modifier = Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                CallMetaPill(label = entry.meta, tone = entry.tone, emphasized = emphasized)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                UiSemanticIcon(
-                    icon = entry.icon,
-                    contentDescription = entry.subtitle,
-                    tone = entry.tone,
-                    size = 18.dp,
-                    cornerRadius = 8.dp,
-                    iconSize = 10.dp,
-                    framed = false
-                )
-                Text(
-                    text = entry.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = entry.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = entry.state,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-        if (!entry.actionLabel.isNullOrBlank() && entry.onAction != null) {
-            FilledTonalButton(
-                onClick = entry.onAction,
-                modifier = Modifier.height(32.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = when (entry.tone) {
-                        UiIconTone.Primary -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        UiIconTone.Accent -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
-                        UiIconTone.Warning -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-                        UiIconTone.Danger -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
-                        UiIconTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
-                    },
-                    contentColor = when (entry.tone) {
-                        UiIconTone.Primary -> MaterialTheme.colorScheme.primary
-                        UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
-                        UiIconTone.Warning -> MaterialTheme.colorScheme.error
-                        UiIconTone.Danger -> MaterialTheme.colorScheme.error
-                        UiIconTone.Neutral -> MaterialTheme.colorScheme.onSurface
-                    }
-                )
-            ) {
-                Text(
-                    text = entry.actionLabel,
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
+        FilledTonalButton(
+            onClick = { entry.onAction?.invoke() },
+            modifier = Modifier.height(32.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = when (entry.tone) {
+                    UiIconTone.Primary -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    UiIconTone.Accent -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+                    UiIconTone.Warning -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+                    UiIconTone.Danger -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
+                    UiIconTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = when (entry.tone) {
+                    UiIconTone.Primary -> MaterialTheme.colorScheme.primary
+                    UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
+                    UiIconTone.Warning -> MaterialTheme.colorScheme.error
+                    UiIconTone.Danger -> MaterialTheme.colorScheme.error
+                    UiIconTone.Neutral -> MaterialTheme.colorScheme.onSurface
+                }
+            )
+        ) {
+            Text(
+                text = entry.actionLabel,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
         }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 52.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
     }
 }
 
 @Composable
-private fun CallMetaPill(
-    label: String,
-    tone: UiIconTone,
-    emphasized: Boolean
-) {
-    val tint = when (tone) {
-        UiIconTone.Primary -> MaterialTheme.colorScheme.primary
-        UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
-        UiIconTone.Warning -> MaterialTheme.colorScheme.error
-        UiIconTone.Danger -> MaterialTheme.colorScheme.error
-        UiIconTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Text(
-        text = label,
+private fun RecentCallRow(entry: RecentCallEntry) {
+    Row(
         modifier = Modifier
-            .background(
-                color = tint.copy(alpha = if (emphasized) 0.10f else 0.06f),
-                shape = RoundedCornerShape(999.dp)
+            .fillMaxWidth()
+            .height(72.dp)
+            .clickable(enabled = entry.onOpen != null) { entry.onOpen?.invoke() },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AvatarBadge(
+            initials = entry.initials,
+            tint = when (entry.tone) {
+                UiIconTone.Primary -> MaterialTheme.colorScheme.primary
+                UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
+                UiIconTone.Warning -> MaterialTheme.colorScheme.error
+                UiIconTone.Danger -> MaterialTheme.colorScheme.error
+                UiIconTone.Neutral -> MaterialTheme.colorScheme.primary
+            },
+            size = 40.dp
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp, end = 8.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = entry.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
-        color = tint,
-        maxLines = 1
+            Text(
+                text = entry.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = entry.trailing,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 52.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
     )
 }
 
 @Composable
-private fun CallEmptyState(onOpenChats: () -> Unit) {
-    SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
+private fun CallEmptyState(
+    onOpenChats: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.Center
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             UiSemanticIcon(
                 icon = MiOwnedIcons.Call,
                 contentDescription = tr("calls_empty_title", "No recent calls"),
                 tone = UiIconTone.Neutral,
-                size = ChatUiTokens.IconContainerMd,
+                size = 40.dp,
                 iconSize = ChatUiTokens.IconGlyphMd
             )
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 10.dp, end = 8.dp)
+                    .padding(start = 12.dp, end = 12.dp)
             ) {
                 Text(
                     text = tr("calls_empty_title", "No recent calls"),
-                    style = MaterialTheme.typography.titleSmall
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Text(
                     text = tr(
                         "calls_empty_subtitle",
-                        "Active calls, missed calls, and rooms appear here."
+                        "Finished calls and joined rooms appear here."
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             FilledTonalButton(
                 onClick = onOpenChats,
-                modifier = Modifier.height(36.dp)
+                modifier = Modifier.height(32.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Text(tr("nav_chats", "Chats"))
+                Text(
+                    text = tr("nav_chats", "Chats"),
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
         }
     }
