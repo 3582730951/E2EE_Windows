@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-private struct SecureFullscreenScrollPage<Content: View>: View {
+struct SecureFullscreenScrollPage<Content: View>: View {
     let horizontalPadding: CGFloat
     let verticalPadding: CGFloat
     let showsIndicators: Bool

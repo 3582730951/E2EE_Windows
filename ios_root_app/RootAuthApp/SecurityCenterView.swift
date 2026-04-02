@@ -177,7 +177,7 @@ struct SecurityCenterView: View {
             }
         }
         .navigationTitle("Security")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(NavigationBarItem.TitleDisplayMode.inline)
         .tint(SecurePalette.accent)
     }
 
