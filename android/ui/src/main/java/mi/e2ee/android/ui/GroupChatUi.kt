@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,13 +29,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -257,6 +262,7 @@ fun GroupChatScreen(
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var composerReply by remember { mutableStateOf<ReplyPreview?>(null) }
     var composerText by remember { mutableStateOf("") }
+    var composerQuickActionsVisible by remember { mutableStateOf(false) }
     var composerDialog by remember { mutableStateOf<GroupComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingGroupDelete?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -311,6 +317,12 @@ fun GroupChatScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val composerOverlayHeight = when {
+        composerReply != null && composerQuickActionsVisible -> 68.dp
+        composerReply != null -> 36.dp
+        composerQuickActionsVisible -> 32.dp
+        else -> 0.dp
+    }
 
     LaunchedEffect(toastMessage) {
         if (toastMessage != null) {
@@ -371,7 +383,6 @@ fun GroupChatScreen(
         },
         bottomBar = {
             ComposerBar(
-                replyPreview = composerReply,
                 message = composerText,
                 onMessageChange = { composerText = it },
                 onSend = {
@@ -379,12 +390,14 @@ fun GroupChatScreen(
                     if (ok) {
                         composerText = ""
                         composerReply = null
+                        composerQuickActionsVisible = false
                     }
                 },
-                onReplyDismiss = { composerReply = null },
-                onAttachFile = { composerDialog = GroupComposerDialog.File },
-                onAttachPhoto = { composerDialog = GroupComposerDialog.File },
-                onAttachLocation = { composerDialog = GroupComposerDialog.Location },
+                showQuickActions = composerQuickActionsVisible,
+                onToggleQuickActions = {
+                    composerQuickActionsVisible = !composerQuickActionsVisible
+                },
+                onEmoji = {},
                 modifier = Modifier
                     .shadow(8.dp, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             )
@@ -423,7 +436,12 @@ fun GroupChatScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + composerOverlayHeight
+                    ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     itemsIndexed(visibleItems, key = { _, item -> item.id }) { index, item ->
@@ -439,6 +457,28 @@ fun GroupChatScreen(
                         }
                     }
                 }
+            }
+            if (composerReply != null || composerQuickActionsVisible) {
+                GroupComposerAssistOverlay(
+                    replyPreview = composerReply,
+                    showQuickActions = composerQuickActionsVisible,
+                    onReplyDismiss = { composerReply = null },
+                    onAttachPhoto = {
+                        composerQuickActionsVisible = false
+                        composerDialog = GroupComposerDialog.File
+                    },
+                    onAttachFile = {
+                        composerQuickActionsVisible = false
+                        composerDialog = GroupComposerDialog.File
+                    },
+                    onAttachLocation = {
+                        composerQuickActionsVisible = false
+                        composerDialog = GroupComposerDialog.Location
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                )
             }
             if (actionTarget != null) {
                 val isPinned = pinnedMessage?.messageId == actionTarget?.id
@@ -699,6 +739,127 @@ fun GroupChatScreen(
             }
         }
     }
+}
+
+@Composable
+private fun GroupComposerAssistOverlay(
+    replyPreview: ReplyPreview?,
+    showQuickActions: Boolean,
+    onReplyDismiss: () -> Unit,
+    onAttachPhoto: () -> Unit,
+    onAttachFile: () -> Unit,
+    onAttachLocation: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (showQuickActions) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                GroupQuickActionButton(
+                    icon = MiOwnedIcons.Photo,
+                    label = tr("chat_quick_photo", "Photo"),
+                    onClick = onAttachPhoto
+                )
+                GroupQuickActionButton(
+                    icon = MiOwnedIcons.File,
+                    label = tr("chat_quick_file", "File"),
+                    onClick = onAttachFile
+                )
+                GroupQuickActionButton(
+                    icon = MiOwnedIcons.Location,
+                    label = tr("chat_quick_location", "Location"),
+                    onClick = onAttachLocation
+                )
+            }
+        }
+        if (replyPreview != null) {
+            GroupReplyComposerRow(
+                reply = replyPreview,
+                onDismiss = onReplyDismiss
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = tr("chat_replying_to", "Replying to %s").format(reply.sender),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = reply.snippet,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+            Icon(
+                imageVector = MiOwnedIcons.Close,
+                contentDescription = tr("chat_dismiss", "Dismiss"),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupQuickActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
+    AssistChip(
+        onClick = onClick,
+        modifier = modifier.height(28.dp),
+        shape = RoundedCornerShape(12.dp),
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(16.dp)
+            )
+        },
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+        )
+    )
 }
 
 @Composable
