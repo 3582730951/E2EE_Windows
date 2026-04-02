@@ -223,7 +223,7 @@ fun ConversationListScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp, vertical = 1.dp)
+                    .padding(horizontal = 6.dp, vertical = 0.dp)
             ) {
                 CompactSearchField(
                     value = query.value,
@@ -234,7 +234,7 @@ fun ConversationListScreen(
                         .fillMaxWidth()
                         .testTag("conversation-search")
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 val search = query.value.trim()
                 val searched = if (search.isBlank()) {
                     conversations.filterNot { hiddenIds.contains(it.id) }
@@ -490,8 +490,9 @@ fun ConversationBottomBar(
     NavigationBar(
         modifier = modifier
             .fillMaxWidth()
+            .height(60.dp)
             .navigationBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         tonalElevation = 0.dp
     ) {
         ConversationBottomNavItem(
@@ -534,13 +535,13 @@ private fun RowScope.ConversationBottomNavItem(
     Column(
         modifier = Modifier
             .weight(1f)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
                 else Color.Transparent
             )
-            .padding(vertical = 6.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
@@ -568,11 +569,11 @@ private fun CompactSearchField(
 ) {
     Surface(
         modifier = modifier.height(height),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
         border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
         )
     ) {
         BasicTextField(
@@ -589,13 +590,13 @@ private fun CompactSearchField(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 12.dp),
+                        .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = MiOwnedIcons.Search,
                         contentDescription = tr("conversations_search_icon", "Search"),
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -844,14 +845,14 @@ private fun ConversationRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
                     AvatarBadge(
                         initials = item.initials,
                         tint = MaterialTheme.colorScheme.primary,
-                        size = 42.dp
+                        size = 40.dp
                     )
                     if (item.isGroup) {
                         UiSemanticIcon(
@@ -859,11 +860,11 @@ private fun ConversationRow(
                             contentDescription = tr("conversations_group", "Group"),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(16.dp),
+                                .size(14.dp),
                             tone = UiIconTone.Primary,
-                            size = 16.dp,
-                            cornerRadius = 8.dp,
-                            iconSize = 10.dp,
+                            size = 14.dp,
+                            cornerRadius = 7.dp,
+                            iconSize = 9.dp,
                             framed = false
                         )
                     }
@@ -873,10 +874,12 @@ private fun ConversationRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = item.name,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(1.dp))
                     val previewText = when {
                         item.draft != null ->
                             tr("conversations_draft_prefix", "Draft: %s").format(item.draft)
@@ -884,7 +887,7 @@ private fun ConversationRow(
                         else -> item.lastMessage
                     }
                     val previewColor = when {
-                        item.draft != null -> MaterialTheme.colorScheme.error
+                        item.draft != null -> MaterialTheme.colorScheme.primary
                         item.isTyping -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
@@ -944,7 +947,7 @@ private fun ConversationRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.06f))
             )
         }
     }

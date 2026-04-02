@@ -97,24 +97,28 @@ fun SettingsScreen(
     val accountSettings = listOf(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
+            subtitle = tr("settings_security_center_subtitle", "Devices, sessions, and approval identity"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.ShieldCheck, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
+            subtitle = tr("settings_account_security_subtitle", "Password, linked devices, and recovery"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Lock, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
+            subtitle = tr("settings_privacy_subtitle", "Read receipts, blocked users, and visibility"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Eye, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
         ),
         SettingEntry(
             title = tr("settings_notifications", "Notifications"),
+            subtitle = tr("settings_notifications_subtitle", "Calls, mentions, and message alerts"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Bell, tone = UiIconTone.Accent) },
             trailing = {
                 Switch(
@@ -129,6 +133,7 @@ fun SettingsScreen(
         add(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
+                subtitle = tr("settings_chat_storage_subtitle", "Media, cache, and auto-download"),
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Chat, tone = UiIconTone.Primary) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
@@ -137,6 +142,7 @@ fun SettingsScreen(
         add(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
+                subtitle = tr("settings_devices_subtitle", "Manage trusted phones and tablets"),
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Devices, tone = UiIconTone.Accent) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
@@ -145,6 +151,7 @@ fun SettingsScreen(
         add(
             SettingEntry(
                 title = tr("settings_appearance", "Appearance"),
+                subtitle = tr("settings_appearance_subtitle", "Theme and reading comfort"),
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Settings, tone = UiIconTone.Neutral) },
                 trailing = {
                     Text(
@@ -159,6 +166,7 @@ fun SettingsScreen(
             add(
                 SettingEntry(
                     title = tr("settings_diagnostics", "Diagnostics"),
+                    subtitle = tr("settings_diagnostics_subtitle", "Bridge, logs, and smoke tools"),
                     icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Bug, tone = UiIconTone.Warning) },
                     trailing = { UiChevron() },
                     onClick = onOpenDiagnostics
@@ -169,6 +177,7 @@ fun SettingsScreen(
     val connectionEntries = listOf(
         SettingEntry(
             title = tr("settings_heartbeat", "Heartbeat"),
+            subtitle = tr("settings_heartbeat_subtitle", "Ping transport and refresh status"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Clock, tone = UiIconTone.Accent) },
             trailing = {
                 TextButton(onClick = { sdk.heartbeat() }) {
@@ -178,6 +187,7 @@ fun SettingsScreen(
         ),
         SettingEntry(
             title = tr("settings_relogin", "Reconnect"),
+            subtitle = tr("settings_relogin_subtitle", "Rebuild the secure session"),
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Link, tone = UiIconTone.Primary) },
             trailing = {
                 TextButton(onClick = { sdk.relogin() }) {
@@ -210,13 +220,13 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 14.dp)
                 .testTag("settings-screen"),
             contentPadding = PaddingValues(
-                top = ChatUiTokens.ItemSpacing,
-                bottom = ChatUiTokens.SectionSpacing
+                top = 8.dp,
+                bottom = 12.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(ChatUiTokens.ItemSpacing)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
                 SettingsHeader(
@@ -228,27 +238,27 @@ fun SettingsScreen(
             }
             item {
                 SectionHeader(text = tr("settings_account_section", "Account"))
-                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
+                Spacer(modifier = Modifier.height(6.dp))
                 SettingsSection(entries = accountSettings)
             }
             item {
                 SectionHeader(text = tr("settings_preferences_section", "Preferences"))
-                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
+                Spacer(modifier = Modifier.height(6.dp))
                 ThemeModeSection(
                     mode = themeMode,
                     onModeChange = onThemeModeChange
                 )
                 if (languageController != null && languageController.packs.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+                    Spacer(modifier = Modifier.height(8.dp))
                     LanguageSection(
                         controller = languageController
                     )
                 }
-                Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+                Spacer(modifier = Modifier.height(8.dp))
                 SettingsSection(entries = appSettings)
-                Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+                Spacer(modifier = Modifier.height(8.dp))
                 SectionHeader(text = tr("settings_connection", "Connection"))
-                Spacer(modifier = Modifier.height(ChatUiTokens.ItemSpacing))
+                Spacer(modifier = Modifier.height(6.dp))
                 SettingsSection(entries = connectionEntries)
             }
         }
@@ -272,16 +282,16 @@ private fun SettingsHeader(
                 icon = MiOwnedIcons.Person,
                 contentDescription = tr("settings_user_placeholder", "MI User"),
                 tone = UiIconTone.Primary,
-                size = ChatUiTokens.IconContainerLg,
-                iconSize = ChatUiTokens.IconGlyphLg,
+                size = ChatUiTokens.IconContainerMd,
+                iconSize = ChatUiTokens.IconGlyphMd,
                 framed = false
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = displayName, style = MaterialTheme.typography.titleLarge)
+                Text(text = displayName, style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = username,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (deviceId.isNotBlank()) {
@@ -328,11 +338,11 @@ private fun ThemeModeSection(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = tr("settings_theme_mode", "Theme mode"), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = tr("settings_theme_mode", "Theme mode"), style = MaterialTheme.typography.titleMedium)
                 }
                 UiStatusCountBadge(label = activeLabel, tone = UiBadgeTone.Neutral)
             }
-            Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -399,11 +409,11 @@ private fun LanguageSection(controller: LanguageController) {
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = tr("settings_language", "Language"), style = MaterialTheme.typography.bodyLarge)
+                    Text(text = tr("settings_language", "Language"), style = MaterialTheme.typography.titleMedium)
                 }
                 UiStatusCountBadge(label = controller.current.label, tone = UiBadgeTone.Neutral)
             }
-            Spacer(modifier = Modifier.height(ChatUiTokens.SectionSpacing))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -484,9 +494,8 @@ private fun SettingsSection(entries: List<SettingEntry>) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp)
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
                     )
                 }
             }
@@ -501,29 +510,30 @@ private fun SettingsRow(entry: SettingEntry) {
     } else {
         Modifier
     }
-    ListItem(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .then(clickableModifier)
-            .clip(RoundedCornerShape(12.dp)),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = entry.icon,
-        trailingContent = entry.trailing,
-        headlineContent = {
+            .clip(RoundedCornerShape(12.dp))
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        entry.icon()
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(text = entry.title, style = MaterialTheme.typography.bodyLarge)
-        },
-        supportingContent = if (entry.subtitle.isNullOrBlank()) {
-            null
-        } else {
-            {
+            if (!entry.subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = entry.subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = entry.subtitle.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-    )
+        Spacer(modifier = Modifier.width(8.dp))
+        entry.trailing()
+    }
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)

@@ -13,17 +13,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import mi.e2ee.android.ui.Attachment
+import mi.e2ee.android.ui.AttachmentKind
+import mi.e2ee.android.ui.ChatItem
+import mi.e2ee.android.ui.ChatMessage
 import mi.e2ee.android.ui.ChatTheme
 import mi.e2ee.android.ui.ChatScreen
 import mi.e2ee.android.ui.CallsHomeScreen
 import mi.e2ee.android.ui.ConversationListScreen
 import mi.e2ee.android.ui.ConversationPreview
+import mi.e2ee.android.ui.DayMarker
 import mi.e2ee.android.ui.GroupCallRoomUi
 import mi.e2ee.android.ui.IncomingCall
 import mi.e2ee.android.ui.LoginScreen
+import mi.e2ee.android.ui.MessageStatus
 import mi.e2ee.android.ui.PeerCallState
 import mi.e2ee.android.ui.ProvideLocalization
-import mi.e2ee.android.ui.SampleChat
 import mi.e2ee.android.ui.SecurityCenterScreen
 import mi.e2ee.android.ui.SdkBridge
 import mi.e2ee.android.ui.SettingsScreen
@@ -96,7 +101,13 @@ private fun MainScreenshotScene(mode: String, context: Context) {
             initialPassword = "trust-build-2026",
             statusMessage = "Pinned gateway verified."
         )
-        "detail", "chat_detail" -> ChatScreen(items = SampleChat.items)
+        "detail", "chat_detail" -> ChatScreen(
+            items = previewChatItems(),
+            title = "Aster Stone",
+            status = "Online",
+            initials = "AS",
+            showTyping = false
+        )
         "calls", "calls_home" -> CallsHomeScreen(
             pendingCall = IncomingCall(
                 peerUsername = "Mira Chen",
@@ -141,6 +152,19 @@ private fun MainScreenshotScene(mode: String, context: Context) {
 
 private fun previewConversations(): List<ConversationPreview> = listOf(
     ConversationPreview(
+        id = "c5",
+        initials = "PT",
+        name = "Platform",
+        lastMessage = "Draft: verify API33 smoke gate",
+        time = "10:03",
+        unreadCount = 0,
+        isPinned = true,
+        isMuted = false,
+        isGroup = true,
+        isTyping = false,
+        draft = "verify API33 smoke gate"
+    ),
+    ConversationPreview(
         id = "c1",
         initials = "AS",
         name = "Aster Stone",
@@ -150,18 +174,6 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         isPinned = true,
         isMuted = false,
         isGroup = false,
-        isTyping = false
-    ),
-    ConversationPreview(
-        id = "g1",
-        initials = "TG",
-        name = "Threat Guild",
-        lastMessage = "Rotation completed",
-        time = "08:15",
-        unreadCount = 0,
-        isPinned = false,
-        isMuted = true,
-        isGroup = true,
         isTyping = false
     ),
     ConversationPreview(
@@ -202,17 +214,101 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         isTyping = true
     ),
     ConversationPreview(
-        id = "c5",
-        initials = "PT",
-        name = "Platform",
-        lastMessage = "Draft: verify API33 smoke gate",
-        time = "10:03",
+        id = "g1",
+        initials = "TG",
+        name = "Threat Guild",
+        lastMessage = "Rotation completed",
+        time = "08:15",
         unreadCount = 0,
-        isPinned = true,
+        isPinned = false,
+        isMuted = true,
+        isGroup = true,
+        isTyping = false
+    ),
+    ConversationPreview(
+        id = "c6",
+        initials = "MC",
+        name = "Mira Chen",
+        lastMessage = "Transport settled after the reconnect.",
+        time = "Yesterday",
+        unreadCount = 1,
+        isPinned = false,
+        isMuted = false,
+        isGroup = false,
+        isTyping = false
+    ),
+    ConversationPreview(
+        id = "c7",
+        initials = "IN",
+        name = "Infra Notes",
+        lastMessage = "Pinned gateway fingerprint rolled forward.",
+        time = "Tue",
+        unreadCount = 0,
+        isPinned = false,
+        isMuted = true,
+        isGroup = true,
+        isTyping = false
+    ),
+    ConversationPreview(
+        id = "c8",
+        initials = "LC",
+        name = "Launch Crew",
+        lastMessage = "Need final release note approval.",
+        time = "Wed",
+        unreadCount = 3,
+        isPinned = false,
         isMuted = false,
         isGroup = true,
         isTyping = false,
-        draft = "verify API33 smoke gate"
+        mentionCount = 1
+    )
+)
+
+private fun previewChatItems(): List<ChatItem> = listOf(
+    DayMarker(id = "day-today", label = "Today"),
+    ChatMessage(
+        id = "m1",
+        sender = "Aster",
+        body = "Morning. I mapped the edge cases into a short checklist.",
+        time = "08:12",
+        isMine = false
+    ),
+    ChatMessage(
+        id = "m2",
+        sender = "Me",
+        body = "Great. Send the checklist and the risk notes.",
+        time = "08:13",
+        isMine = true,
+        status = MessageStatus.Read,
+        replyTo = null
+    ),
+    ChatMessage(
+        id = "m3",
+        sender = "Me",
+        body = "Also flag the retry storms after reconnect so Ops can review it.",
+        time = "08:14",
+        isMine = true,
+        status = MessageStatus.Delivered
+    ),
+    ChatMessage(
+        id = "m4",
+        sender = "Aster",
+        body = "Uploading now. The top risk is retry storms after reconnect.",
+        time = "08:15",
+        isMine = false,
+        attachment = Attachment(
+            kind = AttachmentKind.File,
+            label = "Checklist.pdf",
+            meta = "230 KB"
+        )
+    ),
+    ChatMessage(
+        id = "m5",
+        sender = "Me",
+        body = "Received. I will add backoff, cap the queue depth, and send a clean summary.",
+        time = "08:16",
+        isMine = true,
+        status = MessageStatus.Sent
     )
 )
 

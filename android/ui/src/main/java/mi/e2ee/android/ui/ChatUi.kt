@@ -727,9 +727,9 @@ fun ChatScreen(
         containerColor = Color.Transparent
     ) { padding ->
         val composerInset = if (showComposer) {
-            padding.calculateBottomPadding() + 20.dp
+            padding.calculateBottomPadding() + 14.dp
         } else {
-            16.dp
+            12.dp
         }
         Box(
             modifier = Modifier
@@ -775,10 +775,10 @@ fun ChatScreen(
                     },
                     onAttachmentClick = onDownloadAttachment,
                     contentPadding = PaddingValues(
-                        top = padding.calculateTopPadding() + 12.dp,
+                        top = padding.calculateTopPadding() + 8.dp,
                         bottom = composerInset,
-                        start = 16.dp,
-                        end = 16.dp
+                        start = 12.dp,
+                        end = 12.dp
                     )
                 )
                 if (showJumpToBottom) {
@@ -786,7 +786,7 @@ fun ChatScreen(
                         count = unreadCount,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 14.dp, bottom = composerInset + 22.dp)
+                            .padding(end = 12.dp, bottom = composerInset + 16.dp)
                     )
                 }
             }
@@ -1287,26 +1287,26 @@ private fun ChatTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
         tonalElevation = 0.dp
     ) {
         TopAppBar(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 6.dp),
+                .padding(horizontal = 2.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 36.dp)
-                    Spacer(modifier = Modifier.width(10.dp))
+                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 32.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = status,
                                 style = MaterialTheme.typography.labelSmall,
@@ -1330,14 +1330,14 @@ private fun ChatTopBar(
                     tone = UiIconTone.Neutral,
                     onClick = onSearch
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 TopBarActionIcon(
                     icon = MiOwnedIcons.Call,
                     contentDescription = tr("chat_call", "Call"),
                     tone = UiIconTone.Accent,
                     onClick = onCall
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 TopBarActionIcon(
                     icon = MiOwnedIcons.MoreVertical,
                     contentDescription = tr("chat_more", "More"),
@@ -1389,7 +1389,7 @@ private fun MessageList(
         modifier = Modifier.fillMaxSize(),
         state = listState,
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
             when (item) {
@@ -1473,7 +1473,7 @@ private fun MessageRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = if (isGroupedAbove) 2.dp else 8.dp)
+                    .padding(top = if (isGroupedAbove) 1.dp else 6.dp)
                     .then(swipeModifier),
                 horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.Bottom
@@ -1483,24 +1483,16 @@ private fun MessageRow(
                         AvatarBadge(
                             initials = message.sender.take(2).uppercase(),
                             tint = MaterialTheme.colorScheme.primary,
-                            size = 28.dp
+                            size = 24.dp
                         )
                     } else {
-                        Spacer(modifier = Modifier.width(28.dp))
+                        Spacer(modifier = Modifier.width(24.dp))
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                 }
                 Column(
                     horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
                 ) {
-                    if (!message.isMine && !isGroupedAbove) {
-                        Text(
-                            text = message.sender,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
                     MessageBubble(
                         message = message,
                         isGroupedAbove = isGroupedAbove,
@@ -1618,16 +1610,16 @@ private fun MessageBubble(
     val bubbleShape = if (message.isMine) {
         RoundedCornerShape(
             topStart = 16.dp,
-            topEnd = if (isGroupedAbove) 6.dp else 18.dp,
-            bottomEnd = if (isGroupedBelow) 6.dp else 18.dp,
+            topEnd = if (isGroupedAbove) 6.dp else 16.dp,
+            bottomEnd = if (isGroupedBelow) 6.dp else 16.dp,
             bottomStart = 16.dp
         )
     } else {
         RoundedCornerShape(
-            topStart = if (isGroupedAbove) 6.dp else 18.dp,
+            topStart = if (isGroupedAbove) 6.dp else 16.dp,
             topEnd = 16.dp,
             bottomEnd = 16.dp,
-            bottomStart = if (isGroupedBelow) 6.dp else 18.dp
+            bottomStart = if (isGroupedBelow) 6.dp else 16.dp
         )
     }
 
@@ -1647,14 +1639,17 @@ private fun MessageBubble(
         MaterialTheme.colorScheme.secondary
     }
 
-    val showTail = !isGroupedBelow
-    Box(modifier = Modifier.widthIn(max = 272.dp)) {
+    Box(modifier = Modifier.widthIn(max = 266.dp)) {
         Column(
             modifier = Modifier
                 .clip(bubbleShape)
                 .border(
                     width = 1.dp,
-                    color = highlightColor.copy(alpha = 0.28f * highlightAlpha),
+                    color = if (message.isMine) {
+                        highlightColor.copy(alpha = 0.16f * highlightAlpha)
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.12f + 0.10f * highlightAlpha)
+                    },
                     shape = bubbleShape
                 )
                 .background(bubbleColor)
@@ -1665,7 +1660,7 @@ private fun MessageBubble(
                         onLongPress()
                     }
                 )
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = 11.dp, vertical = 9.dp)
         ) {
             if (message.isRevoked) {
                 RevokedMessageRow(
@@ -1676,11 +1671,11 @@ private fun MessageBubble(
             } else {
                 if (message.forwardedFrom != null) {
                     ForwardedRow(message.forwardedFrom, message.isMine)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
                 }
                 if (message.replyTo != null) {
                     ReplyPreviewRow(message.replyTo, message.isMine)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
                 }
                 Text(
                     text = message.body,
@@ -1688,15 +1683,15 @@ private fun MessageBubble(
                     color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
                 )
                 if (message.linkPreview != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(7.dp))
                     LinkPreviewCard(message.linkPreview, message.isMine)
                 }
                 if (message.attachment != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     AttachmentBlock(message.attachment, message.isMine, onClick = onAttachmentClick)
                 }
             }
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(5.dp))
             MessageMetaRow(
                 time = message.time,
                 status = message.status,
@@ -1704,18 +1699,6 @@ private fun MessageBubble(
                 isEdited = message.isEdited,
                 isFavorite = isFavorite,
                 readBy = message.readBy
-            )
-        }
-        if (showTail) {
-            BubbleTail(
-                color = bubbleColor,
-                isMine = message.isMine,
-                modifier = Modifier
-                    .align(if (message.isMine) Alignment.BottomEnd else Alignment.BottomStart)
-                    .padding(
-                        end = if (message.isMine) 4.dp else 0.dp,
-                        start = if (message.isMine) 0.dp else 4.dp
-                    )
             )
         }
     }
@@ -1729,13 +1712,13 @@ private fun ReplyPreviewRow(reply: ReplyPreview, isMine: Boolean) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(accent.copy(alpha = if (isMine) 0.18f else 0.12f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(24.dp)
+                .height(20.dp)
                 .background(accent, RoundedCornerShape(2.dp))
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -1747,7 +1730,7 @@ private fun ReplyPreviewRow(reply: ReplyPreview, isMine: Boolean) {
             )
             Text(
                 text = reply.snippet,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
             )
         }
@@ -2448,14 +2431,14 @@ private fun TypingIndicator() {
 @Composable
 private fun JumpToBottomButton(count: Int, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.shadow(8.dp, RoundedCornerShape(14.dp)),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.shadow(4.dp, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
         Column(
             modifier = Modifier
-                .padding(horizontal = 6.dp, vertical = 6.dp)
-                .widthIn(min = 32.dp),
+                .padding(horizontal = 6.dp, vertical = 5.dp)
+                .widthIn(min = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
@@ -2993,20 +2976,20 @@ fun ComposerBar(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 1.dp
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 7.dp)
+                .padding(horizontal = 6.dp, vertical = 6.dp)
         ) {
             if (showQuickActions) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     QuickActionButton(
                         icon = MiOwnedIcons.Photo,
@@ -3034,18 +3017,19 @@ fun ComposerBar(
                         onClick = onAttachSticker
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
             if (replyPreview != null) {
                 ReplyComposerRow(
                     reply = replyPreview,
                     onDismiss = onReplyDismiss
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(
                     onClick = { showQuickActions = !showQuickActions },
+                    modifier = Modifier.size(40.dp),
                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                         containerColor = if (showQuickActions) {
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
@@ -3064,7 +3048,7 @@ fun ComposerBar(
                         contentDescription = tr("chat_attach", "Attach")
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 CompactMessageField(
                     value = message,
                     onValueChange = onMessageChange,
@@ -3083,10 +3067,11 @@ fun ComposerBar(
                         }
                     )
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 if (message.isNotBlank()) {
                     FilledIconButton(
                         onClick = onSend,
+                        modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -3100,6 +3085,7 @@ fun ComposerBar(
                 } else {
                     FilledTonalIconButton(
                         onClick = {},
+                        modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -3129,7 +3115,7 @@ private fun CompactMessageField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.heightIn(min = 40.dp, max = 120.dp),
+        modifier = modifier.heightIn(min = 40.dp, max = 100.dp),
         placeholder = {
             Text(
                 text = placeholder,
@@ -3148,7 +3134,7 @@ private fun CompactMessageField(
                 )
             }
         },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         colors = OutlinedTextFieldDefaults.colors(
@@ -3170,7 +3156,7 @@ private fun QuickActionButton(
     AssistChip(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         leadingIcon = {
             Icon(
                 imageVector = icon,
@@ -3195,42 +3181,15 @@ private fun QuickActionButton(
 @Composable
 private fun ChatBackground() {
     val base = MaterialTheme.colorScheme.background
-    val mist = MaterialTheme.colorScheme.surfaceVariant
-    val isDark = base.luminance() < 0.3f
-    val teal = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.08f else 0.12f)
-    val coral = MaterialTheme.colorScheme.secondary.copy(alpha = if (isDark) 0.05f else 0.08f)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.linearGradient(
-                    colors = listOf(base, mist),
-                    start = Offset.Zero,
-                    end = Offset(0f, 1200f)
+                Brush.verticalGradient(
+                    colors = listOf(base, MaterialTheme.colorScheme.surface.copy(alpha = 0.99f))
                 )
             )
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            drawCircle(color = teal, radius = w * 0.42f, center = Offset(w * 0.12f, h * 0.08f))
-            drawCircle(color = coral, radius = w * 0.46f, center = Offset(w * 0.92f, h * 0.18f))
-            drawCircle(
-                color = Color.White.copy(alpha = if (isDark) 0.04f else 0.08f),
-                radius = w * 0.26f,
-                center = Offset(w * 0.8f, h * 0.85f)
-            )
-            for (i in 0..10) {
-                val x = w * (0.12f + i * 0.065f)
-                val y = h * (0.28f + (i % 4) * 0.07f)
-                drawCircle(
-                    color = Color.White.copy(alpha = if (isDark) 0.04f else 0.08f),
-                    radius = 2.5f,
-                    center = Offset(x, y)
-                )
-            }
-        }
-    }
+    )
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)

@@ -158,18 +158,9 @@ fun CallsHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!isEmpty) {
-                item(key = "calls-summary") {
-                    CallSummaryStrip(
-                        activeCount = activeEntries.size,
-                        attentionCount = attentionEntries.size,
-                        recentCount = recentEntries.size
-                    )
-                }
-            }
             if (activeEntries.isNotEmpty()) {
                 item(key = "calls-active-title") {
                     SectionHeader(
@@ -282,13 +273,13 @@ private fun CallActivityRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = entry.onAction != null) { entry.onAction?.invoke() }
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 0.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AvatarBadge(
             initials = entry.title.take(2).uppercase(),
             tint = MaterialTheme.colorScheme.primary,
-            size = 40.dp
+            size = 36.dp
         )
         Column(
             modifier = Modifier
@@ -302,13 +293,13 @@ private fun CallActivityRow(
                 Text(
                     text = entry.title,
                     modifier = Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 CallMetaPill(label = entry.meta, tone = entry.tone, emphasized = emphasized)
             }
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -334,8 +325,8 @@ private fun CallActivityRow(
         if (!entry.actionLabel.isNullOrBlank() && entry.onAction != null) {
             FilledTonalButton(
                 onClick = entry.onAction,
-                modifier = Modifier.height(34.dp),
-                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.height(32.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = when (entry.tone) {
                         UiIconTone.Primary -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
@@ -379,10 +370,10 @@ private fun CallMetaPill(
         text = label,
         modifier = Modifier
             .background(
-                color = tint.copy(alpha = if (emphasized) 0.12f else 0.08f),
+                color = tint.copy(alpha = if (emphasized) 0.10f else 0.06f),
                 shape = RoundedCornerShape(999.dp)
             )
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .padding(horizontal = 7.dp, vertical = 2.dp),
         style = MaterialTheme.typography.labelSmall,
         color = tint,
         maxLines = 1

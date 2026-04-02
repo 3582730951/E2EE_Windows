@@ -123,10 +123,10 @@ private val ChatTypography = Typography(
         letterSpacing = 0.8.sp
     ),
     bodySmall = TextStyle(
-        fontFamily = Mono,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 17.sp
+        fontFamily = Sans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 13.sp,
+        lineHeight = 18.sp
     )
 )
 
@@ -174,21 +174,21 @@ object ThemeMode {
 
 object ChatUiTokens {
     val CornerSmall = 12.dp
-    val CornerMedium = 16.dp
-    val CornerLarge = 20.dp
+    val CornerMedium = 14.dp
+    val CornerLarge = 16.dp
     val IconContainerXs = 20.dp
-    val IconContainerSm = 36.dp
-    val IconContainerMd = 40.dp
-    val IconContainerLg = 44.dp
+    val IconContainerSm = 34.dp
+    val IconContainerMd = 38.dp
+    val IconContainerLg = 42.dp
     val IconGlyphXs = 11.dp
     val IconGlyphSm = 14.dp
     val IconGlyphMd = 16.dp
     val IconGlyphLg = 18.dp
     val BadgeCorner = 8.dp
-    val IconSize = 40.dp
-    val IconCorner = 12.dp
-    val SectionSpacing = 12.dp
-    val ItemSpacing = 8.dp
+    val IconSize = 36.dp
+    val IconCorner = 10.dp
+    val SectionSpacing = 10.dp
+    val ItemSpacing = 6.dp
     const val IconContainerAlpha = 0.08f
     const val SurfaceBorderAlpha = 0.12f
     const val MotionFastMs = 120
