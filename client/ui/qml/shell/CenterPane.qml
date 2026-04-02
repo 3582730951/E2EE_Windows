@@ -13,6 +13,8 @@ Item {
     property var bridge: typeof clientBridge === "undefined" ? null : clientBridge
     property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     readonly property Window hostWindow: root.Window.window
+    readonly property bool smokePostLoginScene: smokeMode && Ui.SmokeSceneStore.normalizedScene === "post_login"
+    readonly property bool smokePostLoginLightScene: smokeMode && Ui.SmokeSceneStore.postLoginLightScene
 
     property bool chatSearchVisible: false
     property bool stickToBottom: true
@@ -862,6 +864,91 @@ Item {
                 opacity: Ui.Style.isDark ? 0.08 : 0.06
                 smooth: true
                 visible: !messageArea.hasChatBackground
+            }
+
+            Item {
+                anchors.fill: parent
+                visible: root.smokePostLoginScene || root.smokePostLoginLightScene
+
+                Rectangle {
+                    visible: root.smokePostLoginScene
+                    width: parent.width * 0.36
+                    height: 160
+                    x: parent.width - width - 72
+                    y: 40
+                    radius: 32
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.12) }
+                        GradientStop { position: 1.0; color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.02) }
+                    }
+                    border.width: 1
+                    border.color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.18)
+                    rotation: -8
+                }
+
+                Rectangle {
+                    visible: root.smokePostLoginScene
+                    width: 220
+                    height: 220
+                    x: -48
+                    y: parent.height - 286
+                    radius: 110
+                    color: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.06)
+                    border.width: 1
+                    border.color: Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.10)
+                }
+
+                Rectangle {
+                    visible: root.smokePostLoginScene
+                    width: 160
+                    height: 44
+                    x: parent.width - width - 92
+                    y: parent.height - 168
+                    radius: 22
+                    color: Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.05)
+                    border.width: 1
+                    border.color: Qt.rgba(78 / 255, 143 / 255, 255 / 255, 0.10)
+                }
+
+                Rectangle {
+                    visible: root.smokePostLoginLightScene
+                    width: parent.width * 0.42
+                    height: 172
+                    x: 36
+                    y: 56
+                    radius: 34
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.11) }
+                        GradientStop { position: 1.0; color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.02) }
+                    }
+                    border.width: 1
+                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.16)
+                    rotation: 5
+                }
+
+                Rectangle {
+                    visible: root.smokePostLoginLightScene
+                    width: 248
+                    height: 248
+                    x: parent.width - 222
+                    y: parent.height - 302
+                    radius: 124
+                    color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.05)
+                    border.width: 1
+                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.10)
+                }
+
+                Rectangle {
+                    visible: root.smokePostLoginLightScene
+                    width: 176
+                    height: 36
+                    x: 68
+                    y: parent.height - 154
+                    radius: 18
+                    color: Qt.rgba(255 / 255, 255 / 255, 255 / 255, 0.32)
+                    border.width: 1
+                    border.color: Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.12)
+                }
             }
 
             Rectangle {

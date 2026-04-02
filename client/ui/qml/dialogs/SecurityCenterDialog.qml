@@ -101,6 +101,13 @@ ApplicationWindow {
                                            : (gatewayInfo.length > 0
                                               ? gatewayInfo
                                               : Ui.I18n.t("dialog.securityCenter.serverHint"))
+    readonly property string serverHeadline: smokeFixtureMode
+                                             ? root.smokeGatewayStatus
+                                             : (gatewayState.length > 0
+                                                ? gatewayState
+                                                : (gatewayInfo.length > 0
+                                                   ? gatewayInfo
+                                                   : Ui.I18n.t("dialog.securityCenter.serverTitle")))
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
     readonly property color smokeSummaryBg: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.08)
     readonly property color smokeSummaryBorder: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.24)
@@ -704,78 +711,35 @@ ApplicationWindow {
                         spacing: smokeFixtureMode ? root.smokeGap : Ui.Style.paddingS
 
                         RowLayout {
-                            visible: !smokeFixtureMode
                             Layout.fillWidth: true
                             spacing: Ui.Style.paddingS
 
-                            Rectangle {
-                                Layout.fillWidth: true
-                                radius: Ui.Style.radiusMedium
-                                color: smokeFixtureMode ? root.smokeSummaryBg : Ui.Style.panelBgAlt
-                                border.color: smokeFixtureMode ? root.smokeSummaryBorder : Ui.Style.borderSubtle
-                                implicitHeight: trustMetricColumn.implicitHeight + Ui.Style.paddingS * 2
-
-                                ColumnLayout {
-                                    id: trustMetricColumn
-                                    anchors.fill: parent
-                                    anchors.margins: Ui.Style.paddingS
-                                    spacing: 2
-
-                                    Components.UiText {
-                                        text: Ui.I18n.t("dialog.securityCenter.transportTitle")
-                                        textRole: "caption"
-                                        roleColor: Ui.Style.textSecondary
-                                    }
-
-                                    Components.UiText {
-                                        text: root.transportHeadline
-                                        textRole: "value_single"
-                                        roleColor: Ui.Style.textPrimary
-                                    }
-                                }
+                            Components.UiText {
+                                text: smokeFixtureMode
+                                      ? (Ui.I18n.usesCjkLocale ? "状态摘要" : "Status summary")
+                                      : (Ui.I18n.usesCjkLocale ? "状态摘要" : "Status summary")
+                                textRole: smokeFixtureMode ? "caption" : "subtitle"
+                                roleColor: Ui.Style.textPrimary
                             }
 
-                            Rectangle {
-                                Layout.fillWidth: true
-                                radius: Ui.Style.radiusMedium
-                                color: smokeFixtureMode ? root.smokeDeviceBg : Ui.Style.panelBgAlt
-                                border.color: smokeFixtureMode ? root.smokeDeviceBorder : Ui.Style.borderSubtle
-                                implicitHeight: deviceMetricColumn.implicitHeight + Ui.Style.paddingS * 2
-
-                                ColumnLayout {
-                                    id: deviceMetricColumn
-                                    anchors.fill: parent
-                                    anchors.margins: Ui.Style.paddingS
-                                    spacing: 2
-
-                                    Components.UiText {
-                                        text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
-                                        textRole: "caption"
-                                        roleColor: Ui.Style.textSecondary
-                                    }
-
-                                    Components.UiText {
-                                        text: root.linkedDevicesSummary
-                                        textRole: "value_single"
-                                        roleColor: Ui.Style.textPrimary
-                                    }
-                                }
-                            }
+                            Item { Layout.fillWidth: true }
                         }
 
                         Rectangle {
-                            visible: smokeFixtureMode
+                            visible: true
                             Layout.fillWidth: true
                             radius: Ui.Style.radiusMedium
-                            color: root.smokeSummaryBg
-                            border.color: root.smokeSummaryBorder
-                            implicitHeight: smokeTransportInfoColumn.implicitHeight + root.smokeCardPadding * 2
+                            color: smokeFixtureMode ? root.smokeSummaryBg : Ui.Style.panelBgAlt
+                            border.color: smokeFixtureMode ? root.smokeSummaryBorder : Ui.Style.borderSubtle
+                            implicitHeight: smokeTransportInfoColumn.implicitHeight + (smokeFixtureMode
+                                                                                        ? root.smokeCardPadding * 2
+                                                                                        : Ui.Style.paddingS * 2)
 
                             ColumnLayout {
                                 id: smokeTransportInfoColumn
                                 anchors.fill: parent
-                                anchors.margins: root.smokeCardPadding
-                                spacing: 2
+                                anchors.margins: smokeFixtureMode ? root.smokeCardPadding : Ui.Style.paddingS
+                                spacing: smokeFixtureMode ? 2 : 3
 
                                 Components.UiText {
                                     text: Ui.I18n.t("dialog.securityCenter.transportTitle")
@@ -792,25 +756,27 @@ ApplicationWindow {
                                 Components.UiText {
                                     text: root.transportDetail
                                     Layout.fillWidth: true
-                                    textRole: "caption"
+                                    textRole: smokeFixtureMode ? "caption" : "detail"
                                     roleColor: Ui.Style.textMuted
                                 }
                             }
                         }
 
                         Rectangle {
-                            visible: smokeFixtureMode
+                            visible: true
                             Layout.fillWidth: true
                             radius: Ui.Style.radiusMedium
-                            color: root.smokeTrustBg
-                            border.color: root.smokeTrustBorder
-                            implicitHeight: smokeTrustColumn.implicitHeight + root.smokeCardPadding * 2
+                            color: smokeFixtureMode ? root.smokeTrustBg : Ui.Style.panelBgAlt
+                            border.color: smokeFixtureMode ? root.smokeTrustBorder : Ui.Style.borderSubtle
+                            implicitHeight: smokeTrustColumn.implicitHeight + (smokeFixtureMode
+                                                                               ? root.smokeCardPadding * 2
+                                                                               : Ui.Style.paddingS * 2)
 
                             ColumnLayout {
                                 id: smokeTrustColumn
                                 anchors.fill: parent
-                                anchors.margins: root.smokeCardPadding
-                                spacing: 2
+                                anchors.margins: smokeFixtureMode ? root.smokeCardPadding : Ui.Style.paddingS
+                                spacing: smokeFixtureMode ? 2 : 3
 
                                 Components.UiText {
                                     text: Ui.I18n.t("dialog.securityCenter.trustTitle")
@@ -827,25 +793,27 @@ ApplicationWindow {
                                 Components.UiText {
                                     text: root.trustDetail
                                     Layout.fillWidth: true
-                                    textRole: "caption"
+                                    textRole: smokeFixtureMode ? "caption" : "detail"
                                     roleColor: Ui.Style.textMuted
                                 }
                             }
                         }
 
                         Rectangle {
-                            visible: smokeFixtureMode
+                            visible: true
                             Layout.fillWidth: true
                             radius: Ui.Style.radiusMedium
-                            color: root.smokeServerBg
-                            border.color: root.smokeServerBorder
-                            implicitHeight: smokeServerColumn.implicitHeight + root.smokeCardPadding * 2
+                            color: smokeFixtureMode ? root.smokeServerBg : Ui.Style.panelBgAlt
+                            border.color: smokeFixtureMode ? root.smokeServerBorder : Ui.Style.borderSubtle
+                            implicitHeight: smokeServerColumn.implicitHeight + (smokeFixtureMode
+                                                                                ? root.smokeCardPadding * 2
+                                                                                : Ui.Style.paddingS * 2)
 
                             ColumnLayout {
                                 id: smokeServerColumn
                                 anchors.fill: parent
-                                anchors.margins: root.smokeCardPadding
-                                spacing: 2
+                                anchors.margins: smokeFixtureMode ? root.smokeCardPadding : Ui.Style.paddingS
+                                spacing: smokeFixtureMode ? 2 : 3
 
                                 Components.UiText {
                                     text: Ui.I18n.t("dialog.securityCenter.serverTitle")
@@ -854,7 +822,7 @@ ApplicationWindow {
                                 }
 
                                 Components.UiText {
-                                    text: root.smokeGatewayStatus
+                                    text: root.serverHeadline
                                     textRole: "value_single"
                                     roleColor: Ui.Style.textPrimary
                                 }
@@ -862,60 +830,9 @@ ApplicationWindow {
                                 Components.UiText {
                                     text: root.serverDetail
                                     Layout.fillWidth: true
-                                    textRole: "caption"
+                                    textRole: smokeFixtureMode ? "caption" : "detail"
                                     roleColor: Ui.Style.textMuted
                                 }
-                            }
-                        }
-
-                        ColumnLayout {
-                            visible: !smokeFixtureMode
-                            Layout.fillWidth: true
-                            spacing: 4
-
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.trustTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.trustHeadline
-                                textRole: "value_single"
-                                roleColor: Ui.Style.textPrimary
-                            }
-
-                            Components.UiText {
-                                text: root.trustDetail
-                                Layout.fillWidth: true
-                                textRole: "detail"
-                                roleColor: Ui.Style.textMuted
-                            }
-                        }
-
-                        Rectangle {
-                            visible: !smokeFixtureMode
-                            Layout.fillWidth: true
-                            height: 1
-                            color: Ui.Style.borderSubtle
-                        }
-
-                        ColumnLayout {
-                            visible: !smokeFixtureMode
-                            Layout.fillWidth: true
-                            spacing: 4
-
-                            Components.UiText {
-                                text: Ui.I18n.t("dialog.securityCenter.serverTitle")
-                                textRole: "caption"
-                                roleColor: Ui.Style.textSecondary
-                            }
-
-                            Components.UiText {
-                                text: root.serverDetail
-                                Layout.fillWidth: true
-                                textRole: "detail"
-                                roleColor: Ui.Style.textMuted
                             }
                         }
                     }

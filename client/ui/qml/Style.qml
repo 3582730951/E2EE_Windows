@@ -39,6 +39,14 @@ Item {
     readonly property string smokeThemeMode: typeof uiSmokeTheme !== "undefined"
                                              ? (uiSmokeTheme || "")
                                              : ""
+    readonly property string smokeSceneName: typeof uiSmokeScene !== "undefined"
+                                             ? ((uiSmokeScene || "").toLowerCase())
+                                             : ""
+    readonly property bool smokePostLoginScene: smokeSceneName === "post_login"
+    readonly property bool smokePostLoginLightScene: smokeSceneName === "post_login_light" ||
+                                                     smokeSceneName === "chat_list_light"
+    readonly property bool smokeLightPrimaryPalette: smokeThemeMode === "light" && smokePostLoginScene
+    readonly property bool smokeLightAltPalette: smokeThemeMode === "light" && smokePostLoginLightScene
     property string themeMode: (styleSettings.storedThemeMode === "dark" ||
                                 styleSettings.storedThemeMode === "light" ||
                                 styleSettings.storedThemeMode === "system")
@@ -60,49 +68,49 @@ Item {
         }
     }
 
-    property color windowBg: isDark ? "#0F172A" : "#F8FAFC"
-    property color panelBg: isDark ? "#101922" : "#FFFFFF"
-    property color panelBgAlt: isDark ? "#182431" : "#F1F5FD"
-    property color panelBgRaised: isDark ? "#101E2E" : "#FFFFFF"
-    property color hoverBg: isDark ? "#1C2A3A" : "#EEF4FC"
-    property color pressedBg: isDark ? "#213244" : "#E4ECFC"
+    property color windowBg: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F6FAF6" : (smokeLightPrimaryPalette ? "#F4F8FF" : "#F8FAFC"))
+    property color panelBg: isDark ? "#101922" : (smokeLightAltPalette ? "#FFFEFB" : "#FFFFFF")
+    property color panelBgAlt: isDark ? "#182431" : (smokeLightAltPalette ? "#EEF5EF" : (smokeLightPrimaryPalette ? "#EDF3FF" : "#F1F5FD"))
+    property color panelBgRaised: isDark ? "#101E2E" : (smokeLightAltPalette ? "#FFFDF8" : "#FFFFFF")
+    property color hoverBg: isDark ? "#1C2A3A" : (smokeLightAltPalette ? "#F1F7F2" : "#EEF4FC")
+    property color pressedBg: isDark ? "#213244" : (smokeLightAltPalette ? "#E5F0E8" : "#E4ECFC")
     property color borderSubtle: isDark ? Qt.rgba(1, 1, 1, 0.08) : "#E4ECFC"
-    property color borderStrong: isDark ? Qt.rgba(1, 1, 1, 0.12) : "#D6E4FA"
+    property color borderStrong: isDark ? Qt.rgba(1, 1, 1, 0.12) : (smokeLightAltPalette ? "#D6E7D8" : "#D6E4FA")
     property color textPrimary: isDark ? "#E8EDF4" : "#0F172A"
-    property color textSecondary: isDark ? "#9DAEBC" : "#64748B"
-    property color textMuted: isDark ? "#7E92A7" : "#7B8CA1"
-    property color iconMuted: isDark ? "#9DAEBC" : "#64748B"
+    property color textSecondary: isDark ? "#9DAEBC" : (smokeLightAltPalette ? "#5D746D" : "#64748B")
+    property color textMuted: isDark ? "#7E92A7" : (smokeLightAltPalette ? "#788C84" : "#7B8CA1")
+    property color iconMuted: isDark ? "#9DAEBC" : (smokeLightAltPalette ? "#5D746D" : "#64748B")
     property color iconActive: isDark ? "#F8FBFF" : "#0F172A"
-    property color accent: "#2563EB"
-    property color accentHover: "#2E6DF0"
-    property color accentPressed: "#1F57CF"
-    property color accentSoft: isDark ? "#8BB5FF" : "#2563EB"
-    property color link: isDark ? "#85B8FF" : "#2E72DE"
+    property color accent: smokeLightAltPalette ? "#138A72" : "#2563EB"
+    property color accentHover: smokeLightAltPalette ? "#16957B" : "#2E6DF0"
+    property color accentPressed: smokeLightAltPalette ? "#10735F" : "#1F57CF"
+    property color accentSoft: isDark ? "#8BB5FF" : (smokeLightAltPalette ? "#138A72" : "#2563EB")
+    property color link: isDark ? "#85B8FF" : (smokeLightAltPalette ? "#0F7F69" : "#2E72DE")
     property color danger: "#DC2626"
     property color success: "#059669"
     property color warning: "#D6A25A"
 
-    property color shellGradientTop: isDark ? "#0F172A" : "#F8FAFC"
-    property color shellGradientBottom: isDark ? "#101922" : "#EEF4FC"
-    property color shellSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.98) : Qt.rgba(1, 1, 1, 0.97)
-    property color tgCloudTop: isDark ? "#0F172A" : "#F8FAFC"
-    property color tgCloudBottom: isDark ? "#101922" : "#EEF4FC"
-    property color tgGlassSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.96) : Qt.rgba(1, 1, 1, 0.97)
-    property color tgCardHighlight: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.10) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.05)
-    property color tgCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.12)
+    property color shellGradientTop: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F6FAF5" : (smokeLightPrimaryPalette ? "#F4F8FF" : "#F8FAFC"))
+    property color shellGradientBottom: isDark ? "#101922" : (smokeLightAltPalette ? "#E8F2EC" : (smokeLightPrimaryPalette ? "#E8F0FF" : "#EEF4FC"))
+    property color shellSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.98) : (smokeLightAltPalette ? Qt.rgba(254 / 255, 255 / 255, 251 / 255, 0.975) : Qt.rgba(1, 1, 1, 0.97))
+    property color tgCloudTop: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F5FAF5" : (smokeLightPrimaryPalette ? "#F3F7FF" : "#F8FAFC"))
+    property color tgCloudBottom: isDark ? "#101922" : (smokeLightAltPalette ? "#E5F1E9" : (smokeLightPrimaryPalette ? "#E7EFFF" : "#EEF4FC"))
+    property color tgGlassSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.96) : (smokeLightAltPalette ? Qt.rgba(254 / 255, 255 / 255, 250 / 255, 0.978) : Qt.rgba(1, 1, 1, 0.97))
+    property color tgCardHighlight: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.10) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.06) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.06))
+    property color tgCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.12) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.12))
     property color tgOnlineDot: "#31C38B"
-    property color tgMutedBadge: isDark ? "#415264" : "#B8C3CF"
-    property color tgUnreadBadge: "#4E8FFF"
-    property color tgActiveRowBg: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.08)
-    property color tgActiveRowBorder: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.28) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18)
-    property color railBg: isDark ? "#17232F" : "#FFFFFF"
-    property color railHeaderBg: isDark ? "#1D2B39" : "#F7FAFD"
-    property color railCardBg: isDark ? "#17232F" : "#FFFFFF"
-    property color railAccentBg: isDark ? Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.16) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.08)
-    property color railAccentBorder: isDark ? Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.24) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.14)
-    property color topBarBg: isDark ? "#1A2632" : "#FFFFFF"
-    property color topBarPillBg: isDark ? "#253444" : "#EEF4FA"
-    property color topBarPillBorder: isDark ? "#33485B" : "#D9E4EF"
+    property color tgMutedBadge: isDark ? "#415264" : (smokeLightAltPalette ? "#B5C8BE" : "#B8C3CF")
+    property color tgUnreadBadge: smokeLightAltPalette ? "#1B9A7C" : "#4E8FFF"
+    property color tgActiveRowBg: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.10) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.09))
+    property color tgActiveRowBorder: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.28) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.20) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18))
+    property color railBg: isDark ? "#17232F" : (smokeLightAltPalette ? "#FBFCF8" : "#FFFFFF")
+    property color railHeaderBg: isDark ? "#1D2B39" : (smokeLightAltPalette ? "#F2F7F1" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F7FAFD"))
+    property color railCardBg: isDark ? "#17232F" : (smokeLightAltPalette ? "#FFFEFB" : "#FFFFFF")
+    property color railAccentBg: isDark ? Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.16) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.09) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.08))
+    property color railAccentBorder: isDark ? Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.24) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.18) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.14))
+    property color topBarBg: isDark ? "#1A2632" : (smokeLightAltPalette ? "#FFFEFB" : "#FFFFFF")
+    property color topBarPillBg: isDark ? "#253444" : (smokeLightAltPalette ? "#EEF5EF" : "#EEF4FA")
+    property color topBarPillBorder: isDark ? "#33485B" : (smokeLightAltPalette ? "#D7E4D8" : "#D9E4EF")
 
     property color authBackdropTop: isDark ? "#0F172A" : "#F8FAFC"
     property color authBackdropBottom: isDark ? "#101922" : "#EEF4FC"
@@ -137,30 +145,30 @@ Item {
     property color authDangerBg: isDark ? Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.13) : Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.10)
     property color authDangerBorder: isDark ? Qt.rgba(244 / 255, 156 / 255, 171 / 255, 0.18) : Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.20)
 
-    property color searchBg: isDark ? "#182431" : "#F1F5FD"
-    property color searchBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : "#E4ECFC"
+    property color searchBg: isDark ? "#182431" : (smokeLightAltPalette ? "#F1F6F1" : "#F1F5FD")
+    property color searchBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : (smokeLightAltPalette ? "#DCE9DE" : "#E4ECFC")
     property color inputBg: isDark ? "#1E2C39" : "#FFFFFF"
-    property color inputBorder: isDark ? Qt.rgba(1, 1, 1, 0.12) : "#D6E4FA"
-    property color inputFocus: isDark ? "#8BB5FF" : "#2563EB"
+    property color inputBorder: isDark ? Qt.rgba(1, 1, 1, 0.12) : (smokeLightAltPalette ? "#D6E7D8" : "#D6E4FA")
+    property color inputFocus: isDark ? "#8BB5FF" : (smokeLightAltPalette ? "#138A72" : "#2563EB")
 
-    property color dialogSelectedBg: isDark ? "#2A4055" : "#EAF2FD"
-    property color dialogSelectedFg: isDark ? "#F1F6FC" : "#22303D"
-    property color dialogHoverBg: isDark ? "#223545" : "#F2F7FC"
-    property color unreadBadgeBg: "#4B89FF"
+    property color dialogSelectedBg: isDark ? "#2A4055" : (smokeLightAltPalette ? "#E5F3EE" : "#EAF2FD")
+    property color dialogSelectedFg: isDark ? "#F1F6FC" : (smokeLightAltPalette ? "#1F3A33" : "#22303D")
+    property color dialogHoverBg: isDark ? "#223545" : (smokeLightAltPalette ? "#F3F8F2" : "#F2F7FC")
+    property color unreadBadgeBg: smokeLightAltPalette ? "#1B9A7C" : "#4B89FF"
     property color unreadBadgeFg: "#FFFFFF"
-    property color unreadBadgeMutedBg: isDark ? "#4A5968" : "#BCC7D2"
+    property color unreadBadgeMutedBg: isDark ? "#4A5968" : (smokeLightAltPalette ? "#B5C8BE" : "#BCC7D2")
     property color unreadBadgeMutedFg: isDark ? "#E2E9F2" : "#25303A"
 
     property color bubbleInBg: isDark ? "#182431" : "#FFFFFF"
     property color bubbleInFg: isDark ? "#E8EDF4" : "#0F172A"
-    property color bubbleOutBg: isDark ? "#1D3560" : "#DCE8FF"
-    property color bubbleOutFg: isDark ? "#F8FBFF" : "#17315A"
+    property color bubbleOutBg: isDark ? "#1D3560" : (smokeLightAltPalette ? "#DBF1E7" : "#DCE8FF")
+    property color bubbleOutFg: isDark ? "#F8FBFF" : (smokeLightAltPalette ? "#114436" : "#17315A")
     property color bubbleMetaInFg: isDark ? "#E8F1FB" : "#90A0AF"
-    property color bubbleMetaOutFg: isDark ? "#F2FFF9" : "#658978"
+    property color bubbleMetaOutFg: isDark ? "#F2FFF9" : (smokeLightAltPalette ? "#5E8A79" : "#658978")
 
-    property color messageBg: isDark ? "#101922" : "#F8FAFC"
-    property color messageGradientStart: isDark ? "#101922" : "#F8FAFC"
-    property color messageGradientEnd: isDark ? "#0F172A" : "#EEF4FC"
+    property color messageBg: isDark ? "#101922" : (smokeLightAltPalette ? "#F4F8F3" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F8FAFC"))
+    property color messageGradientStart: isDark ? "#101922" : (smokeLightAltPalette ? "#F6FBF5" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F8FAFC"))
+    property color messageGradientEnd: isDark ? "#0F172A" : (smokeLightAltPalette ? "#EAF4EF" : (smokeLightPrimaryPalette ? "#EAF1FF" : "#EEF4FC"))
     property color messagePatternA: isDark ? Qt.rgba(1, 1, 1, 0.02) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.03)
     property color messagePatternB: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.02) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.018)
 

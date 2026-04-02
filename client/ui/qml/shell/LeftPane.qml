@@ -6,6 +6,19 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 Item {
     id: root
+    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    readonly property string smokeRailBadgeText: {
+        if (!smokeMode) {
+            return Ui.I18n.t("chat.secureSession")
+        }
+        if (Ui.SmokeSceneStore.postLoginLightScene) {
+            return Ui.I18n.usesCjkLocale ? "平台发布" : "Platform rollout"
+        }
+        if (Ui.SmokeSceneStore.normalizedScene === "post_login") {
+            return Ui.I18n.usesCjkLocale ? "设计评审" : "Design review"
+        }
+        return Ui.I18n.t("chat.secureSession")
+    }
     signal requestNewChat()
     signal requestAddContact()
     signal requestCreateGroup()
@@ -81,7 +94,7 @@ Item {
                         Text {
                             id: securePillText
                             anchors.centerIn: parent
-                            text: Ui.I18n.t("chat.secureSession")
+                            text: root.smokeRailBadgeText
                             color: Ui.Style.accentSoft
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
