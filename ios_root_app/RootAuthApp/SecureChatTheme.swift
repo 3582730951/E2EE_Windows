@@ -57,7 +57,7 @@ enum SecurePalette {
     static let danger = Color(uiColor: UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1.0))
 }
 
-enum SecureBannerTone {
+enum SecureBannerTone: Equatable {
     case neutral
     case success
     case warning
