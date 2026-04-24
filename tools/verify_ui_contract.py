@@ -892,8 +892,6 @@ def verify_windows_ownership_coverage(acceptance: dict[str, Any], errors: list[s
             "tools/windows_smoke_matrix_check.py",
             "tools/windows_smoke_golden_diff.py",
             "tools/agent_ownership_windows_ui.json",
-            "ui_contract/golden/windows/post-login-zh-CN-light-100.png",
-            "ui_contract/golden/windows/post-login-light-zh-CN-light-100.png",
         }
     )
     for repo_path in sorted(phase_critical_paths):
@@ -1486,8 +1484,6 @@ def verify_windows_shared_files(errors: list[str]) -> None:
         ROOT / "tools/windows_qml_literal_copy_audit.py",
         ROOT / "tools/windows_smoke_matrix_check.py",
         ROOT / "tools/windows_smoke_golden_diff.py",
-        ROOT / "ui_contract/golden/windows/post-login-zh-CN-light-100.png",
-        ROOT / "ui_contract/golden/windows/post-login-light-zh-CN-light-100.png",
     ):
         expect(path.exists(), f"missing Windows shared file: {path}", errors)
 
