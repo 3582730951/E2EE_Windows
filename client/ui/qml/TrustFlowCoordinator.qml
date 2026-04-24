@@ -11,7 +11,9 @@ Item {
         id: trustDialog
         ownerWindow: root.ownerWindow
         onAccepted: function(pinText) {
-            Ui.AuthDisplayStore.approveTrust(mode, pinText)
+            if (Ui.AuthDisplayStore.approveTrust(mode, pinText)) {
+                trustDialog.close()
+            }
         }
     }
 

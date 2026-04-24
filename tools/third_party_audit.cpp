@@ -34,6 +34,36 @@ std::string Trim(const std::string& in) {
   return in.substr(start, end - start);
 }
 
+std::string ToLowerAscii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char ch) {
+                   return static_cast<char>(std::tolower(ch));
+                 });
+  return value;
+}
+
+bool ShouldNormalizeText(const std::filesystem::path& path) {
+  const std::string ext = ToLowerAscii(path.extension().string());
+  return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" ||
+         ext == ".h" || ext == ".hh" || ext == ".hpp" || ext == ".hxx" ||
+         ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".yaml" ||
+         ext == ".yml" || ext == ".lua" || ext == ".ini" || ext == ".cmake" ||
+         ext == ".sh" || ext == ".ps1" || ext == ".recipe";
+}
+
+void NormalizeLineEndings(std::vector<std::uint8_t>& bytes) {
+  std::vector<std::uint8_t> normalized;
+  normalized.reserve(bytes.size());
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    const auto ch = bytes[i];
+    if (ch == '\r' && i + 1 < bytes.size() && bytes[i + 1] == '\n') {
+      continue;
+    }
+    normalized.push_back(ch);
+  }
+  bytes.swap(normalized);
+}
+
 bool SplitPipe(const std::string& line, std::vector<std::string>& out) {
   out.clear();
   std::string current;
@@ -108,6 +138,9 @@ bool HashFile(const std::filesystem::path& path, std::string& out) {
     if (!ifs || ifs.gcount() != static_cast<std::streamsize>(bytes.size())) {
       return false;
     }
+  }
+  if (ShouldNormalizeText(path)) {
+    NormalizeLineEndings(bytes);
   }
   out = mi::common::Sha256Hex(bytes.data(), bytes.size());
   return true;
@@ -304,7 +337,10 @@ int main(int argc, char** argv) {
     }
     hashes.push_back(hash);
     if (verify && hash != entry.sha256) {
-      std::cerr << "hash mismatch: " << entry.name << "\n";
+      std::cerr << "hash mismatch: " << entry.name
+                << " path=" << dir.string()
+                << " expected=" << entry.sha256
+                << " actual=" << hash << "\n";
       return 4;
     }
   }

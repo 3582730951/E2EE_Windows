@@ -10,8 +10,8 @@ ApplicationWindow {
     property var ownerWindow: null
     signal requestSecurityCenter()
     visible: false
-    width: 680
-    height: 460
+    width: 656
+    height: 444
     transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
     title: Ui.I18n.t("settings.title")
@@ -131,7 +131,7 @@ ApplicationWindow {
 
         ListView {
             id: sectionList
-            Layout.preferredWidth: 180
+            Layout.preferredWidth: 164
             Layout.fillHeight: true
             model: [Ui.I18n.t("settings.section.appearance"),
                     Ui.I18n.t("settings.section.notifications"),
@@ -141,7 +141,7 @@ ApplicationWindow {
             currentIndex: 0
             delegate: Item {
                 width: ListView.view.width
-                height: 42
+                height: 38
                 Rectangle {
                     anchors.fill: parent
                     radius: Ui.Style.radiusMedium
@@ -153,7 +153,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     text: modelData
                     color: ListView.isCurrentItem ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                    font.pixelSize: 12
+                    font.pixelSize: 13
                     elide: Text.ElideRight
                 }
                 MouseArea {
@@ -191,7 +191,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
+                            Layout.preferredHeight: 48
                             Text {
                                 text: Ui.I18n.t("settings.theme")
                                 color: Ui.Style.textPrimary
@@ -212,7 +212,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
+                            Layout.preferredHeight: 48
                             Text {
                                 text: Ui.I18n.t("settings.language")
                                 color: Ui.Style.textPrimary
@@ -233,7 +233,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
+                            Layout.preferredHeight: 48
                             Text {
                                 text: Ui.I18n.t("settings.fontSize")
                                 color: Ui.Style.textPrimary
@@ -301,24 +301,83 @@ ApplicationWindow {
                             anchors.margins: Ui.Style.paddingM
                             spacing: 0
 
-                            RowLayout {
+                            Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 52
+                                radius: Ui.Style.radiusLarge
+                                color: Ui.Style.statusSurfaceAlt
+                                border.width: 1
+                                border.color: Ui.Style.borderSubtle
+                                implicitHeight: securitySummaryColumn.implicitHeight + Ui.Style.paddingM * 2
+                                clip: true
 
-                                Text {
-                                    text: Ui.I18n.t("settings.securityCenter.title")
-                                    color: Ui.Style.textPrimary
-                                    font.pixelSize: 13
-                                    font.weight: Font.Medium
-                                    wrapMode: Text.NoWrap
-                                    elide: Text.ElideRight
-                                    maximumLineCount: 1
+                                Rectangle {
+                                    x: 1
+                                    y: 1
+                                    width: parent.width - 2
+                                    height: 1
+                                    color: Ui.Style.heroCardSheen
+                                    opacity: Ui.Style.isDark ? 0.36 : 0.74
                                 }
-                                Item { Layout.fillWidth: true }
-                                Components.GhostButton {
-                                    text: Ui.I18n.t("settings.securityCenter.open")
-                                    Layout.preferredHeight: 32
-                                    onClicked: root.requestSecurityCenter()
+
+                                ColumnLayout {
+                                    id: securitySummaryColumn
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingM
+                                    spacing: Ui.Style.paddingS
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Ui.Style.paddingM
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 2
+
+                                            Components.UiText {
+                                                text: Ui.I18n.t("settings.securityCenter.title")
+                                                textRole: "subtitle"
+                                                roleColor: Ui.Style.textPrimary
+                                            }
+
+                                            Components.UiText {
+                                                Layout.fillWidth: true
+                                                text: Ui.I18n.usesCjkLocale
+                                                      ? "传输、信任、设备概览。"
+                                                      : "Transport, trust, device overview."
+                                                textRole: "supporting"
+                                                roleColor: Ui.Style.textSecondary
+                                            }
+                                        }
+
+                                        Components.GhostButton {
+                                            text: Ui.I18n.t("settings.securityCenter.open")
+                                            Layout.alignment: Qt.AlignTop
+                                            Layout.preferredHeight: 34
+                                            Layout.preferredWidth: 118
+                                            onClicked: root.requestSecurityCenter()
+                                        }
+                                    }
+
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        spacing: Ui.Style.paddingS
+
+                                        Components.SecurityBadge {
+                                            labelText: Ui.SecurityDisplayStore.transportHeadline
+                                            detailText: Ui.I18n.t("dialog.securityCenter.transportTitle")
+                                        }
+
+                                        Components.SecurityBadge {
+                                            labelText: Ui.SecurityDisplayStore.linkedDevicesSummary
+                                            detailText: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                                        }
+
+                                        Components.SecurityBadge {
+                                            visible: Ui.SecurityDisplayStore.maskedCurrentDeviceId.length > 0
+                                            labelText: Ui.SecurityDisplayStore.maskedCurrentDeviceId
+                                            detailText: Ui.I18n.usesCjkLocale ? "当前设备" : "Current device"
+                                        }
+                                    }
                                 }
                             }
 

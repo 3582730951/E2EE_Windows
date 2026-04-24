@@ -28,24 +28,14 @@ struct SecurityCenterView: View {
     private var transportTitle: String {
         switch transportTone {
         case .success:
-            return "Secure transport healthy"
+            return "Secure"
         case .warning:
-            return "Secure transport checking"
+            return "Checking"
         case .danger:
-            return "Transport attention required"
+            return "Review"
         case .neutral:
-            return "Transport status"
+            return "Transport"
         }
-    }
-
-    private var transportDetail: String {
-        if !clientStore.lastError.isEmpty {
-            return clientStore.lastError
-        }
-        if clientStore.remoteOK {
-            return "Pinned transport and active session look healthy."
-        }
-        return "Waiting for secure transport validation."
     }
 
     private var currentDeviceLabel: String {
@@ -63,223 +53,348 @@ struct SecurityCenterView: View {
     }
 
     private var rootAuthStatusLabel: String {
-        rootAuthStore.publicKeyHex.isEmpty ? "Not configured" : "Configured"
+        rootAuthStore.publicKeyHex.isEmpty ? "Pending" : "Ready"
+    }
+
+    private var compactDeviceLabel: String {
+        guard currentDeviceLabel.count > 14 else {
+            return currentDeviceLabel
+        }
+        return "\(currentDeviceLabel.prefix(6))...\(currentDeviceLabel.suffix(4))"
     }
 
     var body: some View {
-        SecureFullscreenScrollPage(horizontalPadding: 12,
-                                   verticalPadding: 8,
-                                   showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                summaryStrip
+        List {
+            Section {
+                overviewCard
+                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                sectionLabel("Devices")
-                securityGroup {
-                    securityInfoRow(
-                        title: "Current device",
-                        detail: currentDeviceLabel,
-                        systemImage: "iphone.gen3",
-                        trailing: "This iPhone",
-                        monospaced: true
-                    )
+            Section("Transport") {
+                SecurityMetricRow(
+                    title: "Session",
+                    value: transportTitle,
+                    systemImage: transportIcon,
+                    accent: transportTone.accent,
+                    detail: clientStore.lastError.isEmpty ? clientStore.statusText : clientStore.lastError
+                )
+                SecurityMetricRow(
+                    title: "This device",
+                    value: compactDeviceLabel,
+                    systemImage: "iphone.gen3",
+                    accent: SecurePalette.accentSky,
+                    detail: currentDeviceLabel
+                )
+                SecurityMetricRow(
+                    title: "Linked devices",
+                    value: "\(linkedDeviceSummaries.count)",
+                    systemImage: "ipad.and.iphone",
+                    accent: SecurePalette.accentLavender,
+                    detail: linkedDeviceSummaries.isEmpty ? "No extra devices reported" : "Trusted companion devices"
+                )
+                SecurityMetricRow(
+                    title: "Root auth",
+                    value: rootAuthStatusLabel,
+                    systemImage: "key.horizontal.fill",
+                    accent: rootAuthStore.publicKeyHex.isEmpty ? SecurePalette.warning : SecurePalette.success,
+                    detail: rootAuthStore.publicKeyHex.isEmpty ? "Public key not loaded" : "Approval material available"
+                )
+            }
 
-                    securityDivider()
+            Section("Current Device") {
+                currentDeviceCard
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                    if linkedDeviceSummaries.isEmpty {
-                        securityInfoRow(
-                            title: "Linked devices",
-                            detail: "No additional trusted devices are currently active.",
-                            systemImage: "macbook.and.iphone",
-                            trailing: "0",
-                            lineLimit: 2
-                        )
-                    } else {
-                        ForEach(Array(linkedDeviceSummaries.prefix(3).enumerated()), id: \.offset) { index, summary in
-                            securityInfoRow(
-                                title: index == 0 ? "Linked devices" : " ",
-                                detail: summary,
-                                systemImage: "ipad.and.iphone",
-                                trailing: "Trusted",
-                                lineLimit: 2
-                            )
-
-                            if index < min(linkedDeviceSummaries.count, 3) - 1 {
-                                securityDivider()
-                            }
-                        }
+            Section("Linked Devices") {
+                if linkedDeviceSummaries.isEmpty {
+                    VStack(spacing: 10) {
+                        SecureEmptyStateIllustration(systemImage: "ipad.and.iphone", accent: SecurePalette.accentLavender, size: 82)
+                        Text("No linked devices")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(SecurePalette.textSecondary)
                     }
-                }
-
-                sectionLabel("Trust & Transport")
-                securityGroup {
-                    securityInfoRow(
-                        title: "Secure transport",
-                        detail: transportDetail,
-                        systemImage: transportIcon,
-                        trailing: transportTone == .success ? "Healthy" : "Review"
-                    )
-                    securityDivider()
-                    securityInfoRow(
-                        title: "Gateway",
-                        detail: "\(clientStore.serverHost):\(clientStore.serverPort)",
-                        systemImage: "server.rack",
-                        trailing: clientStore.useTLS ? "TLS" : "TCP"
-                    )
-                    securityDivider()
-                    securityInfoRow(
-                        title: "Trusted state",
-                        detail: clientStore.remoteOK
-                            ? "Pinned session and device trust look normal."
-                            : "Waiting for transport validation from the secure gateway.",
-                        systemImage: "checkmark.shield",
-                        trailing: clientStore.remoteOK ? "Normal" : "Checking"
-                    )
-                }
-
-                sectionLabel("Root Authorization")
-                securityGroup {
-                    securityInfoRow(
-                        title: "Approval tools",
-                        detail: rootAuthStore.publicKeyHex.isEmpty
-                            ? "Set up root approval on this iPhone before approving linked-device logins."
-                            : "Approval tools are ready when a linked device needs verification.",
-                        systemImage: "key.horizontal",
-                        trailing: rootAuthStatusLabel
-                    )
-                    securityDivider()
-                    NavigationLink(destination: ContentView(store: rootAuthStore,
-                                                           embeddedTitle: "Root authorization tools")) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "qrcode.viewfinder")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(SecurePalette.accent)
-                                .frame(width: 22, height: 22)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Open approval tools")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(SecurePalette.textPrimary)
-                                Text("Scan requests, generate approval strings, and manage the signer on a deeper page.")
-                                    .font(.footnote)
-                                    .foregroundStyle(SecurePalette.textSecondary)
-                            }
-
-                            Spacer(minLength: 12)
-
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(SecurePalette.textMuted)
-                        }
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 54)
-                        .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                } else {
+                    ForEach(linkedDeviceSummaries, id: \.self) { summary in
+                        SecurityLinkedDeviceRow(summary: summary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+
+            Section("Approval") {
+                SecurityMetricRow(
+                    title: "Approval code",
+                    value: rootAuthStore.currentCode,
+                    systemImage: "number.square.fill",
+                    accent: SecurePalette.accent,
+                    detail: "One-time root authorization code",
+                    monospaced: true
+                )
+                SecurityMetricRow(
+                    title: "Expires in",
+                    value: "\(rootAuthStore.secondsRemaining)s",
+                    systemImage: "timer",
+                    accent: SecurePalette.accentAmber,
+                    detail: "Time remaining before the current code rotates",
+                    monospaced: true
+                )
+                SecurityMetricRow(
+                    title: "Public key",
+                    value: rootAuthStore.publicKeyHex.isEmpty ? "Unavailable" : shortHex(rootAuthStore.publicKeyHex),
+                    systemImage: "key.horizontal.fill",
+                    accent: rootAuthStore.publicKeyHex.isEmpty ? SecurePalette.warning : SecurePalette.success,
+                    detail: rootAuthStore.publicKeyHex.isEmpty ? "Root authorization material missing" : "Pinned root authorization fingerprint",
+                    monospaced: true
+                )
+
+                NavigationLink(destination: ContentView(store: rootAuthStore,
+                                                       embeddedTitle: "Root authorization tools")) {
+                    HStack(spacing: 12) {
+                        SecureIdentityAvatar(
+                            title: "Approval tools",
+                            seed: "root-auth-tools",
+                            kind: .system,
+                            size: 38,
+                            presence: .secure
+                        )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Approval tools")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(SecurePalette.textPrimary)
+                            Text("Open QR and root authorization controls")
+                                .font(.footnote)
+                                .foregroundStyle(SecurePalette.textSecondary)
+                                .lineLimit(2)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        SecureMetricBadge(
+                            title: "Mode",
+                            value: "QR",
+                            systemImage: "qrcode.viewfinder",
+                            accent: SecurePalette.accentSky
+                        )
+                    }
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .navigationTitle("Security")
-        .navigationBarTitleDisplayMode(NavigationBarItem.TitleDisplayMode.inline)
+        .listStyle(.insetGrouped)
+        .secureInsetGroupedList()
+        .navigationTitle("Security Center")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .tint(SecurePalette.accent)
     }
 
-    private var summaryStrip: some View {
-        HStack(spacing: 8) {
-            Image(systemName: transportIcon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(transportTone.accent)
-                .frame(width: 18, height: 18)
-                .background(
-                    Circle()
-                        .fill(transportTone.fill)
+    private var overviewCard: some View {
+        HStack(alignment: .center, spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                SecureIdentityAvatar(
+                    title: "Transport",
+                    seed: "security-transport",
+                    kind: .system,
+                    size: 54,
+                    presence: clientStore.remoteOK ? .secure : .review,
+                    prominent: true
                 )
+                SecureIdentityAvatar(
+                    title: currentDeviceLabel,
+                    seed: currentDeviceLabel,
+                    kind: .device,
+                    size: 28
+                )
+                .offset(x: 5, y: 5)
+            }
 
-            Text(clientStore.remoteOK ? "No security action needed" : transportTitle)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(SecurePalette.textPrimary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Transport trust and root approval stay separated, but visible in one place.")
+                    .font(.footnote)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 8)
+                HStack(spacing: 8) {
+                    SecureMetricBadge(
+                        title: "Transport",
+                        value: transportTitle,
+                        systemImage: transportIcon,
+                        accent: transportTone.accent
+                    )
+                    SecureMetricBadge(
+                        title: "Root auth",
+                        value: rootAuthStatusLabel,
+                        systemImage: "key.horizontal.fill",
+                        accent: rootAuthStore.publicKeyHex.isEmpty ? SecurePalette.warning : SecurePalette.success
+                    )
+                }
+            }
+
+            Spacer(minLength: 0)
 
             SecureCircularIconButton(
                 systemImage: "arrow.clockwise",
                 accessibilityLabel: "Refresh security state",
-                iconSize: 11,
-                buttonSize: 28
+                iconSize: 12,
+                buttonSize: 30
             ) {
                 clientStore.refreshNow()
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.94))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SecurePalette.border, lineWidth: 1)
-        )
+        .secureNavigationGlass(cornerRadius: 24)
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.caption.weight(.semibold))
-            .tracking(1.0)
-            .foregroundStyle(SecurePalette.textMuted)
-            .padding(.horizontal, 4)
-    }
+    private var currentDeviceCard: some View {
+        HStack(spacing: 12) {
+            SecureIdentityAvatar(
+                title: currentDeviceLabel,
+                seed: currentDeviceLabel,
+                kind: .device,
+                size: 52,
+                presence: clientStore.remoteOK ? .secure : .review,
+                prominent: true
+            )
 
-    private func securityGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(currentDeviceLabel)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textPrimary)
+                    .lineLimit(1)
+
+                Text(clientStore.remoteOK ? "Healthy transport session on this device." : "Transport state needs review on this device.")
+                    .font(.footnote)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    SecureMetricBadge(
+                        title: "Role",
+                        value: "Current",
+                        systemImage: "iphone.gen3",
+                        accent: SecurePalette.accentSky
+                    )
+                    SecureMetricBadge(
+                        title: "State",
+                        value: clientStore.remoteOK ? "Healthy" : "Review",
+                        systemImage: clientStore.remoteOK ? "checkmark.shield.fill" : "shield.lefthalf.filled",
+                        accent: clientStore.remoteOK ? SecurePalette.success : SecurePalette.warning
+                    )
+                }
+            }
+
+            Spacer(minLength: 0)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(SecurePalette.surface.opacity(0.96))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(SecurePalette.border, lineWidth: 1)
-        )
+        .secureCard(padding: 16)
     }
 
-    private func securityDivider() -> some View {
-        Divider()
-            .overlay(SecurePalette.border)
-            .padding(.leading, 54)
+    private func shortHex(_ value: String) -> String {
+        guard value.count > 20 else {
+            return value
+        }
+        return "\(value.prefix(10))...\(value.suffix(8))"
     }
+}
 
-    private func securityInfoRow(title: String,
-                                 detail: String,
-                                 systemImage: String,
-                                 trailing: String,
-                                 monospaced: Bool = false,
-                                 lineLimit: Int = 2) -> some View {
+private struct SecurityMetricRow: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let accent: Color
+    let detail: String
+    var monospaced: Bool = false
+
+    var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(SecurePalette.accent)
+                .foregroundStyle(accent)
                 .frame(width: 22, height: 22)
+                .background(
+                    Circle()
+                        .fill(accent.opacity(0.12))
+                )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(SecurePalette.textPrimary)
-                Text(detail)
-                    .font(monospaced ? .system(.footnote, design: .monospaced) : .footnote)
-                    .foregroundStyle(SecurePalette.textSecondary)
-                    .lineLimit(lineLimit)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(SecurePalette.textSecondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer(minLength: 12)
 
-            Text(trailing)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(SecurePalette.textMuted)
+            Text(value)
+                .font(monospaced
+                      ? .system(.footnote, design: .monospaced).weight(.semibold)
+                      : .footnote.weight(.semibold))
+                .foregroundStyle(SecurePalette.textPrimary)
                 .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 54)
+        .padding(.vertical, 3)
+    }
+}
+
+private struct SecurityLinkedDeviceRow: View {
+    let summary: String
+
+    private var parts: (name: String, state: String, detail: String) {
+        let tokens = summary
+            .split(separator: "·", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let name = tokens.indices.contains(0) ? tokens[0] : summary
+        let state = tokens.indices.contains(1) ? tokens[1] : "Linked"
+        let detail = tokens.indices.contains(2) ? tokens[2] : "Trusted device"
+        return (name, state, detail)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SecureIdentityAvatar(
+                title: parts.name,
+                seed: summary,
+                kind: .device,
+                size: 44,
+                presence: .active
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(parts.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SecurePalette.textPrimary)
+                Text(parts.detail)
+                    .font(.footnote)
+                    .foregroundStyle(SecurePalette.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(parts.state.uppercased())
+                .font(.caption2.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(SecurePalette.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(SecurePalette.accentSoft)
+                )
+        }
+        .padding(.vertical, 3)
     }
 }

@@ -41,6 +41,10 @@ Item {
         appShell.showChatSearch()
     }
 
+    function openNewChat() {
+        appShell.openNewChat()
+    }
+
     function handleEscape() {
         appShell.handleEscape()
     }
@@ -50,8 +54,8 @@ Item {
     }
 
     function openSettings() {
-        if (securityCoordinator) {
-            securityCoordinator.openSettings()
+        if (appShell.openSettingsSurface) {
+            appShell.openSettingsSurface()
         }
     }
 
@@ -61,15 +65,22 @@ Item {
         }
         var scene = Ui.SmokeSceneStore.sceneName
         if (scene === "settings_home") {
+            Ui.ChatDisplayStore.closeRightPane()
             Qt.callLater(function() {
                 openSettings()
             })
             return
         }
         if (scene === "security_center") {
+            Ui.ChatDisplayStore.closeRightPane()
             Qt.callLater(function() {
                 openSecurityCenter()
             })
+            return
+        }
+        if (scene === "calls_home") {
+            Ui.ChatDisplayStore.closeRightPane()
+            Ui.AppStore.setShellSurface("calls")
         }
     }
 

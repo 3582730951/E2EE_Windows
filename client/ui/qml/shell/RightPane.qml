@@ -8,9 +8,246 @@ Item {
     id: root
     anchors.fill: parent
 
+    readonly property bool groupChat: Ui.ChatDisplayStore.currentChatType === "group"
+    readonly property string chatTitle: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                        ? Ui.ChatDisplayStore.currentChatTitle
+                                        : Ui.I18n.t("right.noChatSelected")
+    readonly property string subtitleText: Ui.ChatDisplayStore.currentChatSubtitle
+    readonly property string avatarMode: {
+        if (groupChat) {
+            return "group"
+        }
+        if ((Ui.ChatDisplayStore.currentChatTitle || "").toLowerCase().indexOf("gateway") !== -1) {
+            return "system"
+        }
+        return "person"
+    }
+    readonly property string transportTone: Ui.SecurityDisplayStore.transportHealthy ? "healthy" : "blocked"
+    readonly property string trustTone: {
+        var stateText = (Ui.SecurityDisplayStore.gatewayDisplayState || "").toLowerCase()
+        if (stateText.indexOf("pin") !== -1 || stateText.indexOf("固定") !== -1) {
+            return "healthy"
+        }
+        return stateText.length > 0 ? "review" : "checking"
+    }
+    readonly property string deviceTone: Ui.SecurityDisplayStore.linkedDeviceCount > 0 ? "healthy" : "checking"
+    readonly property bool compactMode: root.width <= 208
+    readonly property int surfacePadding: root.compactMode ? Ui.Style.paddingS : Ui.Style.paddingM
+    readonly property int contentMaxWidth: root.compactMode
+                                           ? Math.max(0, root.width - surfacePadding * 2)
+                                           : 304
+    readonly property string summaryEyebrow: root.groupChat
+                                             ? (Ui.I18n.usesCjkLocale ? "群组详情" : "Group details")
+                                             : (Ui.I18n.usesCjkLocale ? "聊天详情" : "Conversation details")
+    readonly property string summarySubtitle: root.subtitleText.length > 0
+                                             ? root.subtitleText
+                                             : (root.groupChat
+                                                ? (Ui.I18n.usesCjkLocale
+                                                   ? "成员、共享文件与安全状态集中在这里。"
+                                                   : "Members, shared items, and trust state live here.")
+                                                : (Ui.I18n.usesCjkLocale
+                                                   ? "共享媒体、位置和文件会在这里归档。"
+                                                   : "Shared media, places, and files are collected here."))
+    readonly property var runtimeMediaModel: Ui.ChatDisplayStore.sharedMediaModel
+    readonly property var runtimeFilesModel: Ui.ChatDisplayStore.sharedFilesModel
+    readonly property var runtimeLinksModel: Ui.ChatDisplayStore.sharedLinksModel
+    readonly property var quickMediaModel: groupChat
+                                           ? [
+                                                 {
+                                                     entryKind: "photo",
+                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享视觉板" : "Shared visual lane",
+                                                     entryDetail: Ui.I18n.usesCjkLocale
+                                                                  ? "截图、样机与设计图会在这里聚合。"
+                                                                  : "Screenshots, mocks, and design exports land here."
+                                                 },
+                                                 {
+                                                     entryKind: "voice",
+                                                     entryTitle: Ui.I18n.usesCjkLocale ? "语音回顾" : "Voice reviews",
+                                                     entryDetail: Ui.I18n.usesCjkLocale
+                                                                  ? "快速异步反馈保持在线。"
+                                                                  : "Quick async feedback stays easy to scan."
+                                                 },
+                                                 {
+                                                     entryKind: "link",
+                                                     entryTitle: Ui.I18n.usesCjkLocale ? "审批与链接" : "Approvals & links",
+                                                     entryDetail: Ui.I18n.usesCjkLocale
+                                                                  ? "网关 pin 与关键审批会在这里出现。"
+                                                                  : "Pinned gateway notes and review links surface here."
+                                                 }
+                                             ]
+                                           : [
+                                                 {
+                                                     entryKind: "photo",
+                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享照片" : "Shared photos",
+                                                     entryDetail: Ui.I18n.usesCjkLocale
+                                                                  ? "最近发来的照片和截图会显示在这里。"
+                                                                  : "Recent photos and snapshots show up here."
+                                                 },
+                                                 {
+                                                     entryKind: "link",
+                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享位置" : "Pinned places",
+                                                     entryDetail: Ui.I18n.usesCjkLocale
+                                                                  ? "常用地点和最近分享的链接会保留在这里。"
+                                                                  : "Frequent places and recent links stay here."
+                                                 }
+                                             ]
+    readonly property var quickFileModel: [
+        {
+            entryKind: "file",
+            entryTitle: Ui.I18n.usesCjkLocale ? "周末行程.pdf" : "weekend-plan.pdf",
+            entryDetail: Ui.I18n.usesCjkLocale ? "最近共享文件" : "Latest shared file"
+        },
+        {
+            entryKind: "file",
+            entryTitle: Ui.I18n.usesCjkLocale ? "照片清单.zip" : "photo-picks.zip",
+            entryDetail: Ui.I18n.usesCjkLocale ? "收藏文件" : "Pinned file"
+        }
+    ]
+    readonly property var quickLinkModel: [
+        {
+            entryKind: "link",
+            entryTitle: Ui.I18n.usesCjkLocale ? "集合地点" : "Meet-up pin",
+            entryDetail: Ui.I18n.usesCjkLocale ? "最近分享的位置" : "Recently shared location"
+        },
+        {
+            entryKind: "link",
+            entryTitle: Ui.I18n.usesCjkLocale ? "晚餐地图" : "Dinner map",
+            entryDetail: Ui.I18n.usesCjkLocale ? "固定会话链接" : "Pinned conversation link"
+        }
+    ]
+    readonly property var overviewCardsModel: {
+        if (root.runtimeMediaModel.count > 0) {
+            return root.runtimeMediaModel
+        }
+        if (root.runtimeLinksModel.count > 0) {
+            return root.runtimeLinksModel
+        }
+        if (root.runtimeFilesModel.count > 0) {
+            return root.runtimeFilesModel
+        }
+        return root.quickMediaModel
+    }
+    readonly property var mediaCardsModel: root.runtimeMediaModel.count > 0 ? root.runtimeMediaModel : root.quickMediaModel
+    readonly property var fileCardsModel: root.runtimeFilesModel.count > 0 ? root.runtimeFilesModel : root.quickFileModel
+    readonly property var linkCardsModel: root.runtimeLinksModel.count > 0 ? root.runtimeLinksModel : root.quickLinkModel
+    readonly property string overviewTabLabel: Ui.I18n.usesCjkLocale ? "概览" : "Overview"
+    readonly property string linksTabLabel: Ui.I18n.usesCjkLocale ? "链接" : "Links"
+    readonly property var detailTabModel: root.groupChat
+                                          ? [
+                                                { label: Ui.I18n.t("right.members"), icon: "group.svg" },
+                                                { label: Ui.I18n.t("right.media"), icon: "image.svg" },
+                                                { label: Ui.I18n.t("right.files"), icon: "file.svg" },
+                                                { label: root.linksTabLabel, icon: "info.svg" }
+                                            ]
+                                          : [
+                                                { label: root.overviewTabLabel, icon: "chat.svg" },
+                                                { label: Ui.I18n.t("right.media"), icon: "image.svg" },
+                                                { label: Ui.I18n.t("right.files"), icon: "file.svg" },
+                                                { label: root.linksTabLabel, icon: "info.svg" }
+                                            ]
+
+    function detailEntry(modelSource, modelIndex) {
+        if (!modelSource) {
+            return { entryKind: "file", entryTitle: "", entryDetail: "" }
+        }
+        if (modelSource.get) {
+            return modelSource.get(modelIndex)
+        }
+        return modelSource[modelIndex]
+    }
+
+    function modelCount(modelSource) {
+        if (!modelSource) {
+            return 0
+        }
+        if (modelSource.count !== undefined) {
+            return modelSource.count
+        }
+        return modelSource.length !== undefined ? modelSource.length : 0
+    }
+
+    function compactTrustSnapshotLabel() {
+        var stateText = (Ui.SecurityDisplayStore.gatewayDisplayState || "").toLowerCase()
+        if (stateText.indexOf("pin") !== -1 || stateText.indexOf("固定") !== -1) {
+            return Ui.I18n.usesCjkLocale ? "固定" : "Pin"
+        }
+        if (stateText.indexOf("local") !== -1 || stateText.indexOf("本地") !== -1) {
+            return Ui.I18n.usesCjkLocale ? "本地" : "Local"
+        }
+        return Ui.I18n.usesCjkLocale ? "审查" : "Review"
+    }
+
+    function compactDeviceSnapshotLabel() {
+        return "" + Ui.SecurityDisplayStore.linkedDeviceCount
+    }
+
+    function toneAccentColor(tone) {
+        switch (tone) {
+        case "healthy":
+            return Ui.Style.success
+        case "blocked":
+            return Ui.Style.danger
+        case "review":
+            return Ui.Style.warning
+        default:
+            return Ui.Style.accent
+        }
+    }
+
+    function toneSurfaceColor(tone) {
+        switch (tone) {
+        case "healthy":
+            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.18 : 0.10)
+        case "blocked":
+            return Qt.rgba(220 / 255, 38 / 255, 38 / 255, Ui.Style.isDark ? 0.20 : 0.10)
+        case "review":
+            return Qt.rgba(245 / 255, 158 / 255, 11 / 255, Ui.Style.isDark ? 0.18 : 0.10)
+        default:
+            return Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.18 : 0.10)
+        }
+    }
+
+    function toneBorderColor(tone) {
+        switch (tone) {
+        case "healthy":
+            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.26 : 0.16)
+        case "blocked":
+            return Qt.rgba(220 / 255, 38 / 255, 38 / 255, Ui.Style.isDark ? 0.26 : 0.16)
+        case "review":
+            return Qt.rgba(245 / 255, 158 / 255, 11 / 255, Ui.Style.isDark ? 0.26 : 0.16)
+        default:
+            return Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.26 : 0.16)
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
-        color: Ui.Style.panelBg
+        color: Ui.Style.sidebarSurface
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Ui.Style.sidebarBackdropTop }
+            GradientStop { position: 1.0; color: Ui.Style.sidebarBackdropBottom }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: Ui.Style.sidebarSurfaceOverlay
+    }
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Math.round(parent.height * 0.24)
+        color: "transparent"
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Ui.Style.sidebarVibrancyTop }
+            GradientStop { position: 1.0; color: Ui.Style.sidebarVibrancyBottom }
+        }
     }
 
     Rectangle {
@@ -18,7 +255,7 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         width: 1
-        color: Ui.Style.borderSubtle
+        color: Ui.Style.sidebarBorder
     }
 
     ScrollView {
@@ -27,77 +264,172 @@ Item {
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            x: Ui.Style.paddingM
-            y: Ui.Style.paddingM
-            width: root.width - Ui.Style.paddingM * 2
-            spacing: Ui.Style.paddingM
+            id: contentColumn
+            readonly property int compactPadding: root.surfacePadding
+            x: Math.max(compactPadding, Math.round((root.width - width) / 2))
+            y: compactPadding
+            width: Math.min(root.width - compactPadding * 2, root.contentMaxWidth)
+            spacing: root.compactMode ? Ui.Style.paddingS : 14
 
             Rectangle {
+                id: summaryCard
                 Layout.fillWidth: true
-                radius: Ui.Style.radiusLarge
-                color: Ui.Style.panelBgAlt
-                border.color: Ui.Style.borderSubtle
+                radius: Ui.Style.radiusContinuous
+                color: Ui.Style.sidebarHeaderSurface
+                border.width: 1
+                border.color: Ui.Style.sidebarHeaderBorder
+                implicitHeight: summaryColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 52
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarVibrancyTop
+                    opacity: Ui.Style.isDark ? 0.38 : 0.52
+                }
 
                 ColumnLayout {
+                    id: summaryColumn
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingM
-                    spacing: Ui.Style.paddingS
+                    anchors.margins: root.compactMode ? Ui.Style.paddingS : Ui.Style.paddingM
+                    spacing: root.compactMode ? 8 : 8
 
-                    Rectangle {
-                        width: 84
-                        height: 84
-                        radius: 42
-                        color: Ui.Style.avatarColor(Ui.ChatDisplayStore.currentChatTitle)
+                    Text {
                         Layout.alignment: Qt.AlignHCenter
-                        Text {
-                            anchors.centerIn: parent
-                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
-                                  ? Ui.ChatDisplayStore.currentChatTitle.charAt(0).toUpperCase()
-                                  : ""
-                            color: Ui.Style.textPrimary
-                            font.pixelSize: 26
-                            font.weight: Font.DemiBold
-                        }
+                        text: root.summaryEyebrow
+                        color: Ui.Style.sidebarSectionText
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        renderType: Text.NativeRendering
+                        antialiasing: true
+                    }
+
+                    Components.IdentityAvatar {
+                        Layout.alignment: Qt.AlignHCenter
+                        size: root.compactMode ? 44 : 52
+                        titleText: root.chatTitle
+                        seedText: Ui.ChatDisplayStore.currentChatId || root.chatTitle
+                        mode: root.avatarMode
+                        presenceState: root.groupChat ? "secure" : "online"
                     }
 
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: Ui.ChatDisplayStore.currentChatTitle.length > 0
-                              ? Ui.ChatDisplayStore.currentChatTitle
-                              : Ui.I18n.t("right.noChatSelected")
-                        font.pixelSize: 16
+                        Layout.fillWidth: true
+                        text: root.chatTitle
+                        font.pixelSize: root.compactMode ? 13 : 15
                         font.weight: Font.DemiBold
                         color: Ui.Style.textPrimary
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                        renderType: Text.NativeRendering
+                        antialiasing: true
                     }
+
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: Ui.ChatDisplayStore.currentChatSubtitle
-                        font.pixelSize: 12
-                        color: Ui.Style.textMuted
+                        Layout.fillWidth: true
+                        text: root.summarySubtitle
+                        visible: root.summarySubtitle.length > 0
+                        font.pixelSize: 11
+                        color: Ui.Style.sidebarSubtitleText
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
                     }
 
                     RowLayout {
                         Layout.alignment: Qt.AlignHCenter
-                        spacing: Ui.Style.paddingS
+                        visible: true
+                        spacing: 6
+
+                        Repeater {
+                            model: [
+                                {
+                                    icon: root.groupChat ? "group.svg" : "chat.svg",
+                                    value: root.groupChat ? "" + Ui.ChatDisplayStore.currentChatMembers : "1:1",
+                                    accent: true
+                                },
+                                {
+                                    icon: "image.svg",
+                                    value: "" + root.modelCount(root.mediaCardsModel),
+                                    accent: false
+                                },
+                                {
+                                    icon: "file.svg",
+                                    value: "" + root.modelCount(root.fileCardsModel),
+                                    accent: false
+                                },
+                                {
+                                    icon: "info.svg",
+                                    value: "" + root.modelCount(root.linkCardsModel),
+                                    accent: false
+                                }
+                            ]
+
+                            delegate: Rectangle {
+                                radius: 10
+                                color: modelData.accent ? Ui.Style.railAccentBg : Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: modelData.accent ? Ui.Style.railAccentBorder : Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: summaryMetricRow.implicitWidth + 14
+                                implicitHeight: 22
+
+                                RowLayout {
+                                    id: summaryMetricRow
+                                    anchors.centerIn: parent
+                                    spacing: 5
+
+                                    Image {
+                                        width: 10
+                                        height: 10
+                                        source: "qrc:/mi/e2ee/ui/icons/" + modelData.icon
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+
+                                    Text {
+                                        text: modelData.value
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        color: Ui.Style.textSecondary
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        visible: !root.compactMode
+                        spacing: 6
 
                         Components.IconButton {
                             icon.source: "qrc:/mi/e2ee/ui/icons/bell.svg"
                             buttonSize: Ui.Style.iconButtonSmall
-                            iconSize: 16
+                            iconSize: 14
                             ToolTip.visible: hovered
                             ToolTip.text: Ui.I18n.t("right.mute")
                         }
                         Components.IconButton {
                             icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
                             buttonSize: Ui.Style.iconButtonSmall
-                            iconSize: 16
+                            iconSize: 14
                             ToolTip.visible: hovered
                             ToolTip.text: Ui.I18n.t("right.search")
                         }
                         Components.IconButton {
                             icon.source: "qrc:/mi/e2ee/ui/icons/more.svg"
                             buttonSize: Ui.Style.iconButtonSmall
-                            iconSize: 16
+                            iconSize: 14
                             ToolTip.visible: hovered
                             ToolTip.text: Ui.I18n.t("chat.more")
                         }
@@ -105,231 +437,608 @@ Item {
                 }
             }
 
-            StackLayout {
+            Rectangle {
                 Layout.fillWidth: true
-                currentIndex: Ui.ChatDisplayStore.currentChatType === "group" ? 1 : 0
+                visible: !root.compactMode
+                radius: Ui.Style.radiusContinuous
+                color: Ui.Style.sidebarHeaderSurface
+                border.width: 1
+                border.color: Ui.Style.sidebarHeaderBorder
+                implicitHeight: trustSnapshotRow.implicitHeight + Ui.Style.paddingM * 2
 
-                Item {
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: Ui.Style.paddingS
+                RowLayout {
+                    id: trustSnapshotRow
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingM
+                    spacing: Ui.Style.paddingS
 
-                        Rectangle {
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: Ui.Style.radiusMedium
+                        color: root.toneSurfaceColor(root.transportTone)
+                        border.width: 1
+                        border.color: root.toneBorderColor(root.transportTone)
+                        implicitHeight: transportSnapshot.implicitHeight + 12
+
+                        RowLayout {
+                            id: transportSnapshot
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 6
+
+                            Image {
+                                width: 12
+                                height: 12
+                                source: Ui.SecurityDisplayStore.transportHealthy
+                                        ? "qrc:/mi/e2ee/ui/icons/check.svg"
+                                        : "qrc:/mi/e2ee/ui/icons/info.svg"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.SecurityDisplayStore.transportHealthy
+                                      ? (Ui.I18n.usesCjkLocale ? "正常" : "Ready")
+                                      : (Ui.I18n.usesCjkLocale ? "审查" : "Review")
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: root.toneAccentColor(root.transportTone)
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: Ui.Style.radiusMedium
+                        color: root.toneSurfaceColor(root.trustTone)
+                        border.width: 1
+                        border.color: root.toneBorderColor(root.trustTone)
+                        implicitHeight: trustSnapshot.implicitHeight + 12
+
+                        RowLayout {
+                            id: trustSnapshot
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 6
+
+                            Image {
+                                width: 12
+                                height: 12
+                                source: "qrc:/mi/e2ee/ui/icons/info.svg"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.compactTrustSnapshotLabel()
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: root.toneAccentColor(root.trustTone)
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: Ui.Style.radiusMedium
+                        color: root.toneSurfaceColor(root.deviceTone)
+                        border.width: 1
+                        border.color: root.toneBorderColor(root.deviceTone)
+                        implicitHeight: deviceSnapshot.implicitHeight + 12
+
+                        RowLayout {
+                            id: deviceSnapshot
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 6
+
+                            Image {
+                                width: 12
+                                height: 12
+                                source: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.compactDeviceSnapshotLabel()
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: root.toneAccentColor(root.deviceTone)
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: compactDetailCard
+                Layout.fillWidth: true
+                visible: root.compactMode
+                radius: Ui.Style.radiusContinuous
+                color: Ui.Style.sidebarHeaderSurface
+                border.width: 1
+                border.color: Ui.Style.sidebarHeaderBorder
+                implicitHeight: compactDetailColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                ColumnLayout {
+                    id: compactDetailColumn
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingM
+                    spacing: Ui.Style.paddingS
+
+                    Repeater {
+                        model: root.groupChat ? Math.min(2, Ui.ChatDisplayStore.membersModel.count)
+                                              : Math.min(2, root.modelCount(root.overviewCardsModel))
+
+                        delegate: Item {
                             Layout.fillWidth: true
-                            radius: Ui.Style.radiusLarge
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: Ui.Style.paddingM
-                                spacing: Ui.Style.paddingS
+                            implicitHeight: root.groupChat ? 54 : compactMediaCard.implicitHeight
 
-                                Text { text: Ui.I18n.t("right.profile"); color: Ui.Style.textSecondary; font.pixelSize: 11; elide: Text.ElideRight }
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: Ui.Style.paddingS
+                                visible: root.groupChat
+
+                                Components.IdentityAvatar {
+                                    size: 34
+                                    titleText: displayName
+                                    seedText: avatarKey || displayName
+                                    mode: "person"
+                                    presenceState: "online"
+                                }
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    spacing: 4
-                                    Text { text: Ui.I18n.t("right.username"); color: Ui.Style.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
+                                    spacing: 2
+
                                     Text {
-                                        text: Ui.ChatDisplayStore.currentChatSubtitle.length > 0
-                                              ? Ui.ChatDisplayStore.currentChatSubtitle
-                                              : Ui.I18n.t("right.noChatSelected")
-                                        color: Ui.Style.textPrimary
+                                        Layout.fillWidth: true
+                                        text: displayName
                                         font.pixelSize: 12
+                                        color: Ui.Style.textPrimary
                                         elide: Text.ElideRight
                                     }
-                                    Text { text: Ui.I18n.t("right.phone"); color: Ui.Style.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
+
                                     Text {
-                                        text: Ui.SecurityDisplayStore.gatewayDisplayDetail
-                                        color: Ui.Style.textPrimary
-                                        font.pixelSize: 12
+                                        Layout.fillWidth: true
+                                        text: role
+                                        font.pixelSize: 10
+                                        color: Ui.Style.textMuted
                                         elide: Text.ElideRight
-                                        maximumLineCount: 1
                                     }
+                                }
+                            }
+
+                            Components.MediaPreviewCard {
+                                id: compactMediaCard
+                                visible: !root.groupChat
+                                anchors.fill: parent
+                                compact: true
+                                property var cardEntry: root.detailEntry(root.overviewCardsModel, index)
+                                kind: cardEntry.entryKind || "file"
+                                titleText: cardEntry.entryTitle || ""
+                                detailText: cardEntry.entryDetail || ""
+                            }
+                        }
+                    }
+                }
+            }
+
+            TabBar {
+                id: detailTabsBar
+                Layout.fillWidth: true
+                visible: !root.compactMode
+                currentIndex: 0
+                spacing: 4
+                background: Rectangle {
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarHeaderSurface
+                    border.width: 1
+                    border.color: Ui.Style.sidebarHeaderBorder
+                }
+
+                Repeater {
+                    model: root.detailTabModel
+
+                    delegate: TabButton {
+                        property string tabTooltip: modelData.label
+                        hoverEnabled: true
+                        implicitHeight: 34
+                        implicitWidth: 38
+                        Accessible.name: tabTooltip
+                        ToolTip.visible: hovered
+                        ToolTip.text: tabTooltip
+                        background: Rectangle {
+                            radius: Ui.Style.radiusPill
+                            color: detailTabsBar.currentIndex === index ? Ui.Style.sidebarNavActiveBg : "transparent"
+                            border.width: detailTabsBar.currentIndex === index ? 1 : 0
+                            border.color: Ui.Style.sidebarNavActiveBorder
+                        }
+                        contentItem: Item {
+                            implicitWidth: 24
+                            implicitHeight: 24
+                            Image {
+                                anchors.centerIn: parent
+                                width: 14
+                                height: 14
+                                source: "qrc:/mi/e2ee/ui/icons/" + modelData.icon
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                                opacity: hovered || detailTabsBar.currentIndex === index ? 1.0 : 0.82
+                            }
+                        }
+                    }
+                }
+            }
+
+            StackLayout {
+                id: detailPanels
+                Layout.fillWidth: true
+                visible: !root.compactMode
+                currentIndex: detailTabsBar.currentIndex
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarHeaderSurface
+                    border.width: 1
+                    border.color: Ui.Style.sidebarHeaderBorder
+                    implicitHeight: overviewColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                    ColumnLayout {
+                        id: overviewColumn
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.groupChat
+                                      ? Ui.I18n.t("right.members")
+                                      : root.overviewTabLabel
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            Rectangle {
+                                radius: 9
+                                color: Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: overviewCountLabel.implicitWidth + 12
+                                implicitHeight: 18
+
+                                Text {
+                                    id: overviewCountLabel
+                                    anchors.centerIn: parent
+                                    text: root.groupChat
+                                          ? ("" + Ui.ChatDisplayStore.membersModel.count)
+                                          : ("" + root.modelCount(root.overviewCardsModel))
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textSecondary
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            visible: root.groupChat
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Components.IconButton {
+                                icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
+                                accessibleName: Ui.I18n.t("right.add")
+                                buttonSize: 30
+                                iconSize: 14
+                                bgColor: Ui.Style.topBarPillBg
+                                hoverBg: Ui.Style.hoverBg
+                                pressedBg: Ui.Style.pressedBg
+                                ToolTip.visible: hovered
+                                ToolTip.text: accessibleName
+                            }
+
+                            Components.IconButton {
+                                icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
+                                accessibleName: Ui.I18n.t("right.search")
+                                buttonSize: 30
+                                iconSize: 14
+                                bgColor: Ui.Style.topBarPillBg
+                                hoverBg: Ui.Style.hoverBg
+                                pressedBg: Ui.Style.pressedBg
+                                ToolTip.visible: hovered
+                                ToolTip.text: accessibleName
+                            }
+                        }
+
+                        Repeater {
+                            model: root.groupChat ? 0 : root.overviewCardsModel
+
+                            delegate: Components.MediaPreviewCard {
+                                property var cardEntry: root.detailEntry(root.overviewCardsModel, index)
+                                Layout.fillWidth: true
+                                compact: true
+                                kind: cardEntry.entryKind || "file"
+                                titleText: cardEntry.entryTitle || ""
+                                detailText: cardEntry.entryDetail || ""
+                            }
+                        }
+
+                        ListView {
+                            visible: root.groupChat
+                            clip: true
+                            model: Ui.ChatDisplayStore.membersModel
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 260
+                            delegate: Item {
+                                width: ListView.view.width
+                                height: 56
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Ui.Style.radiusMedium
+                                    color: memberMouse.containsMouse ? Ui.Style.sidebarListHoverBg : Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: memberMouse.containsMouse ? Ui.Style.sidebarNavBorder : Ui.Style.sidebarMetaChipBorder
                                 }
 
                                 RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Ui.Style.paddingS
-                                    Components.GhostButton {
-                                        text: Ui.I18n.t("right.mute")
-                                        Layout.fillWidth: true
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingS
+                                    spacing: Ui.Style.paddingM
+
+                                    Components.IdentityAvatar {
+                                        size: 36
+                                        titleText: displayName
+                                        seedText: avatarKey || displayName
+                                        mode: "person"
+                                        presenceState: "online"
                                     }
-                                    Components.GhostButton {
-                                        text: Ui.I18n.t("right.block")
+
+                                    ColumnLayout {
                                         Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            text: displayName
+                                            font.pixelSize: 12
+                                            color: Ui.Style.textPrimary
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            text: role
+                                            font.pixelSize: 10
+                                            color: Ui.Style.textMuted
+                                        }
                                     }
                                 }
+
+                                MouseArea {
+                                    id: memberMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                }
+                            }
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: sharedMediaCard
+                    Layout.fillWidth: true
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarHeaderSurface
+                    border.width: 1
+                    border.color: Ui.Style.sidebarHeaderBorder
+                    implicitHeight: sharedMediaColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                    ColumnLayout {
+                        id: sharedMediaColumn
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.I18n.t("right.media")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            Rectangle {
+                                radius: 9
+                                color: Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: sharedMediaCountLabel.implicitWidth + 12
+                                implicitHeight: 18
+
+                                Text {
+                                    id: sharedMediaCountLabel
+                                    anchors.centerIn: parent
+                                    text: "" + root.modelCount(root.mediaCardsModel)
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textSecondary
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: root.mediaCardsModel
+
+                            delegate: Components.MediaPreviewCard {
+                                property var cardEntry: root.detailEntry(root.mediaCardsModel, index)
+                                Layout.fillWidth: true
+                                compact: true
+                                kind: cardEntry.entryKind || "file"
+                                titleText: cardEntry.entryTitle || ""
+                                detailText: cardEntry.entryDetail || ""
                             }
                         }
                     }
                 }
 
-                Item {
+                Rectangle {
+                    id: sharedFilesCard
+                    Layout.fillWidth: true
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarHeaderSurface
+                    border.width: 1
+                    border.color: Ui.Style.sidebarHeaderBorder
+                    implicitHeight: sharedFilesColumn.implicitHeight + Ui.Style.paddingM * 2
+
                     ColumnLayout {
+                        id: sharedFilesColumn
                         anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
                         spacing: Ui.Style.paddingS
 
-                        Rectangle {
+                        RowLayout {
                             Layout.fillWidth: true
-                            radius: Ui.Style.radiusLarge
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
+                            spacing: 8
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: Ui.Style.paddingM
-                                spacing: Ui.Style.paddingS
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.I18n.t("right.files")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
 
-                                Text { text: Ui.I18n.t("right.group"); color: Ui.Style.textSecondary; font.pixelSize: 11; elide: Text.ElideRight }
+                            Rectangle {
+                                radius: 9
+                                color: Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: sharedFilesCountLabel.implicitWidth + 12
+                                implicitHeight: 18
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Ui.Style.paddingS
-                                    Components.GhostButton {
-                                        text: Ui.I18n.t("right.add")
-                                        Layout.fillWidth: true
-                                    }
-                                    Components.GhostButton {
-                                        text: Ui.I18n.t("right.search")
-                                        Layout.fillWidth: true
-                                    }
-                                    Components.GhostButton {
-                                        text: Ui.I18n.t("right.notify")
-                                        Layout.fillWidth: true
-                                    }
+                                Text {
+                                    id: sharedFilesCountLabel
+                                    anchors.centerIn: parent
+                                    text: "" + root.modelCount(root.fileCardsModel)
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textSecondary
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
                                 }
+                            }
+                        }
 
-                                TabBar {
-                                    id: groupTabs
-                                    Layout.fillWidth: true
-                                    currentIndex: 0
-                                    background: Rectangle {
-                                        radius: Ui.Style.radiusMedium
-                                        color: Ui.Style.panelBg
-                                        border.color: Ui.Style.borderSubtle
-                                    }
-                                    TabButton {
-                                        text: Ui.I18n.t("right.members")
-                                        background: Rectangle {
-                                            radius: Ui.Style.radiusMedium
-                                            color: groupTabs.currentIndex === 0 ? Ui.Style.dialogSelectedBg : "transparent"
-                                        }
-                                        contentItem: Text {
-                                            text: parent.text
-                                            font.pixelSize: 11
-                                            color: groupTabs.currentIndex === 0 ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                    }
-                                    TabButton {
-                                        text: Ui.I18n.t("right.media")
-                                        background: Rectangle {
-                                            radius: Ui.Style.radiusMedium
-                                            color: groupTabs.currentIndex === 1 ? Ui.Style.dialogSelectedBg : "transparent"
-                                        }
-                                        contentItem: Text {
-                                            text: parent.text
-                                            font.pixelSize: 11
-                                            color: groupTabs.currentIndex === 1 ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                    }
-                                    TabButton {
-                                        text: Ui.I18n.t("right.files")
-                                        background: Rectangle {
-                                            radius: Ui.Style.radiusMedium
-                                            color: groupTabs.currentIndex === 2 ? Ui.Style.dialogSelectedBg : "transparent"
-                                        }
-                                        contentItem: Text {
-                                            text: parent.text
-                                            font.pixelSize: 11
-                                            color: groupTabs.currentIndex === 2 ? Ui.Style.dialogSelectedFg : Ui.Style.textSecondary
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-                                    }
+                        Repeater {
+                            model: root.fileCardsModel
+
+                            delegate: Components.MediaPreviewCard {
+                                property var cardEntry: root.detailEntry(root.fileCardsModel, index)
+                                Layout.fillWidth: true
+                                compact: true
+                                kind: cardEntry.entryKind || "file"
+                                titleText: cardEntry.entryTitle || ""
+                                detailText: cardEntry.entryDetail || ""
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: sharedLinksCard
+                    Layout.fillWidth: true
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.sidebarHeaderSurface
+                    border.width: 1
+                    border.color: Ui.Style.sidebarHeaderBorder
+                    implicitHeight: sharedLinksColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                    ColumnLayout {
+                        id: sharedLinksColumn
+                        anchors.fill: parent
+                        anchors.margins: Ui.Style.paddingM
+                        spacing: Ui.Style.paddingS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.linksTabLabel
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            Rectangle {
+                                radius: 9
+                                color: Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: sharedLinksCountLabel.implicitWidth + 12
+                                implicitHeight: 18
+
+                                Text {
+                                    id: sharedLinksCountLabel
+                                    anchors.centerIn: parent
+                                    text: "" + root.modelCount(root.linkCardsModel)
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textSecondary
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
                                 }
+                            }
+                        }
 
-                                StackLayout {
-                                    Layout.fillWidth: true
-                                    currentIndex: groupTabs.currentIndex
+                        Repeater {
+                            model: root.linkCardsModel
 
-                                    ListView {
-                                        clip: true
-                                        model: Ui.ChatDisplayStore.membersModel
-                                        delegate: Item {
-                                            width: ListView.view.width
-                                            height: 54
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                radius: Ui.Style.radiusMedium
-                                                color: mouseArea.containsMouse ? Ui.Style.dialogHoverBg : "transparent"
-                                            }
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: Ui.Style.paddingS
-                                                spacing: Ui.Style.paddingM
-                                                Rectangle {
-                                                    width: 36
-                                                    height: 36
-                                                    radius: 18
-                                                    color: Ui.Style.avatarColor(avatarKey)
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: displayName.length > 0 ? displayName.charAt(0).toUpperCase() : ""
-                                                        color: Ui.Style.textPrimary
-                                                        font.pixelSize: 13
-                                                    }
-                                                }
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 2
-                                                    Text {
-                                                        text: displayName
-                                                        font.pixelSize: 12
-                                                        color: Ui.Style.textPrimary
-                                                        elide: Text.ElideRight
-                                                    }
-                                                    Text {
-                                                        text: role
-                                                        font.pixelSize: 10
-                                                        color: Ui.Style.textMuted
-                                                    }
-                                                }
-                                            }
-                                            MouseArea {
-                                                id: mouseArea
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                            }
-                                        }
-                                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; width: 6 }
-                                        Layout.preferredHeight: 260
-                                    }
-
-                                    Item {
-                                        Layout.preferredHeight: 180
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Ui.I18n.t("right.mediaPlaceholder")
-                                            color: Ui.Style.textMuted
-                                            font.pixelSize: 11
-                                        }
-                                    }
-
-                                    Item {
-                                        Layout.preferredHeight: 180
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Ui.I18n.t("right.filesPlaceholder")
-                                            color: Ui.Style.textMuted
-                                            font.pixelSize: 11
-                                        }
-                                    }
-                                }
+                            delegate: Components.MediaPreviewCard {
+                                property var cardEntry: root.detailEntry(root.linkCardsModel, index)
+                                Layout.fillWidth: true
+                                compact: true
+                                kind: cardEntry.entryKind || "file"
+                                titleText: cardEntry.entryTitle || ""
+                                detailText: cardEntry.entryDetail || ""
                             }
                         }
                     }

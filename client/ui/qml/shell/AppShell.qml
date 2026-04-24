@@ -14,10 +14,58 @@ Item {
     property int rightWidth: Ui.Style.rightPaneWidth
     property var securityCoordinator: null
     readonly property bool shellReady: true
+    readonly property var layoutContract: Ui.Style.shellLayoutContract
     readonly property bool hasActiveChat: Ui.ChatDisplayStore.currentChatId.length > 0
-    readonly property bool canUseThreeColumn: root.windowWidth >= Ui.Style.threeColumnMinWidth
-    readonly property bool rightPaneMounted: hasActiveChat && (canUseThreeColumn || Ui.ChatDisplayStore.rightPaneVisible)
+    readonly property string shellSurface: Ui.AppStore.currentShellSurface || "chat"
+    readonly property bool canUseThreeColumn: root.windowWidth >= layoutContract.threeColumnMinWidth
+    readonly property bool canUseUtilityRail: root.windowWidth >= 820
+    readonly property bool canUseDrawerTwoColumn: root.windowWidth >= layoutContract.twoColumnDrawerMinWidth
+    readonly property bool canUseCompactTwoColumn: root.windowWidth >= layoutContract.compactTwoColumnMinWidth
+    readonly property bool isCompactShell: canUseCompactTwoColumn && !canUseDrawerTwoColumn
+    readonly property bool immersiveUtilitySurface: shellSurface === "settings" ||
+                                                    shellSurface === "security" ||
+                                                    shellSurface === "calls"
+    readonly property bool tightChatColumns: shellSurface === "chat" &&
+                                             hasActiveChat &&
+                                             Ui.ChatDisplayStore.rightPaneVisible &&
+                                             canUseThreeColumn &&
+                                             // root.windowWidth < 1400
+                                             root.windowWidth < 1300
+    readonly property bool rightPaneMounted: hasActiveChat &&
+                                             canUseThreeColumn &&
+                                             Ui.ChatDisplayStore.rightPaneVisible
+    readonly property bool rightPaneDrawerVisible: hasActiveChat &&
+                                                   !canUseThreeColumn &&
+                                                   Ui.ChatDisplayStore.rightPaneVisible &&
+                                                   shellSurface === "chat"
+    readonly property bool drawerTightChatColumns: shellSurface === "chat" &&
+                                                   hasActiveChat &&
+                                                   rightPaneDrawerVisible
+    readonly property int rightPaneDrawerWidth: canUseDrawerTwoColumn
+                                                ? Math.min(rightWidth, Ui.Style.rightPaneWidthMax)
+                                                : Ui.Style.rightPaneWidthDrawerNarrow
     readonly property Window hostWindow: root.Window.window
+
+    onWindowWidthChanged: {
+        var leftMaxWidth = windowWidth < 1160
+                           ? Ui.Style.leftPaneWidthDefault
+                           : Math.max(Ui.Style.leftPaneWidthDefault, Math.floor(windowWidth * 0.30))
+        var rightMaxWidth = windowWidth < 1160
+                            ? Ui.Style.rightPaneWidth
+                            : Math.min(Ui.Style.rightPaneWidthMax, Math.floor(windowWidth * 0.30))
+        if (isCompactShell) {
+            leftWidth = Math.max(Ui.Style.leftPaneWidthMin,
+                                 Math.min(Ui.Style.leftPaneWidthCompact, leftMaxWidth))
+        } else {
+            leftWidth = Math.max(Ui.Style.leftPaneWidthMin,
+                                 Math.min(leftWidth, leftMaxWidth))
+        }
+        rightWidth = Math.max(Ui.Style.rightPaneWidthMin,
+                              Math.min(rightWidth, rightMaxWidth))
+        if (!canUseCompactTwoColumn) {
+            Ui.ChatDisplayStore.closeRightPane()
+        }
+    }
 
     onHasActiveChatChanged: {
         if (!hasActiveChat) {
@@ -62,21 +110,43 @@ Item {
                     z: 5
                 }
 
-                Shell.LeftPane {
-                    id: leftPane
-                    SplitView.preferredWidth: root.leftWidth
-                    SplitView.minimumWidth: Ui.Style.leftPaneWidthMin
+                Loader {
+                    id: leftPaneLoader
+                    active: !root.immersiveUtilitySurface || root.canUseUtilityRail
+                    visible: active
+                    SplitView.preferredWidth: root.immersiveUtilitySurface
+                                              ? Ui.Style.leftPaneWidthUtilityRail
+                                              : (root.tightChatColumns
+                                              ? Ui.Style.leftPaneWidthDetailTight
+                                              : (root.drawerTightChatColumns
+                                              ? Ui.Style.leftPaneWidthDrawerTight
+                                              : (root.isCompactShell
+                                              ? Ui.Style.leftPaneWidthCompact
+                                              : root.leftWidth)))
+                    SplitView.minimumWidth: root.immersiveUtilitySurface
+                                            ? Ui.Style.leftPaneWidthUtilityRail
+                                            : (root.tightChatColumns
+                                            ? Ui.Style.leftPaneWidthDetailTight
+                                            : (root.drawerTightChatColumns
+                                            ? Ui.Style.leftPaneWidthDrawerTight
+                                            : Ui.Style.leftPaneWidthMin))
                     onWidthChanged: {
-                        if (width > 80) {
+                        if (width > 80 &&
+                                !root.isCompactShell &&
+                                !root.tightChatColumns &&
+                                !root.drawerTightChatColumns) {
                             root.leftWidth = width
                         }
                     }
-                    onRequestNewChat: newChatDialog.open()
-                    onRequestAddContact: addContactDialog.open()
-                    onRequestCreateGroup: createGroupWizard.open()
-                    onRequestNotifications: notificationDialog.open()
-                    onRequestSettings: if (root.securityCoordinator) root.securityCoordinator.openSettings()
-                    onRequestDeviceManager: if (root.securityCoordinator) root.securityCoordinator.openDeviceManager()
+                    sourceComponent: Shell.LeftPane {
+                        compactShell: root.isCompactShell
+                        onRequestNewChat: newChatDialog.open()
+                        onRequestAddContact: addContactDialog.open()
+                        onRequestCreateGroup: createGroupWizard.open()
+                        onRequestNotifications: notificationDialog.open()
+                        onRequestSettings: Ui.AppStore.setShellSurface("settings")
+                        onRequestDeviceManager: Ui.AppStore.setShellSurface("security")
+                    }
                 }
 
                 Shell.CenterPane {
@@ -89,17 +159,58 @@ Item {
                     id: rightPaneLoader
                     active: root.rightPaneMounted
                     visible: active
-                    SplitView.preferredWidth: root.rightWidth
-                    SplitView.minimumWidth: Ui.Style.rightPaneWidthMin
+                    SplitView.preferredWidth: root.tightChatColumns
+                                              ? Ui.Style.rightPaneWidthTight
+                                              : root.rightWidth
+                    SplitView.minimumWidth: root.tightChatColumns
+                                            ? Ui.Style.rightPaneWidthTight
+                                            : Ui.Style.rightPaneWidthMin
                     SplitView.maximumWidth: Ui.Style.rightPaneWidthMax
                     onWidthChanged: {
-                        if (active && width > Ui.Style.rightPaneWidthMin) {
+                        if (active && width > Ui.Style.rightPaneWidthMin && !root.tightChatColumns) {
                             root.rightWidth = width
                         }
                     }
                     sourceComponent: Shell.RightPane {
                     }
                 }
+            }
+
+            Loader {
+                id: rightPaneDrawer
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                width: root.rightPaneDrawerWidth
+                active: root.rightPaneDrawerVisible
+                visible: active
+                z: 30
+                sourceComponent: Item {
+                    anchors.fill: parent
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Ui.Style.panelBgAlt
+                        border.width: 1
+                        border.color: Ui.Style.borderSubtle
+                    }
+
+                    Shell.RightPane {
+                        anchors.fill: parent
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: rightPaneDrawer.left
+                visible: root.rightPaneDrawerVisible
+                enabled: visible
+                z: 20
+                acceptedButtons: Qt.LeftButton
+                onClicked: Ui.ChatDisplayStore.closeRightPane()
             }
         }
     }
@@ -121,17 +232,34 @@ Item {
         ownerWindow: root.hostWindow
     }
     function focusSearch() {
-        leftPane.focusSearch()
+        if (leftPaneLoader.item && leftPaneLoader.item.focusSearch) {
+            leftPaneLoader.item.focusSearch()
+        }
+    }
+
+    function openNewChat() {
+        Ui.AppStore.setShellSurface("chat")
+        newChatDialog.open()
     }
 
     function showChatSearch() {
-        centerPane.showSearch()
+        if (shellSurface === "chat") {
+            centerPane.showSearch()
+        }
+    }
+
+    function openSettingsSurface() {
+        if (Ui.SecurityDisplayStore && Ui.SecurityDisplayStore.refresh) {
+            Ui.SecurityDisplayStore.refresh()
+        }
+        Ui.AppStore.setShellSurface("settings")
     }
 
     function openSecurityCenter() {
-        if (root.securityCoordinator) {
-            root.securityCoordinator.openSecurityCenter()
+        if (Ui.SecurityDisplayStore && Ui.SecurityDisplayStore.refresh) {
+            Ui.SecurityDisplayStore.refresh()
         }
+        Ui.AppStore.setShellSurface("security")
     }
 
     function handleEscape() {
@@ -154,12 +282,22 @@ Item {
             notificationDialog.close()
             return
         }
-        if (centerPane.clearChatSearch()) {
+        if (centerPane.handleEscape()) {
             return
         }
-        if (Ui.ChatDisplayStore.searchQuery.length > 0) {
-            leftPane.clearSearch()
+        if (leftPaneLoader.item && leftPaneLoader.item.handleEscape && leftPaneLoader.item.handleEscape()) {
             return
+        }
+        if (root.rightPaneDrawerVisible) {
+            Ui.ChatDisplayStore.closeRightPane()
+            return
+        }
+        if (shellSurface === "security") {
+            Ui.AppStore.setShellSurface("settings")
+            return
+        }
+        if (shellSurface !== "chat") {
+            Ui.AppStore.setShellSurface("chat")
         }
     }
 }

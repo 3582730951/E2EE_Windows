@@ -4,8 +4,8 @@ miniz|3.1.0|public-domain|miniz|10ce092315b2c2bdb69e3acb574ae9dfeb5065f13593e9fd
 kcp|snapshot|MIT|kcp|76860ea7d1e51b12dff4367d3e81e21ded1eb193e4b82e1a840732ba9a6166d7
 qrcodegen|snapshot|MIT|qrcodegen|45e67766469682d31e0564227574fbbd0b13845a1230c1db6cfda84d6b44ab76
 ed25519|snapshot|Zlib|ed25519|e46f15cbc9365b794911087a77725ad565d4142f52530ef68a0e1cc74f1ff041
-pqclean_mlkem768_clean|snapshot|CC0-1.0 AND MIT|pqclean_mlkem768_clean|9a9ed8cce6732c75ae7662ea8fd8216048cb71721248e965ba608a2e9bd50ee5
-pqclean_mldsa65_clean|snapshot|CC0-1.0 AND MIT|pqclean_mldsa65_clean|00682be3449d46c19c5291c7fa39f828275436c7036c87f8dceaa4dec10118cd
+pqclean_mlkem768_clean|snapshot|CC0-1.0 AND MIT|pqclean_mlkem768_clean|2267362fd211e3ac341b95f77b55df19a3f4159de9e340129d2249ce2dc18394
+pqclean_mldsa65_clean|snapshot|CC0-1.0 AND MIT|pqclean_mldsa65_clean|5b5cb286c04d20deed453761fbfc410671b59d899a851bf006d935c536c2d1dc
 rime-luna-pinyin|2024.02.10|LGPL-3.0|../client/ui/data/ime_pinyin.dat|405355580591bc45e7973aa69937e9044ad579ef1d2b99394570387e2f84807b
 rime-luna-pinyin-abbr|2024.02.10|LGPL-3.0|../client/ui/data/ime_pinyin_short.dat|6bc56357ace03f1e7c8f58a9e030ec061da63bc4a136b911a912c8e3a633822b
 rime-luna-pinyin-yaml|2024.02.10|LGPL-3.0|../client/ui/data/rime/luna_pinyin.dict.yaml|38405bbec72fa9056c892f02ced8a6979ea3256a85484492d25586ad128f3ef4
@@ -58,7 +58,7 @@ rime-ice-lua-v-filter|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/v_filter.
 rime-ice-lua-cold-word-drop-drop-words|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/drop_words.lua|c54cc787cf23a28321b42e256a094c4aadbf27a836f9852ea7b8a48e433ee591
 rime-ice-lua-cold-word-drop-filter|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/filter.lua|cb862d048c0b670a22b329992efe436d5e9107bf24d83f6d5f00213139ad5e82
 rime-ice-lua-cold-word-drop-hide-words|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/hide_words.lua|26df6ed82bbc646e29aa647be35df9076f6195e520489ccd9022dc081a02cb30
-rime-ice-lua-cold-word-drop-logger|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/logger.lua|f4be75968364390d7d48bb83b789e4834f9b3f8cd577fb0caac7a00ea1eca312
+rime-ice-lua-cold-word-drop-logger|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/logger.lua|50873222fb3bb095aba423b36b70cf6285958293073a7b097b292ac3ac25e8fc
 rime-ice-lua-cold-word-drop-metatable|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/metatable.lua|66d88f4d9dc0bf7c37e8f5ca9ab3c237ca995a28468c53f57cc3aa3937b798cb
 rime-ice-lua-cold-word-drop-processor|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/processor.lua|3af3de687ad7feba4e9f49e7b2768e9137d1447bbeede7f81f8c10206c0747f0
 rime-ice-lua-cold-word-drop-reduce-freq-words|snapshot|GPL-3.0-only|../client/ui/data/rime/lua/cold_word_drop/reduce_freq_words.lua|2124f57446510ceae3ed5f8383237fdcaec68e54cfd0d66218b14f4f011872ca

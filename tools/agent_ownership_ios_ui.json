@@ -1,0 +1,39 @@
+{
+  "version": "2026-04-04",
+  "allowed_paths": {
+    "iOSAgent1": [
+      "ios_root_app/RootAuthApp/SecureChatTheme.swift",
+      "ios_root_app/RootAuthApp/AppShell.swift"
+    ],
+    "iOSAgent2": [
+      "ios_root_app/RootAuthApp/ClientWorkspaceViews.swift"
+    ],
+    "iOSAgent3": [
+      "ios_root_app/RootAuthApp/SecurityCenterView.swift",
+      "ios_root_app/RootAuthApp/ContentView.swift"
+    ],
+    "ValidationAgent": [
+      "tools/verify_ui_contract.py",
+      "tools/agent_ownership_ios_ui.json"
+    ]
+  },
+  "forbidden_paths": [
+    "ios_root_app/RootAuthApp/MIClientBridge.mm",
+    "ios_root_app/RootAuthApp/MIClientStub.mm",
+    "ios_root_app/RootAuthApp/RootAuthNetwork.swift",
+    "ios_root_app/RootAuthApp/RootAuthStore.swift"
+  ],
+  "no_edit_surfaces": [
+    "ios_root_app/RootAuthApp/MIClientBridge.mm",
+    "ios_root_app/RootAuthApp/MIClientStub.mm",
+    "ios_root_app/RootAuthApp/RootAuthNetwork.swift",
+    "ios_root_app/RootAuthApp/RootAuthStore.swift"
+  ],
+  "legacy_excluded_surfaces": [
+    "ios_root_app/RootAuthApp/MIClientBridge.mm",
+    "ios_root_app/RootAuthApp/MIClientStub.mm"
+  ],
+  "single_writer_manifests": [
+    "tools/agent_ownership_ios_ui.json"
+  ]
+}

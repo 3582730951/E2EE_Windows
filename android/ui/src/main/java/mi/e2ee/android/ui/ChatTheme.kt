@@ -15,26 +15,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mi.e2ee.android.R
 
-private val Primary = Color(0xFF2563EB)
-private val PrimaryDark = Color(0xFF1D4ED8)
-private val Accent = Color(0xFF059669)
-private val Warning = Color(0xFFD97706)
-private val Danger = Color(0xFFDC2626)
-private val Background = Color(0xFFF8FAFC)
+private val Primary = Color(0xFF1F5EFF)
+private val PrimaryDark = Color(0xFF1849C7)
+private val Accent = Color(0xFF0F9F7A)
+private val Warning = Color(0xFFCC7A00)
+private val Danger = Color(0xFFD43939)
+private val Background = Color(0xFFF6F9FC)
 private val Surface = Color(0xFFFFFFFF)
-private val SurfaceVariant = Color(0xFFF3F6FB)
+private val SurfaceVariant = Color(0xFFEEF3FA)
 private val TextPrimary = Color(0xFF0F172A)
-private val TextSecondary = Color(0xFF64748B)
-private val Divider = Color(0xFFDBE4F0)
+private val TextSecondary = Color(0xFF5C6D82)
+private val Divider = Color(0xFFD7E1EE)
 
 private val DarkPrimary = Color(0xFF4E7FFF)
-private val DarkPrimaryContainer = Color(0xFF17336E)
+private val DarkPrimaryContainer = Color(0xFF153067)
 private val DarkAccent = Color(0xFF10B981)
 private val DarkWarning = Color(0xFFF59E0B)
 private val DarkDanger = Color(0xFFF87171)
-private val DarkBackground = Color(0xFF0C1520)
-private val DarkSurface = Color(0xFF111C27)
-private val DarkSurfaceVariant = Color(0xFF172330)
+private val DarkBackground = Color(0xFF0B1420)
+private val DarkSurface = Color(0xFF111B27)
+private val DarkSurfaceVariant = Color(0xFF162230)
 private val DarkTextPrimary = Color(0xFFE8EDF4)
 private val DarkTextSecondary = Color(0xFF9DAEBC)
 private val DarkDivider = Color(0xFF2B3846)
@@ -173,20 +173,26 @@ object ThemeMode {
 }
 
 object ChatUiTokens {
-    val CornerSmall = 12.dp
-    val CornerMedium = 14.dp
+    val CornerSmall = 10.dp
+    val CornerMedium = 12.dp
     val CornerLarge = 16.dp
+    val CornerXLarge = 22.dp
     val IconContainerXs = 20.dp
-    val IconContainerSm = 34.dp
-    val IconContainerMd = 38.dp
-    val IconContainerLg = 42.dp
+    val IconContainerSm = 32.dp
+    val IconContainerMd = 36.dp
+    val IconContainerLg = 40.dp
     val IconGlyphXs = 11.dp
-    val IconGlyphSm = 14.dp
-    val IconGlyphMd = 16.dp
+    val IconGlyphSm = 13.dp
+    val IconGlyphMd = 15.dp
     val IconGlyphLg = 18.dp
     val BadgeCorner = 8.dp
     val IconSize = 36.dp
     val IconCorner = 10.dp
+    val AvatarSmall = 24.dp
+    val AvatarMedium = 44.dp
+    val AvatarLarge = 56.dp
+    val AvatarHero = 72.dp
+    val IllustrationFrame = 144.dp
     val SectionSpacing = 8.dp
     val ItemSpacing = 4.dp
     const val IconContainerAlpha = 0.08f

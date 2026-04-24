@@ -11,6 +11,18 @@ Item {
     readonly property string maskedCurrentDeviceId: currentDeviceDisplay
     readonly property bool transportHealthy: client ? client.remoteOk === true : false
     readonly property string versionText: client && client.version ? client.version() : ""
+    readonly property string transportHeadline: transportHealthy
+                                                ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
+                                                : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
+    readonly property string transportTone: transportHealthy ? "healthy" : "blocked"
+    readonly property string trustHeadline: gatewayDisplayState.length > 0
+                                            ? gatewayDisplayState
+                                            : Ui.I18n.t("dialog.securityCenter.trustReview")
+    readonly property string trustDetail: gatewayDisplayDetail.length > 0
+                                          ? gatewayDisplayDetail
+                                          : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+    readonly property string trustTone: "review"
+    readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCount)
 
     property var overviewCards: []
     property string currentDeviceDisplay: ""
@@ -73,34 +85,30 @@ Item {
             {
                 icon: "qrc:/mi/e2ee/ui/icons/check.svg",
                 title: Ui.I18n.t("dialog.securityCenter.transportTitle"),
-                value: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
-                    : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention"),
-                detail: transportHealthy
-                    ? Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
-                    : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
+                value: transportHeadline,
+                detail: connectionSummary(),
+                tone: transportTone
             },
             {
                 icon: "qrc:/mi/e2ee/ui/icons/info.svg",
                 title: Ui.I18n.t("dialog.securityCenter.trustTitle"),
-                value: gatewayDisplayState.length > 0
-                    ? gatewayDisplayState
-                    : Ui.I18n.t("dialog.securityCenter.trustReview"),
-                detail: gatewayDisplayDetail.length > 0
-                    ? gatewayDisplayDetail
-                    : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+                value: trustHeadline,
+                detail: trustDetail,
+                tone: trustTone
             },
             {
                 icon: "qrc:/mi/e2ee/ui/icons/device.svg",
                 title: Ui.I18n.t("dialog.securityCenter.devicesTitle"),
-                value: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCount),
-                detail: Ui.I18n.t("dialog.securityCenter.devicesHint")
+                value: linkedDevicesSummary,
+                detail: Ui.I18n.t("dialog.securityCenter.devicesHint"),
+                tone: linkedDeviceCount > 0 ? "healthy" : "review"
             },
             {
                 icon: "qrc:/mi/e2ee/ui/icons/clock.svg",
                 title: Ui.I18n.t("dialog.securityCenter.serverTitle"),
                 value: gatewayDisplayDetail.length > 0 ? gatewayDisplayDetail : gatewayDisplayState,
-                detail: Ui.I18n.t("dialog.securityCenter.serverHint")
+                detail: Ui.I18n.t("dialog.securityCenter.serverHint"),
+                tone: "checking"
             }
         ]
     }

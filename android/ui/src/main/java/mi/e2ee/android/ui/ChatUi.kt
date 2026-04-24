@@ -2,6 +2,7 @@ package mi.e2ee.android.ui
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -10,6 +11,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,9 +33,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -69,8 +71,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -91,9 +91,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -230,6 +234,14 @@ private sealed interface ComposerDialog {
     data object Location : ComposerDialog
     data object Sticker : ComposerDialog
     data object Contact : ComposerDialog
+}
+
+internal enum class ComposerSurfaceState {
+    Collapsed,
+    Text,
+    QuickActions,
+    Emoji,
+    Voice
 }
 
 object SampleChat {
@@ -496,7 +508,7 @@ fun ChatScreen(
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var composerReply by remember { mutableStateOf<ReplyPreview?>(null) }
     var composerText by remember { mutableStateOf("") }
-    var composerQuickActionsVisible by remember { mutableStateOf(false) }
+    var composerSurface by remember { mutableStateOf(ComposerSurfaceState.Collapsed) }
     var composerDialog by remember { mutableStateOf<ComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingMessageDelete?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -510,11 +522,14 @@ fun ChatScreen(
     var toolsResendFilePath by remember { mutableStateOf("") }
     var toolsResult by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val composerFocusRequester = remember { FocusRequester() }
     val resolvedConversationId = if (conversationId.isNotBlank()) conversationId else "default"
     val prefs = remember { context.getSharedPreferences(CHAT_PREFS_NAME, Context.MODE_PRIVATE) }
     var highlightedMessageId by remember(resolvedConversationId) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var composerFieldFocused by remember { mutableStateOf(false) }
     var deletedIds by remember(resolvedConversationId) {
         mutableStateOf(loadDeletedIds(prefs, resolvedConversationId))
     }
@@ -666,13 +681,39 @@ fun ChatScreen(
         visibleMessages.filterIsInstance<ChatMessage>().isEmpty() -> ChatScreenState.Empty
         else -> ChatScreenState.Content
     }
+    val quickActionsVisible = composerSurface == ComposerSurfaceState.QuickActions
+    val emojiSurfaceVisible = composerSurface == ComposerSurfaceState.Emoji
+    val voiceSurfaceVisible = composerSurface == ComposerSurfaceState.Voice
     val showComposer = effectiveState != ChatScreenState.NotFound &&
         effectiveState != ChatScreenState.PermissionDenied
+    fun collapseTextComposer() {
+        focusManager.clearFocus(force = true)
+        composerFieldFocused = false
+        composerSurface = ComposerSurfaceState.Collapsed
+    }
+    BackHandler(enabled = actionTarget != null ||
+        composerDialog != null ||
+        composerReply != null ||
+        quickActionsVisible ||
+        emojiSurfaceVisible ||
+        voiceSurfaceVisible ||
+        composerFieldFocused) {
+        when {
+            actionTarget != null -> actionTarget = null
+            composerDialog != null -> composerDialog = null
+            composerSurface == ComposerSurfaceState.QuickActions ||
+                composerSurface == ComposerSurfaceState.Emoji ||
+                composerSurface == ComposerSurfaceState.Voice -> {
+                composerSurface = ComposerSurfaceState.Collapsed
+            }
+            composerReply != null -> composerReply = null
+            composerFieldFocused -> collapseTextComposer()
+        }
+    }
     Scaffold(
         topBar = {
             ChatTopBar(
                 title = title,
-                status = status,
                 initials = initials,
                 selfInitials = selfInitials,
                 onBack = onBack,
@@ -696,14 +737,46 @@ fun ChatScreen(
                         if (ok) {
                             composerText = ""
                             composerReply = null
-                            composerQuickActionsVisible = false
+                            composerFocusRequester.requestFocus()
                         }
                     },
-                    showQuickActions = composerQuickActionsVisible,
-                    onToggleQuickActions = {
-                        composerQuickActionsVisible = !composerQuickActionsVisible
+                    surfaceState = composerSurface,
+                    focusRequester = composerFocusRequester,
+                    onTextFieldFocusChange = { focused ->
+                        composerFieldFocused = focused
+                        if (focused) {
+                            composerSurface = ComposerSurfaceState.Text
+                        } else if (composerSurface == ComposerSurfaceState.Text) {
+                            composerSurface = ComposerSurfaceState.Collapsed
+                        }
                     },
-                    onEmoji = { composerDialog = ComposerDialog.Sticker },
+                    onToggleQuickActions = {
+                        focusManager.clearFocus(force = true)
+                        composerFieldFocused = false
+                        composerSurface = if (quickActionsVisible) {
+                            ComposerSurfaceState.Collapsed
+                        } else {
+                            ComposerSurfaceState.QuickActions
+                        }
+                    },
+                    onEmoji = {
+                        focusManager.clearFocus(force = true)
+                        composerFieldFocused = false
+                        composerSurface = if (emojiSurfaceVisible) {
+                            ComposerSurfaceState.Collapsed
+                        } else {
+                            ComposerSurfaceState.Emoji
+                        }
+                    },
+                    onVoice = {
+                        focusManager.clearFocus(force = true)
+                        composerFieldFocused = false
+                        composerSurface = if (voiceSurfaceVisible) {
+                            ComposerSurfaceState.Collapsed
+                        } else {
+                            ComposerSurfaceState.Voice
+                        }
+                    },
                     modifier = Modifier
                         .alpha(inputAlpha)
                         .padding(bottom = inputOffset)
@@ -715,9 +788,11 @@ fun ChatScreen(
         containerColor = Color.Transparent
     ) { padding ->
         val composerOverlayHeight = when {
-            composerReply != null && composerQuickActionsVisible -> 68.dp
+            composerReply != null && quickActionsVisible -> 68.dp
             composerReply != null -> 36.dp
-            composerQuickActionsVisible -> 32.dp
+            quickActionsVisible -> 32.dp
+            emojiSurfaceVisible -> 96.dp
+            voiceSurfaceVisible -> 64.dp
             else -> 0.dp
         }
         val composerInset = if (showComposer) {
@@ -776,29 +851,29 @@ fun ChatScreen(
                     )
                 )
             }
-            if (showComposer && (composerReply != null || composerQuickActionsVisible)) {
+            if (showComposer && (composerReply != null || quickActionsVisible)) {
                 ComposerAssistOverlay(
                     replyPreview = composerReply,
-                    showQuickActions = composerQuickActionsVisible,
+                    showQuickActions = quickActionsVisible,
                     onReplyDismiss = { composerReply = null },
                     onAttachPhoto = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = ComposerDialog.File
                     },
                     onAttachFile = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = ComposerDialog.File
                     },
                     onAttachLocation = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = ComposerDialog.Location
                     },
                     onAttachContact = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = ComposerDialog.Contact
                     },
                     onAttachSticker = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = ComposerDialog.Sticker
                     },
                     modifier = Modifier
@@ -808,6 +883,20 @@ fun ChatScreen(
                             start = 6.dp,
                             end = 6.dp,
                             bottom = padding.calculateBottomPadding() + 4.dp + inputOffset
+                        )
+                )
+            }
+            if (showComposer && (emojiSurfaceVisible || voiceSurfaceVisible)) {
+                ComposerSurfacePanel(
+                    surfaceState = composerSurface,
+                    onDismiss = { composerSurface = ComposerSurfaceState.Collapsed },
+                    onAppendEmoji = { emoji -> composerText += emoji },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(
+                            start = 6.dp,
+                            end = 6.dp,
+                            bottom = padding.calculateBottomPadding() + 46.dp + inputOffset
                         )
                 )
             }
@@ -1293,7 +1382,6 @@ fun ChatScreen(
 @Composable
 private fun ChatTopBar(
     title: String,
-    status: String,
     initials: String,
     selfInitials: String,
     onBack: () -> Unit,
@@ -1304,74 +1392,118 @@ private fun ChatTopBar(
     onTools: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = phaseOneColors()
+    // .height(80.dp)
+    // Modifier.align(Alignment.Center)
+    // padding(horizontal = 76.dp)
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-        tonalElevation = 0.dp
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(
+            bottomStart = 22.dp,
+            bottomEnd = 22.dp
+        ),
+        color = colors.glass,
+        shadowElevation = 0.dp
     ) {
-        TopAppBar(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 2.dp),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarBadge(initials = initials, tint = MaterialTheme.colorScheme.primary, size = 30.dp)
-                    Spacer(modifier = Modifier.width(7.dp))
-                    Column {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                .statusBarsPadding()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UiToolbarIconButton(
+                        icon = MiOwnedIcons.ArrowBack,
+                        contentDescription = tr("chat_back", "Back"),
+                        onClick = onBack
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TopBarActionIcon(
+                            icon = MiOwnedIcons.Search,
+                            contentDescription = tr("chat_search", "Search"),
+                            tone = UiIconTone.Neutral,
+                            onClick = onSearch
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            StatusDot(color = MaterialTheme.colorScheme.primary, size = 5.dp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        TopBarActionIcon(
+                            icon = MiOwnedIcons.Call,
+                            contentDescription = tr("chat_call", "Call"),
+                            tone = UiIconTone.Accent,
+                            onClick = onCall
+                        )
+                        TopBarActionIcon(
+                            icon = MiOwnedIcons.MoreVertical,
+                            contentDescription = tr("chat_more", "More"),
+                            tone = UiIconTone.Neutral,
+                            onClick = if (BuildConfig.DEBUG) onTools else onSettings
+                        )
+                        Box(modifier = Modifier.clickable(onClick = onSelfClick)) {
+                            IdentityAvatar(
+                                label = selfInitials.ifBlank { initials },
+                                seed = "chat-self-$selfInitials",
+                                kind = IdentityAvatarKind.Person,
+                                size = 34.dp
                             )
                         }
                     }
                 }
-            },
-            navigationIcon = {
-                UiToolbarIconButton(
-                    icon = MiOwnedIcons.ArrowBack,
-                    contentDescription = tr("chat_back", "Back"),
-                    onClick = onBack
-                )
-            },
-            actions = {
-                TopBarActionIcon(
-                    icon = MiOwnedIcons.Search,
-                    contentDescription = tr("conversations_search", "Search chats"),
-                    tone = UiIconTone.Neutral,
-                    onClick = onSearch
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                TopBarActionIcon(
-                    icon = MiOwnedIcons.Call,
-                    contentDescription = tr("chat_call", "Call"),
-                    tone = UiIconTone.Accent,
-                    onClick = onCall
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                TopBarActionIcon(
-                    icon = MiOwnedIcons.MoreVertical,
-                    contentDescription = tr("chat_more", "More"),
-                    tone = UiIconTone.Neutral,
-                    onClick = if (BuildConfig.DEBUG) onTools else onSettings
-                )
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                titleContentColor = MaterialTheme.colorScheme.onSurface
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 76.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = (-0.2).sp
+                            ),
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = tr("chat_header_subtitle", "Encrypted conversation"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(
+                        if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+                            Color.Black.copy(alpha = 0.05f)
+                        } else {
+                            Color.White.copy(alpha = 0.10f)
+                        }
+                    )
             )
-        )
+        }
     }
 }
 
@@ -1411,7 +1543,7 @@ private fun MessageList(
         modifier = Modifier.fillMaxSize(),
         state = listState,
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
             when (item) {
@@ -1502,10 +1634,12 @@ private fun MessageRow(
             ) {
                 if (!message.isMine) {
                     if (!isGroupedBelow) {
-                        AvatarBadge(
-                            initials = message.sender.take(2).uppercase(),
-                            tint = MaterialTheme.colorScheme.primary,
-                            size = 22.dp
+                        IdentityAvatar(
+                            label = message.sender,
+                            seed = message.sender,
+                            kind = IdentityAvatarKind.Person,
+                            size = 24.dp,
+                            presenceState = PresenceState.Online
                         )
                     } else {
                         Spacer(modifier = Modifier.width(22.dp))
@@ -1624,6 +1758,7 @@ private fun MessageBubble(
     onAttachmentClick: (Attachment) -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val colors = phaseOneColors()
     val highlightAlpha by animateFloatAsState(
         targetValue = if (isHighlighted) 1f else 0f,
         animationSpec = tween(220),
@@ -1631,50 +1766,69 @@ private fun MessageBubble(
     )
     val bubbleShape = if (message.isMine) {
         RoundedCornerShape(
-            topStart = 16.dp,
-            topEnd = if (isGroupedAbove) 6.dp else 16.dp,
-            bottomEnd = if (isGroupedBelow) 6.dp else 16.dp,
-            bottomStart = 16.dp
+            topStart = 18.dp,
+            topEnd = if (isGroupedAbove) 8.dp else 18.dp,
+            bottomEnd = if (isGroupedBelow) 8.dp else 18.dp,
+            bottomStart = 18.dp
         )
     } else {
         RoundedCornerShape(
-            topStart = if (isGroupedAbove) 6.dp else 16.dp,
-            topEnd = 16.dp,
-            bottomEnd = 16.dp,
-            bottomStart = if (isGroupedBelow) 6.dp else 16.dp
+            topStart = if (isGroupedAbove) 8.dp else 18.dp,
+            topEnd = 18.dp,
+            bottomEnd = 18.dp,
+            bottomStart = if (isGroupedBelow) 8.dp else 18.dp
         )
     }
 
     val baseBubbleColor = if (message.isMine) {
-        MaterialTheme.colorScheme.primary
+        colors.primary
     } else {
-        MaterialTheme.colorScheme.surface
+        colors.surface
     }
     val bubbleColor = if (message.isRevoked) {
-        MaterialTheme.colorScheme.surfaceVariant
+        colors.surfaceVariant
     } else {
         baseBubbleColor
     }
     val highlightColor = if (message.isMine) {
-        MaterialTheme.colorScheme.primary
+        colors.primary
     } else {
-        MaterialTheme.colorScheme.secondary
+        colors.accent
+    }
+    val bubbleAccent = if (message.isMine) {
+        Color.White.copy(alpha = 0.16f)
+    } else {
+        colors.primary.copy(alpha = 0.08f)
     }
 
-    Box(modifier = Modifier.widthIn(max = 260.dp)) {
+    Box(modifier = Modifier.widthIn(max = 272.dp)) {
         Column(
             modifier = Modifier
                 .clip(bubbleShape)
                 .border(
                     width = 1.dp,
                     color = if (message.isMine) {
-                        highlightColor.copy(alpha = 0.12f * highlightAlpha)
+                        Color.White.copy(alpha = 0.12f + (0.08f * highlightAlpha))
                     } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.08f + 0.04f * highlightAlpha)
+                        colors.cardBorder.copy(alpha = 0.84f + 0.10f * highlightAlpha)
                     },
                     shape = bubbleShape
                 )
-                .background(bubbleColor)
+                .then(
+                    if (message.isMine) {
+                        Modifier.background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    baseBubbleColor,
+                                    colors.accent.copy(alpha = 0.94f)
+                                )
+                            ),
+                            shape = bubbleShape
+                        )
+                    } else {
+                        Modifier.background(bubbleColor, bubbleShape)
+                    }
+                )
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {
@@ -1682,7 +1836,7 @@ private fun MessageBubble(
                         onLongPress()
                     }
                 )
-                .padding(horizontal = 11.dp, vertical = 9.dp)
+                .padding(horizontal = 13.dp, vertical = 12.dp)
         ) {
             if (message.isRevoked) {
                 RevokedMessageRow(
@@ -1699,17 +1853,27 @@ private fun MessageBubble(
                     ReplyPreviewRow(message.replyTo, message.isMine)
                     Spacer(modifier = Modifier.height(5.dp))
                 }
-                Text(
-                    text = message.body,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
-                )
+                if (message.body.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(bubbleAccent)
+                    ) {
+                        Text(
+                            text = message.body,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (message.isMine) Color.White else colors.onSurface
+                        )
+                    }
+                }
                 if (message.linkPreview != null) {
-                    Spacer(modifier = Modifier.height(7.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     LinkPreviewCard(message.linkPreview, message.isMine)
                 }
                 if (message.attachment != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     AttachmentBlock(message.attachment, message.isMine, onClick = onAttachmentClick)
                 }
             }
@@ -1728,13 +1892,14 @@ private fun MessageBubble(
 
 @Composable
 private fun ReplyPreviewRow(reply: ReplyPreview, isMine: Boolean) {
-    val accent = if (isMine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
+    val colors = phaseOneColors()
+    val accent = if (isMine) Color.White.copy(alpha = 0.85f) else colors.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(accent.copy(alpha = if (isMine) 0.18f else 0.12f))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .clip(RoundedCornerShape(14.dp))
+            .background(accent.copy(alpha = if (isMine) 0.18f else 0.10f))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -1753,7 +1918,7 @@ private fun ReplyPreviewRow(reply: ReplyPreview, isMine: Boolean) {
             Text(
                 text = reply.snippet,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
+                color = if (isMine) Color.White else colors.onSurface
             )
         }
     }
@@ -1761,33 +1926,35 @@ private fun ReplyPreviewRow(reply: ReplyPreview, isMine: Boolean) {
 
 @Composable
 private fun ReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
+    val colors = phaseOneColors()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(32.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
-            .padding(horizontal = 10.dp),
+            .height(40.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.glass)
+            .border(1.dp, colors.glassBorder, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
                 .width(3.dp)
                 .height(18.dp)
-                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                .background(colors.primary, RoundedCornerShape(2.dp))
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = tr("chat_replying_to", "Replying to %s").format(reply.sender),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary
+            color = colors.primary
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = reply.snippet,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colors.onSurfaceMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -1795,7 +1962,7 @@ private fun ReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
             Icon(
                 imageVector = MiOwnedIcons.Close,
                 contentDescription = tr("chat_dismiss", "Dismiss"),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = colors.onSurfaceMuted
             )
         }
     }
@@ -1803,7 +1970,8 @@ private fun ReplyComposerRow(reply: ReplyPreview, onDismiss: () -> Unit) {
 
 @Composable
 private fun ForwardedRow(label: String, isMine: Boolean) {
-    val accent = if (isMine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
+    val colors = phaseOneColors()
+    val accent = if (isMine) Color.White.copy(alpha = 0.85f) else colors.primary
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1832,31 +2000,38 @@ private fun ForwardedRow(label: String, isMine: Boolean) {
 
 @Composable
 private fun LinkPreviewCard(preview: LinkPreview, isMine: Boolean) {
-    val surface = if (isMine) Color.White.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface
-    val titleColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
-    val metaColor = if (isMine) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val colors = phaseOneColors()
+    val surface = if (isMine) Color.White.copy(alpha = 0.15f) else colors.surfaceVariant
+    val titleColor = if (isMine) Color.White else colors.onSurface
+    val metaColor = if (isMine) Color.White.copy(alpha = 0.72f) else colors.onSurfaceMuted
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(surface)
-            .padding(8.dp)
+            .border(1.dp, if (isMine) Color.White.copy(alpha = 0.12f) else colors.cardBorder, RoundedCornerShape(16.dp))
+            .padding(12.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
+                .height(112.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (isMine) Color.White.copy(alpha = 0.10f) else colors.surface),
+                contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = MiOwnedIcons.Link,
                 contentDescription = tr("chat_link_preview", "Link preview"),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (isMine) Color.White.copy(alpha = 0.82f) else colors.onSurfaceMuted
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        MediaHintChip(
+            kind = MediaHintKind.Link,
+            label = preview.domain
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = preview.title,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -1881,13 +2056,14 @@ fun AttachmentBlock(
     isMine: Boolean,
     onClick: ((Attachment) -> Unit)? = null
 ) {
-    val textColor = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface
+    val colors = phaseOneColors()
+    val textColor = if (isMine) Color.White else colors.onSurface
     when (attachment.kind) {
         AttachmentKind.File -> {
             val surfaceColor = if (isMine) {
-                Color.White.copy(alpha = 0.18f)
+                Color.White.copy(alpha = 0.15f)
             } else {
-                MaterialTheme.colorScheme.surface
+                colors.surfaceVariant
             }
             val clickModifier = if (onClick != null) {
                 Modifier.clickable { onClick(attachment) }
@@ -1897,18 +2073,28 @@ fun AttachmentBlock(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(16.dp))
                     .background(surfaceColor)
+                    .border(1.dp, if (isMine) Color.White.copy(alpha = 0.12f) else colors.cardBorder, RoundedCornerShape(16.dp))
                     .then(clickModifier)
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = MiOwnedIcons.File,
-                        contentDescription = tr("chat_attachment_file", "File"),
-                        tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isMine) Color.White.copy(alpha = 0.15f) else colors.surface)
+                            .border(1.dp, if (isMine) Color.White.copy(alpha = 0.10f) else colors.cardBorder, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = MiOwnedIcons.File,
+                            contentDescription = tr("chat_attachment_file", "File"),
+                            tint = if (isMine) Color.White else colors.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = attachment.label,
@@ -1921,6 +2107,11 @@ fun AttachmentBlock(
                             color = textColor.copy(alpha = 0.7f)
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    MediaHintChip(
+                        kind = MediaHintKind.File,
+                        label = tr("chat_attachment_file", "File")
+                    )
                 }
                 if (attachment.state == TransferState.Downloading && attachment.progress != null) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1931,11 +2122,11 @@ fun AttachmentBlock(
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp)),
-                        color = if (isMine) Color.White else MaterialTheme.colorScheme.primary,
+                        color = if (isMine) Color.White else colors.primary,
                         trackColor = if (isMine) {
                             Color.White.copy(alpha = 0.3f)
                         } else {
-                            MaterialTheme.colorScheme.surfaceVariant
+                            colors.surface
                         }
                     )
                 }
@@ -1945,14 +2136,14 @@ fun AttachmentBlock(
                         Icon(
                             imageVector = MiOwnedIcons.Alert,
                             contentDescription = tr("chat_status_failed", "Failed"),
-                            tint = MaterialTheme.colorScheme.error,
+                            tint = colors.danger,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = tr("chat_transfer_failed", "Transfer failed"),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = colors.danger
                         )
                     }
                 }
@@ -1970,6 +2161,11 @@ fun AttachmentBlock(
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                MediaHintChip(
+                    kind = MediaHintKind.Voice,
+                    label = tr("chat_attachment_voice", "Voice")
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Icon(
                     imageVector = MiOwnedIcons.Play,
                     contentDescription = tr("chat_attachment_play", "Play"),
@@ -1999,6 +2195,11 @@ fun AttachmentBlock(
                     )
                     .padding(8.dp)
             ) {
+                MediaHintChip(
+                    kind = MediaHintKind.Photo,
+                    label = tr("chat_attachment_photo", "Photo")
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2037,6 +2238,11 @@ fun AttachmentBlock(
                     )
                     .padding(8.dp)
             ) {
+                UiStatusCountBadge(
+                    label = tr("chat_attachment_location", "Location"),
+                    tone = UiBadgeTone.Neutral
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2102,10 +2308,11 @@ private fun MessageMetaRow(
     isFavorite: Boolean,
     readBy: List<String>
 ) {
+    val colors = phaseOneColors()
     val textColor = if (isMine) {
         Color.White.copy(alpha = 0.8f)
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        colors.onSurfaceMuted
     }
     val statusLabel = when {
         !isMine -> null
@@ -2139,7 +2346,7 @@ private fun MessageMetaRow(
             Text(
                 text = statusLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (status == MessageStatus.Failed) MaterialTheme.colorScheme.error else textColor
+                color = if (status == MessageStatus.Failed) colors.danger else textColor
             )
             Spacer(modifier = Modifier.width(6.dp))
         }
@@ -2339,12 +2546,14 @@ private fun UnreadSeparator(count: Int) {
 
 @Composable
 private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
+    val colors = phaseOneColors()
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.cardBorder),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         shape = RoundedCornerShape(16.dp)
@@ -2359,7 +2568,7 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(36.dp)
                     .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        colors.primary.copy(alpha = 0.15f),
                         RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -2367,7 +2576,7 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
                 Icon(
                     imageVector = MiOwnedIcons.Pin,
                     contentDescription = tr("chat_pinned", "Pinned"),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = colors.primary
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -2375,12 +2584,12 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
                 Text(
                     text = message.title,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = colors.onSurface
                 )
                 Text(
                     text = message.snippet,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colors.onSurfaceMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2388,7 +2597,7 @@ private fun PinnedMessageRow(message: PinnedMessage, onClick: () -> Unit) {
             Icon(
                 imageVector = MiOwnedIcons.ChevronRight,
                 contentDescription = tr("chat_open", "Open"),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = colors.onSurfaceMuted
             )
         }
     }
@@ -2523,21 +2732,14 @@ private fun ChatStatusState(
             .padding(horizontal = 20.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
+        EmptyStateIllustration(
+            icon = icon,
+            contentDescription = title,
+            modifier = Modifier.size(ChatUiTokens.IllustrationFrame),
+            tone = UiIconTone.Primary,
+            chipLabel = tr("chat_status_chip", "Secure")
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
@@ -2979,30 +3181,37 @@ private fun VoiceWaveform(modifier: Modifier = Modifier, tint: Color) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ComposerBar(
+internal fun ComposerBar(
     modifier: Modifier = Modifier,
     message: String,
     onMessageChange: (String) -> Unit,
     onSend: () -> Unit = {},
-    showQuickActions: Boolean,
+    surfaceState: ComposerSurfaceState = ComposerSurfaceState.Collapsed,
+    focusRequester: FocusRequester,
+    onTextFieldFocusChange: (Boolean) -> Unit = {},
     onToggleQuickActions: () -> Unit,
-    onEmoji: () -> Unit = {}
+    onEmoji: () -> Unit = {},
+    onVoice: () -> Unit = {}
 ) {
+    val colors = phaseOneColors()
+    val showQuickActions = surfaceState == ComposerSurfaceState.QuickActions
+    val showVoice = surfaceState == ComposerSurfaceState.Voice
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding()
-            .padding(horizontal = 6.dp, vertical = 4.dp)
-            .height(52.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .height(56.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = colors.glass,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.glassBorder),
         tonalElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 6.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilledTonalIconButton(
@@ -3010,14 +3219,14 @@ fun ComposerBar(
                 modifier = Modifier.size(36.dp),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = if (showQuickActions) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        colors.primary.copy(alpha = 0.12f)
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant
+                        colors.surface
                     },
                     contentColor = if (showQuickActions) {
-                        MaterialTheme.colorScheme.primary
+                        colors.primary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        colors.onSurfaceMuted
                     }
                 )
             ) {
@@ -3032,6 +3241,8 @@ fun ComposerBar(
                 onValueChange = onMessageChange,
                 placeholder = tr("chat_placeholder", "Write a message..."),
                 modifier = Modifier.weight(1f),
+                focusRequester = focusRequester,
+                onFocusChange = onTextFieldFocusChange,
                 onEmoji = onEmoji,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
@@ -3049,10 +3260,10 @@ fun ComposerBar(
             if (message.isNotBlank()) {
                 FilledIconButton(
                     onClick = onSend,
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier.size(38.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        containerColor = colors.primary,
+                        contentColor = Color.White
                     )
                 ) {
                     Icon(
@@ -3062,11 +3273,19 @@ fun ComposerBar(
                 }
             } else {
                 FilledTonalIconButton(
-                    onClick = {},
-                    modifier = Modifier.size(36.dp),
+                    onClick = onVoice,
+                    modifier = Modifier.size(38.dp),
                     colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (showVoice) {
+                            colors.primary.copy(alpha = 0.12f)
+                        } else {
+                            colors.surface
+                        },
+                        contentColor = if (showVoice) {
+                            colors.primary
+                        } else {
+                            colors.onSurfaceMuted
+                        }
                     )
                 ) {
                     Icon(
@@ -3144,14 +3363,20 @@ private fun CompactMessageField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester,
+    onFocusChange: (Boolean) -> Unit,
     onEmoji: () -> Unit,
     keyboardOptions: KeyboardOptions,
     keyboardActions: KeyboardActions
 ) {
+    val colors = phaseOneColors()
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.height(40.dp),
+        modifier = modifier
+            .height(40.dp)
+            .focusRequester(focusRequester)
+            .onFocusChanged { onFocusChange(it.isFocused) },
         placeholder = {
             Text(
                 text = placeholder,
@@ -3163,23 +3388,97 @@ private fun CompactMessageField(
         minLines = 1,
         maxLines = 1,
         trailingIcon = {
-            IconButton(onClick = onEmoji, modifier = Modifier.size(28.dp)) {
+            IconButton(onClick = onEmoji, modifier = Modifier.size(26.dp)) {
                 Icon(
                     imageVector = MiOwnedIcons.Emoji,
                     contentDescription = tr("chat_emoji", "Emoji")
                 )
             }
         },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(20.dp),
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+            focusedContainerColor = colors.surface.copy(alpha = 0.92f),
+            unfocusedContainerColor = colors.surface.copy(alpha = 0.88f),
+            focusedBorderColor = colors.primary.copy(alpha = 0.20f),
+            unfocusedBorderColor = colors.cardBorder
         )
     )
+}
+
+@Composable
+private fun ComposerSurfacePanel(
+    surfaceState: ComposerSurfaceState,
+    onDismiss: () -> Unit,
+    onAppendEmoji: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = phaseOneColors()
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = colors.glass,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.glassBorder),
+        tonalElevation = 1.dp
+    ) {
+        when (surfaceState) {
+            ComposerSurfaceState.Emoji -> Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = tr("chat_emoji_panel_title", "Emoji"),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("👍", "🔥", "✅", "🎯", "👀", "🙌", "🚀", "🛡️").forEach { emoji ->
+                        AssistChip(
+                            onClick = { onAppendEmoji(emoji) },
+                            label = { Text(emoji, fontSize = 18.sp) }
+                        )
+                    }
+                }
+            }
+
+            ComposerSurfaceState.Voice -> Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = MiOwnedIcons.Mic,
+                    contentDescription = tr("chat_voice", "Voice input"),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = tr("chat_voice_hold_title", "Voice note ready"),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = tr("chat_voice_hold_hint", "Recording is not available in this preview. Use text or attachments."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(tr("chat_voice_close", "Close"))
+                }
+            }
+
+            else -> Unit
+        }
+    }
 }
 
 @Composable
@@ -3189,10 +3488,11 @@ private fun QuickActionButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
+    val colors = phaseOneColors()
     AssistChip(
         onClick = onClick,
-        modifier = modifier.height(28.dp),
-        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.height(30.dp),
+        shape = RoundedCornerShape(14.dp),
         leadingIcon = {
             Icon(
                 imageVector = icon,
@@ -3207,22 +3507,26 @@ private fun QuickActionButton(
             )
         },
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
-            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+            containerColor = colors.glass,
+            labelColor = colors.onSurface,
+            leadingIconContentColor = colors.primary
         )
     )
 }
 
 @Composable
 private fun ChatBackground() {
-    val base = MaterialTheme.colorScheme.background
+    val colors = phaseOneColors()
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(base, MaterialTheme.colorScheme.surface.copy(alpha = 0.99f))
+                    colors = listOf(
+                        colors.background,
+                        colors.surfaceVariant.copy(alpha = 0.92f),
+                        colors.background
+                    )
                 )
             )
     )

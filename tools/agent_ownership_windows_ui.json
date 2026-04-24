@@ -7,6 +7,8 @@
       "ui_contract/components.json",
       "ui_contract/copy_keys.json",
       "client/ui/qml/I18n.qml",
+      "client/ui/qml/i18n/en-US.json",
+      "client/ui/qml/i18n/zh-CN.json",
       "client/ui/qml/Style.qml",
       "client/ui/qml/Main.qml",
       "client/ui/qml/components/UiText.qml",
@@ -59,7 +61,9 @@
       "tools/windows_qml_literal_copy_audit.py",
       "tools/windows_smoke_matrix_check.py",
       "tools/windows_smoke_golden_diff.py",
-      "tools/agent_ownership_windows_ui.json"
+      "tools/agent_ownership_windows_ui.json",
+      "ui_contract/golden/windows/post-login-zh-CN-light-100.png",
+      "ui_contract/golden/windows/post-login-light-zh-CN-light-100.png"
     ]
   },
   "forbidden_paths": [

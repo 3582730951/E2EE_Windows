@@ -465,6 +465,25 @@ object MiOwnedIcons {
         }
     }
 
+    val Refresh: ImageVector by lazy {
+        miStrokeIcon("MiRefresh") {
+            moveTo(20f, 5f)
+            lineTo(20f, 9f)
+            lineTo(16f, 9f)
+            moveTo(20f, 9f)
+            quadTo(18.7f, 6.5f, 16.1f, 5.3f)
+            quadTo(12.5f, 3.7f, 8.9f, 5.3f)
+            quadTo(5.3f, 6.9f, 4f, 10.5f)
+            moveTo(4f, 19f)
+            lineTo(4f, 15f)
+            lineTo(8f, 15f)
+            moveTo(4f, 15f)
+            quadTo(5.3f, 17.5f, 7.9f, 18.7f)
+            quadTo(11.5f, 20.3f, 15.1f, 18.7f)
+            quadTo(18.7f, 17.1f, 20f, 13.5f)
+        }
+    }
+
     val File: ImageVector by lazy {
         miStrokeIcon("MiFile") {
             moveTo(7f, 3f)

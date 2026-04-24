@@ -9,18 +9,18 @@ Button {
     property color hoverBg: Ui.Style.hoverBg
     property color pressedBg: Ui.Style.pressedBg
 
-    implicitHeight: 34
+    implicitHeight: 38
 
     background: Rectangle {
-        radius: Ui.Style.radiusMedium
+        radius: 14
         border.color: root.borderColor
         border.width: 1
-        color: root.down ? root.pressedBg : (root.hovered ? root.hoverBg : "transparent")
+        color: root.down ? root.pressedBg : (root.hovered ? root.hoverBg : Ui.Style.topBarPillBg)
     }
     contentItem: Text {
         text: root.text
         color: root.textColor
-        font.pixelSize: 12
+        font.pixelSize: 13
         font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

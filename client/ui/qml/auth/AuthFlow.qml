@@ -20,6 +20,19 @@ Item {
     property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
+    property bool advancedExpanded: false
+    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
+    readonly property bool compactStage: width <= 720 || height <= 760
+    readonly property string heroEyebrow: waitingServerTrust
+                                          ? (Ui.I18n.usesCjkLocale ? "需要确认服务器信任" : "Server trust review")
+                                          : (Ui.I18n.usesCjkLocale ? "安全登录" : "Secure sign in")
+    readonly property string heroSubtitle: waitingServerTrust
+                                          ? (Ui.I18n.usesCjkLocale
+                                             ? "继续之前，请确认当前网关指纹。"
+                                             : "Confirm the current gateway fingerprint before continuing.")
+                                          : (Ui.I18n.usesCjkLocale
+                                             ? "使用账号继续，设备与传输状态会在本地校验。"
+                                             : "Continue with your account and verify device and transport state locally.")
 
     signal authSucceeded()
 
@@ -105,27 +118,15 @@ Item {
         qrTimer.restart()
     }
 
-    function statusTone() {
-        return errorText.length > 0 ? "danger" : "neutral"
-    }
-
     function statusTitle() {
         if (errorText.length > 0) {
             return errorText
         }
-        return Ui.AuthDisplayStore.gatewayState.length > 0
-                ? Ui.AuthDisplayStore.gatewayState
-                : Ui.I18n.t("auth.hero.badge")
+        return ""
     }
 
-    function statusDetail() {
-        if (waitingServerTrust) {
-            return Ui.I18n.t("dialog.securityCenter.trustReviewHint")
-        }
-        if (Ui.AuthDisplayStore.gatewayDetail.length > 0) {
-            return Ui.AuthDisplayStore.gatewayDetail
-        }
-        return Ui.I18n.t("dialog.securityCenter.serverHint")
+    function statusLine() {
+        return statusTitle()
     }
 
     Rectangle {
@@ -144,12 +145,25 @@ Item {
         }
 
         Rectangle {
-            width: parent.width * 0.54
-            height: parent.height * 0.46
-            anchors.centerIn: parent
-            radius: Ui.Style.radiusXL * 2
-            color: Ui.Style.authGlowPrimary
-            opacity: 0.10
+            width: 280
+            height: 280
+            radius: 140
+            anchors.top: parent.top
+            anchors.topMargin: -72
+            anchors.left: parent.left
+            anchors.leftMargin: -64
+            color: Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.16 : 0.12)
+        }
+
+        Rectangle {
+            width: 220
+            height: 220
+            radius: 110
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: -84
+            anchors.right: parent.right
+            anchors.rightMargin: -48
+            color: Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.10 : 0.08)
         }
 
         Item {
@@ -163,109 +177,243 @@ Item {
                 width: Math.min(parent.width, Ui.Style.authPanelWidth)
                 height: Math.min(parent.height, Ui.Style.authStageHeight)
                 anchors.centerIn: parent
-                radius: Ui.Style.radiusXL
+                radius: Ui.Style.radiusContinuous
                 color: Ui.Style.authCardBg
                 border.width: 1
                 border.color: Ui.Style.authCardBorder
                 antialiasing: true
                 clip: true
 
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 108
+                    radius: Ui.Style.radiusContinuous
+                    color: Ui.Style.alpha(Ui.Style.accent, Ui.Style.isDark ? 0.10 : 0.08)
+                }
+
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: Ui.Style.paddingL
-                    spacing: 6
+                    anchors.margins: root.compactStage ? Ui.Style.paddingM : Ui.Style.paddingL
+                    spacing: root.compactStage ? 8 : 10
 
-                    Label {
+                    Rectangle {
                         Layout.fillWidth: true
-                        text: Ui.I18n.t("app.title")
-                        color: Ui.Style.textMuted
-                        font.pixelSize: Ui.Style.authMetaTextSize
-                        font.weight: Font.Medium
-                        wrapMode: Text.NoWrap
-                        elide: Text.ElideRight
+                        radius: Ui.Style.radiusContinuous
+                        color: Ui.Style.authSurfaceStrong
+                        border.width: 1
+                        border.color: Ui.Style.authContextBorder
+                        implicitHeight: heroColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                        ColumnLayout {
+                            id: heroColumn
+                            anchors.fill: parent
+                            anchors.margins: Ui.Style.paddingM
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 8
+
+                                Rectangle {
+                                    width: 34
+                                    height: 34
+                                    radius: 17
+                                    color: Ui.Style.badgeSurfaceStrong
+                                    border.width: 1
+                                    border.color: Ui.Style.badgeBorder
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 16
+                                        height: 16
+                                        source: "qrc:/mi/e2ee/ui/icons/chat.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Rectangle {
+                                    radius: 10
+                                    color: Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: Ui.Style.sidebarMetaChipBorder
+                                    implicitWidth: heroEyebrowLabel.implicitWidth + 14
+                                    implicitHeight: 20
+
+                                    Text {
+                                        id: heroEyebrowLabel
+                                        anchors.centerIn: parent
+                                        text: root.heroEyebrow
+                                        color: Ui.Style.textSecondary
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
+                                    }
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.I18n.t("auth.login")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: root.compactStage ? 20 : 22
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.heroSubtitle
+                                color: Ui.Style.textSecondary
+                                font.pixelSize: 12
+                                font.weight: Font.Normal
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+                        }
                     }
 
-                    Label {
+                    RowLayout {
+                        id: authModeTabs
                         Layout.fillWidth: true
-                        text: Ui.I18n.t("auth.title")
-                        color: Ui.Style.textPrimary
-                        font.pixelSize: 22
-                        font.weight: Font.DemiBold
-                        wrapMode: Text.WordWrap
-                    }
+                        Layout.preferredHeight: 0
+                        visible: false
+                        spacing: Ui.Style.paddingS
 
-                    Label {
-                        Layout.fillWidth: true
-                        text: Ui.I18n.t("auth.subtitle")
-                        color: Ui.Style.textSecondary
-                        font.pixelSize: Ui.Style.authSubtitleTextSize
-                        wrapMode: Text.WordWrap
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            radius: 15
+                            color: Ui.Style.dialogSelectedBg
+                            border.width: 1
+                            border.color: Ui.Style.tgActiveRowBorder
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 14
+                                height: 14
+                                source: "qrc:/mi/e2ee/ui/icons/login.svg"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                            }
+
+                            MouseArea {
+                                id: accountMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (qrPopup.visible) {
+                                        qrPopup.close()
+                                    }
+                                    accountField.forceActiveFocus()
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            radius: 15
+                            color: Ui.Style.topBarPillBg
+                            border.width: 1
+                            border.color: Ui.Style.topBarPillBorder
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 14
+                                height: 14
+                                source: "qrc:/mi/e2ee/ui/icons/qrcode.svg"
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                antialiasing: true
+                            }
+
+                            MouseArea {
+                                id: qrModeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: qrPopup.open()
+                            }
+                        }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 30
-                        radius: 15
+                        visible: statusLine().length > 0
+                        radius: 14
+                        color: Ui.Style.authSurfaceStrong
                         border.width: 1
-                        border.color: statusTone() === "danger"
-                                      ? Ui.Style.authDangerBorder
+                        border.color: errorText.length > 0
+                                      ? Ui.Style.alpha(Ui.Style.danger, 0.28)
                                       : Ui.Style.authContextBorder
-                        color: statusTone() === "danger"
-                               ? Ui.Style.authDangerBg
-                               : Ui.Style.authContextBg
+                        implicitHeight: statusRow.implicitHeight + Ui.Style.paddingS * 2
 
                         RowLayout {
+                            id: statusRow
                             anchors.fill: parent
-                            anchors.leftMargin: Ui.Style.paddingS
-                            anchors.rightMargin: Ui.Style.paddingS
-                            spacing: 6
+                            anchors.margins: Ui.Style.paddingS
+                            spacing: Ui.Style.paddingS
 
                             Rectangle {
-                                width: 6
-                                height: 6
-                                radius: 3
-                                color: statusTone() === "danger"
-                                       ? Ui.Style.danger
-                                       : Ui.Style.accent
-                                Layout.alignment: Qt.AlignVCenter
+                                width: 20
+                                height: 20
+                                radius: 10
+                                color: errorText.length > 0
+                                       ? Ui.Style.alpha(Ui.Style.danger, 0.12)
+                                       : Ui.Style.alpha(Ui.Style.accent, 0.10)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: errorText.length > 0 ? "!" : "\u2022"
+                                    color: errorText.length > 0 ? Ui.Style.danger : Ui.Style.accent
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                }
                             }
 
                             Text {
-                                text: statusTitle()
-                                Layout.preferredWidth: Math.min(108, implicitWidth)
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                color: Ui.Style.textPrimary
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                text: statusDetail()
                                 Layout.fillWidth: true
-                                font.pixelSize: 11
-                                color: Ui.Style.textSecondary
+                                text: statusTitle()
+                                color: errorText.length > 0
+                                       ? Ui.Style.danger
+                                       : Ui.Style.textSecondary
+                                font.pixelSize: 12
+                                font.weight: Font.Medium
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 2
                                 elide: Text.ElideRight
                             }
                         }
                     }
 
-                    Item {
+                    Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: loginPageLayout.implicitHeight
+                        radius: Ui.Style.radiusContinuous
+                        color: Ui.Style.authSurfaceStrong
+                        border.width: 1
+                        border.color: Ui.Style.authContextBorder
+                        implicitHeight: loginPageLayout.implicitHeight + Ui.Style.paddingM * 2
 
                         ColumnLayout {
                             id: loginPageLayout
-                            width: parent.width
+                            anchors.fill: parent
+                            anchors.margins: Ui.Style.paddingM
                             spacing: Ui.Style.paddingS
-
-                            Label {
-                                text: Ui.I18n.t("auth.placeholder.account")
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                font.weight: Font.Medium
-                                color: Ui.Style.authLabelText
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
 
                             Components.SecureTextField {
                                 id: accountField
@@ -285,15 +433,6 @@ Item {
                                                   : Ui.Style.authFieldBorder
                                 }
                                 onTextChanged: accountInput = text
-                            }
-
-                            Label {
-                                text: Ui.I18n.t("auth.placeholder.password")
-                                font.pixelSize: Ui.Style.authSubtitleTextSize
-                                font.weight: Font.Medium
-                                color: Ui.Style.authLabelText
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
                             }
 
                             Components.SecureTextField {
@@ -320,34 +459,20 @@ Item {
                             Components.RootAuthCodeCard {
                                 id: rootCodeFieldCard
                                 Layout.fillWidth: true
+                                visible: advancedExpanded || rootCodeInput.length > 0
                                 labelText: Ui.I18n.t("auth.placeholder.rootCode")
                                 placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+                                descriptionText: ""
                                 onTextChanged: rootCodeInput = text
                             }
 
-                            Button {
+                            Components.PrimaryButton {
                                 id: loginButton
-                                text: Ui.I18n.t("auth.login")
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
+                                text: Ui.I18n.t("auth.login")
                                 Accessible.name: Ui.I18n.t("auth.login")
-                                background: Rectangle {
-                                    radius: Ui.Style.radiusMedium
-                                    gradient: Gradient {
-                                        GradientStop { position: 0.0; color: loginButton.down ? Ui.Style.accentPressed : Ui.Style.accentHover }
-                                        GradientStop { position: 1.0; color: loginButton.down ? Ui.Style.accent : Ui.Style.accent }
-                                    }
-                                    border.width: 1
-                                    border.color: Ui.Style.authBadgeBorder
-                                }
-                                contentItem: Text {
-                                    text: Ui.I18n.t("auth.login")
-                                    color: Ui.Style.textPrimary
-                                    font.pixelSize: 16
-                                    font.weight: Font.DemiBold
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
+                                enabled: accountInput.length > 0 && passwordInput.length > 0
                                 onClicked: {
                                     if (accountInput.length === 0 || passwordInput.length === 0) {
                                         errorText = Ui.I18n.t("auth.error.login")
@@ -362,48 +487,48 @@ Item {
                             }
 
                             RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
+                                Layout.fillWidth: true
                                 spacing: Ui.Style.paddingS
 
-                                Button {
-                                    text: Ui.I18n.t("auth.registerAccount")
-                                    flat: true
-                                    Accessible.name: Ui.I18n.t("auth.registerAccount")
-                                    onClicked: registerPopup.open()
-                                    contentItem: Text {
-                                        text: parent.text
-                                        color: Ui.Style.link
-                                        font.pixelSize: 12
-                                        font.weight: Font.Medium
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: Rectangle { color: "transparent" }
-                                }
-
-                                Rectangle {
-                                    width: 1
-                                    height: 12
-                                    radius: 1
-                                    color: Ui.Style.borderSubtle
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                Button {
+                                Components.GhostButton {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 34
                                     text: Ui.I18n.t("auth.qrLogin")
-                                    flat: true
                                     Accessible.name: Ui.I18n.t("auth.qrLogin")
                                     onClicked: qrPopup.open()
-                                    contentItem: Text {
-                                        text: parent.text
-                                        color: Ui.Style.link
-                                        font.pixelSize: 12
-                                        font.weight: Font.Medium
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: Rectangle { color: "transparent" }
                                 }
+
+                                Components.GhostButton {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 34
+                                    text: Ui.I18n.t("auth.register")
+                                    Accessible.name: Ui.I18n.t("auth.register")
+                                    onClicked: registerPopup.open()
+                                }
+                            }
+
+                            Button {
+                                id: advancedAccessButton
+                                Layout.alignment: Qt.AlignHCenter
+                                text: advancedExpanded
+                                      ? Ui.I18n.t("auth.advanced.hide")
+                                      : Ui.I18n.t("auth.advanced")
+                                Accessible.name: text
+                                background: Rectangle {
+                                    radius: 10
+                                    color: Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: Ui.Style.sidebarMetaChipBorder
+                                }
+                                contentItem: Text {
+                                    text: advancedAccessButton.text
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                onClicked: advancedExpanded = !advancedExpanded
                             }
                         }
                     }
@@ -424,7 +549,7 @@ Item {
         y: Math.round((root.height - implicitHeight) / 2)
 
         background: Rectangle {
-            radius: Ui.Style.radiusLarge
+            radius: Ui.Style.radiusContinuous
             color: Ui.Style.authCardBg
             border.width: 1
             border.color: Ui.Style.authCardBorder
@@ -432,6 +557,19 @@ Item {
 
         contentItem: ColumnLayout {
             spacing: Ui.Style.paddingS
+
+            Text {
+                Layout.fillWidth: true
+                text: Ui.I18n.usesCjkLocale ? "创建新账号" : "Create an account"
+                color: Ui.Style.textSecondary
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                maximumLineCount: 1
+                elide: Text.ElideRight
+                renderType: Text.NativeRendering
+                antialiasing: true
+            }
 
             Label {
                 Layout.fillWidth: true
@@ -554,7 +692,7 @@ Item {
         onClosed: stopQrLogin()
 
         background: Rectangle {
-            radius: Ui.Style.radiusLarge
+            radius: Ui.Style.radiusContinuous
             color: Ui.Style.authCardBg
             border.width: 1
             border.color: Ui.Style.authCardBorder
@@ -562,6 +700,39 @@ Item {
 
         contentItem: ColumnLayout {
             spacing: Ui.Style.paddingS
+
+            Text {
+                Layout.fillWidth: true
+                text: Ui.I18n.usesCjkLocale ? "从已登录设备扫描" : "Scan from a signed-in device"
+                color: Ui.Style.textSecondary
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                maximumLineCount: 1
+                elide: Text.ElideRight
+                renderType: Text.NativeRendering
+                antialiasing: true
+            }
+
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                width: 34
+                height: 34
+                radius: 17
+                color: Ui.Style.badgeSurfaceStrong
+                border.width: 1
+                border.color: Ui.Style.badgeBorder
+
+                Image {
+                    anchors.centerIn: parent
+                    width: 16
+                    height: 16
+                    source: "qrc:/mi/e2ee/ui/icons/qrcode.svg"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    antialiasing: true
+                }
+            }
 
             Label {
                 Layout.fillWidth: true

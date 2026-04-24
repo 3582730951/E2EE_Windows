@@ -2062,6 +2062,31 @@ std::uint32_t mi_client_load_chat_history(mi_client_handle* handle,
   }
 }
 
+std::uint32_t mi_client_export_recent_history_snapshot(
+    mi_client_handle* handle,
+    std::uint32_t max_conversations,
+    std::uint32_t max_messages_per_conversation,
+    mi_history_entry_t* out_entries,
+    std::uint32_t max_entries) {
+  if (!handle || !handle->core || !out_entries || max_entries == 0) {
+    return 0;
+  }
+  try {
+    const std::size_t conv_cap =
+        max_conversations == 0 ? 20u : static_cast<std::size_t>(max_conversations);
+    const std::size_t msg_cap = max_messages_per_conversation == 0
+                                    ? 50u
+                                    : static_cast<std::size_t>(
+                                          max_messages_per_conversation);
+    handle->history_cache =
+        handle->core->ExportRecentHistorySnapshot(conv_cap, msg_cap);
+    return FillHistoryView(handle->history_cache, handle->history_view,
+                           out_entries, max_entries);
+  } catch (...) {
+    return 0;
+  }
+}
+
 int mi_client_delete_chat_history(mi_client_handle* handle,
                                   const char* conv_id,
                                   int is_group,

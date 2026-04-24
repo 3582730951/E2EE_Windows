@@ -12,6 +12,7 @@ Text {
     color: roleColor
     font.family: monospace ? Ui.Style.monoFontFamily : Ui.Style.fontFamily
     font.pixelSize: Ui.Style.fontPixelSize(textRole)
+    font.letterSpacing: Ui.Style.fontLetterSpacing(textRole)
     font.weight: Ui.Style.fontWeight(textRole)
     font.hintingPreference: Font.PreferFullHinting
     wrapMode: Ui.Style.overflowRole(textRole).wrapMode

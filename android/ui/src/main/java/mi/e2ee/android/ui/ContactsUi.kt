@@ -269,40 +269,33 @@ fun AddFriendScreen(
 
 @Composable
 private fun FriendRow(friend: FriendUi, onClick: () -> Unit) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.clickable { onClick() }
-    ) {
+    SurfaceSectionCard(modifier = Modifier.clickable { onClick() }) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 2.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AvatarBadge(initials = friendInitials(friend), tint = MaterialTheme.colorScheme.primary)
+            AvatarBadge(
+                initials = friendInitials(friend),
+                tint = MaterialTheme.colorScheme.primary,
+                size = 40.dp
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = friendDisplayName(friend), style = MaterialTheme.typography.bodyLarge)
-                if (friend.remark.isNotBlank()) {
-                    Text(
-                        text = friend.username,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            FilledTonalButton(
-                onClick = onClick,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                    contentColor = MaterialTheme.colorScheme.primary
+                Text(
+                    text = if (friend.remark.isNotBlank()) friend.username else friend.status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
-            ) {
-                Icon(MiOwnedIcons.ChevronRight, contentDescription = tr("contacts_open", "Open"))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(tr("contacts_open", "Open"))
             }
+            Icon(
+                imageVector = MiOwnedIcons.ChevronRight,
+                contentDescription = tr("contacts_open", "Open"),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

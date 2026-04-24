@@ -18,6 +18,15 @@ QtObject {
     readonly property double scaleOverride: typeof uiSmokeScale !== "undefined"
                                             ? Number(uiSmokeScale || 1.0)
                                             : 1.0
+    readonly property int fallbackViewportWidth: loginScene
+                                                 ? Ui.Style.smokeViewportContract.loginWidth
+                                                 : Ui.Style.smokeViewportContract.shellWidth
+    readonly property int runtimeViewportWidth: typeof uiSmokeViewportWidth !== "undefined"
+                                                ? Number(uiSmokeViewportWidth)
+                                                : fallbackViewportWidth
+    readonly property int runtimeViewportHeight: typeof uiSmokeViewportHeight !== "undefined"
+                                                 ? Number(uiSmokeViewportHeight)
+                                                 : Ui.Style.smokeViewportContract.height
     readonly property bool validScene: sceneName === "" ||
                                        sceneName === "auth_login" ||
                                        sceneName === "login" ||
@@ -66,14 +75,11 @@ QtObject {
     }
 
     function viewportWidth(includeAuthFallback) {
-        if (loginScene || includeAuthFallback === true) {
-            return 840
-        }
-        return 900
+        return runtimeViewportWidth
     }
 
     function viewportHeight() {
-        return 620
+        return runtimeViewportHeight
     }
 
     function captureName() {

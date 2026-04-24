@@ -10,11 +10,23 @@ Rectangle {
     property alias text: inputField.text
     property string labelText: ""
     property string placeholderText: ""
+    property string descriptionText: ""
     property int echoMode: TextInput.Password
 
-    radius: Ui.Style.radiusMedium
+    radius: Ui.Style.radiusLarge
     color: Ui.Style.authSurfaceStrong
+    border.width: 1
     border.color: Ui.Style.authContextBorder
+    clip: true
+
+    Rectangle {
+        x: 1
+        y: 1
+        width: root.width - 2
+        height: 1
+        color: Ui.Style.heroCardSheen
+        opacity: Ui.Style.isDark ? 0.34 : 0.72
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -32,6 +44,14 @@ Rectangle {
             elide: Text.ElideRight
             renderType: Text.NativeRendering
             antialiasing: true
+        }
+
+        Components.UiText {
+            Layout.fillWidth: true
+            visible: root.descriptionText.length > 0
+            text: root.descriptionText
+            textRole: "supporting"
+            roleColor: Ui.Style.textSecondary
         }
 
         Components.SecureTextField {

@@ -35,7 +35,7 @@ ApplicationWindow {
     height: smokeMode
             ? smokeViewportHeight
             : (authMode ? authHeight : 760)
-    minimumWidth: smokeMode ? width : (authMode ? authWidth : width)
+    minimumWidth: smokeMode ? width : (authMode ? authWidth : Ui.Style.shellMinWidth)
     minimumHeight: smokeMode ? height : (authMode ? authHeight : height)
     maximumWidth: smokeMode ? width : (authMode ? authWidth : 16384)
     maximumHeight: smokeMode ? height : (authMode ? authHeight : 16384)
@@ -163,6 +163,13 @@ ApplicationWindow {
         }
     }
 
+    function openShellNewChat() {
+        var shell = activeShellItem()
+        if (shell && shell.openNewChat) {
+            shell.openNewChat()
+        }
+    }
+
     function handleShellEscape() {
         var shell = activeShellItem()
         if (shell && shell.handleEscape) {
@@ -199,6 +206,10 @@ ApplicationWindow {
 
             function showChatSearch() {
                 smokeAdapter.showChatSearch()
+            }
+
+            function openNewChat() {
+                smokeAdapter.openNewChat()
             }
 
             function handleEscape() {
@@ -453,13 +464,6 @@ ApplicationWindow {
                     font.pixelSize: Ui.Style.authWindowTitleTextSize
                 }
 
-                Components.UiText {
-                    text: Ui.I18n.t("auth.subtitle")
-                    textRole: "caption"
-                    roleColor: Ui.Style.textMuted
-                    font.pixelSize: Ui.Style.authMetaTextSize
-                }
-
                 Item { Layout.fillWidth: true }
 
                 ToolButton {
@@ -564,6 +568,10 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+K"
         onActivated: focusShellSearch()
+    }
+    Shortcut {
+        sequence: "Ctrl+N"
+        onActivated: openShellNewChat()
     }
     Shortcut {
         sequence: "Ctrl+F"

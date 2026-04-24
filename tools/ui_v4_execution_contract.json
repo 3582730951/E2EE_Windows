@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "task": "finish-full-v4-im-ui-plan",
+  "execution_mode": "real-multi-agent",
+  "assurance_level": "heavy",
+  "objective": "Finish the remaining cross-platform UI, interaction, and acceptance work needed to reach the full V4 IM plan rather than the last accepted batch.",
+  "non_goals": [
+    "Backend protocol changes",
+    "Refactors outside the UI and acceptance perimeter",
+    "Pushing unrelated worktree changes"
+  ],
+  "remaining_tracks": [
+    {
+      "id": "windows_shell",
+      "owner": "worker",
+      "files": [
+        "client/ui/qml/Main.qml",
+        "client/ui/qml/shell/AppShell.qml",
+        "client/ui/qml/shell/LeftPane.qml",
+        "client/ui/qml/shell/CenterPane.qml",
+        "client/ui/qml/SmokeAdapter.qml",
+        "client/ui/qml/AppStore.qml",
+        "client/ui/qml/Style.qml"
+      ],
+      "acceptance": [
+        "desktop breakpoints must drive actual shell behavior",
+        "Ctrl+N must exist and Esc must resolve to the correct foreground surface",
+        "calls/settings/security smoke surfaces must map to distinct shell behavior"
+      ]
+    },
+    {
+      "id": "android_interactions",
+      "owner": "worker",
+      "files": [
+        "android/ui/src/main/java/mi/e2ee/android/ui/ChatUi.kt",
+        "android/ui/src/main/java/mi/e2ee/android/ui/UiHost.kt",
+        "android/ui/src/main/java/mi/e2ee/android/ui/UiNavigation.kt",
+        "android/app/src/main/java/mi/e2ee/android/MainActivity.kt"
+      ],
+      "acceptance": [
+        "composer must expose explicit surface states beyond a single quick-action toggle",
+        "Back must dismiss composer surfaces before route back",
+        "screenshot scenes must align with real surfaces"
+      ]
+    },
+    {
+      "id": "ios_native_contract",
+      "owner": "worker",
+      "files": [
+        "ios_root_app/RootAuthApp/AppShell.swift",
+        "ios_root_app/RootAuthApp/ClientWorkspaceViews.swift",
+        "ios_root_app/RootAuthApp/SecurityCenterView.swift"
+      ],
+      "acceptance": [
+        "conversation list must use native IM-style swipe actions",
+        "conversation surfaces must expose a native context menu path",
+        "detail toolbar and tab-bar behavior must stay strict"
+      ]
+    },
+    {
+      "id": "acceptance_contract",
+      "owner": "worker",
+      "files": [
+        ".github/workflows/ci.yml",
+        "ui_contract/acceptance.json",
+        "tools/verify_ui_contract.py"
+      ],
+      "acceptance": [
+        "scene, viewport, and evidence requirements must be stronger than the current lightweight batch",
+        "verify_ui_contract.py must enforce the new requirements"
+      ]
+    }
+  ],
+  "regression_perimeter": [
+    "Windows smoke scene activation and desktop shell shortcuts",
+    "Android chat composer interaction flow and screenshot routing",
+    "iOS chat list/detail navigation semantics",
+    "CI acceptance checks and screenshot capture requirements"
+  ],
+  "forbidden_shortcuts": [
+    "Declaring the full plan complete just because the previous CI run is green",
+    "Mapping screenshot-only fake states that diverge from runtime surfaces",
+    "Editing unrelated dirty files outside the owned perimeter"
+  ],
+  "decision_log": [
+    {
+      "id": "role-transfer-001",
+      "type": "role_transfer",
+      "reason": "Delegated workers did not return integration-ready output within the execution window, so the main agent is taking over implementation to keep the plan moving.",
+      "taken_over_tracks": [
+        "windows_shell",
+        "android_interactions",
+        "ios_native_contract",
+        "acceptance_contract"
+      ],
+      "independent_review_required": true
+    }
+  ]
+}

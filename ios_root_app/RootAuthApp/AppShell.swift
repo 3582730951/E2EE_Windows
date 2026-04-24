@@ -549,7 +549,7 @@ final class ClientWorkspaceStore: ObservableObject {
         isReady = true
         isLoggedIn = scenario != .login
         remoteOK = scenario != .login
-        deviceDisplayID = "ios-sim-01"
+        deviceDisplayID = "iPhone 15 Pro"
         serverHost = "secure-gateway.internal"
         serverPort = "9000"
         username = "aster"
@@ -566,37 +566,37 @@ final class ClientWorkspaceStore: ObservableObject {
             ClientConversation(
                 id: "c-aster",
                 title: "Aster Stone",
-                subtitle: "Security review at 10:30",
+                subtitle: "Shared a release storyboard",
                 isGroup: false
             ),
             ClientConversation(
                 id: "g-threat",
                 title: "Threat Guild",
-                subtitle: "Rotation completed for 12 members",
+                subtitle: "[File] Rotation report for 12 members",
                 isGroup: true
             ),
             ClientConversation(
                 id: "c-mira",
                 title: "Mira Chen",
-                subtitle: "Uploaded the audit package",
+                subtitle: "[Photo] Uploaded the audit package",
                 isGroup: false
             ),
             ClientConversation(
                 id: "c-ops",
                 title: "Ops Sync",
-                subtitle: "Queue cap increased to 512",
+                subtitle: "https://secure-gateway.internal/ops/queue",
                 isGroup: false
             ),
             ClientConversation(
                 id: "c-rhea",
                 title: "Rhea North",
-                subtitle: "Typing indicator verified",
+                subtitle: "[Voice] Typing indicator verified",
                 isGroup: false
             ),
             ClientConversation(
                 id: "g-platform",
                 title: "Platform",
-                subtitle: "API33 smoke gate is green",
+                subtitle: "[File] API33 smoke gate report",
                 isGroup: true
             )
         ]
@@ -607,7 +607,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "m1",
                     conversationID: "c-aster",
                     sender: "Aster Stone",
-                    text: "The secure handoff build is ready for review.",
+                    text: "[File] secure-handoff-build-notes.pdf",
                     outgoing: false,
                     timestampMS: now - 600_000
                 ),
@@ -623,7 +623,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "m2b",
                     conversationID: "c-aster",
                     sender: "You",
-                    text: "I want the desktop, Android, and iOS shells to feel consistent.",
+                    text: "https://secure-gateway.internal/releases/ui-shell-review",
                     outgoing: true,
                     timestampMS: now - 360_000
                 ),
@@ -631,7 +631,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "m2c",
                     conversationID: "c-aster",
                     sender: "Aster Stone",
-                    text: "The updated chat list is denser and the settings shell is no longer carrying auth UI.",
+                    text: "[Photo] The updated chat list is denser and the settings shell no longer carries auth UI.",
                     outgoing: false,
                     timestampMS: now - 300_000
                 ),
@@ -673,7 +673,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "o1",
                     conversationID: "c-ops",
                     sender: "Ops Sync",
-                    text: "Release package uploaded and signed.",
+                    text: "https://secure-gateway.internal/ops/release-package",
                     outgoing: false,
                     timestampMS: now - 300_000
                 )
@@ -683,7 +683,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "r1",
                     conversationID: "c-rhea",
                     sender: "Rhea North",
-                    text: "Screenshot pass is green on Android.",
+                    text: "[Voice] Screenshot pass is green on Android.",
                     outgoing: false,
                     timestampMS: now - 240_000
                 )
@@ -693,7 +693,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "p1",
                     conversationID: "g-platform",
                     sender: "Platform",
-                    text: "Smoke gate passed on API33 with the new fixture set.",
+                    text: "[File] Smoke gate passed on API33 with the new fixture set.",
                     outgoing: false,
                     timestampMS: now - 120_000
                 )
@@ -703,7 +703,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "g1",
                     conversationID: "g-threat",
                     sender: "System",
-                    text: "Sender key rotation completed successfully.",
+                    text: "[File] Sender key rotation completed successfully.",
                     outgoing: false,
                     timestampMS: now - 1_200_000
                 )
@@ -713,15 +713,16 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "m4",
                     conversationID: "c-mira",
                     sender: "Mira Chen",
-                    text: "Uploaded the audit package and linked device report.",
+                    text: "[Photo] Uploaded the audit package and linked device report.",
                     outgoing: false,
                     timestampMS: now - 900_000
                 )
             ]
         ]
         deviceSummaries = [
-            "iPhone 15 Pro · Secure session active",
-            "Windows Workstation · Last seen 2m ago"
+            "iPhone 15 Pro · Current · Secure session active",
+            "Windows Workstation · Linked · Last seen 2m ago",
+            "MacBook Air · Linked · Review complete"
         ]
         selectedConversationID = "c-aster"
     }
@@ -774,6 +775,10 @@ struct AppShell: View {
             .background(SecurePalette.backgroundBottom)
     }
 
+    private var hidesChatsTabBar: Bool {
+        chatsPath.last == .detail
+    }
+
     init() {
         let scenario = ScreenshotScenario.current
         screenshotScenario = scenario
@@ -797,6 +802,21 @@ struct AppShell: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(shellBackground)
+            } else if screenshotScenario == .detail {
+                NavigationStack {
+                    if let conversation = clientStore.primaryConversation {
+                        ClientConversationDetailView(
+                            store: clientStore,
+                            conversation: conversation,
+                            sourceTitle: "Chats"
+                        )
+                    } else {
+                        ClientWorkspaceView(store: clientStore)
+                    }
+                }
+                .toolbar(.hidden, for: .tabBar)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(shellBackground)
             } else {
                 TabView(selection: $selectedTab) {
                     NavigationStack(path: $chatsPath) {
@@ -817,10 +837,11 @@ struct AppShell: View {
                                 }
                             }
                     }
+                    .toolbar(hidesChatsTabBar ? .hidden : .visible, for: .tabBar)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)
                     .tabItem {
-                        Label("Chats", systemImage: "message.fill")
+                        Image(systemName: "message.fill")
                     }
                     .tag(AppTab.chats)
 
@@ -830,7 +851,7 @@ struct AppShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)
                     .tabItem {
-                        Label("Contacts", systemImage: "person.2.fill")
+                        Image(systemName: "person.2.fill")
                     }
                     .tag(AppTab.contacts)
 
@@ -840,7 +861,7 @@ struct AppShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)
                     .tabItem {
-                        Label("Calls", systemImage: "phone.fill")
+                        Image(systemName: "phone.fill")
                     }
                     .tag(AppTab.calls)
 
@@ -863,7 +884,7 @@ struct AppShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(shellBackground)
                     .tabItem {
-                        Label("Settings", systemImage: "gearshape.fill")
+                        Image(systemName: "gearshape.fill")
                     }
                     .tag(AppTab.settings)
                 }
@@ -923,6 +944,7 @@ struct AppShell: View {
         navigationBar.standardAppearance = appearance
         navigationBar.scrollEdgeAppearance = appearance
         navigationBar.compactAppearance = appearance
+        navigationBar.prefersLargeTitles = true
         navigationBar.tintColor = UIColor(SecurePalette.accent)
     }
 }

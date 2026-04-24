@@ -10,10 +10,12 @@ ApplicationWindow {
     property var ownerWindow: null
     visible: false
     width: 460
-    height: 320
+    height: 372
     transientParent: ownerWindow
     flags: Qt.FramelessWindowHint | Qt.Window
-    title: Ui.I18n.t("dialog.securityCenter.trustTitle")
+    title: mode === "peer" && peerName.length > 0
+           ? peerName
+           : Ui.I18n.t("dialog.securityCenter.trustTitle")
     color: "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
@@ -29,6 +31,26 @@ ApplicationWindow {
     property string pin: ""
     property string peerName: ""
     property string description: ""
+    readonly property string promptBadgeLabel: mode === "peer"
+                                               ? (Ui.I18n.usesCjkLocale ? "联系人审批" : "Peer approval")
+                                               : (Ui.I18n.usesCjkLocale ? "网关信任" : "Gateway trust")
+    readonly property string promptBadgeDetail: mode === "peer"
+                                                ? (peerName.length > 0 ? peerName : (Ui.I18n.usesCjkLocale ? "待审批设备" : "Pending device"))
+                                                : (Ui.I18n.usesCjkLocale ? "手动审批" : "Manual approval")
+    readonly property string fingerprintHint: mode === "peer"
+                                              ? (Ui.I18n.usesCjkLocale
+                                                 ? "核对联系人指纹后再批准。"
+                                                 : "Compare the peer fingerprint before approval.")
+                                              : (Ui.I18n.usesCjkLocale
+                                                 ? "核对固定网关指纹后再继续。"
+                                                 : "Compare the pinned gateway fingerprint before continuing.")
+    readonly property string rootCodeHint: mode === "peer"
+                                           ? (Ui.I18n.usesCjkLocale
+                                              ? "输入根审批码完成本次手动信任。"
+                                              : "Enter the root approval code for this manual trust action.")
+                                           : (Ui.I18n.usesCjkLocale
+                                              ? "输入根审批码继续本次网关信任。"
+                                              : "Enter the root approval code to continue this gateway trust review.")
 
     signal accepted(string pinText)
 
@@ -38,8 +60,13 @@ ApplicationWindow {
         pin = pinValue || ""
         peerName = peerValue || ""
         description = mode === "peer"
-                       ? (Ui.I18n.t("dialog.securityCenter.trustReviewHint") + " " + peerName)
-                       : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
+                       ? (Ui.I18n.usesCjkLocale
+                          ? "请先确认联系人身份与指纹，再执行本次审批。"
+                          : "Verify the peer identity and fingerprint before approving this trust request.")
+                       : (Ui.I18n.usesCjkLocale
+                          ? "请先确认网关指纹与信任来源，再执行本次审批。"
+                          : "Verify the gateway fingerprint and trusted source before approving this request.")
+        Ui.AuthDisplayStore.clearError()
         pinCard.text = pin
         visible = true
         raise()
@@ -68,9 +95,19 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent
             anchors.margins: Ui.Style.paddingM
-            Components.UiText {
-                text: root.title
-                textRole: "subtitle"
+            ColumnLayout {
+                spacing: 2
+
+                Components.UiText {
+                    text: root.title
+                    textRole: "subtitle"
+                }
+
+                Components.UiText {
+                    text: root.promptBadgeLabel
+                    textRole: "caption"
+                    roleColor: Ui.Style.textMuted
+                }
             }
             Item { Layout.fillWidth: true }
             Components.IconButton {
@@ -96,8 +133,11 @@ ApplicationWindow {
                        ? peerName
                        : Ui.I18n.t("dialog.securityCenter.trustTitle")
             descriptionText: description
+            badgeLabelText: root.promptBadgeLabel
+            badgeDetailText: root.promptBadgeDetail
             fingerprintLabelText: Ui.I18n.t("dialog.securityCenter.serverTitle")
             fingerprintText: fingerprint
+            fingerprintDetailText: root.fingerprintHint
         }
 
         Components.RootAuthCodeCard {
@@ -105,7 +145,16 @@ ApplicationWindow {
             Layout.fillWidth: true
             labelText: Ui.I18n.t("auth.placeholder.rootCode")
             placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
+            descriptionText: root.rootCodeHint
             text: pin
+        }
+
+        Components.UiText {
+            Layout.fillWidth: true
+            visible: Ui.AuthDisplayStore.errorText.length > 0
+            text: Ui.AuthDisplayStore.errorText
+            textRole: "supporting"
+            roleColor: Ui.Style.danger
         }
 
         Item { Layout.fillHeight: true }
@@ -122,11 +171,9 @@ ApplicationWindow {
             Components.PrimaryButton {
                 text: Ui.I18n.t("dialog.securityCenter.trustTitle")
                 Layout.fillWidth: true
+                enabled: pinCard.text.trim().length > 0
                 Accessible.name: Ui.I18n.t("dialog.securityCenter.trustTitle")
-                onClicked: {
-                    accepted(pinCard.text)
-                    root.close()
-                }
+                onClicked: accepted(pinCard.text.trim())
             }
         }
     }

@@ -52,6 +52,31 @@ bool EnvFlagEnabled(const char *name) {
     return value == "1" || value == "true" || value == "yes" || value == "on";
 }
 
+struct WindowsUiRuntimeContract {
+    int shellMinWidth;
+    int compactTwoColumnMinWidth;
+    int twoColumnDrawerMinWidth;
+    int threeColumnMinWidth;
+    int loginViewportWidth;
+    int smokeShellViewportWidth;
+    int smokeViewportHeight;
+};
+
+const WindowsUiRuntimeContract& UiRuntimeContractSpec() {
+    // Keep layout breakpoints and smoke capture viewports separate.
+    // The shell switches layout at 980px, but acceptance requires 900x620 screenshots.
+    static const WindowsUiRuntimeContract contract{
+        760,
+        980,
+        1120,
+        1360,
+        840,
+        900,
+        620
+    };
+    return contract;
+}
+
 int SmokeDurationMs() {
     bool ok = false;
     const int value = qEnvironmentVariableIntValue("MI_E2EE_UI_SMOKE_MS", &ok);
@@ -70,14 +95,16 @@ QString SmokeScene() {
     if (raw == QStringLiteral("auth_login")) {
         return QStringLiteral("login");
     }
-    if (raw == QStringLiteral("chat_list") ||
-        raw == QStringLiteral("chat_detail") ||
-        raw == QStringLiteral("settings_home") ||
-        raw == QStringLiteral("calls_home")) {
+    if (raw == QStringLiteral("chat_list")) {
         return QStringLiteral("post_login");
     }
     if (raw == QStringLiteral("chat_list_light")) {
         return QStringLiteral("post_login_light");
+    }
+    if (raw == QStringLiteral("chat_detail") ||
+        raw == QStringLiteral("settings_home") ||
+        raw == QStringLiteral("calls_home")) {
+        return raw;
     }
     if (raw == QStringLiteral("security_center")) {
         return QStringLiteral("security_center");
@@ -107,6 +134,15 @@ QString SmokeCaptureNameForScene(const QString& scene) {
     if (scene == QStringLiteral("login")) {
         return QStringLiteral("login");
     }
+    if (scene == QStringLiteral("chat_detail")) {
+        return QStringLiteral("chat-detail");
+    }
+    if (scene == QStringLiteral("settings_home")) {
+        return QStringLiteral("settings-home");
+    }
+    if (scene == QStringLiteral("calls_home")) {
+        return QStringLiteral("calls-home");
+    }
     if (scene == QStringLiteral("security_center")) {
         return QStringLiteral("security-center");
     }
@@ -135,7 +171,10 @@ int SmokeDurationFloorMs(const QString& scene) {
         return 12000;
     }
     if (scene == QStringLiteral("post_login") ||
-        scene == QStringLiteral("post_login_light")) {
+        scene == QStringLiteral("post_login_light") ||
+        scene == QStringLiteral("chat_detail") ||
+        scene == QStringLiteral("settings_home") ||
+        scene == QStringLiteral("calls_home")) {
         return 9000;
     }
     return 6500;
@@ -165,10 +204,11 @@ QImage SmokeContentBoundsImage(const QImage& image);
 bool IsInformativeSmokeImage(const QImage& image);
 
 QSize SmokeViewportForScene(const QString& scene) {
+    const auto& contract = UiRuntimeContractSpec();
     if (scene == QStringLiteral("login")) {
-        return QSize(840, 620);
+        return QSize(contract.loginViewportWidth, contract.smokeViewportHeight);
     }
-    return QSize(900, 620);
+    return QSize(contract.smokeShellViewportWidth, contract.smokeViewportHeight);
 }
 
 void AppendSmokeLog(const QString& captureDir, const QString& message) {
@@ -765,6 +805,8 @@ int main(int argc, char* argv[]) {
     const QString smokeLocale = SmokeLocale();
     const QString smokeTheme = SmokeTheme();
     const double smokeScale = SmokeScale();
+    const auto& uiRuntimeContract = UiRuntimeContractSpec();
+    const QSize smokeViewport = SmokeViewportForScene(smokeScene);
     QTimer smokeTimer;
 
     QQmlApplicationEngine engine;
@@ -776,6 +818,19 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty("uiSmokeLocale", smokeLocale);
     engine.rootContext()->setContextProperty("uiSmokeTheme", smokeTheme);
     engine.rootContext()->setContextProperty("uiSmokeScale", smokeScale);
+    engine.rootContext()->setContextProperty("uiShellMinWidth", uiRuntimeContract.shellMinWidth);
+    engine.rootContext()->setContextProperty("uiCompactTwoColumnMinWidth",
+                                             uiRuntimeContract.compactTwoColumnMinWidth);
+    engine.rootContext()->setContextProperty("uiTwoColumnDrawerMinWidth",
+                                             uiRuntimeContract.twoColumnDrawerMinWidth);
+    engine.rootContext()->setContextProperty("uiThreeColumnMinWidth",
+                                             uiRuntimeContract.threeColumnMinWidth);
+    engine.rootContext()->setContextProperty("uiSmokeLoginViewportWidth",
+                                             uiRuntimeContract.loginViewportWidth);
+    engine.rootContext()->setContextProperty("uiSmokeShellViewportWidth",
+                                             uiRuntimeContract.smokeShellViewportWidth);
+    engine.rootContext()->setContextProperty("uiSmokeViewportWidth", smokeViewport.width());
+    engine.rootContext()->setContextProperty("uiSmokeViewportHeight", smokeViewport.height());
     QObject::connect(&engine, &QQmlEngine::warnings, &app,
                      [smokeCaptureDir](const QList<QQmlError>& warnings) {
                          for (const auto& warning : warnings) {

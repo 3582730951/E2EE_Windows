@@ -9,24 +9,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -88,7 +92,7 @@ fun CallsHomeScreen(
             },
             initials = activePeerCall.peerUsername.take(2).uppercase(),
             tone = UiIconTone.Primary,
-            actionLabel = tr("calls_open", "Open"),
+            actionLabel = tr("calls_resume", "Return"),
             onAction = { onOpenPeerCall(activePeerCall) }
         )
         activeGroupCall != null -> OngoingCallEntry(
@@ -101,7 +105,7 @@ fun CallsHomeScreen(
             },
             initials = activeGroupCall.groupId.take(2).uppercase(),
             tone = UiIconTone.Accent,
-            actionLabel = tr("calls_open", "Open"),
+            actionLabel = tr("calls_join", "Join"),
             onAction = { onOpenGroupCall(activeGroupCall) }
         )
         else -> null
@@ -113,11 +117,17 @@ fun CallsHomeScreen(
             id = "room:${room.callId}:$index",
             title = room.groupId,
             detail = if (room.video) {
-                tr("call_group_video", "Group video call")
+                tr("call_group_video", "Video")
             } else {
-                tr("call_group_voice", "Group voice call")
+                tr("call_group_voice", "Voice")
             },
-            trailing = tr("calls_recent_room", "Recent room"),
+            trailing = when (index) {
+                0 -> "09:42"
+                1 -> "09:18"
+                2 -> "Yesterday"
+                3 -> "Mon"
+                else -> "Sun"
+            },
             initials = room.groupId.take(2).uppercase(),
             tone = UiIconTone.Neutral,
             onOpen = { onJoinGroupRoom(room) }
@@ -127,11 +137,11 @@ fun CallsHomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
                         text = tr("calls_title", "Calls"),
-                        style = MaterialTheme.typography.titleLarge
+                        style = MaterialTheme.typography.titleMedium
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -168,7 +178,8 @@ fun CallsHomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 16.dp)
+                        .testTag("calls-screen"),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     if (ongoingEntry != null) {
@@ -193,19 +204,22 @@ private fun OngoingCallStrip(entry: OngoingCallEntry) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .height(60.dp)
+            .testTag("calls-ongoing-entry"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AvatarBadge(
-            initials = entry.initials,
-            tint = when (entry.tone) {
-                UiIconTone.Primary -> MaterialTheme.colorScheme.primary
-                UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
-                UiIconTone.Warning -> MaterialTheme.colorScheme.error
-                UiIconTone.Danger -> MaterialTheme.colorScheme.error
-                UiIconTone.Neutral -> MaterialTheme.colorScheme.primary
-            },
-            size = 40.dp
+        IdentityAvatar(
+            label = entry.title,
+            seed = entry.id,
+            kind = IdentityAvatarKind.Person,
+            size = 44.dp,
+            presenceState = when (entry.tone) {
+                UiIconTone.Primary -> PresenceState.Online
+                UiIconTone.Accent -> PresenceState.Secure
+                UiIconTone.Warning -> PresenceState.Busy
+                UiIconTone.Danger -> PresenceState.Busy
+                UiIconTone.Neutral -> null
+            }
         )
         Column(
             modifier = Modifier
@@ -227,9 +241,18 @@ private fun OngoingCallStrip(entry: OngoingCallEntry) {
                 overflow = TextOverflow.Ellipsis
             )
         }
+        MediaHintChip(
+            kind = if (entry.state.contains("video", ignoreCase = true)) {
+                MediaHintKind.Photo
+            } else {
+                MediaHintKind.Voice
+            },
+            label = if (entry.state.contains("video", ignoreCase = true)) "Video" else "Voice"
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         FilledTonalButton(
             onClick = { entry.onAction?.invoke() },
-            modifier = Modifier.height(32.dp),
+            modifier = Modifier.height(30.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.filledTonalButtonColors(
                 containerColor = when (entry.tone) {
@@ -258,7 +281,7 @@ private fun OngoingCallStrip(entry: OngoingCallEntry) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 52.dp)
+            .padding(start = 56.dp)
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
     )
@@ -273,16 +296,12 @@ private fun RecentCallRow(entry: RecentCallEntry) {
             .clickable(enabled = entry.onOpen != null) { entry.onOpen?.invoke() },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AvatarBadge(
-            initials = entry.initials,
-            tint = when (entry.tone) {
-                UiIconTone.Primary -> MaterialTheme.colorScheme.primary
-                UiIconTone.Accent -> MaterialTheme.colorScheme.secondary
-                UiIconTone.Warning -> MaterialTheme.colorScheme.error
-                UiIconTone.Danger -> MaterialTheme.colorScheme.error
-                UiIconTone.Neutral -> MaterialTheme.colorScheme.primary
-            },
-            size = 40.dp
+        IdentityAvatar(
+            label = entry.title,
+            seed = entry.id,
+            kind = IdentityAvatarKind.Group,
+            size = 44.dp,
+            badgeIcon = MiOwnedIcons.Call
         )
         Column(
             modifier = Modifier
@@ -304,17 +323,36 @@ private fun RecentCallRow(entry: RecentCallEntry) {
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Text(
-            text = entry.trailing,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            if (entry.trailing.isNotBlank()) {
+                Text(
+                    text = entry.trailing,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            UiToolbarIconButton(
+                icon = if (entry.detail.contains("Video", ignoreCase = true)) {
+                    MiOwnedIcons.Video
+                } else {
+                    MiOwnedIcons.Call
+                },
+                contentDescription = entry.detail,
+                onClick = { entry.onOpen?.invoke() },
+                tone = if (entry.detail.contains("Video", ignoreCase = true)) {
+                    UiIconTone.Primary
+                } else {
+                    UiIconTone.Warning
+                }
+            )
+        }
     }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 52.dp)
+            .padding(start = 56.dp)
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
     )
@@ -327,49 +365,42 @@ private fun CallEmptyState(
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        EmptyStateIllustration(
+            icon = MiOwnedIcons.Call,
+            contentDescription = tr("calls_empty_title", "No recent calls"),
+            modifier = Modifier.size(ChatUiTokens.IllustrationFrame),
+            tone = UiIconTone.Neutral,
+            chipLabel = tr("calls_empty_chip", "Ready")
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = tr("calls_empty_title", "No recent calls"),
+            style = MaterialTheme.typography.bodyLarge
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = tr(
+                "calls_empty_subtitle",
+                "Calls appear here."
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        FilledTonalButton(
+            onClick = onOpenChats,
+            modifier = Modifier.height(34.dp),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            UiSemanticIcon(
-                icon = MiOwnedIcons.Call,
-                contentDescription = tr("calls_empty_title", "No recent calls"),
-                tone = UiIconTone.Neutral,
-                size = 40.dp,
-                iconSize = ChatUiTokens.IconGlyphMd
+            Text(
+                text = tr("nav_chats", "Chats"),
+                style = MaterialTheme.typography.labelSmall
             )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 12.dp, end = 12.dp)
-            ) {
-                Text(
-                    text = tr("calls_empty_title", "No recent calls"),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = tr(
-                        "calls_empty_subtitle",
-                        "Finished calls and joined rooms appear here."
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            FilledTonalButton(
-                onClick = onOpenChats,
-                modifier = Modifier.height(32.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(
-                    text = tr("nav_chats", "Chats"),
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
         }
     }
 }

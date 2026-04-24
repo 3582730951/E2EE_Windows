@@ -6,11 +6,14 @@ import "qrc:/mi/e2ee/ui/qml" as Ui
 Item {
     id: style
     readonly property var sansFontStacksZhCn: [
+        "PingFang SC",
         "Microsoft YaHei UI",
         "Segoe UI Variable",
         "Segoe UI"
     ]
     readonly property var sansFontStacksEnUs: [
+        "SF Pro Text",
+        "SF Pro Display",
         "Segoe UI Variable",
         "Segoe UI",
         "Microsoft YaHei UI"
@@ -47,6 +50,29 @@ Item {
                                                      smokeSceneName === "chat_list_light"
     readonly property bool smokeLightPrimaryPalette: smokeThemeMode === "light" && smokePostLoginScene
     readonly property bool smokeLightAltPalette: smokeThemeMode === "light" && smokePostLoginLightScene
+    readonly property var smokeViewportContract: ({
+        loginWidth: typeof uiSmokeLoginViewportWidth !== "undefined"
+                    ? Number(uiSmokeLoginViewportWidth)
+                    : 840,
+        shellWidth: typeof uiSmokeShellViewportWidth !== "undefined"
+                    ? Number(uiSmokeShellViewportWidth)
+                    : 900,
+        height: typeof uiSmokeViewportHeight !== "undefined"
+                ? Number(uiSmokeViewportHeight)
+                : 620
+    })
+    readonly property var shellLayoutContract: ({
+        shellMinWidth: typeof uiShellMinWidth !== "undefined" ? Number(uiShellMinWidth) : 760,
+        compactTwoColumnMinWidth: typeof uiCompactTwoColumnMinWidth !== "undefined"
+                                  ? Number(uiCompactTwoColumnMinWidth)
+                                  : 980,
+        twoColumnDrawerMinWidth: typeof uiTwoColumnDrawerMinWidth !== "undefined"
+                                 ? Number(uiTwoColumnDrawerMinWidth)
+                                 : 1120,
+        threeColumnMinWidth: typeof uiThreeColumnMinWidth !== "undefined"
+                             ? Number(uiThreeColumnMinWidth)
+                             : 980
+    })
     property string themeMode: (styleSettings.storedThemeMode === "dark" ||
                                 styleSettings.storedThemeMode === "light" ||
                                 styleSettings.storedThemeMode === "system")
@@ -68,56 +94,103 @@ Item {
         }
     }
 
-    property color windowBg: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F3FAF4" : (smokeLightPrimaryPalette ? "#F4F8FF" : "#F8FAFC"))
-    property color panelBg: isDark ? "#101922" : (smokeLightAltPalette ? "#FEFFFC" : "#FFFFFF")
-    property color panelBgAlt: isDark ? "#182431" : (smokeLightAltPalette ? "#ECF6EF" : (smokeLightPrimaryPalette ? "#EDF3FF" : "#F1F5FD"))
-    property color panelBgRaised: isDark ? "#101E2E" : (smokeLightAltPalette ? "#FFFDF8" : "#FFFFFF")
-    property color hoverBg: isDark ? "#1C2A3A" : (smokeLightAltPalette ? "#EFF7F1" : "#EEF4FC")
-    property color pressedBg: isDark ? "#213244" : (smokeLightAltPalette ? "#E2F0E6" : "#E4ECFC")
-    property color borderSubtle: isDark ? Qt.rgba(1, 1, 1, 0.08) : "#E4ECFC"
-    property color borderStrong: isDark ? Qt.rgba(1, 1, 1, 0.12) : (smokeLightAltPalette ? "#D6E7D8" : "#D6E4FA")
-    property color textPrimary: isDark ? "#E8EDF4" : "#0F172A"
-    property color textSecondary: isDark ? "#9DAEBC" : (smokeLightAltPalette ? "#5D746D" : "#64748B")
-    property color textMuted: isDark ? "#7E92A7" : (smokeLightAltPalette ? "#788C84" : "#7B8CA1")
-    property color iconMuted: isDark ? "#9DAEBC" : (smokeLightAltPalette ? "#5D746D" : "#64748B")
-    property color iconActive: isDark ? "#F8FBFF" : "#0F172A"
-    property color accent: smokeLightAltPalette ? "#138A72" : "#2563EB"
-    property color accentHover: smokeLightAltPalette ? "#16957B" : "#2E6DF0"
-    property color accentPressed: smokeLightAltPalette ? "#10735F" : "#1F57CF"
-    property color accentSoft: isDark ? "#8BB5FF" : (smokeLightAltPalette ? "#138A72" : "#2563EB")
-    property color link: isDark ? "#85B8FF" : (smokeLightAltPalette ? "#0F7F69" : "#2E72DE")
+    property color windowBg: isDark ? "#0E1621" : "#F2F2F7"
+    property color panelBg: isDark ? "#18222D" : "#FFFFFF"
+    property color panelBgAlt: isDark ? "#15202B" : "#F8FAFD"
+    property color panelBgRaised: isDark ? "#202C38" : Qt.rgba(1, 1, 1, 0.96)
+    property color hoverBg: isDark ? Qt.rgba(1, 1, 1, 0.065) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.08)
+    property color pressedBg: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.14)
+    property color borderSubtle: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.10)
+    property color borderStrong: isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.16)
+    property color textPrimary: isDark ? "#F5F7FA" : "#111827"
+    property color textSecondary: isDark ? "#AAB7C5" : "#667781"
+    property color textMuted: isDark ? "#7D8EA3" : "#8B9AA9"
+    property color iconMuted: isDark ? "#AAB7C5" : "#667781"
+    property color iconActive: isDark ? "#F9FBFF" : "#111827"
+    property color accent: "#3390EC"
+    property color accentHover: "#5AA6F0"
+    property color accentPressed: "#2A7DD2"
+    property color accentSoft: isDark ? "#80C2FF" : "#5AA6F0"
+    property color link: isDark ? "#80C2FF" : "#2A7DD2"
     property color danger: "#DC2626"
     property color success: "#059669"
     property color warning: "#D6A25A"
+    property color warningBorder: alpha(warning, isDark ? 0.26 : 0.22)
+    property color statusWarningBg: alpha(warning, isDark ? 0.12 : 0.10)
 
-    property color shellGradientTop: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F5FBF5" : (smokeLightPrimaryPalette ? "#F4F8FF" : "#F8FAFC"))
-    property color shellGradientBottom: isDark ? "#101922" : (smokeLightAltPalette ? "#E5F2EA" : (smokeLightPrimaryPalette ? "#E8F0FF" : "#EEF4FC"))
-    property color shellSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.98) : (smokeLightAltPalette ? Qt.rgba(254 / 255, 255 / 255, 251 / 255, 0.975) : Qt.rgba(1, 1, 1, 0.97))
-    property color tgCloudTop: isDark ? "#0F172A" : (smokeLightAltPalette ? "#F5FAF5" : (smokeLightPrimaryPalette ? "#F3F7FF" : "#F8FAFC"))
-    property color tgCloudBottom: isDark ? "#101922" : (smokeLightAltPalette ? "#E5F1E9" : (smokeLightPrimaryPalette ? "#E7EFFF" : "#EEF4FC"))
-    property color tgGlassSurface: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.96) : (smokeLightAltPalette ? Qt.rgba(254 / 255, 255 / 255, 250 / 255, 0.978) : Qt.rgba(1, 1, 1, 0.97))
-    property color tgCardHighlight: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.10) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.06) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.06))
-    property color tgCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.12) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.12))
+    property color shellGradientTop: isDark ? "#0C141E" : "#F7F8FC"
+    property color shellGradientBottom: isDark ? "#0E1621" : "#E8ECF4"
+    property color shellSurface: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.94) : Qt.rgba(1, 1, 1, 0.88)
+    property color tgCloudTop: isDark ? "#0C141E" : "#F7F8FC"
+    property color tgCloudBottom: isDark ? "#0E1621" : "#EBEEF5"
+    property color tgGlassSurface: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.90) : Qt.rgba(1, 1, 1, 0.86)
+    property color tgCardHighlight: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.10) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.05)
+    property color tgCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.09)
     property color tgOnlineDot: "#31C38B"
-    property color tgMutedBadge: isDark ? "#415264" : (smokeLightAltPalette ? "#B5C8BE" : "#B8C3CF")
-    property color tgUnreadBadge: smokeLightAltPalette ? "#1B9A7C" : "#4E8FFF"
-    property color tgActiveRowBg: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.10) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.09))
-    property color tgActiveRowBorder: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.28) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.20) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.18))
-    property color railBg: isDark ? "#17232F" : (smokeLightAltPalette ? "#F9FCF7" : "#FFFFFF")
-    property color railHeaderBg: isDark ? "#1D2B39" : (smokeLightAltPalette ? "#F1F7F0" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F7FAFD"))
-    property color railCardBg: isDark ? "#17232F" : (smokeLightAltPalette ? "#FFFEFB" : "#FFFFFF")
-    property color railAccentBg: isDark ? Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.16) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.09) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.08))
-    property color railAccentBorder: isDark ? Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.24) : (smokeLightAltPalette ? Qt.rgba(19 / 255, 138 / 255, 114 / 255, 0.18) : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.14))
-    property color topBarBg: isDark ? "#1A2632" : (smokeLightAltPalette ? "#FEFFFC" : "#FFFFFF")
-    property color topBarPillBg: isDark ? "#253444" : (smokeLightAltPalette ? "#EEF6F0" : "#EEF4FA")
-    property color topBarPillBorder: isDark ? "#33485B" : (smokeLightAltPalette ? "#D5E6D8" : "#D9E4EF")
+    property color tgMutedBadge: isDark ? "#44576A" : "#C6CED8"
+    property color tgUnreadBadge: "#3390EC"
+    property color tgActiveRowBg: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.11)
+    property color tgActiveRowBorder: isDark ? Qt.rgba(119 / 255, 186 / 255, 255 / 255, 0.30) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18)
+    property color railBg: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.84) : Qt.rgba(1, 1, 1, 0.64)
+    property color railHeaderBg: isDark ? Qt.rgba(28 / 255, 40 / 255, 52 / 255, 0.94) : Qt.rgba(1, 1, 1, 0.60)
+    property color railCardBg: isDark ? Qt.rgba(27 / 255, 38 / 255, 50 / 255, 0.80) : Qt.rgba(1, 1, 1, 0.58)
+    property color railAccentBg: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.16) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.10)
+    property color railAccentBorder: isDark ? Qt.rgba(126 / 255, 189 / 255, 255 / 255, 0.24) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.16)
+    property color topBarBg: isDark ? Qt.rgba(27 / 255, 39 / 255, 50 / 255, 0.76) : Qt.rgba(1, 1, 1, 0.58)
+    property color topBarPillBg: isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(255, 255, 255, 0.76)
+    property color topBarPillBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.08)
+    property color sidebarSurface: isDark ? Qt.rgba(20 / 255, 31 / 255, 43 / 255, 0.82) : Qt.rgba(248 / 255, 250 / 255, 255 / 255, 0.60)
+    property color sidebarSurfaceStrong: isDark ? Qt.rgba(24 / 255, 36 / 255, 49 / 255, 0.92) : Qt.rgba(255, 255, 255, 0.78)
+    property color sidebarBackdropTop: isDark ? Qt.rgba(39 / 255, 66 / 255, 97 / 255, 0.34) : Qt.rgba(255, 255, 255, 0.92)
+    property color sidebarBackdropBottom: isDark ? Qt.rgba(12 / 255, 21 / 255, 30 / 255, 0.18) : Qt.rgba(231 / 255, 238 / 255, 248 / 255, 0.84)
+    property color sidebarVibrancyTop: isDark ? Qt.rgba(98 / 255, 166 / 255, 255 / 255, 0.15) : Qt.rgba(123 / 255, 181 / 255, 255 / 255, 0.20)
+    property color sidebarVibrancyBottom: isDark ? Qt.rgba(111 / 255, 225 / 255, 196 / 255, 0.06) : Qt.rgba(255 / 255, 255 / 255, 255 / 255, 0.0)
+    property color sidebarBorder: isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.09)
+    property color sidebarHairline: isDark ? Qt.rgba(255, 255, 255, 0.14) : Qt.rgba(255, 255, 255, 0.84)
+    property color sidebarGlow: isDark ? Qt.rgba(100 / 255, 169 / 255, 255 / 255, 0.15) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.12)
+    property color sidebarHeaderSurface: isDark ? Qt.rgba(255, 255, 255, 0.045) : Qt.rgba(255, 255, 255, 0.58)
+    property color sidebarHeaderBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.07)
+    property color sidebarTitleText: isDark ? "#F7FBFF" : "#162334"
+    property color sidebarSubtitleText: isDark ? "#A8B6C8" : "#5F6E82"
+    property color sidebarSectionText: isDark ? "#7F91A4" : "#8A97A9"
+    property color sidebarSearchBg: isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(255, 255, 255, 0.66)
+    property color sidebarSearchBorder: isDark ? Qt.rgba(255, 255, 255, 0.09) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.08)
+    property color sidebarNavBg: isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(255, 255, 255, 0.42)
+    property color sidebarNavBorder: isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.05)
+    property color sidebarNavActiveBg: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.13)
+    property color sidebarNavActiveBorder: isDark ? Qt.rgba(126 / 255, 189 / 255, 255 / 255, 0.24) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.16)
+    property color sidebarListHoverBg: isDark ? Qt.rgba(255, 255, 255, 0.055) : Qt.rgba(255, 255, 255, 0.68)
+    property color sidebarListSelectedBg: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.12)
+    property color sidebarListSelectedBorder: isDark ? Qt.rgba(126 / 255, 189 / 255, 255 / 255, 0.26) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.15)
+    property color sidebarTimestamp: isDark ? "#7F92A8" : "#8B98A8"
+    property color sidebarTimestampUnread: accent
+    property color sidebarUnreadBadgeBg: accent
+    property color sidebarUnreadBadgeMutedBg: isDark ? "#41576B" : "#C7D0DA"
+    property color sidebarUnreadBadgeFg: "#FFFFFF"
+    property color sidebarStatusBg: isDark ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.72)
+    property color sidebarStatusBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.08)
+    property color sidebarStatusText: isDark ? "#DCE9F7" : "#3B4A5A"
+    property color sidebarStatusChipBg: isDark ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.62)
+    property color sidebarStatusChipBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.07)
+    property color sidebarComposeBg: isDark ? Qt.rgba(255, 255, 255, 0.07) : Qt.rgba(255, 255, 255, 0.74)
+    property color sidebarComposeBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.07)
+    property color sidebarSectionDivider: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.08)
+    property color sidebarSelectionStripe: "#3390EC"
+    property color sidebarPinnedTint: isDark ? "#93A9C0" : "#8C99A8"
+    property color sidebarMetaChipBg: isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(255, 255, 255, 0.58)
+    property color sidebarMetaChipBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.06)
+    property color sidebarSurfaceOverlay: isDark ? Qt.rgba(255, 255, 255, 0.02) : Qt.rgba(255, 255, 255, 0.30)
+    property int glassBlurRadius: 32
+    property int sidebarBlurRadius: 36
+    property real glassSurfaceOpacity: isDark ? 0.82 : 0.60
+    property real sidebarSurfaceOpacity: isDark ? 0.82 : 0.60
 
-    property color authBackdropTop: isDark ? "#0F172A" : "#F8FAFC"
-    property color authBackdropBottom: isDark ? "#101922" : "#EEF4FC"
-    property color authGlowPrimary: isDark ? Qt.rgba(0.30, 0.54, 1.0, 0.12) : Qt.rgba(0.30, 0.54, 1.0, 0.10)
-    property color authGlowSecondary: isDark ? Qt.rgba(0.13, 0.75, 0.56, 0.08) : Qt.rgba(0.13, 0.75, 0.56, 0.06)
+    property color authBackdropTop: isDark ? "#0F172A" : "#F5F7FA"
+    property color authBackdropBottom: isDark ? "#101922" : "#EDF1F5"
+    property color authGlowPrimary: isDark ? Qt.rgba(0.30, 0.54, 1.0, 0.04) : Qt.rgba(0.30, 0.54, 1.0, 0.015)
+    property color authGlowSecondary: isDark ? Qt.rgba(0.13, 0.75, 0.56, 0.03) : Qt.rgba(0.13, 0.75, 0.56, 0.010)
     property color authCardBg: isDark ? Qt.rgba(16 / 255, 25 / 255, 34 / 255, 0.95) : Qt.rgba(1, 1, 1, 0.97)
-    property color authCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.12)
+    property color authCardBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.10)
     property color authTitleBarBg: panelBg
     property color authTitleBarBorder: borderSubtle
     property color authTitleBarText: textPrimary
@@ -145,66 +218,126 @@ Item {
     property color authDangerBg: isDark ? Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.13) : Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.10)
     property color authDangerBorder: isDark ? Qt.rgba(244 / 255, 156 / 255, 171 / 255, 0.18) : Qt.rgba(231 / 255, 100 / 255, 121 / 255, 0.20)
 
-    property color searchBg: isDark ? "#182431" : (smokeLightAltPalette ? "#F3F8F2" : "#F1F5FD")
-    property color searchBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : (smokeLightAltPalette ? "#D9E8DC" : "#E4ECFC")
-    property color inputBg: isDark ? "#1E2C39" : "#FFFFFF"
-    property color inputBorder: isDark ? Qt.rgba(1, 1, 1, 0.12) : (smokeLightAltPalette ? "#D6E7D8" : "#D6E4FA")
-    property color inputFocus: isDark ? "#8BB5FF" : (smokeLightAltPalette ? "#138A72" : "#2563EB")
+    property color searchBg: sidebarSearchBg
+    property color searchBorder: sidebarSearchBorder
+    property color inputBg: isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(255, 255, 255, 0.82)
+    property color inputBorder: isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.09)
+    property color inputFocus: accent
 
-    property color dialogSelectedBg: isDark ? "#2A4055" : (smokeLightAltPalette ? "#E3F3EB" : "#EAF2FD")
-    property color dialogSelectedFg: isDark ? "#F1F6FC" : (smokeLightAltPalette ? "#1D3B33" : "#22303D")
-    property color dialogHoverBg: isDark ? "#223545" : (smokeLightAltPalette ? "#F2F8F1" : "#F2F7FC")
-    property color unreadBadgeBg: smokeLightAltPalette ? "#1B9A7C" : "#4B89FF"
-    property color unreadBadgeFg: "#FFFFFF"
-    property color unreadBadgeMutedBg: isDark ? "#4A5968" : (smokeLightAltPalette ? "#B5C8BE" : "#BCC7D2")
-    property color unreadBadgeMutedFg: isDark ? "#E2E9F2" : "#25303A"
+    property color dialogSelectedBg: sidebarListSelectedBg
+    property color dialogSelectedFg: isDark ? "#F7FBFF" : "#17324D"
+    property color dialogHoverBg: sidebarListHoverBg
+    property color unreadBadgeBg: sidebarUnreadBadgeBg
+    property color unreadBadgeFg: sidebarUnreadBadgeFg
+    property color unreadBadgeMutedBg: sidebarUnreadBadgeMutedBg
+    property color unreadBadgeMutedFg: isDark ? "#E7EEF5" : "#4B5563"
 
     property color bubbleInBg: isDark ? "#182431" : "#FFFFFF"
     property color bubbleInFg: isDark ? "#E8EDF4" : "#0F172A"
-    property color bubbleOutBg: isDark ? "#1D3560" : (smokeLightAltPalette ? "#D8F0E3" : "#DCE8FF")
-    property color bubbleOutFg: isDark ? "#F8FBFF" : (smokeLightAltPalette ? "#103F34" : "#17315A")
-    property color bubbleMetaInFg: isDark ? "#E8F1FB" : "#90A0AF"
-    property color bubbleMetaOutFg: isDark ? "#F2FFF9" : (smokeLightAltPalette ? "#5E8A79" : "#658978")
+    property color bubbleOutBg: isDark ? "#24476F" : "#D8E9FB"
+    property color bubbleOutFg: isDark ? "#F8FBFF" : "#17324D"
+    property color bubbleMetaInFg: isDark ? "#D5E0EB" : "#8B9AA9"
+    property color bubbleMetaOutFg: isDark ? "#E7F3FF" : "#5F7C99"
 
-    property color messageBg: isDark ? "#101922" : (smokeLightAltPalette ? "#F3F8F3" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F8FAFC"))
-    property color messageGradientStart: isDark ? "#101922" : (smokeLightAltPalette ? "#F5FBF5" : (smokeLightPrimaryPalette ? "#F5F8FF" : "#F8FAFC"))
-    property color messageGradientEnd: isDark ? "#0F172A" : (smokeLightAltPalette ? "#E8F3EC" : (smokeLightPrimaryPalette ? "#EAF1FF" : "#EEF4FC"))
-    property color messagePatternA: isDark ? Qt.rgba(1, 1, 1, 0.02) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.03)
-    property color messagePatternB: isDark ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.02) : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.018)
+    property color messageBg: isDark ? "#0E1621" : "#EEF2F7"
+    property color messageGradientStart: isDark ? "#0D1520" : "#F3F5FA"
+    property color messageGradientEnd: isDark ? "#0E1621" : "#E9EDF5"
+    property color messagePatternA: isDark ? Qt.rgba(1, 1, 1, 0.010) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.008)
+    property color messagePatternB: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.008) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.005)
+    property color heroCardBg: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.94) : Qt.rgba(1, 1, 1, 0.96)
+    property color heroCardBgAlt: isDark ? Qt.rgba(31 / 255, 44 / 255, 57 / 255, 0.92) : Qt.rgba(247 / 255, 249 / 255, 252 / 255, 0.94)
+    property color heroCardBorder: isDark ? Qt.rgba(126 / 255, 189 / 255, 255 / 255, 0.16) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.12)
+    property color heroCardSheen: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.62)
+    property color heroCardGlow: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.12) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.10)
+    property color iconWellBg: isDark ? Qt.rgba(8 / 255, 14 / 255, 23 / 255, 0.48) : Qt.rgba(1, 1, 1, 0.66)
+    property color iconWellBorder: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(255, 255, 255, 0.82)
+    property color iconWellOverlay: isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.03)
+    property color badgeSurface: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.10) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.08)
+    property color badgeSurfaceStrong: isDark ? Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.18) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.14)
+    property color badgeBorder: isDark ? Qt.rgba(126 / 255, 189 / 255, 255 / 255, 0.22) : Qt.rgba(51 / 255, 144 / 255, 236 / 255, 0.16)
+    property color badgeTextPrimary: isDark ? "#EAF4FF" : "#2264AC"
+    property color badgeTextSecondary: isDark ? "#A6BAD0" : "#6B7280"
+    property color statusSurfaceAlt: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.86) : Qt.rgba(1, 1, 1, 0.82)
+    property color statusValueBg: isDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.04)
+    property color avatarHalo: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.38)
+    property color avatarBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(255, 255, 255, 0.78)
+    property color avatarInset: isDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(255, 255, 255, 0.16)
+    property color mediaCardBg: isDark ? Qt.rgba(24 / 255, 34 / 255, 45 / 255, 0.90) : Qt.rgba(1, 1, 1, 0.90)
+    property color mediaPreviewOverlay: isDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(1, 1, 1, 0.56)
 
-    property int radiusSmall: 8
-    property int radiusMedium: 12
-    property int radiusLarge: 16
-    property int radiusXL: 20
+    property int radiusSmall: 10
+    property int radiusMedium: 14
+    property int radiusLarge: 18
+    property int radiusXL: 16
+    property int radiusContinuous: 28
+    property int radiusPill: 18
+    property int radiusSidebar: 34
+    property int radiusListRow: 18
     property int paddingXs: 4
     property int paddingXS: paddingXs
     property int paddingS: 8
     property int paddingM: 12
-    property int paddingL: 16
-    property int paddingXL: 24
-    property int avatarSizeDialogRow: 44
+    property int paddingL: 18
+    property int paddingXL: 26
+    property int controlVerticalGap: 16
+    property int sectionGap: 22
+    property int settingsRowMinHeight: 62
+    property int utilityHeaderMaxHeight: 84
+    property int utilitySurfaceMaxWidth: 640
+    property int compactRailHeaderHeight: 112
+    property real badgeMaxWidthRatio: 0.38
+    property int avatarSizeDialogRow: 40
     property int avatarSizeTopBar: 34
-    property int dialogRowHeight: 68
-    property int topBarHeight: 56
+    property int dialogRowHeight: 72
+    property int topBarHeight: 50
+    property int sidebarLargeTitleSize: 33
+    property int sidebarSubtitleSize: 13
+    property int sidebarNavLabelSize: 12
+    property int sidebarSectionLabelSize: 10
+    property int sidebarRowTitleSize: 15
+    property int sidebarRowPreviewSize: 12
+    property int sidebarTimestampSize: 11
+    property int sidebarStatusSize: 11
+    property int sidebarHeaderTopInset: 28
+    property int sidebarHeaderBottomInset: 18
+    property int sidebarHeaderSideInset: 16
+    property int sidebarHeaderStatusHeight: 32
+    property int sidebarSearchHeight: 36
+    property int sidebarNavHeight: 36
+    property int sidebarCompactRailItemSize: 46
     property int authWindowTitleBarHeight: 26
     property int authWindowTitleTextSize: 12
-    property int authPanelWidth: 412
-    property int authStageWidth: 444
-    property int authStageHeight: 460
-    property int authTitleTextSize: 24
+    property int authPanelWidth: 360
+    property int authStageWidth: 404
+    property int authStageHeight: 352
+    property int authTitleTextSize: 18
     property int authSubtitleTextSize: 13
     property int authBodyTextSize: 14
     property int authMetaTextSize: 12
-    property int authFieldHeight: 40
+    property int authFieldHeight: 42
     property int authPrimaryButtonHeight: 40
-    property int leftPaneWidthMin: 280
-    property int leftPaneWidthDefault: 292
-    property int centerPaneWidthMin: 560
-    property int rightPaneWidth: 336
-    property int rightPaneWidthMin: 290
+    property int shellMinWidth: shellLayoutContract.shellMinWidth
+    property int leftPaneWidthUtilityRail: 60
+    property int leftPaneWidthMin: 232
+    property int leftPaneWidthCompact: 336
+    property int leftPaneWidthDefault: 352
+    // property int leftPaneWidthDetailTight: 248
+    property int leftPaneWidthDetailTight: 236
+    // property int leftPaneWidthDrawerTight: 272
+    property int leftPaneWidthDrawerTight: 260
+    property int centerPaneWidthMin: 320
+    property int rightPaneWidth: 248
+    property int rightPaneWidthMin: 220
+    // property int rightPaneWidthTight: 72
+    property int rightPaneWidthTight: 228
+    // property int rightPaneDrawerCompactWidth: 244
+    property int rightPaneDrawerCompactWidth: 236
+    property int rightPaneWidthDrawerNarrow: 108
     property int rightPaneWidthMax: 420
-    property int threeColumnMinWidth: 1320
-    property int iconButtonSize: 36
+    property int compactTwoColumnMinWidth: shellLayoutContract.compactTwoColumnMinWidth
+    property int twoColumnDrawerMinWidth: shellLayoutContract.twoColumnDrawerMinWidth
+    property int threeColumnMinWidth: shellLayoutContract.threeColumnMinWidth
+    property int iconButtonSize: 38
     property int iconButtonSmall: 24
     property int microTextSize: 13
 
@@ -233,11 +366,11 @@ Item {
     function fontPixelSize(roleName) {
         switch (roleName) {
         case "display":
-            return 24
+            return 30
         case "title":
             return 20
         case "subtitle":
-            return 16
+            return 17
         case "caption":
         case "button_label":
         case "code_inline":
@@ -245,9 +378,30 @@ Item {
         case "detail":
         case "supporting":
         case "message_body":
-            return 15
+            return 14
         default:
             return 14
+        }
+    }
+
+    function fontLetterSpacing(roleName) {
+        switch (roleName) {
+        case "display":
+            return -0.60
+        case "title":
+            return -0.32
+        case "subtitle":
+            return -0.12
+        case "caption":
+            return 0.16
+        case "button_label":
+            return 0.10
+        case "detail":
+        case "supporting":
+        case "message_body":
+            return 0.02
+        default:
+            return 0.0
         }
     }
 
@@ -265,8 +419,14 @@ Item {
         }
     }
 
+    function alpha(colorValue, opacity) {
+        return Qt.rgba(colorValue.r, colorValue.g, colorValue.b, opacity)
+    }
+
     function avatarColor(key) {
-        var palette = ["#3D8AC7", "#5F7EA8", "#2F6EA5", "#3A6B8C", "#2F7A77", "#5B7A64", "#7A6B5B", "#6B5B7A"]
+        var palette = isDark
+                ? ["#6484B7", "#7394C8", "#5E9F9A", "#8575BE", "#B47F93", "#B69064", "#75A774", "#7B93AF"]
+                : ["#BDD8FB", "#C9D4FF", "#BFE8DF", "#F5CDDF", "#F6DDB7", "#E0D2FB", "#C7E3F7", "#D1EAC0"]
         if (!key || key.length === 0) {
             return palette[0]
         }

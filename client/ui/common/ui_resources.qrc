@@ -11,6 +11,7 @@
         <file alias="icons/chat.svg">../icons/chat.svg</file>
         <file alias="icons/clock.svg">../icons/clock.svg</file>
         <file alias="icons/bell.svg">../icons/bell.svg</file>
+        <file alias="icons/chevron-right.svg">../icons/chevron-right.svg</file>
         <file alias="icons/chevron-down.svg">../icons/chevron-down.svg</file>
         <file alias="icons/check.svg">../icons/check.svg</file>
         <file alias="icons/close.svg">../icons/close.svg</file>
@@ -20,6 +21,7 @@
         <file alias="icons/file.svg">../icons/file.svg</file>
         <file alias="icons/image.svg">../icons/image.svg</file>
         <file alias="icons/info.svg">../icons/info.svg</file>
+        <file alias="icons/language.svg">../icons/language.svg</file>
         <file alias="icons/mic.svg">../icons/mic.svg</file>
         <file alias="icons/more.svg">../icons/more.svg</file>
         <file alias="icons/more-vert.svg">../icons/more-vert.svg</file>
@@ -30,6 +32,8 @@
         <file alias="icons/plus.svg">../icons/plus.svg</file>
         <file alias="icons/phone.svg">../icons/phone.svg</file>
         <file alias="icons/paperclip.svg">../icons/paperclip.svg</file>
+        <file alias="icons/palette.svg">../icons/palette.svg</file>
+        <file alias="icons/qrcode.svg">../icons/qrcode.svg</file>
         <file alias="icons/search.svg">../icons/search.svg</file>
         <file alias="icons/settings.svg">../icons/settings.svg</file>
         <file alias="icons/star.svg">../icons/star.svg</file>
@@ -87,6 +91,11 @@
         <file alias="qml/components/TrustPromptCard.qml">../qml/components/TrustPromptCard.qml</file>
         <file alias="qml/components/RootAuthCodeCard.qml">../qml/components/RootAuthCodeCard.qml</file>
         <file alias="qml/components/DeviceFingerprintRow.qml">../qml/components/DeviceFingerprintRow.qml</file>
+        <file alias="qml/components/IdentityAvatar.qml">../qml/components/IdentityAvatar.qml</file>
+        <file alias="qml/components/MediaPreviewCard.qml">../qml/components/MediaPreviewCard.qml</file>
+        <file alias="qml/components/SecurityStateStrip.qml">../qml/components/SecurityStateStrip.qml</file>
+        <file alias="qml/components/EmptyStateIllustration.qml">../qml/components/EmptyStateIllustration.qml</file>
+        <file alias="qml/components/InlineSwitch.qml">../qml/components/InlineSwitch.qml</file>
         <file alias="qml/shell/GroupCallWindow.qml">../qml/shell/GroupCallWindow.qml</file>
         <file alias="emoji/emoji.json">../data/emoji.json</file>
         <file alias="ime/pinyin.dat">../data/ime_pinyin.dat</file>

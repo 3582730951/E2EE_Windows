@@ -1,11 +1,18 @@
 package mi.e2ee.android.ui
 
-import androidx.activity.ComponentActivity
+import android.content.Context
+import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import mi.e2ee.android.MainActivity
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,127 +20,96 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class UiScreensSmokeTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
+    val composeRule = createEmptyComposeRule()
 
     @Test
-    fun loginScreenShowsPrimaryActions() {
-        composeRule.setContent {
-            ChatTheme {
-                LoginScreen()
-            }
-        }
+    fun screenshotBootstrapDetailStartsInHostAndReturnsToChatList() {
+        val scenario = launchScreenshotScene("detail")
+        try {
+            waitForTag("chat-screen")
+            composeRule.onNodeWithTag("chat-screen").assertIsDisplayed()
 
-        composeRule.onNodeWithText("Welcome back").assertIsDisplayed()
-        composeRule.onNodeWithText("Sign in").assertIsDisplayed()
-        composeRule.onNodeWithText("Show QR").assertIsDisplayed()
-        composeRule.onNodeWithText("Scan QR").assertIsDisplayed()
+            scenario.onActivity { activity ->
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+
+            waitForTag("conversation-list-screen")
+            composeRule.onNodeWithTag("conversation-list-screen").assertIsDisplayed()
+        } finally {
+            scenario.close()
+        }
     }
 
     @Test
-    fun conversationListShowsChatsAndSearch() {
-        val conversations = listOf(
-            ConversationPreview(
-                id = "c1",
-                initials = "AS",
-                name = "Aster Stone",
-                lastMessage = "Encrypted check-in",
-                time = "09:41",
-                unreadCount = 2,
-                isPinned = true,
-                isMuted = false,
-                isGroup = false,
-                isTyping = false
-            ),
-            ConversationPreview(
-                id = "g1",
-                initials = "TG",
-                name = "Threat Guild",
-                lastMessage = "Rotation completed",
-                time = "08:15",
-                unreadCount = 0,
-                isPinned = false,
-                isMuted = true,
-                isGroup = true,
-                isTyping = false
-            )
-        )
-        composeRule.setContent {
-            ChatTheme {
-                ConversationListScreen(conversations = conversations)
-            }
-        }
+    fun screenshotBootstrapSecurityCenterReturnsToSettingsRoot() {
+        val scenario = launchScreenshotScene("security_center")
+        try {
+            waitForTag("security-center-screen")
+            composeRule.onNodeWithTag("security-center-screen").assertIsDisplayed()
 
-        composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
-        composeRule.onNodeWithText("Threat Guild").assertIsDisplayed()
-        composeRule.onNodeWithText("Encrypted check-in").assertIsDisplayed()
+            scenario.onActivity { activity ->
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+
+            waitForTag("settings-screen")
+            composeRule.onNodeWithTag("settings-screen").assertIsDisplayed()
+        } finally {
+            scenario.close()
+        }
     }
 
     @Test
-    fun chatScreenShowsPinnedAndComposer() {
-        composeRule.setContent {
-            ChatTheme {
-                ChatScreen(items = SampleChat.items)
-            }
+    fun screenshotBootstrapCallsUsesRootCallsScreen() {
+        val scenario = launchScreenshotScene("calls")
+        try {
+            waitForTag("calls-screen")
+            waitForText("Weekend House")
+            composeRule.onNodeWithText("Weekend House").assertIsDisplayed()
+        } finally {
+            scenario.close()
         }
-
-        composeRule.onNodeWithText("Aster Stone").assertIsDisplayed()
-        composeRule.onNodeWithText("Morning. I mapped the edge cases into a short checklist.").assertIsDisplayed()
-        composeRule.onNodeWithText("Checklist.pdf").assertIsDisplayed()
     }
 
     @Test
-    fun registerScreenShowsIdentityInputs() {
-        composeRule.setContent {
-            ChatTheme {
-                RegisterScreen()
-            }
-        }
+    fun previewGroupConversationUsesGroupRouteWithoutSdkBootstrap() {
+        val scenario = launchScreenshotScene("chats")
+        try {
+            waitForTag("conversation-list-screen")
+            composeRule.onNodeWithText("Dinner Plan").performClick()
 
-        composeRule.onNodeWithTag("register-screen").assertIsDisplayed()
-        composeRule.onNodeWithText("Display name").assertIsDisplayed()
-        composeRule.onNodeWithText("Confirm password").assertIsDisplayed()
+            waitForText("Dinner in ten minutes. Let us meet downstairs.")
+            composeRule.onNodeWithText("Dinner in ten minutes. Let us meet downstairs.").assertIsDisplayed()
+
+            scenario.onActivity { activity ->
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+
+            waitForTag("conversation-list-screen")
+            composeRule.onNodeWithTag("conversation-list-screen").assertIsDisplayed()
+        } finally {
+            scenario.close()
+        }
     }
 
-    @Test
-    fun settingsScreenShowsAccountAndPrivacySections() {
-        composeRule.setContent {
-            ChatTheme {
-                SettingsScreen(sdk = SdkBridge(composeRule.activity))
-            }
-        }
-
-        composeRule.onNodeWithTag("settings-screen").assertIsDisplayed()
-        composeRule.onNodeWithText("Account and security").assertIsDisplayed()
-        composeRule.onNodeWithText("Privacy").assertIsDisplayed()
+    private fun launchScreenshotScene(scene: String): ActivityScenario<MainActivity> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SCREENSHOT_MODE, scene)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return ActivityScenario.launch(intent)
     }
 
-    @Test
-    fun groupChatScreenShowsTitleAndMessages() {
-        composeRule.setContent {
-            ChatTheme {
-                GroupChatScreen(items = SampleGroupChat.items)
-            }
+    private fun waitForTag(tag: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag(tag, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
         }
-
-        composeRule.onNodeWithText("Design Ops").assertIsDisplayed()
-        composeRule.onNodeWithText("12 members / Secure group").assertIsDisplayed()
-        composeRule.onNodeWithText("Aster joined the group").assertIsDisplayed()
     }
 
-    @Test
-    fun friendRequestsScreenShowsActions() {
-        val requests = listOf(
-            FriendRequestUi(username = "mina", remark = "Hi, let's connect")
-        )
-        composeRule.setContent {
-            ChatTheme {
-                FriendRequestsScreen(requests = requests)
-            }
+    private fun waitForText(text: String) {
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText(text, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
         }
-
-        composeRule.onNodeWithText("Friend requests").assertIsDisplayed()
-        composeRule.onNodeWithText("mina").assertIsDisplayed()
-        composeRule.onNodeWithText("Accept").assertIsDisplayed()
-        composeRule.onNodeWithText("Decline").assertIsDisplayed()
     }
 }

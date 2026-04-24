@@ -1,0 +1,9 @@
+{
+  "zh_cn_allowed_latin_tokens": [
+    "Alex",
+    "Aster",
+    "MI"
+  ],
+  "en_us_allowed_cjk_tokens": [],
+  "notes": "Only proper nouns and approved sample user names. No utility words."
+}

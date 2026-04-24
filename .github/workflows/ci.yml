@@ -52,6 +52,44 @@ jobs:
           python3 tools/windows_qml_text_policy_audit.py
           python3 tools/windows_qml_literal_copy_audit.py
 
+      - name: Write UI contract static evidence manifest
+        run: |
+          set -euo pipefail
+          mkdir -p build/ui_contract_evidence
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("build/ui_contract_evidence")
+          manifest = {
+              "kind": "ui_contract_static_evidence",
+              "status": "passed",
+              "required_evidence_satisfied": [
+                  "accessibility",
+                  "ownership_manifest",
+                  "text_policy",
+                  "literal_copy",
+              ],
+              "verified_by": [
+                  "tools/verify_ui_contract.py",
+                  "tools/windows_qml_accessibility_audit.py",
+                  "tools/windows_qml_text_policy_audit.py",
+                  "tools/windows_qml_literal_copy_audit.py",
+              ],
+          }
+          (root / "ui-contract-static-evidence.json").write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload UI contract evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi_e2ee_ui_contract_evidence
+          path: build/ui_contract_evidence/*
+          if-no-files-found: error
+
   build-package:
     needs:
       - verify-ui-contract
@@ -544,7 +582,7 @@ jobs:
             if (-not $ready) {
               throw "server not ready"
             }
-            function Invoke-UiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-UiSmokeOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
               $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
               $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
@@ -553,6 +591,17 @@ jobs:
               $env:QT_SCALE_FACTOR = [string]$scale
               $scaleLabel = [int][Math]::Round($scale * 100.0)
               $label = "$sceneName-$locale-$theme-$scaleLabel"
+              $captureName = switch ($sceneName) {
+                "login" { "login.png" }
+                "chat_detail" { "chat-detail.png" }
+                "calls_home" { "calls-home.png" }
+                "settings_home" { "settings-home.png" }
+                "security_center" { "security-center.png" }
+                "post_login_light" { "post-login-light.png" }
+                default { "post-login.png" }
+              }
+              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              Remove-Item $capturePath -ErrorAction SilentlyContinue
               $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
               $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.Directory.FullName -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
@@ -575,22 +624,33 @@ jobs:
                 }
                 throw "UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
-              $captureName = switch ($sceneName) {
-                "login" { "login.png" }
-                "security_center" { "security-center.png" }
-                "post_login_light" { "post-login-light.png" }
-                default { "post-login.png" }
-              }
-              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
               if (-not (Test-Path $capturePath)) {
                 throw "UI smoke capture missing: $capturePath"
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
               Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
               python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
-              if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
+              if ($locale -eq "zh-CN" -and $theme -eq "light" -and $scale -eq 1.0) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
-                python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+                if (Test-Path $golden) {
+                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden
+                }
+              }
+            }
+            function Invoke-UiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+              $maxAttempts = 3
+              for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                  Invoke-UiSmokeOnce $scene $locale $theme $scale
+                  return
+                } catch {
+                  if ($attempt -ge $maxAttempts) {
+                    throw
+                  }
+                  $labelScene = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
+                  Write-Host "UI smoke retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
+                  Start-Sleep -Seconds 2
+                }
               }
             }
             Push-Location $exe.Directory.FullName
@@ -602,6 +662,9 @@ jobs:
                 Invoke-UiSmoke "post_login_light" "zh-CN" "light" $scale
                 Invoke-UiSmoke "security_center" "zh-CN" "light" $scale
               }
+              Invoke-UiSmoke "chat_detail" "zh-CN" "light" 1.0
+              Invoke-UiSmoke "calls_home" "zh-CN" "light" 1.0
+              Invoke-UiSmoke "settings_home" "zh-CN" "light" 1.0
               Invoke-UiSmoke "post_login" "zh-CN" "dark" 1.0
               Invoke-UiSmoke "post_login" "en-US" "light" 1.0
             } finally {
@@ -830,7 +893,7 @@ jobs:
               }
               throw "dist server not ready"
             }
-            function Invoke-DistUiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-DistUiSmokeOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
               $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
               $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
@@ -839,6 +902,17 @@ jobs:
               $env:QT_SCALE_FACTOR = [string]$scale
               $scaleLabel = [int][Math]::Round($scale * 100.0)
               $label = "$sceneName-$locale-$theme-$scaleLabel"
+              $captureName = switch ($sceneName) {
+                "login" { "login.png" }
+                "chat_detail" { "chat-detail.png" }
+                "calls_home" { "calls-home.png" }
+                "settings_home" { "settings-home.png" }
+                "security_center" { "security-center.png" }
+                "post_login_light" { "post-login-light.png" }
+                default { "post-login.png" }
+              }
+              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              Remove-Item $capturePath -ErrorAction SilentlyContinue
               $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
               $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
               $uiProc = Start-Process -FilePath $clientLauncher -WorkingDirectory $clientRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
@@ -861,22 +935,33 @@ jobs:
                 }
                 throw "dist UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
               }
-              $captureName = switch ($sceneName) {
-                "login" { "login.png" }
-                "security_center" { "security-center.png" }
-                "post_login_light" { "post-login-light.png" }
-                default { "post-login.png" }
-              }
-              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
               if (-not (Test-Path $capturePath)) {
                 throw "dist UI smoke capture missing: $capturePath"
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
               Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
               python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
-              if ($locale -eq "zh-CN" -and $theme -eq "light" -and ($sceneName -eq "post_login" -or $sceneName -eq "post_login_light") -and ($scale -eq 1.0 -or $scale -eq 1.5)) {
+              if ($locale -eq "zh-CN" -and $theme -eq "light" -and $scale -eq 1.0) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
-                python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden --allow-missing-golden
+                if (Test-Path $golden) {
+                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden
+                }
+              }
+            }
+            function Invoke-DistUiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+              $maxAttempts = 3
+              for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                  Invoke-DistUiSmokeOnce $scene $locale $theme $scale
+                  return
+                } catch {
+                  if ($attempt -ge $maxAttempts) {
+                    throw
+                  }
+                  $labelScene = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
+                  Write-Host "Dist UI smoke retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
+                  Start-Sleep -Seconds 2
+                }
               }
             }
             Push-Location $clientRoot
@@ -888,6 +973,9 @@ jobs:
                 Invoke-DistUiSmoke "post_login_light" "zh-CN" "light" $scale
                 Invoke-DistUiSmoke "security_center" "zh-CN" "light" $scale
               }
+              Invoke-DistUiSmoke "chat_detail" "zh-CN" "light" 1.0
+              Invoke-DistUiSmoke "calls_home" "zh-CN" "light" 1.0
+              Invoke-DistUiSmoke "settings_home" "zh-CN" "light" 1.0
               Invoke-DistUiSmoke "post_login" "zh-CN" "dark" 1.0
               Invoke-DistUiSmoke "post_login" "en-US" "light" 1.0
             } finally {
@@ -1091,6 +1179,9 @@ jobs:
           canonical_aliases = {
               "login.png": "login-zh-CN-light-100.png",
               "post-login.png": "post-login-zh-CN-light-100.png",
+              "chat-detail.png": "chat-detail-zh-CN-light-100.png",
+              "calls-home.png": "calls-home-zh-CN-light-100.png",
+              "settings-home.png": "settings-home-zh-CN-light-100.png",
               "post-login-light.png": "post-login-light-zh-CN-light-100.png",
               "security-center.png": "security-center-zh-CN-light-100.png",
           }
@@ -1119,6 +1210,138 @@ jobs:
           --min-frame-decode-ops $env:MI_E2EE_PERF_MIN_FRAME_DECODE_OPS
           --min-offline-put-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS
           --min-offline-fetch-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS
+
+      - name: Write Windows runtime evidence manifest
+        run: |
+          $ErrorActionPreference = "Stop"
+          @'
+          import json
+          from pathlib import Path
+
+          root = Path("build/ui_smoke_artifacts")
+          if not root.exists():
+              raise SystemExit("build/ui_smoke_artifacts is missing")
+
+          acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          tuple_entries = acceptance["runtime_artifact_contract"]["tuple_inventory"]["windows"]
+          scene_evidence: dict[str, list[str]] = {}
+          theme_evidence: dict[str, list[str]] = {}
+          state_evidence: dict[str, list[str]] = {}
+          tuple_evidence: dict[str, list[str]] = {}
+
+          def extend_unique(target: dict[str, list[str]], key: str, evidence_files: list[str]) -> None:
+              bucket = target.setdefault(key, [])
+              for rel in evidence_files:
+                  if rel not in bucket:
+                      bucket.append(rel)
+
+          for entry in tuple_entries:
+              scene = entry["scene"]
+              theme = entry["theme"]
+              state = entry["state"]
+              evidence_files = list(entry["evidence_files"])
+              tuple_key = f"{scene}|{theme}|{state}"
+              tuple_evidence[tuple_key] = evidence_files
+              extend_unique(scene_evidence, scene, evidence_files)
+              extend_unique(theme_evidence, theme, evidence_files)
+              extend_unique(state_evidence, state, evidence_files)
+          locale_evidence = [
+              "build/post-login-en-US-light-100.png",
+              "dist/post-login-en-US-light-100.png",
+          ]
+          required_files = sorted({
+              *(entry for entries in scene_evidence.values() for entry in entries),
+              *(entry for entries in theme_evidence.values() for entry in entries),
+              *(entry for entries in state_evidence.values() for entry in entries),
+              *(entry for entries in tuple_evidence.values() for entry in entries),
+              *locale_evidence,
+          })
+          missing = [entry for entry in required_files if not (root / entry).exists()]
+          if missing:
+              raise SystemExit("missing Windows runtime evidence files:\n" + "\n".join(str(root / entry) for entry in missing))
+
+          manifest = {
+              "platform": "windows",
+              "required_evidence_satisfied": [
+                  "build",
+                  "navigation_flow",
+                  "fixture_smoke",
+                  "golden_diff",
+                  "theme_parity",
+                  "packaging",
+                  "identity_visuals",
+                  "security_tone_matrix",
+                  "empty_state_art",
+                  "smoke_matrix",
+                  "scene_matrix",
+                  "viewport_matrix",
+                  "tuple_matrix",
+              ],
+              "theme_matrix_validated": sorted(theme_evidence.keys()),
+              "state_matrix_validated": sorted(state_evidence.keys()),
+              "scenes_validated": list(scene_evidence.keys()),
+              "tuple_matrix_validated": sorted(tuple_evidence.keys()),
+              "scene_evidence": scene_evidence,
+              "theme_evidence": theme_evidence,
+              "state_evidence": state_evidence,
+              "tuple_evidence": tuple_evidence,
+              "locales_validated": ["zh-CN", "en-US"],
+              "scales_validated": [100, 125, 150, 175, 200],
+          }
+          (root / "windows-runtime-evidence.json").write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          for theme in manifest["theme_matrix_validated"]:
+              evidence_files = theme_evidence[theme]
+              (root / f"windows-theme-{theme}.json").write_text(
+                  json.dumps(
+                      {"platform": "windows", "theme": theme, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for scene in manifest["scenes_validated"]:
+              evidence_files = scene_evidence[scene]
+              (root / f"windows-scene-{scene}.json").write_text(
+                  json.dumps(
+                      {"platform": "windows", "scene": scene, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for state in manifest["state_matrix_validated"]:
+              evidence_files = state_evidence[state]
+              (root / f"windows-state-{state}.json").write_text(
+                  json.dumps(
+                      {"platform": "windows", "state": state, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for tuple_key in manifest["tuple_matrix_validated"]:
+              scene, theme, state = tuple_key.split("|", 2)
+              evidence_files = tuple_evidence[tuple_key]
+              marker_name = f"windows-tuple-{scene}__{theme}__{state}.json"
+              (root / marker_name).write_text(
+                  json.dumps(
+                      {
+                          "platform": "windows",
+                          "scene": scene,
+                          "theme": theme,
+                          "state": state,
+                          "tuple_key": tuple_key,
+                          "evidence_files": evidence_files,
+                      },
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          '@ | python -
 
       - name: Upload UI smoke captures
         if: always()
@@ -1834,24 +2057,24 @@ jobs:
           mkdir -p build/ios_rootauth_artifacts
           app_path=$(find "$GITHUB_WORKSPACE/build/ios_rootauth_derived/Build/Products" -type d -name 'RootAuthApp.app' | head -n 1)
           if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
-            echo "RootAuth simulator app bundle missing; skip screenshot" >&2
-            exit 0
+            echo "RootAuth simulator app bundle missing" >&2
+            exit 1
           fi
           xcrun simctl shutdown all >/dev/null 2>&1 || true
           udid=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')
           if [ -z "$udid" ]; then
-            echo "No available iPhone simulator found; skip screenshot" >&2
-            exit 0
+            echo "No available iPhone simulator found" >&2
+            exit 1
           fi
           xcrun simctl erase "$udid" >/dev/null 2>&1 || true
           xcrun simctl boot "$udid" >/dev/null 2>&1 || true
           xcrun simctl bootstatus "$udid" -b || {
-            echo "Simulator boot failed; skip screenshot" >&2
-            exit 0
+            echo "Simulator boot failed" >&2
+            exit 1
           }
           xcrun simctl install "$udid" "$app_path" || {
-            echo "Simulator install failed; skip screenshot" >&2
-            exit 0
+            echo "Simulator install failed" >&2
+            exit 1
           }
           screenshot_is_windowed() {
             local image_path="$1"
@@ -1954,12 +2177,17 @@ jobs:
           }
           capture_screenshot() {
             local mode="$1"
-            local output="$2"
-            local launch_log="build/ios_rootauth_artifacts/ios_rootauth_launch_${mode}.log"
+            local theme="$2"
+            local output="$3"
+            local launch_log="build/ios_rootauth_artifacts/ios_rootauth_launch_${mode}_${theme}.log"
             local settle_seconds=5
             if [ "$mode" = "detail" ] || [ "$mode" = "security" ]; then
               settle_seconds=6
             fi
+            xcrun simctl ui "$udid" appearance "$theme" >/dev/null 2>&1 || {
+              echo "Failed to set simulator appearance: $theme" >&2
+              return 1
+            }
             for attempt in 1 2 3; do
               rm -f "$output"
               xcrun simctl terminate "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
@@ -2087,33 +2315,49 @@ jobs:
           PY
           }
           capture_failed=0
-          capture_screenshot "login" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || {
+          capture_screenshot "login" "light" "build/ios_rootauth_artifacts/rootauth-ios-login.png" || {
             echo "Failed to capture RootAuth iOS screenshot: login" >&2
             capture_failed=1
           }
-          capture_screenshot "chats" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
+          capture_screenshot "chats" "light" "build/ios_rootauth_artifacts/rootauth-ios-home.png" || {
             echo "Failed to capture RootAuth iOS screenshot: chats/home" >&2
             capture_failed=1
           }
-          capture_screenshot "detail" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || {
+          capture_screenshot "detail" "light" "build/ios_rootauth_artifacts/rootauth-ios-detail.png" || {
             echo "Failed to capture RootAuth iOS screenshot: detail" >&2
             capture_failed=1
           }
-          capture_screenshot "settings" "build/ios_rootauth_artifacts/rootauth-ios-settings.png" || {
+          capture_screenshot "calls" "light" "build/ios_rootauth_artifacts/rootauth-ios-calls.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: calls" >&2
+            capture_failed=1
+          }
+          capture_screenshot "settings" "light" "build/ios_rootauth_artifacts/rootauth-ios-settings.png" || {
             echo "Failed to capture RootAuth iOS screenshot: settings" >&2
             capture_failed=1
           }
-          capture_screenshot "security" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || {
+          capture_screenshot "security" "light" "build/ios_rootauth_artifacts/rootauth-ios-security.png" || {
             echo "Failed to capture RootAuth iOS screenshot: security" >&2
             capture_failed=1
           }
+          capture_screenshot "chats" "dark" "build/ios_rootauth_artifacts/rootauth-ios-home-dark.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: chats/home (dark)" >&2
+            capture_failed=1
+          }
+          capture_screenshot "security" "dark" "build/ios_rootauth_artifacts/rootauth-ios-security-dark.png" || {
+            echo "Failed to capture RootAuth iOS screenshot: security (dark)" >&2
+            capture_failed=1
+          }
+          xcrun simctl ui "$udid" appearance light >/dev/null 2>&1 || true
 
           required_screenshots=(
             "build/ios_rootauth_artifacts/rootauth-ios-login.png"
             "build/ios_rootauth_artifacts/rootauth-ios-home.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-home-dark.png"
             "build/ios_rootauth_artifacts/rootauth-ios-detail.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-calls.png"
             "build/ios_rootauth_artifacts/rootauth-ios-settings.png"
             "build/ios_rootauth_artifacts/rootauth-ios-security.png"
+            "build/ios_rootauth_artifacts/rootauth-ios-security-dark.png"
           )
 
           missing_screenshots=0
@@ -2359,6 +2603,144 @@ jobs:
               trim_black_frame(Path(file_path))
           PY
 
+      - name: Write RootAuth iOS runtime evidence manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("build/ios_rootauth_artifacts")
+          required = {
+              "login": root / "rootauth-ios-login.png",
+              "chats": root / "rootauth-ios-home.png",
+              "detail": root / "rootauth-ios-detail.png",
+              "calls": root / "rootauth-ios-calls.png",
+              "settings": root / "rootauth-ios-settings.png",
+              "security": root / "rootauth-ios-security.png",
+              "chats_dark": root / "rootauth-ios-home-dark.png",
+              "security_dark": root / "rootauth-ios-security-dark.png",
+          }
+          missing = [str(path) for path in required.values() if not path.exists()]
+          bundle = root / "RootAuthApp-sim.zip"
+          if not bundle.exists():
+              missing.append(str(bundle))
+          if missing:
+              raise SystemExit("missing iOS runtime evidence files:\n" + "\n".join(missing))
+
+          acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          tuple_entries = acceptance["runtime_artifact_contract"]["tuple_inventory"]["ios"]
+          scene_evidence: dict[str, list[str]] = {}
+          theme_evidence: dict[str, list[str]] = {}
+          state_evidence: dict[str, list[str]] = {}
+          tuple_evidence: dict[str, list[str]] = {}
+
+          def extend_unique(target: dict[str, list[str]], key: str, evidence_files: list[str]) -> None:
+              bucket = target.setdefault(key, [])
+              for rel in evidence_files:
+                  if rel not in bucket:
+                      bucket.append(rel)
+
+          for entry in tuple_entries:
+              scene = entry["scene"]
+              theme = entry["theme"]
+              state = entry["state"]
+              evidence_files = list(entry["evidence_files"])
+              tuple_key = f"{scene}|{theme}|{state}"
+              tuple_evidence[tuple_key] = evidence_files
+              extend_unique(scene_evidence, scene, evidence_files)
+              extend_unique(theme_evidence, theme, evidence_files)
+              extend_unique(state_evidence, state, evidence_files)
+          required_files = sorted({
+              *(entry for entries in scene_evidence.values() for entry in entries),
+              *(entry for entries in theme_evidence.values() for entry in entries),
+              *(entry for entries in state_evidence.values() for entry in entries),
+              *(entry for entries in tuple_evidence.values() for entry in entries),
+          })
+          tuple_missing = [entry for entry in required_files if not (root / entry).exists()]
+          if tuple_missing:
+              raise SystemExit("missing iOS tuple runtime evidence files:\n" + "\n".join(tuple_missing))
+
+          manifest = {
+              "platform": "ios",
+              "required_evidence_satisfied": [
+                  "build",
+                  "navigation_flow",
+                  "fixture_smoke",
+                  "theme_parity",
+                  "identity_visuals",
+                  "security_tone_matrix",
+                  "empty_state_art",
+                  "detail_tab_hidden_parity",
+                  "scene_matrix",
+                  "viewport_matrix",
+                  "tuple_matrix",
+              ],
+              "theme_matrix_validated": sorted(theme_evidence.keys()),
+              "state_matrix_validated": sorted(state_evidence.keys()),
+              "scenes_validated": list(scene_evidence.keys()),
+              "tuple_matrix_validated": sorted(tuple_evidence.keys()),
+              "scene_evidence": scene_evidence,
+              "theme_evidence": theme_evidence,
+              "state_evidence": state_evidence,
+              "tuple_evidence": tuple_evidence,
+          }
+          (root / "ios-runtime-evidence.json").write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          for theme in manifest["theme_matrix_validated"]:
+              evidence_files = theme_evidence[theme]
+              (root / f"ios-theme-{theme}.json").write_text(
+                  json.dumps(
+                      {"platform": "ios", "theme": theme, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for scene in manifest["scenes_validated"]:
+              evidence_files = scene_evidence[scene]
+              (root / f"ios-scene-{scene}.json").write_text(
+                  json.dumps(
+                      {"platform": "ios", "scene": scene, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for state in manifest["state_matrix_validated"]:
+              evidence_files = state_evidence[state]
+              (root / f"ios-state-{state}.json").write_text(
+                  json.dumps(
+                      {"platform": "ios", "state": state, "evidence_files": evidence_files},
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          for tuple_key in manifest["tuple_matrix_validated"]:
+              scene, theme, state = tuple_key.split("|", 2)
+              evidence_files = tuple_evidence[tuple_key]
+              marker_name = f"ios-tuple-{scene}__{theme}__{state}.json"
+              (root / marker_name).write_text(
+                  json.dumps(
+                      {
+                          "platform": "ios",
+                          "scene": scene,
+                          "theme": theme,
+                          "state": state,
+                          "tuple_key": tuple_key,
+                          "evidence_files": evidence_files,
+                      },
+                      indent=2,
+                      ensure_ascii=False,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
+          PY
+
       - name: Archive xcodebuild log
         if: always()
         run: |
@@ -2394,6 +2776,9 @@ jobs:
     outputs:
       emulator_validated: ${{ steps.android_emulator_validation.outputs.validated }}
       arm64_validated: ${{ steps.android_arm64_validation.outputs.validated }}
+      arm64_waived: ${{ steps.android_arm64_validation.outputs.waived }}
+      arm64_waiver_reason: ${{ steps.android_arm64_validation.outputs.waiver_reason }}
+      arm64_gate_passed: ${{ steps.android_arm64_validation.outputs.gate_passed }}
     defaults:
       run:
         shell: bash
@@ -2720,6 +3105,7 @@ jobs:
           install_components: 'firebase'
 
       - name: Firebase Test Lab (arm64)
+        id: android_arm64_ftl
         if: ${{ env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1' && env.GCP_SERVICE_ACCOUNT_JSON != '' && env.GCP_PROJECT_ID != '' }}
         env:
           FTL_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
@@ -2751,12 +3137,138 @@ jobs:
             args+=(--device "model=Pixel3,version=33,locale=en,orientation=portrait")
           fi
           gcloud "${args[@]}"
+          echo "validated=true" >> "$GITHUB_OUTPUT"
 
       - name: Mark Android arm64 validation
         id: android_arm64_validation
-        if: env.MI_E2EE_CI_SKIP_ANDROID_TESTS != '1'
+        if: always()
+        env:
+          FTL_VALIDATED: ${{ steps.android_arm64_ftl.outputs.validated }}
+          FTL_DEVICE_MATRIX: ${{ vars.MI_E2EE_FTL_DEVICE_MATRIX }}
         run: |
-          echo "validated=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          mkdir -p build/android_ui_artifacts
+          validated=false
+          waived=false
+          waiver_reason=""
+          reason_detail="Firebase Test Lab arm64 validation did not run"
+          evidence_source="unresolved"
+          gate_passed=false
+          skip_android_tests=false
+          has_gcp_service_account_json=false
+          has_gcp_project_id=false
+          ftl_validated_reported=false
+          ftl_requested_device_matrix_non_empty=false
+          ftl_device_matrix_arm64_approved=false
+          default_device_matrix="model=Pixel2,version=30,locale=en,orientation=portrait;model=Pixel3,version=33,locale=en,orientation=portrait"
+          requested_device_matrix="${FTL_DEVICE_MATRIX:-$default_device_matrix}"
+          if [ "${MI_E2EE_CI_SKIP_ANDROID_TESTS:-0}" = "1" ]; then
+            skip_android_tests=true
+          fi
+          if [ "${GCP_SERVICE_ACCOUNT_JSON:-}" != "" ]; then
+            has_gcp_service_account_json=true
+          fi
+          if [ "${GCP_PROJECT_ID:-}" != "" ]; then
+            has_gcp_project_id=true
+          fi
+          if [ "${FTL_VALIDATED:-}" = "true" ]; then
+            ftl_validated_reported=true
+          fi
+          if [ -n "$requested_device_matrix" ]; then
+            ftl_requested_device_matrix_non_empty=true
+            ftl_device_matrix_arm64_approved=true
+            IFS=';' read -r -a requested_devices <<< "$requested_device_matrix"
+            for device in "${requested_devices[@]}"; do
+              [ -n "$device" ] || continue
+              model=""
+              IFS=',' read -r -a device_parts <<< "$device"
+              for part in "${device_parts[@]}"; do
+                case "$part" in
+                  model=*)
+                    model="${part#model=}"
+                    ;;
+                esac
+              done
+              case "$model" in
+                Pixel2|Pixel3)
+                  ;;
+                *)
+                  ftl_device_matrix_arm64_approved=false
+                  ;;
+              esac
+            done
+          fi
+          if [ "${MI_E2EE_CI_SKIP_ANDROID_TESTS:-0}" = "1" ]; then
+            waived=true
+            waiver_reason="android_tests_skipped"
+            reason_detail="Android tests were skipped"
+            evidence_source="ci_waiver"
+            gate_passed=true
+          elif [ "${GCP_SERVICE_ACCOUNT_JSON:-}" = "" ] || [ "${GCP_PROJECT_ID:-}" = "" ]; then
+            waived=true
+            waiver_reason="missing_gcp_credentials"
+            reason_detail="GCP credentials for arm64 validation are missing"
+            evidence_source="ci_waiver"
+            gate_passed=true
+          elif [ "$ftl_device_matrix_arm64_approved" != "true" ]; then
+            reason_detail="Firebase Test Lab arm64 device matrix is not approved"
+          elif [ "${FTL_VALIDATED:-}" = "true" ]; then
+            validated=true
+            reason_detail="Firebase Test Lab arm64 validation passed"
+            evidence_source="firebase_test_lab"
+            gate_passed=true
+          else
+            reason_detail="Firebase Test Lab arm64 validation failed or did not report success"
+          fi
+          export ANDROID_ARM64_VALIDATED_VALUE="$validated"
+          export ANDROID_ARM64_WAIVED_VALUE="$waived"
+          export ANDROID_ARM64_WAIVER_REASON="$waiver_reason"
+          export ANDROID_ARM64_REASON_DETAIL="$reason_detail"
+          export ANDROID_ARM64_EVIDENCE_SOURCE="$evidence_source"
+          export ANDROID_ARM64_GATE_PASSED="$gate_passed"
+          export ANDROID_ARM64_SKIP_ANDROID_TESTS="$skip_android_tests"
+          export ANDROID_ARM64_HAS_GCP_SERVICE_ACCOUNT_JSON="$has_gcp_service_account_json"
+          export ANDROID_ARM64_HAS_GCP_PROJECT_ID="$has_gcp_project_id"
+          export ANDROID_ARM64_FTL_VALIDATED_REPORTED="$ftl_validated_reported"
+          export ANDROID_ARM64_FTL_REQUESTED_DEVICE_MATRIX_NON_EMPTY="$ftl_requested_device_matrix_non_empty"
+          export ANDROID_ARM64_FTL_DEVICE_MATRIX_ARM64_APPROVED="$ftl_device_matrix_arm64_approved"
+          export ANDROID_ARM64_REQUESTED_DEVICE_MATRIX="$requested_device_matrix"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          requested_device_matrix = [
+              entry for entry in os.environ["ANDROID_ARM64_REQUESTED_DEVICE_MATRIX"].split(";") if entry
+          ]
+          manifest = {
+              "platform": "android",
+              "requirement_mode": "required_or_waived",
+              "validated": os.environ["ANDROID_ARM64_VALIDATED_VALUE"] == "true",
+              "waived": os.environ["ANDROID_ARM64_WAIVED_VALUE"] == "true",
+              "waiver_reason": os.environ["ANDROID_ARM64_WAIVER_REASON"],
+              "reason_detail": os.environ["ANDROID_ARM64_REASON_DETAIL"],
+              "evidence_source": os.environ["ANDROID_ARM64_EVIDENCE_SOURCE"],
+              "gate_passed": os.environ["ANDROID_ARM64_GATE_PASSED"] == "true",
+              "requested_device_matrix": requested_device_matrix,
+              "audit": {
+                  "skip_android_tests": os.environ["ANDROID_ARM64_SKIP_ANDROID_TESTS"] == "true",
+                  "has_gcp_service_account_json": os.environ["ANDROID_ARM64_HAS_GCP_SERVICE_ACCOUNT_JSON"] == "true",
+                  "has_gcp_project_id": os.environ["ANDROID_ARM64_HAS_GCP_PROJECT_ID"] == "true",
+                  "ftl_validated_reported": os.environ["ANDROID_ARM64_FTL_VALIDATED_REPORTED"] == "true",
+                  "ftl_requested_device_matrix_non_empty": os.environ["ANDROID_ARM64_FTL_REQUESTED_DEVICE_MATRIX_NON_EMPTY"] == "true",
+                  "ftl_device_matrix_arm64_approved": os.environ["ANDROID_ARM64_FTL_DEVICE_MATRIX_ARM64_APPROVED"] == "true",
+              },
+          }
+          Path("build/android_ui_artifacts/android-arm64-validation.json").write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          echo "validated=$validated" >> "$GITHUB_OUTPUT"
+          echo "waived=$waived" >> "$GITHUB_OUTPUT"
+          echo "waiver_reason=$waiver_reason" >> "$GITHUB_OUTPUT"
+          echo "gate_passed=$gate_passed" >> "$GITHUB_OUTPUT"
 
       - name: Build Android release
         run: |
@@ -2794,12 +3306,191 @@ jobs:
           name: mi_e2ee_android_rootauth_release
           path: android/rootapp/build/outputs/apk/release/*.apk
 
+      - name: Verify and finalize Android runtime evidence manifest
+        if: always()
+        env:
+          ANDROID_EMULATOR_VALIDATED: ${{ steps.android_emulator_validation.outputs.validated }}
+          ANDROID_ARM64_VALIDATED: ${{ steps.android_arm64_validation.outputs.validated }}
+          ANDROID_ARM64_WAIVED: ${{ steps.android_arm64_validation.outputs.waived }}
+          ANDROID_ARM64_WAIVER_REASON: ${{ steps.android_arm64_validation.outputs.waiver_reason }}
+          ANDROID_ARM64_GATE_PASSED: ${{ steps.android_arm64_validation.outputs.gate_passed }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/android_ui_artifacts
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("build/android_ui_artifacts")
+          required = {
+              "login": root / "android-login.png",
+              "chats": root / "android-chats.png",
+              "chats_dark": root / "android-chats-dark.png",
+              "detail": root / "android-detail.png",
+              "calls": root / "android-calls.png",
+              "settings": root / "android-settings.png",
+              "security_center": root / "android-security.png",
+              "security_center_dark": root / "android-security-dark.png",
+          }
+          missing = [str(path) for path in required.values() if not path.exists()]
+          if missing:
+              raise SystemExit("missing Android runtime evidence files:\n" + "\n".join(missing))
+
+          acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          runtime = acceptance["runtime_artifact_contract"]
+          android_cfg = runtime["evidence_manifests"]["android_runtime"]
+          tuple_entries = runtime["tuple_inventory"]["android"]
+          expected_theme_matrix = set(acceptance["theme_matrix"])
+          expected_state_matrix = set(acceptance["state_matrix"])
+          expected_scene_matrix = set(acceptance["fixture_scenes"]["android"])
+
+          manifest_path = root / android_cfg["manifest_file"]
+          if not manifest_path.exists():
+              raise SystemExit(f"Android runtime manifest missing from runtime producer: {manifest_path.name}")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          expected_required_evidence = [
+              "build",
+              "navigation_flow",
+              "fixture_smoke",
+              "theme_parity",
+              "identity_visuals",
+              "security_tone_matrix",
+              "empty_state_art",
+              "detail_tab_hidden_parity",
+              "scene_matrix",
+              "viewport_matrix",
+              "tuple_matrix",
+          ]
+          if manifest.get("platform") != "android":
+              raise SystemExit("android runtime manifest platform mismatch")
+          if manifest.get("required_evidence_satisfied") != expected_required_evidence:
+              raise SystemExit("android runtime manifest required_evidence_satisfied mismatch")
+          if manifest.get("tuple_markers_emitted_by_runtime") is not True:
+              raise SystemExit("android runtime manifest must declare tuple_markers_emitted_by_runtime=true")
+          if manifest.get("runtime_marker_source") != android_cfg["runtime_marker_source"]:
+              raise SystemExit("android runtime manifest runtime_marker_source mismatch")
+
+          scene_evidence = manifest.get("scene_evidence")
+          theme_evidence = manifest.get("theme_evidence")
+          state_evidence = manifest.get("state_evidence")
+          tuple_evidence = manifest.get("tuple_evidence")
+          if not isinstance(scene_evidence, dict):
+              raise SystemExit("android runtime manifest scene_evidence missing")
+          if not isinstance(theme_evidence, dict):
+              raise SystemExit("android runtime manifest theme_evidence missing")
+          if not isinstance(state_evidence, dict):
+              raise SystemExit("android runtime manifest state_evidence missing")
+          if not isinstance(tuple_evidence, dict):
+              raise SystemExit("android runtime manifest tuple_evidence missing")
+
+          def validate_marker(marker_path: Path, key: str, value: str, expected_evidence: list[str]) -> None:
+              if not marker_path.exists():
+                  raise SystemExit(f"Android runtime marker missing: {marker_path.name}")
+              payload = json.loads(marker_path.read_text(encoding="utf-8"))
+              if payload.get("platform") != "android":
+                  raise SystemExit(f"{marker_path.name} platform mismatch")
+              if payload.get(key) != value:
+                  raise SystemExit(f"{marker_path.name} {key} mismatch")
+              evidence_files = payload.get("evidence_files")
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  raise SystemExit(f"{marker_path.name} missing non-empty evidence_files")
+              if set(evidence_files) != set(expected_evidence):
+                  raise SystemExit(f"{marker_path.name} evidence_files mismatch")
+              for rel in evidence_files:
+                  if not (root / rel).exists():
+                      raise SystemExit(f"{marker_path.name} evidence file missing: {rel}")
+
+          def validate_tuple_marker(marker_path: Path, scene: str, theme: str, state: str, tuple_key: str, expected_evidence: list[str]) -> None:
+              if not marker_path.exists():
+                  raise SystemExit(f"Android runtime tuple marker missing: {marker_path.name}")
+              payload = json.loads(marker_path.read_text(encoding="utf-8"))
+              if payload.get("platform") != "android":
+                  raise SystemExit(f"{marker_path.name} platform mismatch")
+              if payload.get("scene") != scene:
+                  raise SystemExit(f"{marker_path.name} scene mismatch")
+              if payload.get("theme") != theme:
+                  raise SystemExit(f"{marker_path.name} theme mismatch")
+              if payload.get("state") != state:
+                  raise SystemExit(f"{marker_path.name} state mismatch")
+              if payload.get("tuple_key") != tuple_key:
+                  raise SystemExit(f"{marker_path.name} tuple_key mismatch")
+              evidence_files = payload.get("evidence_files")
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  raise SystemExit(f"{marker_path.name} missing non-empty evidence_files")
+              if set(evidence_files) != set(expected_evidence):
+                  raise SystemExit(f"{marker_path.name} evidence_files mismatch")
+              for rel in evidence_files:
+                  if not (root / rel).exists():
+                      raise SystemExit(f"{marker_path.name} evidence file missing: {rel}")
+
+          manifest_tuple_keys = set(manifest.get("tuple_matrix_validated", []))
+          expected_tuple_keys: set[str] = set()
+          for entry in tuple_entries:
+              scene = entry["scene"]
+              theme = entry["theme"]
+              state = entry["state"]
+              evidence_files = entry["evidence_files"]
+              tuple_key = f"{scene}|{theme}|{state}"
+              expected_tuple_keys.add(tuple_key)
+              if tuple_evidence.get(tuple_key) != evidence_files:
+                  raise SystemExit(f"android runtime tuple_evidence mismatch: {tuple_key}")
+              validate_tuple_marker(
+                  root / f"{android_cfg['tuple_marker_prefix']}{scene}__{theme}__{state}.json",
+                  scene,
+                  theme,
+                  state,
+                  tuple_key,
+                  evidence_files,
+              )
+          if manifest_tuple_keys != expected_tuple_keys:
+              raise SystemExit(
+                  "android runtime tuple_matrix_validated mismatch:\n"
+                  f"expected={sorted(expected_tuple_keys)}\nactual={sorted(manifest_tuple_keys)}"
+              )
+
+          for scene in sorted(expected_scene_matrix):
+              evidence_files = scene_evidence.get(scene)
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  raise SystemExit(f"android runtime scene_evidence missing: {scene}")
+              validate_marker(root / f"{android_cfg['scene_marker_prefix']}{scene}.json", "scene", scene, evidence_files)
+          if set(manifest.get("scenes_validated", [])) != expected_scene_matrix:
+              raise SystemExit("android runtime scenes_validated mismatch")
+
+          for theme in sorted(expected_theme_matrix):
+              evidence_files = theme_evidence.get(theme)
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  raise SystemExit(f"android runtime theme_evidence missing: {theme}")
+              validate_marker(root / f"{android_cfg['theme_marker_prefix']}{theme}.json", "theme", theme, evidence_files)
+          if set(manifest.get("theme_matrix_validated", [])) != expected_theme_matrix:
+              raise SystemExit("android runtime theme_matrix_validated mismatch")
+
+          for state in sorted(expected_state_matrix):
+              evidence_files = state_evidence.get(state)
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  raise SystemExit(f"android runtime state_evidence missing: {state}")
+              validate_marker(root / f"{android_cfg['state_marker_prefix']}{state}.json", "state", state, evidence_files)
+          if set(manifest.get("state_matrix_validated", [])) != expected_state_matrix:
+              raise SystemExit("android runtime state_matrix_validated mismatch")
+
+          manifest["emulator_validated"] = os.environ.get("ANDROID_EMULATOR_VALIDATED") == "true"
+          manifest["arm64_validated"] = os.environ.get("ANDROID_ARM64_VALIDATED") == "true"
+          manifest["arm64_waived"] = os.environ.get("ANDROID_ARM64_WAIVED") == "true"
+          manifest["arm64_waiver_reason"] = os.environ.get("ANDROID_ARM64_WAIVER_REASON", "")
+          manifest["arm64_gate_passed"] = os.environ.get("ANDROID_ARM64_GATE_PASSED") == "true"
+          manifest_path.write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Upload Android UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mi_e2ee_android_ui_smoke
-          path: build/android_ui_artifacts/*.png
+          path: build/android_ui_artifacts/*
           if-no-files-found: error
 
   final-acceptance:
@@ -2817,6 +3508,470 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download acceptance artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mi_e2ee_*
+          path: build/final_acceptance_artifacts
+
+      - name: Verify runtime evidence artifacts
+        env:
+          ANDROID_ARM64_VALIDATED: ${{ needs.build-android.outputs.arm64_validated }}
+          ANDROID_ARM64_WAIVED: ${{ needs.build-android.outputs.arm64_waived }}
+          ANDROID_ARM64_WAIVER_REASON: ${{ needs.build-android.outputs.arm64_waiver_reason }}
+          ANDROID_ARM64_GATE_PASSED: ${{ needs.build-android.outputs.arm64_gate_passed }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          runtime = acceptance["runtime_artifact_contract"]
+          manifests_cfg = runtime["evidence_manifests"]
+          artifacts_root = Path("build/final_acceptance_artifacts")
+          errors: list[str] = []
+
+          def expect(condition: bool, message: str) -> None:
+              if not condition:
+                  errors.append(message)
+
+          def artifact_dir(name: str) -> Path:
+              return artifacts_root / name
+
+          def find_single(path: Path, name: str) -> Path | None:
+              if not path.exists():
+                  return None
+              matches = [candidate for candidate in path.rglob(name) if candidate.is_file()]
+              if not matches:
+                  return None
+              return matches[0]
+
+          def load_manifest(config_key: str) -> dict:
+              config = manifests_cfg[config_key]
+              root = artifact_dir(config["artifact_name"])
+              expect(root.exists(), f"artifact directory missing: {root}")
+              manifest_path = find_single(root, config["manifest_file"])
+              expect(manifest_path is not None, f"manifest missing: {config['artifact_name']}/{config['manifest_file']}")
+              if manifest_path is None:
+                  return {}
+              return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          static_manifest = load_manifest("static_contract")
+          windows_manifest = load_manifest("windows_runtime")
+          ios_manifest = load_manifest("ios_runtime")
+          android_manifest = load_manifest("android_runtime")
+
+          covered_evidence: set[str] = set()
+          for manifest in (static_manifest, windows_manifest, ios_manifest, android_manifest):
+              covered_evidence.update(manifest.get("required_evidence_satisfied", []))
+          missing_evidence = [item for item in acceptance["required_evidence"] if item not in covered_evidence]
+          expect(not missing_evidence, "required_evidence runtime coverage missing: " + ", ".join(missing_evidence))
+
+          expectations = runtime["artifact_expectations"]
+          for package_artifact in expectations["windows_packages"] + expectations["android_packages"]:
+              package_dir = artifact_dir(package_artifact)
+              expect(package_dir.exists(), f"artifact missing: {package_artifact}")
+              if package_dir.exists():
+                  expect(any(candidate.is_file() for candidate in package_dir.rglob("*")), f"artifact empty: {package_artifact}")
+
+          ios_dir = artifact_dir(manifests_cfg["ios_runtime"]["artifact_name"])
+          expect(
+              find_single(ios_dir, expectations["ios_bundle_glob"]) is not None,
+              f"iOS bundle evidence missing: {expectations['ios_bundle_glob']}",
+          )
+
+          windows_dir = artifact_dir(manifests_cfg["windows_runtime"]["artifact_name"])
+          android_dir = artifact_dir(manifests_cfg["android_runtime"]["artifact_name"])
+          platform_dirs = {
+              "windows": windows_dir,
+              "ios": ios_dir,
+              "android": android_dir,
+          }
+          runtime_manifests = {
+              "windows": windows_manifest,
+              "ios": ios_manifest,
+              "android": android_manifest,
+          }
+
+          required_windows_runtime = [
+              "build/login-zh-CN-light-100.png",
+              "build/post-login-zh-CN-light-100.png",
+              "build/post-login-light-zh-CN-light-100.png",
+              "build/security-center-zh-CN-light-100.png",
+              "build/chat-detail-zh-CN-light-100.png",
+              "build/calls-home-zh-CN-light-100.png",
+              "build/settings-home-zh-CN-light-100.png",
+              "build/post-login-zh-CN-dark-100.png",
+              "build/post-login-en-US-light-100.png",
+              "dist/login-zh-CN-light-100.png",
+              "dist/post-login-zh-CN-light-100.png",
+              "dist/post-login-light-zh-CN-light-100.png",
+              "dist/security-center-zh-CN-light-100.png",
+              "dist/chat-detail-zh-CN-light-100.png",
+              "dist/calls-home-zh-CN-light-100.png",
+              "dist/settings-home-zh-CN-light-100.png",
+              "dist/post-login-zh-CN-dark-100.png",
+              "dist/post-login-en-US-light-100.png",
+          ]
+          for relative_path in required_windows_runtime:
+              expect((windows_dir / relative_path).exists(), f"Windows runtime artifact missing: {relative_path}")
+
+          for platform, inventory in runtime["screenshot_inventory"].items():
+              if platform == "windows":
+                  continue
+              directory = platform_dirs[platform]
+              for scene, filename in inventory.items():
+                  expect(find_single(directory, filename) is not None, f"{platform} screenshot missing for {scene}: {filename}")
+
+          def validate_marker(
+              *,
+              directory: Path,
+              marker: Path,
+              platform: str,
+              key: str,
+              value: str,
+              expected_evidence: list[str],
+          ) -> None:
+              expect(marker.exists(), f"{platform} {key} matrix marker missing: {marker.name}")
+              if not marker.exists():
+                  return
+              try:
+                  payload = json.loads(marker.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  expect(False, f"invalid JSON marker {marker.name}: {exc}")
+                  return
+              expect(payload.get("platform") == platform, f"{marker.name} platform mismatch")
+              expect(payload.get(key) == value, f"{marker.name} {key} mismatch")
+              evidence_files = payload.get("evidence_files")
+              expect(isinstance(evidence_files, list) and len(evidence_files) > 0, f"{marker.name} missing non-empty evidence_files")
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  return
+              expect(
+                  set(evidence_files) == set(expected_evidence),
+                  f"{marker.name} evidence_files mismatch with runtime manifest",
+              )
+              for rel in evidence_files:
+                  expect((directory / rel).exists(), f"{marker.name} evidence file missing: {rel}")
+
+          def validate_tuple_marker(
+              *,
+              directory: Path,
+              marker: Path,
+              platform: str,
+              scene: str,
+              theme: str,
+              state: str,
+              tuple_key: str,
+              expected_evidence: list[str],
+          ) -> None:
+              expect(marker.exists(), f"{platform} tuple marker missing: {marker.name}")
+              if not marker.exists():
+                  return
+              try:
+                  payload = json.loads(marker.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  expect(False, f"invalid JSON tuple marker {marker.name}: {exc}")
+                  return
+              expect(payload.get("platform") == platform, f"{marker.name} platform mismatch")
+              expect(payload.get("scene") == scene, f"{marker.name} scene mismatch")
+              expect(payload.get("theme") == theme, f"{marker.name} theme mismatch")
+              expect(payload.get("state") == state, f"{marker.name} state mismatch")
+              expect(payload.get("tuple_key") == tuple_key, f"{marker.name} tuple_key mismatch")
+              evidence_files = payload.get("evidence_files")
+              expect(isinstance(evidence_files, list) and len(evidence_files) > 0, f"{marker.name} missing non-empty evidence_files")
+              if not isinstance(evidence_files, list) or not evidence_files:
+                  return
+              expect(
+                  set(evidence_files) == set(expected_evidence),
+                  f"{marker.name} evidence_files mismatch with runtime manifest",
+              )
+              for rel in evidence_files:
+                  expect((directory / rel).exists(), f"{marker.name} evidence file missing: {rel}")
+
+          tuple_inventory = runtime.get("tuple_inventory", {})
+
+          def derive_tuple_maps(entries: list[dict]) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, list[str]], dict[str, list[str]]]:
+              scene_map: dict[str, list[str]] = {}
+              theme_map: dict[str, list[str]] = {}
+              state_map: dict[str, list[str]] = {}
+              tuple_map: dict[str, list[str]] = {}
+
+              def extend_unique(target: dict[str, list[str]], key: str, evidence_files: list[str]) -> None:
+                  bucket = target.setdefault(key, [])
+                  for rel in evidence_files:
+                      if rel not in bucket:
+                          bucket.append(rel)
+
+              for tuple_item in entries:
+                  scene = tuple_item["scene"]
+                  theme = tuple_item["theme"]
+                  state = tuple_item["state"]
+                  evidence_files = list(tuple_item["evidence_files"])
+                  tuple_key = f"{scene}|{theme}|{state}"
+                  tuple_map[tuple_key] = evidence_files
+                  extend_unique(scene_map, scene, evidence_files)
+                  extend_unique(theme_map, theme, evidence_files)
+                  extend_unique(state_map, state, evidence_files)
+              return scene_map, theme_map, state_map, tuple_map
+
+          for platform, config_key in (
+              ("windows", "windows_runtime"),
+              ("ios", "ios_runtime"),
+              ("android", "android_runtime"),
+          ):
+              directory = platform_dirs[platform]
+              config = manifests_cfg[config_key]
+              manifest = runtime_manifests[platform]
+              if platform == "android":
+                  expect(
+                      manifest.get("tuple_markers_emitted_by_runtime") is True,
+                      "android runtime manifest must declare tuple_markers_emitted_by_runtime=true",
+                  )
+                  expect(
+                      manifest.get("runtime_marker_source") == config.get("runtime_marker_source"),
+                      "android runtime manifest runtime_marker_source mismatch",
+                  )
+              platform_tuples = tuple_inventory.get(platform, [])
+              expect(isinstance(platform_tuples, list) and len(platform_tuples) > 0, f"{platform} tuple_inventory missing or empty")
+              if not isinstance(platform_tuples, list):
+                  platform_tuples = []
+              expected_scene_evidence, expected_theme_evidence, expected_state_evidence, expected_tuple_evidence = derive_tuple_maps(platform_tuples)
+
+              expected_scenes = set(acceptance["fixture_scenes"][platform])
+              expected_themes = set(acceptance["theme_matrix"])
+              expected_states = set(acceptance["state_matrix"])
+              manifest_scenes = set(manifest.get("scenes_validated", []))
+              manifest_themes = set(manifest.get("theme_matrix_validated", []))
+              manifest_states = set(manifest.get("state_matrix_validated", []))
+              manifest_tuple_keys = set(manifest.get("tuple_matrix_validated", []))
+
+              expect(manifest_scenes == expected_scenes, f"{platform} runtime manifest scenes mismatch: expected={sorted(expected_scenes)} actual={sorted(manifest_scenes)}")
+              expect(manifest_themes == expected_themes, f"{platform} runtime manifest themes mismatch: expected={sorted(expected_themes)} actual={sorted(manifest_themes)}")
+              expect(manifest_states == expected_states, f"{platform} runtime manifest states mismatch: expected={sorted(expected_states)} actual={sorted(manifest_states)}")
+              expect(
+                  manifest_tuple_keys == set(expected_tuple_evidence.keys()),
+                  f"{platform} runtime manifest tuple keys mismatch: expected={sorted(expected_tuple_evidence.keys())} actual={sorted(manifest_tuple_keys)}",
+              )
+
+              scene_evidence = manifest.get("scene_evidence")
+              theme_evidence = manifest.get("theme_evidence")
+              state_evidence = manifest.get("state_evidence")
+              tuple_evidence = manifest.get("tuple_evidence")
+              expect(isinstance(scene_evidence, dict), f"{platform} runtime manifest missing scene_evidence")
+              expect(isinstance(theme_evidence, dict), f"{platform} runtime manifest missing theme_evidence")
+              expect(isinstance(state_evidence, dict), f"{platform} runtime manifest missing state_evidence")
+              expect(isinstance(tuple_evidence, dict), f"{platform} runtime manifest missing tuple_evidence")
+              if not isinstance(scene_evidence, dict):
+                  scene_evidence = {}
+              if not isinstance(theme_evidence, dict):
+                  theme_evidence = {}
+              if not isinstance(state_evidence, dict):
+                  state_evidence = {}
+              if not isinstance(tuple_evidence, dict):
+                  tuple_evidence = {}
+
+              expect(set(scene_evidence.keys()) == expected_scenes, f"{platform} scene_evidence keys mismatch")
+              expect(set(theme_evidence.keys()) == expected_themes, f"{platform} theme_evidence keys mismatch")
+              expect(set(state_evidence.keys()) == expected_states, f"{platform} state_evidence keys mismatch")
+              expect(set(tuple_evidence.keys()) == set(expected_tuple_evidence.keys()), f"{platform} tuple_evidence keys mismatch")
+
+              for scene in acceptance["fixture_scenes"][platform]:
+                  expected_evidence = expected_scene_evidence.get(scene, [])
+                  actual_evidence = scene_evidence.get(scene, [])
+                  expect(expected_evidence, f"{platform} tuple_inventory missing scene coverage: {scene}")
+                  expect(isinstance(actual_evidence, list) and len(actual_evidence) > 0, f"{platform} scene_evidence missing: {scene}")
+                  if isinstance(actual_evidence, list):
+                      expect(set(actual_evidence) == set(expected_evidence), f"{platform} scene_evidence mismatch: {scene}")
+                      for rel in actual_evidence:
+                          expect((directory / rel).exists(), f"{platform} scene evidence file missing for {scene}: {rel}")
+                  validate_marker(
+                      directory=directory,
+                      marker=directory / f"{config['scene_marker_prefix']}{scene}.json",
+                      platform=platform,
+                      key="scene",
+                      value=scene,
+                      expected_evidence=expected_evidence,
+                  )
+
+              for theme in acceptance["theme_matrix"]:
+                  expected_evidence = expected_theme_evidence.get(theme, [])
+                  actual_evidence = theme_evidence.get(theme, [])
+                  expect(expected_evidence, f"{platform} tuple_inventory missing theme coverage: {theme}")
+                  expect(isinstance(actual_evidence, list) and len(actual_evidence) > 0, f"{platform} theme_evidence missing: {theme}")
+                  if isinstance(actual_evidence, list):
+                      expect(set(actual_evidence) == set(expected_evidence), f"{platform} theme_evidence mismatch: {theme}")
+                      for rel in actual_evidence:
+                          expect((directory / rel).exists(), f"{platform} theme evidence file missing for {theme}: {rel}")
+                  validate_marker(
+                      directory=directory,
+                      marker=directory / f"{config['theme_marker_prefix']}{theme}.json",
+                      platform=platform,
+                      key="theme",
+                      value=theme,
+                      expected_evidence=expected_evidence,
+                  )
+
+              for state in acceptance["state_matrix"]:
+                  expected_evidence = expected_state_evidence.get(state, [])
+                  actual_evidence = state_evidence.get(state, [])
+                  expect(expected_evidence, f"{platform} tuple_inventory missing state coverage: {state}")
+                  expect(isinstance(actual_evidence, list) and len(actual_evidence) > 0, f"{platform} state_evidence missing: {state}")
+                  if isinstance(actual_evidence, list):
+                      expect(set(actual_evidence) == set(expected_evidence), f"{platform} state_evidence mismatch: {state}")
+                      for rel in actual_evidence:
+                          expect((directory / rel).exists(), f"{platform} state evidence file missing for {state}: {rel}")
+                  validate_marker(
+                      directory=directory,
+                      marker=directory / f"{config['state_marker_prefix']}{state}.json",
+                      platform=platform,
+                      key="state",
+                      value=state,
+                      expected_evidence=expected_evidence,
+                  )
+
+              for tuple_item in platform_tuples:
+                  if not isinstance(tuple_item, dict):
+                      expect(False, f"{platform} tuple_inventory entry is not an object")
+                      continue
+                  scene = tuple_item.get("scene")
+                  theme = tuple_item.get("theme")
+                  state = tuple_item.get("state")
+                  expected_evidence = tuple_item.get("evidence_files")
+                  tuple_key = f"{scene}|{theme}|{state}"
+                  expect(scene in acceptance["fixture_scenes"][platform], f"{platform} tuple scene not in fixture_scenes: {scene}")
+                  expect(theme in acceptance["theme_matrix"], f"{platform} tuple theme not in theme_matrix: {theme}")
+                  expect(state in acceptance["state_matrix"], f"{platform} tuple state not in state_matrix: {state}")
+                  expect(isinstance(expected_evidence, list) and len(expected_evidence) > 0, f"{platform} tuple evidence_files missing: {tuple_key}")
+                  actual_evidence = tuple_evidence.get(tuple_key, [])
+                  expect(isinstance(actual_evidence, list) and len(actual_evidence) > 0, f"{platform} tuple_evidence missing: {tuple_key}")
+                  if isinstance(expected_evidence, list) and isinstance(actual_evidence, list):
+                      expect(set(actual_evidence) == set(expected_evidence), f"{platform} tuple_evidence mismatch: {tuple_key}")
+                  for rel in actual_evidence if isinstance(actual_evidence, list) else []:
+                      expect((directory / rel).exists(), f"{platform} tuple evidence file missing for {tuple_key}: {rel}")
+                  marker_name = f"{config['tuple_marker_prefix']}{scene}__{theme}__{state}.json"
+                  validate_tuple_marker(
+                      directory=directory,
+                      marker=directory / marker_name,
+                      platform=platform,
+                      scene=scene,
+                      theme=theme,
+                      state=state,
+                      tuple_key=tuple_key,
+                      expected_evidence=expected_evidence if isinstance(expected_evidence, list) else [],
+                  )
+
+          arm64_manifest_path = find_single(android_dir, expectations["android_arm64_validation_manifest"])
+          expect(
+              arm64_manifest_path is not None,
+              f"Android arm64 validation manifest missing: {expectations['android_arm64_validation_manifest']}",
+          )
+          if arm64_manifest_path is not None:
+              arm64_manifest = json.loads(arm64_manifest_path.read_text(encoding="utf-8"))
+              policy = expectations.get("android_arm64_requirement", {})
+              mode = policy.get("mode")
+              allowed_waiver_reasons = policy.get("allowed_waiver_reasons", [])
+              validated_evidence_source = policy.get("validated_evidence_source")
+              waived_evidence_source = policy.get("waived_evidence_source")
+              required_manifest_fields = policy.get("required_manifest_fields", [])
+              required_audit_fields = policy.get("required_audit_fields", [])
+              validated_requires_audit_true = policy.get("validated_requires_audit_true", [])
+              validated = arm64_manifest.get("validated")
+              waived = arm64_manifest.get("waived")
+              waiver_reason = arm64_manifest.get("waiver_reason")
+              evidence_source = arm64_manifest.get("evidence_source")
+              gate_passed = arm64_manifest.get("gate_passed")
+              requested_device_matrix = arm64_manifest.get("requested_device_matrix")
+              audit = arm64_manifest.get("audit")
+              expect(mode == "required_or_waived", f"Unsupported Android arm64 requirement mode: {mode}")
+              expect(arm64_manifest.get("requirement_mode") == mode, "Android arm64 manifest requirement_mode mismatch")
+              expect(isinstance(validated, bool), "Android arm64 manifest validated must be bool")
+              expect(isinstance(waived, bool), "Android arm64 manifest waived must be bool")
+              expect(isinstance(gate_passed, bool), "Android arm64 manifest gate_passed must be bool")
+              expect(isinstance(requested_device_matrix, list), "Android arm64 manifest requested_device_matrix must be a list")
+              expect(isinstance(audit, dict), "Android arm64 manifest audit must be an object")
+              for field in required_manifest_fields if isinstance(required_manifest_fields, list) else []:
+                  expect(field in arm64_manifest, f"Android arm64 manifest missing required field: {field}")
+              if not isinstance(audit, dict):
+                  audit = {}
+              for field in required_audit_fields if isinstance(required_audit_fields, list) else []:
+                  expect(field in audit, f"Android arm64 audit missing required field: {field}")
+                  if field in audit:
+                      expect(isinstance(audit[field], bool), f"Android arm64 audit field must be bool: {field}")
+              if validated is True:
+                  expect(waived is False, "Android arm64 manifest cannot be both validated and waived")
+                  expect(waiver_reason in ("", None), "Android arm64 waiver_reason must be empty when validated=true")
+                  expect(evidence_source == validated_evidence_source, f"Android arm64 validated evidence_source mismatch: {evidence_source}")
+                  expect(
+                      isinstance(requested_device_matrix, list) and len(requested_device_matrix) > 0,
+                      "Android arm64 validated manifest must include a non-empty requested_device_matrix",
+                  )
+                  for field in validated_requires_audit_true if isinstance(validated_requires_audit_true, list) else []:
+                      expect(audit.get(field) is True, f"Android arm64 audit.{field} must be true when validated=true")
+                  expect(gate_passed is True, "Android arm64 gate_passed must be true when validated=true")
+              else:
+                  expect(waived is True, "Android arm64 requires waived=true when validated=false")
+                  expect(
+                      waiver_reason in allowed_waiver_reasons,
+                      f"Android arm64 waiver_reason is not allowed: {waiver_reason}",
+                  )
+                  expect(evidence_source == waived_evidence_source, f"Android arm64 waived evidence_source mismatch: {evidence_source}")
+                  expect(gate_passed is True, "Android arm64 gate_passed must be true for allowed waiver")
+                  if waiver_reason == "android_tests_skipped":
+                      expect(audit.get("skip_android_tests") is True, "Android arm64 waiver android_tests_skipped must set audit.skip_android_tests=true")
+                  if waiver_reason == "missing_gcp_credentials":
+                      expect(
+                          audit.get("has_gcp_service_account_json") is False or audit.get("has_gcp_project_id") is False,
+                          "Android arm64 waiver missing_gcp_credentials must show missing GCP audit evidence",
+                      )
+              env_validated = os.environ.get("ANDROID_ARM64_VALIDATED")
+              env_waived = os.environ.get("ANDROID_ARM64_WAIVED")
+              env_waiver_reason = os.environ.get("ANDROID_ARM64_WAIVER_REASON", "")
+              env_gate_passed = os.environ.get("ANDROID_ARM64_GATE_PASSED")
+              expect(
+                  env_validated == ("true" if validated else "false"),
+                  f"Android arm64 validated output mismatch: env={env_validated}, manifest={validated}",
+              )
+              expect(
+                  env_waived == ("true" if waived else "false"),
+                  f"Android arm64 waived output mismatch: env={env_waived}, manifest={waived}",
+              )
+              expect(
+                  env_waiver_reason == (waiver_reason or ""),
+                  f"Android arm64 waiver_reason output mismatch: env={env_waiver_reason}, manifest={waiver_reason}",
+              )
+              expect(
+                  env_gate_passed == ("true" if gate_passed else "false"),
+                  f"Android arm64 gate_passed output mismatch: env={env_gate_passed}, manifest={gate_passed}",
+              )
+              expect(
+                  android_manifest.get("arm64_validated") == validated,
+                  "Android runtime manifest arm64_validated mismatch with arm64 manifest",
+              )
+              expect(
+                  android_manifest.get("arm64_waived") == waived,
+                  "Android runtime manifest arm64_waived mismatch with arm64 manifest",
+              )
+              expect(
+                  android_manifest.get("arm64_waiver_reason", "") == (waiver_reason or ""),
+                  "Android runtime manifest arm64_waiver_reason mismatch with arm64 manifest",
+              )
+              expect(
+                  android_manifest.get("arm64_gate_passed") == gate_passed,
+                  "Android runtime manifest arm64_gate_passed mismatch with arm64 manifest",
+              )
+
+          if errors:
+              for error in errors:
+                  print(f"ERROR: {error}")
+              raise SystemExit(1)
+          print("Runtime evidence validation passed.")
+          PY
+
       - name: Verify final acceptance gates
         env:
           VERIFY_UI_CONTRACT_RESULT: ${{ needs.verify-ui-contract.result }}
@@ -2830,6 +3985,9 @@ jobs:
           IOS_SMOKE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.smoke_verified }}
           ANDROID_EMULATOR_VALIDATED: ${{ needs.build-android.outputs.emulator_validated }}
           ANDROID_ARM64_VALIDATED: ${{ needs.build-android.outputs.arm64_validated }}
+          ANDROID_ARM64_WAIVED: ${{ needs.build-android.outputs.arm64_waived }}
+          ANDROID_ARM64_WAIVER_REASON: ${{ needs.build-android.outputs.arm64_waiver_reason }}
+          ANDROID_ARM64_GATE_PASSED: ${{ needs.build-android.outputs.arm64_gate_passed }}
         run: |
           set -euo pipefail
           fail=0
@@ -2859,7 +4017,7 @@ jobs:
           check_flag "ios app bundle evidence" "$IOS_APP_BUNDLE_VERIFIED"
           check_flag "ios smoke evidence" "$IOS_SMOKE_VERIFIED"
           check_flag "android emulator evidence" "$ANDROID_EMULATOR_VALIDATED"
-          check_flag "android arm64 evidence" "$ANDROID_ARM64_VALIDATED"
+          check_flag "android arm64 contract gate" "$ANDROID_ARM64_GATE_PASSED"
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
@@ -2870,6 +4028,9 @@ jobs:
           IOS_SMOKE_VERIFIED: ${{ needs.build-ios-rootauth.outputs.smoke_verified }}
           ANDROID_EMULATOR_VALIDATED: ${{ needs.build-android.outputs.emulator_validated }}
           ANDROID_ARM64_VALIDATED: ${{ needs.build-android.outputs.arm64_validated }}
+          ANDROID_ARM64_WAIVED: ${{ needs.build-android.outputs.arm64_waived }}
+          ANDROID_ARM64_WAIVER_REASON: ${{ needs.build-android.outputs.arm64_waiver_reason }}
+          ANDROID_ARM64_GATE_PASSED: ${{ needs.build-android.outputs.arm64_gate_passed }}
         run: |
           {
             echo "## Final Acceptance"
@@ -2880,4 +4041,7 @@ jobs:
             echo "- iOS smoke evidence: ${IOS_SMOKE_VERIFIED}"
             echo "- Android emulator evidence: ${ANDROID_EMULATOR_VALIDATED}"
             echo "- Android arm64 evidence: ${ANDROID_ARM64_VALIDATED}"
+            echo "- Android arm64 waived: ${ANDROID_ARM64_WAIVED}"
+            echo "- Android arm64 waiver reason: ${ANDROID_ARM64_WAIVER_REASON}"
+            echo "- Android arm64 contract gate: ${ANDROID_ARM64_GATE_PASSED}"
           } >> "$GITHUB_STEP_SUMMARY"

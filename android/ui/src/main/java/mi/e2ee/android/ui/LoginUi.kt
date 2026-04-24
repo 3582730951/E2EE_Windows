@@ -1,7 +1,6 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,16 +9,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,13 +31,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
@@ -49,7 +51,6 @@ fun LoginApp() {
 fun LoginScreen(
     onRegister: () -> Unit = {},
     onLogin: (String, String, String) -> Unit = { _, _, _ -> },
-    onShowQr: (String) -> Unit = {},
     onScanQr: () -> Unit = {},
     initialUsername: String = "",
     initialPassword: String = "",
@@ -58,6 +59,7 @@ fun LoginScreen(
     statusMessage: String? = null,
     remoteError: String? = null
 ) {
+    val colors = phaseOneColors()
     val email = remember { mutableStateOf(initialUsername) }
     val password = remember { mutableStateOf(initialPassword) }
     val rootCode = remember { mutableStateOf(initialRootCode) }
@@ -69,7 +71,6 @@ fun LoginScreen(
         else -> null
     }
     val bannerIsError = !errorMessage.isNullOrBlank() || !remoteError.isNullOrBlank()
-    val headerStatus = bannerMessage?.takeIf { !bannerIsError }
     val cardStatus = bannerMessage?.takeIf { bannerIsError }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -77,31 +78,55 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Spacer(modifier = Modifier.weight(0.38f))
+            Spacer(modifier = Modifier.heightIn(min = 24.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 AppMark()
-                Text(
-                    text = tr("login_title", "Welcome back"),
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = tr("login_subtitle", "Secure sign-in for private conversations."),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!headerStatus.isNullOrBlank()) {
-                    LoginSupportStatusRow(message = headerStatus)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = tr("login_sign_in", "Sign in"),
+                        style = phaseOneLargeTitleTextStyle(),
+                        color = colors.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.width(1.dp))
+                    Text(
+                        text = tr("login_account_hint", "Use your account to continue"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceMuted,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MediaHintChip(
+                        kind = MediaHintKind.Link,
+                        label = tr("login_chip_private", "Private"),
+                        showLabel = true
+                    )
+                    MediaHintChip(
+                        kind = MediaHintKind.File,
+                        label = tr("login_chip_device", "Device-bound"),
+                        showLabel = true
+                    )
                 }
             }
-
-            SurfaceSectionCard(modifier = Modifier.fillMaxWidth()) {
+            InsetGroupedCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (!cardStatus.isNullOrBlank()) {
                         LoginErrorBanner(errorCode = cardStatus)
@@ -109,6 +134,7 @@ fun LoginScreen(
 
                     LoginInputField(
                         label = tr("login_phone_email", "Phone or email"),
+                        leadingIcon = MiOwnedIcons.Person,
                         value = email.value,
                         onValueChange = { email.value = it },
                         placeholder = tr("login_phone_email", "Phone or email"),
@@ -116,10 +142,12 @@ fun LoginScreen(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
                         ),
-                        singleLine = true
+                        singleLine = true,
+                        showLabel = false
                     )
                     LoginInputField(
                         label = tr("login_password", "Password"),
+                        leadingIcon = MiOwnedIcons.Lock,
                         value = password.value,
                         onValueChange = { password.value = it },
                         placeholder = tr("login_password", "Password"),
@@ -127,15 +155,13 @@ fun LoginScreen(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                    LoginAdvancedAccessRow(
-                        expanded = showAdvanced.value,
-                        onToggle = { showAdvanced.value = !showAdvanced.value }
+                        visualTransformation = PasswordVisualTransformation(),
+                        showLabel = false
                     )
                     if (showAdvanced.value || rootCode.value.isNotBlank()) {
                         LoginInputField(
-                            label = tr("login_root_code_short", "Root auth (optional)"),
+                            label = tr("login_root_code_short", "Approval code"),
+                            leadingIcon = MiOwnedIcons.ShieldCheck,
                             value = rootCode.value,
                             onValueChange = { value ->
                                 val cleaned = value.trim().filter {
@@ -143,12 +169,13 @@ fun LoginScreen(
                                 }
                                 rootCode.value = cleaned.take(160)
                             },
-                            placeholder = tr("login_root_code_placeholder", "code:signature"),
+                            placeholder = tr("login_root_code_short", "Approval code"),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Ascii,
                                 imeAction = ImeAction.Done
                             ),
-                            singleLine = true
+                            singleLine = true,
+                            showLabel = false
                         )
                     }
                     PrimaryButton(
@@ -158,74 +185,71 @@ fun LoginScreen(
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        LoginUtilityButton(
-                            label = tr("login_qr_show", "Show QR"),
-                            token = "QR",
-                            onClick = { onShowQr(email.value.trim()) },
-                            modifier = Modifier
+                        SecondaryButton(
+                            label = tr("login_qr_show", "QR sign in"),
+                            modifier = Modifier.weight(1f),
+                            fillMaxWidth = false,
+                            onClick = onScanQr
                         )
-                        LoginUtilityButton(
-                            label = tr("login_scan_qr", "Scan QR"),
-                            token = "SC",
-                            onClick = onScanQr,
-                            modifier = Modifier
+                        SecondaryButton(
+                            label = tr("login_new_here", "Register"),
+                            modifier = Modifier.weight(1f),
+                            fillMaxWidth = false,
+                            onClick = onRegister
                         )
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = colors.surfaceVariant.copy(alpha = 0.82f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr("login_advanced_title", "Advanced"),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = colors.onSurface
+                                )
+                                Text(
+                                    text = tr("login_advanced_hint", "Root approval code for high-risk sign-in"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceMuted
+                                )
+                            }
+                            TextButton(onClick = { showAdvanced.value = !showAdvanced.value }) {
+                                Text(
+                                text = if (showAdvanced.value) {
+                                    tr("login_hide_advanced", "Hide advanced")
+                                } else {
+                                    tr("login_show_advanced", "Advanced")
+                                },
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.weight(1f))
-            AuthFooterRow(
-                leftText = tr("login_new_here", "New here? Create an account"),
-                onLeftClick = onRegister,
-                rightPrefix = tr("login_privacy_prefix", "By continuing you agree to"),
-                rightLink = tr("login_privacy_policy", "Privacy Policy")
-            )
+            Spacer(modifier = Modifier.heightIn(min = 18.dp))
         }
     }
 }
 
 @Composable
-private fun LoginAdvancedAccessRow(
-    expanded: Boolean,
-    onToggle: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onToggle)
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = if (expanded) {
-                tr("login_hide_advanced", "Hide advanced sign-in")
-            } else {
-                tr("login_show_advanced", "Use root auth")
-            },
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = tr("login_optional", "Optional"),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
 private fun LoginErrorBanner(errorCode: String) {
+    val colors = phaseOneColors()
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.10f))
+            .background(colors.danger.copy(alpha = 0.10f))
             .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -233,14 +257,14 @@ private fun LoginErrorBanner(errorCode: String) {
                 label = "!",
                 size = 18.dp,
                 cornerRadius = 6.dp,
-                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                contentColor = MaterialTheme.colorScheme.error
+                containerColor = colors.danger.copy(alpha = 0.12f),
+                contentColor = colors.danger
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = tr("login_error", "Login failed - %s").format(errorCode),
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.error,
+                color = colors.danger,
                 maxLines = 2
             )
         }
@@ -248,92 +272,54 @@ private fun LoginErrorBanner(errorCode: String) {
 }
 
 @Composable
-private fun LoginStatusChip(message: String) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        UiTokenIcon(
-            label = "i",
-            size = 16.dp,
-            cornerRadius = 5.dp,
-            containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
-            contentColor = MaterialTheme.colorScheme.secondary
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun LoginSupportStatusRow(message: String) {
-    Row(
-        modifier = Modifier.height(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        UiTokenIcon(
-            label = "i",
-            size = 14.dp,
-            cornerRadius = 4.dp,
-            containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
-            contentColor = MaterialTheme.colorScheme.secondary,
-            textStyle = MaterialTheme.typography.labelSmall
-        )
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
 private fun LoginInputField(
     label: String,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector,
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
     keyboardOptions: KeyboardOptions,
     singleLine: Boolean = true,
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    showLabel: Boolean = true
 ) {
+    val colors = phaseOneColors()
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (showLabel) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceMuted
+            )
+        }
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp),
+            leadingIcon = {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = label,
+                    tint = colors.onSurfaceMuted
+                )
+            },
             placeholder = { Text(placeholder) },
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
             shape = RoundedCornerShape(14.dp),
             singleLine = singleLine,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                focusedTextColor = colors.onSurface,
+                unfocusedTextColor = colors.onSurface,
+                focusedBorderColor = colors.primary.copy(alpha = 0.24f),
+                unfocusedBorderColor = colors.outline.copy(alpha = 0.18f),
+                focusedContainerColor = colors.surfaceVariant.copy(alpha = 0.72f),
+                unfocusedContainerColor = colors.surfaceVariant.copy(alpha = 0.72f)
             )
         )
     }
@@ -341,71 +327,55 @@ private fun LoginInputField(
 
 @Composable
 private fun AppMark() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        UiTokenIcon(
-            label = "MI",
-            size = 32.dp,
-            cornerRadius = 10.dp,
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-            contentColor = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            Text(text = tr("app_name", "MI Secure"), style = MaterialTheme.typography.titleSmall)
-            Text(
-                text = tr("app_tagline", "Private chat"),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = phaseOneColors().glass,
+        border = androidx.compose.foundation.BorderStroke(1.dp, phaseOneColors().glassBorder)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            IdentityAvatar(
+                label = "MI E2EE",
+                seed = "app-mark",
+                kind = IdentityAvatarKind.System,
+                size = 44.dp,
+                badgeIcon = MiOwnedIcons.ShieldCheck
             )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = tr("app_name", "MI E2EE"),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                )
+                Text(
+                    text = tr("login_mark_subtitle", "Secure messaging"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = phaseOneColors().onSurfaceMuted
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun LoginBackground() {
-    val base = MaterialTheme.colorScheme.background
+    val colors = phaseOneColors()
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.linearGradient(
-                    colors = listOf(base, MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
-                    start = Offset.Zero,
-                    end = Offset(0f, 1200f)
+                Brush.verticalGradient(
+                    colors = listOf(
+                        colors.background,
+                        colors.surfaceVariant.copy(alpha = 0.74f),
+                        colors.background
+                    )
                 )
             )
     )
-}
-
-@Composable
-private fun LoginUtilityButton(
-    label: String,
-    token: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    TextButton(
-        onClick = onClick,
-        modifier = modifier.height(28.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
-        ),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-    ) {
-        UiTokenIcon(
-            label = token,
-            size = 16.dp,
-            cornerRadius = 6.dp,
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-            contentColor = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
 }
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)

@@ -16,7 +16,7 @@ Item {
     }
 
     implicitWidth: 200
-    implicitHeight: 36
+    implicitHeight: 38
 
     SecureTextField {
         id: field

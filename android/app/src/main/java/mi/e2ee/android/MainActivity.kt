@@ -18,22 +18,20 @@ import mi.e2ee.android.ui.AttachmentKind
 import mi.e2ee.android.ui.ChatItem
 import mi.e2ee.android.ui.ChatMessage
 import mi.e2ee.android.ui.ChatTheme
-import mi.e2ee.android.ui.ChatScreen
-import mi.e2ee.android.ui.CallsHomeScreen
-import mi.e2ee.android.ui.ConversationListScreen
 import mi.e2ee.android.ui.ConversationPreview
 import mi.e2ee.android.ui.DayMarker
 import mi.e2ee.android.ui.GroupCallRoomUi
+import mi.e2ee.android.ui.GroupChatItem
 import mi.e2ee.android.ui.IncomingCall
-import mi.e2ee.android.ui.LoginScreen
 import mi.e2ee.android.ui.MessageStatus
 import mi.e2ee.android.ui.PeerCallState
 import mi.e2ee.android.ui.ProvideLocalization
-import mi.e2ee.android.ui.SecurityCenterScreen
 import mi.e2ee.android.ui.SdkBridge
-import mi.e2ee.android.ui.SettingsScreen
+import mi.e2ee.android.ui.SampleGroupChat
 import mi.e2ee.android.ui.ThemeMode
 import mi.e2ee.android.ui.UiHost
+import mi.e2ee.android.ui.UiHostPreviewState
+import mi.e2ee.android.ui.resolveScreenshotBootstrapState
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,7 +46,11 @@ class MainActivity : ComponentActivity() {
             ProvideLocalization {
                 ChatTheme(mode = themeMode) {
                     if (screenshotMode != null) {
-                        MainScreenshotScene(mode = screenshotMode, context = context)
+                        MainScreenshotScene(
+                            mode = screenshotMode,
+                            context = context,
+                            themeMode = themeMode
+                        )
                     } else {
                         val sdk = remember(context) { SdkBridge(context) }
                         LaunchedEffect(Unit) {
@@ -86,89 +88,102 @@ class MainActivity : ComponentActivity() {
             .apply()
     }
 
-    private companion object {
-        const val PREFS_NAME = "mi_chat_prefs"
-        const val KEY_THEME_MODE = "theme_mode"
+    companion object {
         const val EXTRA_SCREENSHOT_MODE = "mi.e2ee.android.extra.SCREENSHOT_MODE"
+
+        private const val PREFS_NAME = "mi_chat_prefs"
+        private const val KEY_THEME_MODE = "theme_mode"
     }
 }
 
 @Composable
-private fun MainScreenshotScene(mode: String, context: Context) {
-    when (mode.lowercase()) {
-        "login", "auth_login" -> LoginScreen(
-            initialUsername = "aster@mi.internal",
-            initialPassword = "trust-build-2026",
-            statusMessage = "Pinned gateway verified."
-        )
-        "detail", "chat_detail" -> ChatScreen(
-            items = previewChatItems(),
-            title = "Aster Stone",
-            status = "Online",
-            initials = "AS",
-            showTyping = false
-        )
-        "calls", "calls_home" -> CallsHomeScreen(
-            pendingCall = IncomingCall(
-                peerUsername = "Mira Chen",
-                callId = byteArrayOf(0x01, 0x02),
-                callIdHex = "0102",
-                video = false
-            ),
-            activePeerCall = PeerCallState(
-                peerUsername = "Aster Stone",
-                callId = byteArrayOf(0x0A, 0x0B),
-                callIdHex = "0a0b",
-                video = true,
-                initiator = true
-            ),
-            activeGroupCall = null,
-            groupRooms = previewCallRooms()
-        )
-        "security_center" -> SecurityCenterScreen(
-            sdk = remember(context) { SdkBridge(context) },
-            title = "Security Center",
-            previewMode = true
-        )
-        "settings", "settings_home" ->
-            SettingsScreen(
-                sdk = remember(context) { SdkBridge(context) },
-                themeMode = ThemeMode.FollowSystem,
-                onThemeModeChange = {},
-                showBackButton = false,
-                onBack = {},
-                onOpenSecurityCenter = {},
-                onOpenAccount = {},
-                onOpenPrivacy = {},
-                onOpenDiagnostics = {},
-                onOpenChats = {},
-                onOpenCalls = {},
-                onOpenContacts = {}
-            )
-        "chats", "chat_list" -> ConversationListScreen(conversations = previewConversations())
-        else -> ConversationListScreen(conversations = previewConversations())
+private fun MainScreenshotScene(
+    mode: String,
+    context: Context,
+    themeMode: Int
+) {
+    val bootstrapState = remember(mode) { resolveScreenshotBootstrapState(mode) }
+    val previewSdk = remember(context) { SdkBridge(context) }
+    val previewState = remember(bootstrapState.sceneId) {
+        previewUiHostStateForScene(bootstrapState.sceneId)
     }
+    DisposableEffect(previewSdk) {
+        onDispose { previewSdk.dispose() }
+    }
+    UiHost(
+        sdk = previewSdk,
+        themeMode = themeMode,
+        onThemeModeChange = {},
+        screenshotBootstrapState = bootstrapState,
+        screenshotPreviewState = previewState
+    )
+}
+
+private fun previewUiHostStateForScene(sceneId: String): UiHostPreviewState {
+    val conversations = previewConversations()
+    val chatItems = conversations.associate { conversation ->
+        conversation.id to previewChatItems(conversation.id)
+    }
+    val groupChatItems = conversations
+        .filter { it.isGroup }
+        .associate { conversation ->
+            conversation.id to previewGroupChatItems(conversation.id)
+        }
+    val activePeer = if (sceneId == "calls_home") {
+        null
+    } else {
+        PeerCallState(
+            peerUsername = "Aster Stone",
+            callId = byteArrayOf(0x0A, 0x0B),
+            callIdHex = "0a0b",
+            video = true,
+            initiator = true
+        )
+    }
+    val pending = if (sceneId == "calls_home") {
+        null
+    } else {
+        IncomingCall(
+            peerUsername = "Mira Chen",
+            callId = byteArrayOf(0x01, 0x02),
+            callIdHex = "0102",
+            video = false
+        )
+    }
+    return UiHostPreviewState(
+        conversations = conversations,
+        chatItems = chatItems,
+        groupChatItems = groupChatItems,
+        pendingCall = pending,
+        activePeerCall = activePeer,
+        activeGroupCall = null,
+        groupRooms = previewCallRooms()
+    )
+}
+
+private fun previewGroupChatItems(conversationId: String): List<GroupChatItem> {
+    return SampleGroupChat.itemsFor(conversationId)
 }
 
 private fun previewConversations(): List<ConversationPreview> = listOf(
     ConversationPreview(
         id = "c5",
-        initials = "PT",
-        name = "Platform",
-        lastMessage = "Draft: verify API33 smoke gate",
+        initials = "RW",
+        name = "River Walk",
+        lastMessage = "Map pin shared",
         time = "10:03",
         unreadCount = 0,
         isPinned = true,
         isMuted = false,
         isGroup = true,
         isTyping = false,
-        draft = "verify API33 smoke gate"
+        draft = "Bring the blue blanket"
     ),
     ConversationPreview(
         id = "c1",
         initials = "AS",
         name = "Aster Stone",
-        lastMessage = "Encrypted check-in",
+        lastMessage = "Voice note attached",
         time = "09:41",
         unreadCount = 2,
         isPinned = true,
@@ -180,7 +195,7 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         id = "c2",
         initials = "LN",
         name = "Lena North",
-        lastMessage = "Screenshot pass is green.",
+        lastMessage = "The lake looks calm today.",
         time = "07:52",
         unreadCount = 0,
         isPinned = false,
@@ -190,9 +205,9 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
     ),
     ConversationPreview(
         id = "c3",
-        initials = "OS",
-        name = "Ops Sync",
-        lastMessage = "Queue cap increased to 512.",
+        initials = "DP",
+        name = "Dinner Plan",
+        lastMessage = "Lobby at 7:30?",
         time = "Yesterday",
         unreadCount = 5,
         isPinned = false,
@@ -215,9 +230,9 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
     ),
     ConversationPreview(
         id = "g1",
-        initials = "TG",
-        name = "Threat Guild",
-        lastMessage = "Rotation completed",
+        initials = "WH",
+        name = "Weekend House",
+        lastMessage = "The deck lights are on.",
         time = "08:15",
         unreadCount = 0,
         isPinned = false,
@@ -229,7 +244,7 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
         id = "c6",
         initials = "MC",
         name = "Mira Chen",
-        lastMessage = "Transport settled after the reconnect.",
+        lastMessage = "I am downstairs.",
         time = "Yesterday",
         unreadCount = 1,
         isPinned = false,
@@ -239,9 +254,9 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
     ),
     ConversationPreview(
         id = "c7",
-        initials = "IN",
-        name = "Infra Notes",
-        lastMessage = "Pinned gateway fingerprint rolled forward.",
+        initials = "PC",
+        name = "Photo Club",
+        lastMessage = "Shared the station album",
         time = "Tue",
         unreadCount = 0,
         isPinned = false,
@@ -251,9 +266,9 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
     ),
     ConversationPreview(
         id = "c8",
-        initials = "LC",
-        name = "Launch Crew",
-        lastMessage = "Need final release note approval.",
+        initials = "FM",
+        name = "Family",
+        lastMessage = "Dinner starts at eight.",
         time = "Wed",
         unreadCount = 3,
         isPinned = false,
@@ -264,77 +279,106 @@ private fun previewConversations(): List<ConversationPreview> = listOf(
     )
 )
 
-private fun previewChatItems(): List<ChatItem> = listOf(
-    DayMarker(id = "day-today", label = "Today"),
-    ChatMessage(
-        id = "m1",
-        sender = "Aster",
-        body = "Morning. I mapped the edge cases into a short checklist.",
-        time = "08:12",
-        isMine = false
-    ),
-    ChatMessage(
-        id = "m2",
-        sender = "Me",
-        body = "Great. Send the checklist and the risk notes.",
-        time = "08:13",
-        isMine = true,
-        status = MessageStatus.Read,
-        replyTo = null
-    ),
-    ChatMessage(
-        id = "m3",
-        sender = "Me",
-        body = "Also flag the retry storms after reconnect so Ops can review it.",
-        time = "08:14",
-        isMine = true,
-        status = MessageStatus.Delivered
-    ),
-    ChatMessage(
-        id = "m4",
-        sender = "Aster",
-        body = "Uploading now. The top risk is retry storms after reconnect.",
-        time = "08:15",
-        isMine = false,
-        attachment = Attachment(
-            kind = AttachmentKind.File,
-            label = "Checklist.pdf",
-            meta = "230 KB"
+private fun previewChatItems(conversationId: String): List<ChatItem> {
+    return when (conversationId) {
+        "c5" -> listOf(
+            DayMarker(id = "day-river", label = "Today"),
+            ChatMessage(
+                id = "p1",
+                sender = "Rhea",
+                body = "I dropped the riverside pin in the thread.",
+                time = "10:01",
+                isMine = false
+            ),
+            ChatMessage(
+                id = "p2",
+                sender = "Me",
+                body = "Got it. I will meet you by the bridge.",
+                time = "10:02",
+                isMine = true,
+                status = MessageStatus.Read
+            ),
+            ChatMessage(
+                id = "p3",
+                sender = "Rhea",
+                body = "Great. Sunset should be around 7:10.",
+                time = "10:03",
+                isMine = false
+            )
         )
-    ),
-    ChatMessage(
-        id = "m5",
-        sender = "Me",
-        body = "Received. I will add backoff, cap the queue depth, and send a clean summary.",
-        time = "08:16",
-        isMine = true,
-        status = MessageStatus.Sent
-    )
-)
+        else -> listOf(
+            DayMarker(id = "day-today", label = "Today"),
+            ChatMessage(
+                id = "m1",
+                sender = "Aster",
+                body = "Morning. I saved a short list for the cafe stop.",
+                time = "08:12",
+                isMine = false
+            ),
+            ChatMessage(
+                id = "m2",
+                sender = "Me",
+                body = "Perfect. Send the list and the map pin.",
+                time = "08:13",
+                isMine = true,
+                status = MessageStatus.Read,
+                replyTo = null
+            ),
+            ChatMessage(
+                id = "m3",
+                sender = "Me",
+                body = "Also keep one table by the window if you arrive first.",
+                time = "08:14",
+                isMine = true,
+                status = MessageStatus.Delivered
+            ),
+            ChatMessage(
+                id = "m4",
+                sender = "Aster",
+                body = "Uploading now. I added the tram stop and the cafe name.",
+                time = "08:15",
+                isMine = false,
+                attachment = Attachment(
+                    kind = AttachmentKind.File,
+                    label = "CafeList.pdf",
+                    meta = "230 KB"
+                )
+            ),
+            ChatMessage(
+                id = "m5",
+                sender = "Me",
+                body = "Received. I will bring it up when everyone arrives.",
+                time = "08:16",
+                isMine = true,
+                status = MessageStatus.Sent
+            )
+        )
+    }
+}
 
 private fun previewCallRooms(): List<GroupCallRoomUi> = listOf(
     GroupCallRoomUi(
-        groupId = "Threat Guild",
+        groupId = "Weekend House",
         callId = "room-a",
         video = true
     ),
     GroupCallRoomUi(
-        groupId = "Ops Sync",
+        groupId = "Dinner Plan",
         callId = "room-b",
         video = false
     ),
     GroupCallRoomUi(
-        groupId = "Launch Crew",
+        groupId = "Family",
         callId = "room-c",
         video = false
     ),
     GroupCallRoomUi(
-        groupId = "Platform",
+        groupId = "River Walk",
         callId = "room-d",
         video = true
     ),
     GroupCallRoomUi(
-        groupId = "Design Review",
+        groupId = "Photo Club",
         callId = "room-e",
         video = false
     )

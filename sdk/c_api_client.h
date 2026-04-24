@@ -443,6 +443,12 @@ MI_E2EE_SDK_API std::uint32_t mi_client_load_chat_history(mi_client_handle* hand
                                           std::uint32_t limit,
                                           mi_history_entry_t* out_entries,
                                           std::uint32_t max_entries);
+MI_E2EE_SDK_API std::uint32_t mi_client_export_recent_history_snapshot(
+    mi_client_handle* handle,
+    std::uint32_t max_conversations,
+    std::uint32_t max_messages_per_conversation,
+    mi_history_entry_t* out_entries,
+    std::uint32_t max_entries);
 MI_E2EE_SDK_API int mi_client_delete_chat_history(mi_client_handle* handle,
                                   const char* conv_id,
                                   int is_group,

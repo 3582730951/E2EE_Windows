@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <system_error>
@@ -1247,7 +1248,7 @@ bool StorageService::DownloadChatFileToBytes(ClientCore& core, const ChatFileMes
   return true;
 }
 
-std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore& core, 
+std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore& core,
     const std::string& conv_id, bool is_group, std::size_t limit) const {
   std::vector<HistoryEntry> out;
   core.last_error_.clear();
@@ -1396,6 +1397,48 @@ std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore
 
     (void)trySummary();
   }
+  return out;
+}
+
+std::vector<ClientCore::HistoryEntry> StorageService::ExportRecentHistorySnapshot(
+    ClientCore& core,
+    std::size_t max_conversations,
+    std::size_t max_messages_per_conversation) const {
+  std::vector<HistoryEntry> out;
+  core.last_error_.clear();
+  if (!core.history_store_) {
+    return out;
+  }
+
+  std::vector<ChatHistoryMessage> msgs;
+  std::string err;
+  if (!core.history_store_->ExportRecentSnapshot(
+          max_conversations, max_messages_per_conversation, msgs, err)) {
+    core.last_error_ = err.empty() ? "history snapshot export failed" : err;
+    return out;
+  }
+
+  std::vector<std::pair<bool, std::string>> conversations;
+  std::unordered_set<std::string> seen;
+  conversations.reserve(msgs.size());
+  for (const auto& msg : msgs) {
+    if (msg.conv_id.empty()) {
+      continue;
+    }
+    const std::string key = std::string(msg.is_group ? "g:" : "d:") + msg.conv_id;
+    if (!seen.insert(key).second) {
+      continue;
+    }
+    conversations.emplace_back(msg.is_group, msg.conv_id);
+  }
+
+  for (const auto& conv : conversations) {
+    auto entries = LoadChatHistory(core, conv.second, conv.first,
+                                   max_messages_per_conversation);
+    out.insert(out.end(), std::make_move_iterator(entries.begin()),
+               std::make_move_iterator(entries.end()));
+  }
+  core.last_error_.clear();
   return out;
 }
 

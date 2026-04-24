@@ -36,7 +36,6 @@
 *.log.old.old.old.old.old
 *.log.old.old
 *.md
-*.txt
 *.zip
 *.doc
 *.docx

@@ -34,6 +34,10 @@ Item {
         syncTrustState()
     }
 
+    function clearError() {
+        errorText = ""
+    }
+
     function completeAuth() {
         cancelQrLogin()
         Ui.AppStore.currentPage = 1

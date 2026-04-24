@@ -21,6 +21,9 @@ QtObject {
     readonly property var filteredDialogsModel: Ui.AppStore.filteredDialogsModel
     readonly property var contactsModel: Ui.AppStore.contactsModel
     readonly property var membersModel: Ui.AppStore.membersModel
+    readonly property var sharedMediaModel: Ui.AppStore.sharedMediaModel
+    readonly property var sharedFilesModel: Ui.AppStore.sharedFilesModel
+    readonly property var sharedLinksModel: Ui.AppStore.sharedLinksModel
     readonly property int recallWindowMs: Ui.AppStore.recallWindowMs
 
     function messagesModel(chatId) {

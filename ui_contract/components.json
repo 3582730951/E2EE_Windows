@@ -87,6 +87,46 @@
       "role": "lightweight security/trust cue"
     },
     {
+      "id": "IdentityAvatar",
+      "role": "generated identity surface",
+      "required_states": [
+        "person",
+        "group-collage",
+        "device",
+        "system"
+      ]
+    },
+    {
+      "id": "MediaPreviewCard",
+      "role": "inline media and attachment preview",
+      "required_states": [
+        "photo",
+        "file",
+        "voice",
+        "link"
+      ]
+    },
+    {
+      "id": "SecurityStateStrip",
+      "role": "explicit transport and trust state summary",
+      "required_tones": [
+        "healthy",
+        "checking",
+        "review",
+        "blocked"
+      ]
+    },
+    {
+      "id": "EmptyStateIllustration",
+      "role": "image-first empty state anchor",
+      "required_states": [
+        "chat",
+        "calls",
+        "settings",
+        "security"
+      ]
+    },
+    {
       "id": "DetailMetricTile",
       "role": "compact stats or device metadata"
     },

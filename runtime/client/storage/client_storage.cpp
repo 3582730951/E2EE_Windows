@@ -90,6 +90,13 @@ std::vector<ClientCore::HistoryEntry> ClientCore::LoadChatHistory(
   return StorageService().LoadChatHistory(*this, conv_id, is_group, limit);
 }
 
+std::vector<ClientCore::HistoryEntry> ClientCore::ExportRecentHistorySnapshot(
+    std::size_t max_conversations,
+    std::size_t max_messages_per_conversation) {
+  return StorageService().ExportRecentHistorySnapshot(
+      *this, max_conversations, max_messages_per_conversation);
+}
+
 bool ClientCore::AddHistorySystemMessage(const std::string& conv_id,
                                         bool is_group,
                                         const std::string& text_utf8) {

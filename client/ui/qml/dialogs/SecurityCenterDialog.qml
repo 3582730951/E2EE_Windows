@@ -13,13 +13,14 @@ ApplicationWindow {
     readonly property bool smokeFixtureMode: smokeMode && Ui.SmokeSceneStore.securityCenterScene
 
     property string currentDeviceDisplay: ""
+    property string currentDeviceCopyValue: ""
     property string gatewayState: ""
     property string gatewayInfo: ""
 
     signal requestManageDevices()
 
     visible: false
-    width: smokeFixtureMode ? Ui.SmokeSceneStore.viewportWidth(false) : 720
+    width: smokeFixtureMode ? Ui.SmokeSceneStore.viewportWidth(false) : 700
     height: smokeFixtureMode ? Ui.SmokeSceneStore.viewportHeight() : 540
     minimumWidth: width
     minimumHeight: height
@@ -42,17 +43,17 @@ ApplicationWindow {
                                                      ? true
                                                      : Ui.SecurityDisplayStore.transportHealthy
     readonly property string smokeTransportHint: Ui.I18n.usesCjkLocale
-                                                 ? "TLS、会话密钥与轮换状态正常。"
-                                                 : "TLS, session keys, and rotation healthy."
+                                                 ? "TLS、会话密钥、轮换正常。"
+                                                 : "TLS, keys, rotation healthy."
     readonly property string smokeTrustHint: Ui.I18n.usesCjkLocale
-                                             ? "根信任已就绪，可用于敏感操作。"
-                                             : "Root trust ready for sensitive actions."
+                                             ? "根信任已就绪。"
+                                             : "Root trust ready."
     readonly property string smokeGatewayStatus: Ui.I18n.usesCjkLocale
                                                  ? "已固定指纹"
                                                  : "Pinned fingerprint"
     readonly property string smokeGatewayHint: Ui.I18n.usesCjkLocale
-                                               ? "网关访问维持在安全传输之上。"
-                                               : "Gateway access stays on secure transport."
+                                               ? "网关走安全传输。"
+                                               : "Gateway on secure transport."
     readonly property string smokeCurrentDeviceHint: Ui.I18n.usesCjkLocale
                                                      ? "当前会话的主端点。"
                                                      : "Primary endpoint for this session."
@@ -60,8 +61,21 @@ ApplicationWindow {
                                                        ? "设备与会话"
                                                        : "Devices & session"
     readonly property string smokeDevicesHint: Ui.I18n.usesCjkLocale
-                                               ? "审查、移除或追加可信设备。"
+                                               ? "查看、移除或关联可信设备。"
                                                : "Review, remove, or link trusted devices."
+    readonly property string currentDeviceDetailText: smokeFixtureMode
+                                                      ? smokeCurrentDeviceHint
+                                                      : (Ui.I18n.usesCjkLocale
+                                                         ? "与已绑定设备分开。"
+                                                         : "Separate from linked devices.")
+    readonly property string linkedDevicesHintText: smokeFixtureMode
+                                                    ? smokeDevicesHint
+                                                    : (Ui.I18n.usesCjkLocale
+                                                       ? "已绑定设备单独列出，解绑需确认。"
+                                                       : "Listed separately. Unlink requires confirmation.")
+    readonly property string manageDevicesHintText: Ui.I18n.usesCjkLocale
+                                                    ? "复制标识或确认解绑。"
+                                                    : "Copy identifiers or confirm unlink."
     readonly property var smokeLinkedDevices: [
         {
             maskedDeviceDisplayId: "win-23..ac91",
@@ -117,44 +131,47 @@ ApplicationWindow {
                                              : Ui.I18n.t("dialog.securityCenter.trustReviewHint"))
     readonly property string serverHeadline: smokeFixtureMode
                                              ? root.smokeGatewayStatus
-                                             : (gatewayState.length > 0
-                                                ? gatewayState
-                                                : (gatewayInfo.length > 0
-                                                   ? gatewayInfo
-                                                   : Ui.I18n.t("dialog.securityCenter.serverTitle")))
+                                             : (gatewayInfo.length > 0
+                                                ? gatewayInfo
+                                                : Ui.I18n.t("dialog.securityCenter.serverTitle"))
     readonly property string serverDetail: smokeFixtureMode
                                            ? root.smokeGatewayHint
-                                           : (gatewayInfo.length > 0
-                                              ? gatewayInfo
+                                           : (gatewayState.length > 0
+                                              ? gatewayState
                                               : Ui.I18n.t("dialog.securityCenter.serverHint"))
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
     readonly property var statusRows: [
         {
             title: Ui.I18n.t("dialog.securityCenter.transportTitle"),
             value: transportHeadline,
-            detail: transportDetail
+            detail: transportDetail,
+            tone: root.effectiveTransportHealthy ? "healthy" : "blocked"
         },
         {
             title: Ui.I18n.t("dialog.securityCenter.trustTitle"),
             value: trustHeadline,
-            detail: trustDetail
+            detail: trustDetail,
+            tone: smokeFixtureMode ? "healthy" : "review"
         },
         {
             title: Ui.I18n.t("dialog.securityCenter.serverTitle"),
             value: serverHeadline,
-            detail: serverDetail
+            detail: serverDetail,
+            tone: smokeFixtureMode ? "healthy" : "checking"
         }
     ]
 
     function refreshOverview() {
         if (smokeFixtureMode) {
             currentDeviceDisplay = ""
+            currentDeviceCopyValue = ""
             gatewayState = ""
             gatewayInfo = ""
             return
         }
         Ui.SecurityDisplayStore.refresh()
         currentDeviceDisplay = Ui.SecurityDisplayStore.maskedCurrentDeviceId
+        currentDeviceCopyValue = Ui.SecurityDisplayStore.currentDeviceCopyValue
         gatewayState = Ui.SecurityDisplayStore.gatewayDisplayState
         gatewayInfo = Ui.SecurityDisplayStore.gatewayDisplayDetail
     }
@@ -206,7 +223,7 @@ ApplicationWindow {
                 }
 
                 Components.UiText {
-                    text: Ui.I18n.t("dialog.securityCenter.subtitle")
+                    text: Ui.I18n.usesCjkLocale ? "信任、传输、设备" : "Trust, transport, devices"
                     textRole: "caption"
                     roleColor: Ui.Style.textMuted
                 }
@@ -238,66 +255,95 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true
-                radius: Ui.Style.radiusMedium
-                color: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.08)
-                border.color: Qt.rgba(5 / 255, 150 / 255, 105 / 255, 0.24)
-                implicitHeight: 40
+                radius: Ui.Style.radiusLarge
+                color: Ui.Style.statusSurfaceAlt
+                border.width: 1
+                border.color: Ui.Style.alpha(Ui.Style.accent, Ui.Style.isDark ? 0.24 : 0.14)
+                implicitHeight: securityHero.implicitHeight + Ui.Style.paddingM * 2
+                clip: true
+
+                Rectangle {
+                    width: parent.width * 0.42
+                    height: width
+                    x: -width * 0.16
+                    y: -height * 0.24
+                    radius: width / 2
+                    color: Ui.Style.alpha(Ui.Style.accent, Ui.Style.isDark ? 0.14 : 0.09)
+                }
+
+                Rectangle {
+                    x: 1
+                    y: 1
+                    width: parent.width - 2
+                    height: 1
+                    color: Ui.Style.heroCardSheen
+                    opacity: Ui.Style.isDark ? 0.38 : 0.78
+                }
 
                 RowLayout {
+                    id: securityHero
                     anchors.fill: parent
                     anchors.leftMargin: Ui.Style.paddingM
                     anchors.rightMargin: Ui.Style.paddingM
-                    spacing: 8
+                    anchors.topMargin: Ui.Style.paddingM
+                    anchors.bottomMargin: Ui.Style.paddingM
+                    spacing: Ui.Style.paddingM
 
-                    Rectangle {
-                        width: 8
-                        height: 8
-                        radius: 4
-                        color: root.effectiveTransportHealthy ? Ui.Style.success : Ui.Style.danger
-                        Layout.alignment: Qt.AlignVCenter
+                    Components.EmptyStateIllustration {
+                        kind: "security"
+                        size: 54
+                        Layout.alignment: Qt.AlignTop
                     }
 
-                    Components.UiText {
-                        text: Ui.I18n.t("dialog.securityCenter.transportTitle")
-                        textRole: "caption"
-                        roleColor: Ui.Style.textSecondary
-                        Layout.alignment: Qt.AlignVCenter
-                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
 
-                    Components.UiText {
-                        text: root.transportHeadline
-                        textRole: "value_single"
-                        roleColor: Ui.Style.textPrimary
-                        Layout.alignment: Qt.AlignVCenter
-                    }
+                        Components.UiText {
+                            text: Ui.I18n.usesCjkLocale ? "安全概览" : "Trust overview"
+                            textRole: "subtitle"
+                            roleColor: Ui.Style.textPrimary
+                        }
 
-                    Item { Layout.fillWidth: true }
+                        Components.UiText {
+                            Layout.fillWidth: true
+                            text: Ui.I18n.usesCjkLocale
+                                  ? "传输、信任、设备分开显示。"
+                                  : "Transport, trust, and devices stay separate."
+                            textRole: "supporting"
+                            roleColor: Ui.Style.textSecondary
+                        }
 
-                    Components.UiText {
-                        text: root.effectiveCurrentDeviceDisplay
-                        textRole: "caption"
-                        roleColor: Ui.Style.textSecondary
-                        Layout.alignment: Qt.AlignVCenter
-                    }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
 
-                    Components.UiText {
-                        text: root.linkedDevicesSummary
-                        textRole: "caption"
-                        roleColor: Ui.Style.textSecondary
-                        Layout.alignment: Qt.AlignVCenter
+                            Components.SecurityBadge {
+                                labelText: root.transportHeadline
+                                detailText: Ui.I18n.t("dialog.securityCenter.transportTitle")
+                            }
+
+                            Components.SecurityBadge {
+                                labelText: root.trustHeadline
+                                detailText: Ui.I18n.t("dialog.securityCenter.trustTitle")
+                            }
+
+                            Components.SecurityBadge {
+                                labelText: root.linkedDevicesSummary
+                                detailText: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                            }
+                        }
                     }
                 }
             }
 
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.max(devicesCard.implicitHeight, sidePanel.implicitHeight)
-                spacing: Ui.Style.paddingM
+                spacing: Ui.Style.paddingS + 2
 
                 Rectangle {
                     id: devicesCard
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
                     radius: Ui.Style.radiusMedium
                     color: Ui.Style.panelBg
                     border.color: Ui.Style.borderSubtle
@@ -342,6 +388,13 @@ ApplicationWindow {
                             }
                         }
 
+                        Components.UiText {
+                            Layout.fillWidth: true
+                            text: root.linkedDevicesHintText
+                            textRole: "supporting"
+                            roleColor: Ui.Style.textSecondary
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Ui.Style.radiusMedium
@@ -353,36 +406,60 @@ ApplicationWindow {
                                 id: currentDeviceColumn
                                 anchors.fill: parent
                                 anchors.margins: Ui.Style.paddingM
-                                spacing: 3
+                                spacing: Ui.Style.paddingS
 
-                                Components.UiText {
-                                    text: Ui.I18n.t("dialog.securityCenter.currentDevice")
-                                    textRole: "caption"
-                                    roleColor: Ui.Style.textSecondary
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Ui.Style.paddingM
+
+                                    Components.IdentityAvatar {
+                                        size: 36
+                                        titleText: root.effectiveCurrentDeviceDisplay
+                                        seedText: root.effectiveCurrentDeviceDisplay
+                                        mode: "device"
+                                        presenceState: root.effectiveTransportHealthy ? "secure" : "busy"
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Components.UiText {
+                                            text: Ui.I18n.t("dialog.securityCenter.currentDevice")
+                                            textRole: "caption"
+                                            roleColor: Ui.Style.textSecondary
+                                        }
+
+                                        Components.UiText {
+                                            text: root.effectiveCurrentDeviceDisplay
+                                            Layout.fillWidth: true
+                                            textRole: "value_single"
+                                            roleColor: Ui.Style.textPrimary
+                                        }
+                                    }
                                 }
 
-                                Components.UiText {
-                                    text: root.effectiveCurrentDeviceDisplay
+                                Components.DeviceFingerprintRow {
                                     Layout.fillWidth: true
-                                    textRole: "value_single"
-                                    roleColor: Ui.Style.textPrimary
-                                }
-
-                                Components.UiText {
-                                    text: smokeFixtureMode
-                                          ? root.smokeCurrentDeviceHint
-                                          : Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
-                                    Layout.fillWidth: true
-                                    textRole: "detail"
-                                    roleColor: Ui.Style.textMuted
+                                    labelText: Ui.I18n.usesCjkLocale ? "设备标识" : "Device identifier"
+                                    valueText: root.effectiveCurrentDeviceDisplay
+                                    detailText: root.currentDeviceDetailText
+                                    copyValue: smokeFixtureMode ? "" : root.currentDeviceCopyValue
                                 }
                             }
+                        }
+
+                        Components.UiText {
+                            visible: linkedDeviceCountValue > 0
+                            text: Ui.I18n.t("dialog.deviceManager.linkedDevices")
+                            textRole: "caption"
+                            roleColor: Ui.Style.textSecondary
                         }
 
                         ListView {
                             Layout.fillWidth: true
                             Layout.preferredHeight: linkedDeviceCountValue > 0
-                                                    ? Math.min(contentHeight, 186)
+                                                    ? Math.min(contentHeight, 172)
                                                     : 0
                             clip: true
                             interactive: false
@@ -408,9 +485,10 @@ ApplicationWindow {
                                 radius: Ui.Style.radiusMedium
                                 color: Ui.Style.panelBgAlt
                                 border.color: Ui.Style.borderSubtle
-                                implicitHeight: 56
+                                implicitHeight: linkedDeviceRow.implicitHeight + Ui.Style.paddingM * 2
 
                                 RowLayout {
+                                    id: linkedDeviceRow
                                     anchors.fill: parent
                                     anchors.leftMargin: Ui.Style.paddingM
                                     anchors.rightMargin: Ui.Style.paddingM
@@ -420,14 +498,15 @@ ApplicationWindow {
                                         width: 30
                                         height: 30
                                         radius: 15
-                                        color: Ui.Style.railAccentBg
+                                        color: "transparent"
 
-                                        Image {
-                                            anchors.centerIn: parent
-                                            width: 14
-                                            height: 14
-                                            fillMode: Image.PreserveAspectFit
-                                            source: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                        Components.IdentityAvatar {
+                                            anchors.fill: parent
+                                            size: 30
+                                            titleText: deviceDisplayId
+                                            seedText: deviceDisplayId
+                                            mode: "device"
+                                            presenceState: "secure"
                                         }
                                     }
 
@@ -447,23 +526,63 @@ ApplicationWindow {
                                             roleColor: Ui.Style.textMuted
                                         }
                                     }
+
+                                    Components.SecurityBadge {
+                                        labelText: Ui.I18n.usesCjkLocale ? "已绑定" : "Linked"
+                                        detailText: deviceSeenText
+                                    }
                                 }
                             }
                         }
 
-                        Components.UiText {
+                        Rectangle {
                             visible: linkedDeviceCountValue === 0
-                            text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
-                            textRole: "supporting"
-                            roleColor: Ui.Style.textMuted
+                            Layout.fillWidth: true
+                            radius: Ui.Style.radiusMedium
+                            color: Ui.Style.railAccentBg
+                            border.width: 1
+                            border.color: Ui.Style.railAccentBorder
+                            implicitHeight: emptyDevicesRow.implicitHeight + Ui.Style.paddingM * 2
+
+                            RowLayout {
+                                id: emptyDevicesRow
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingM
+                                spacing: Ui.Style.paddingM
+
+                                Components.EmptyStateIllustration {
+                                    kind: "security"
+                                    size: 40
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+
+                                    Components.UiText {
+                                        text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
+                                        textRole: "value_single"
+                                        roleColor: Ui.Style.textPrimary
+                                    }
+
+                                    Components.UiText {
+                                        text: root.smokeFixtureMode
+                                              ? root.smokeDevicesHint
+                                              : (Ui.I18n.usesCjkLocale
+                                                 ? "新设备会在这里出现。"
+                                                 : "New trusted devices appear here.")
+                                        textRole: "detail"
+                                        roleColor: Ui.Style.textMuted
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
                 Rectangle {
                     id: sidePanel
-                    Layout.preferredWidth: 272
-                    Layout.fillHeight: true
+                    Layout.fillWidth: true
                     radius: Ui.Style.radiusMedium
                     color: Ui.Style.panelBg
                     border.color: Ui.Style.borderSubtle
@@ -478,37 +597,13 @@ ApplicationWindow {
                         Repeater {
                             model: root.statusRows
 
-                            delegate: Item {
+                            delegate: Components.SecurityStateStrip {
                                 Layout.fillWidth: true
-                                implicitHeight: 68
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: 2
-
-                                    Item { Layout.fillHeight: true }
-
-                                    Components.UiText {
-                                        text: modelData.title
-                                        textRole: "caption"
-                                        roleColor: Ui.Style.textSecondary
-                                    }
-
-                                    Components.UiText {
-                                        text: modelData.value
-                                        textRole: "value_single"
-                                        roleColor: Ui.Style.textPrimary
-                                    }
-
-                                    Components.UiText {
-                                        text: modelData.detail
-                                        textRole: "caption"
-                                        roleColor: Ui.Style.textMuted
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Item { Layout.fillHeight: true }
-                                }
+                                Layout.bottomMargin: Ui.Style.paddingS
+                                titleText: modelData.title
+                                valueText: modelData.value
+                                detailText: modelData.detail
+                                tone: modelData.tone
                             }
                         }
                     }
@@ -526,7 +621,7 @@ ApplicationWindow {
                     id: actionRow
                     anchors.fill: parent
                     anchors.margins: Ui.Style.paddingM
-                    spacing: Ui.Style.paddingM
+                    spacing: Ui.Style.paddingS
 
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -539,11 +634,9 @@ ApplicationWindow {
                         }
 
                         Components.UiText {
-                            text: smokeFixtureMode
-                                  ? root.smokeDevicesHint
-                                  : Ui.I18n.t("dialog.securityCenter.devicesHint")
                             Layout.fillWidth: true
-                            textRole: "detail"
+                            text: root.manageDevicesHintText
+                            textRole: "supporting"
                             roleColor: Ui.Style.textSecondary
                         }
                     }
@@ -551,7 +644,7 @@ ApplicationWindow {
                     Components.PrimaryButton {
                         text: Ui.I18n.t("dialog.securityCenter.manageDevices")
                         Accessible.name: Ui.I18n.t("dialog.securityCenter.manageDevices")
-                        Layout.preferredWidth: 148
+                        Layout.preferredWidth: 136
                         Layout.preferredHeight: 34
                         onClicked: root.requestManageDevices()
                     }

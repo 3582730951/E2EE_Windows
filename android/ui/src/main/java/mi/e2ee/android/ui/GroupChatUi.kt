@@ -57,10 +57,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -114,7 +116,7 @@ object SampleGroupChat {
             id = "g1",
             sender = "Aster",
             role = "Admin",
-            body = "Daily sync in 10 minutes. Please post blockers.",
+            body = "Dinner in ten minutes. Let us meet downstairs.",
             time = "09:05",
             isMine = false
         ),
@@ -122,14 +124,14 @@ object SampleGroupChat {
             id = "g2",
             sender = "Me",
             role = null,
-            body = "Working on the UI spec. Draft will be shared soon.",
+            body = "On the way. I will share the map in a second.",
             time = "09:06",
             isMine = true,
             status = "Read",
             readBy = listOf("AS", "RN", "LD"),
             attachment = Attachment(
                 AttachmentKind.File,
-                "UI-Spec.pdf",
+                "DinnerPlan.pdf",
                 "230 KB",
                 state = TransferState.Downloading,
                 progress = 0.42f
@@ -140,16 +142,16 @@ object SampleGroupChat {
             id = "g3",
             sender = "Rin",
             role = null,
-            body = "Thanks @Mina - also check the privacy toggles copy.",
+            body = "Thanks @Mina. Please save a seat by the window.",
             time = "09:07",
             isMine = false,
-            attachment = Attachment(AttachmentKind.Photo, "Privacy.png", "1280x720")
+            attachment = Attachment(AttachmentKind.Photo, "Bridge.png", "1280x720")
         ),
         GroupMessage(
             id = "g4",
             sender = "Me",
             role = null,
-            body = "Noted. I will add the final wording today.",
+            body = "Noted. I will be there soon.",
             time = "09:08",
             isMine = true,
             status = "Delivered",
@@ -171,7 +173,7 @@ object SampleGroupChat {
             id = "g6",
             sender = "Aster",
             role = "Admin",
-            body = "Meet at this location for the review.",
+            body = "Meet at this location.",
             time = "09:10",
             isMine = false,
             attachment = Attachment(AttachmentKind.Location, "Civic Plaza", "2.1 km away")
@@ -184,16 +186,16 @@ object SampleGroupChat {
             id = "a1",
             sender = "Qin",
             role = "Owner",
-            body = "Release notes draft is in Drive. Please review.",
+            body = "The house key is in the lockbox by the door.",
             time = "11:12",
             isMine = false,
-            attachment = Attachment(AttachmentKind.File, "ReleaseNotes.docx", "410 KB")
+            attachment = Attachment(AttachmentKind.File, "WeekendList.docx", "410 KB")
         ),
         GroupMessage(
             id = "a2",
             sender = "Me",
             role = null,
-            body = "I will check the privacy section and share feedback.",
+            body = "I will bring snacks and extra blankets.",
             time = "11:13",
             isMine = true,
             status = "Read",
@@ -202,17 +204,17 @@ object SampleGroupChat {
         GroupMessage(
             id = "a3",
             sender = "Jun",
-            role = "QA",
-            body = "@Mina the test matrix is updated for Android 14.",
+            role = "Admin",
+            body = "@Mina the sunset view is perfect from the deck.",
             time = "11:15",
             isMine = false,
-            attachment = Attachment(AttachmentKind.Photo, "Matrix.png", "1440x900")
+            attachment = Attachment(AttachmentKind.Photo, "DeckView.png", "1440x900")
         ),
         GroupMessage(
             id = "a4",
             sender = "Me",
             role = null,
-            body = "Thanks. I will sync with release ops.",
+            body = "Thanks. I will text everyone when I arrive.",
             time = "11:16",
             isMine = true,
             status = "Delivered",
@@ -241,8 +243,8 @@ fun GroupChatApp() {
 fun GroupChatScreen(
     items: List<GroupChatItem>,
     conversationId: String = "default_group",
-    title: String = "Design Ops",
-    subtitle: String = "12 members / Secure group",
+    title: String = "Weekend House",
+    subtitle: String = "12 members",
     onBack: () -> Unit = {},
     onOpenGroupDetail: () -> Unit = {},
     activeCall: GroupCallRoomUi? = null,
@@ -262,7 +264,7 @@ fun GroupChatScreen(
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var composerReply by remember { mutableStateOf<ReplyPreview?>(null) }
     var composerText by remember { mutableStateOf("") }
-    var composerQuickActionsVisible by remember { mutableStateOf(false) }
+    var composerSurface by remember { mutableStateOf(ComposerSurfaceState.Collapsed) }
     var composerDialog by remember { mutableStateOf<GroupComposerDialog?>(null) }
     var pendingDelete by remember { mutableStateOf<PendingGroupDelete?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -272,10 +274,12 @@ fun GroupChatScreen(
     var toolsResendFilePath by remember { mutableStateOf("") }
     var toolsResult by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val strings = LocalStrings.current
     fun t(key: String, fallback: String): String = strings.get(key, fallback)
     val resolvedConversationId = if (conversationId.isNotBlank()) conversationId else "default_group"
     val prefs = remember { context.getSharedPreferences(GROUP_PREFS_NAME, Context.MODE_PRIVATE) }
+    val composerFocusRequester = remember { FocusRequester() }
     var deletedIds by remember(resolvedConversationId) {
         mutableStateOf(loadGroupDeletedIds(prefs, resolvedConversationId))
     }
@@ -317,10 +321,11 @@ fun GroupChatScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val quickActionsVisible = composerSurface == ComposerSurfaceState.QuickActions
     val composerOverlayHeight = when {
-        composerReply != null && composerQuickActionsVisible -> 68.dp
+        composerReply != null && quickActionsVisible -> 68.dp
         composerReply != null -> 36.dp
-        composerQuickActionsVisible -> 32.dp
+        quickActionsVisible -> 32.dp
         else -> 0.dp
     }
 
@@ -390,12 +395,26 @@ fun GroupChatScreen(
                     if (ok) {
                         composerText = ""
                         composerReply = null
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Text
+                        composerFocusRequester.requestFocus()
                     }
                 },
-                showQuickActions = composerQuickActionsVisible,
+                surfaceState = composerSurface,
+                focusRequester = composerFocusRequester,
+                onTextFieldFocusChange = { focused ->
+                    if (focused) {
+                        composerSurface = ComposerSurfaceState.Text
+                    } else if (composerSurface == ComposerSurfaceState.Text) {
+                        composerSurface = ComposerSurfaceState.Collapsed
+                    }
+                },
                 onToggleQuickActions = {
-                    composerQuickActionsVisible = !composerQuickActionsVisible
+                    focusManager.clearFocus(force = true)
+                    composerSurface = if (quickActionsVisible) {
+                        ComposerSurfaceState.Collapsed
+                    } else {
+                        ComposerSurfaceState.QuickActions
+                    }
                 },
                 onEmoji = {},
                 modifier = Modifier
@@ -458,21 +477,21 @@ fun GroupChatScreen(
                     }
                 }
             }
-            if (composerReply != null || composerQuickActionsVisible) {
+            if (composerReply != null || quickActionsVisible) {
                 GroupComposerAssistOverlay(
                     replyPreview = composerReply,
-                    showQuickActions = composerQuickActionsVisible,
+                    showQuickActions = quickActionsVisible,
                     onReplyDismiss = { composerReply = null },
                     onAttachPhoto = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = GroupComposerDialog.File
                     },
                     onAttachFile = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = GroupComposerDialog.File
                     },
                     onAttachLocation = {
-                        composerQuickActionsVisible = false
+                        composerSurface = ComposerSurfaceState.Collapsed
                         composerDialog = GroupComposerDialog.Location
                     },
                     modifier = Modifier

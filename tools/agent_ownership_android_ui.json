@@ -1,0 +1,42 @@
+{
+  "version": "2026-04-04",
+  "allowed_paths": {
+    "AndroidAgent1": [
+      "android/ui/src/main/java/mi/e2ee/android/ui/ChatTheme.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/UiComponents.kt"
+    ],
+    "AndroidAgent2": [
+      "android/ui/src/main/java/mi/e2ee/android/ui/UiHost.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/LoginUi.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/ConversationListUi.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/ChatUi.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/CallsHomeUi.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/SettingsUi.kt",
+      "android/ui/src/main/java/mi/e2ee/android/ui/SecurityCenterUi.kt",
+      "android/app/src/main/java/mi/e2ee/android/MainActivity.kt"
+    ],
+    "ValidationAgent": [
+      "android/scripts/ci_ui_smoke.sh",
+      "tools/verify_ui_contract.py",
+      "tools/agent_ownership_android_ui.json"
+    ]
+  },
+  "forbidden_paths": [
+    "android/rootapp",
+    "android/app/src/main/cpp",
+    "android/app/src/main/java/mi/e2ee/android/sdk"
+  ],
+  "no_edit_surfaces": [
+    "android/rootapp",
+    "android/app/src/main/cpp",
+    "android/app/src/main/java/mi/e2ee/android/sdk"
+  ],
+  "legacy_excluded_surfaces": [
+    "android/app/src/main/cpp",
+    "android/app/src/main/java/mi/e2ee/android/sdk",
+    "android/rootapp"
+  ],
+  "single_writer_manifests": [
+    "tools/agent_ownership_android_ui.json"
+  ]
+}

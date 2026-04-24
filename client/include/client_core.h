@@ -495,6 +495,9 @@ class ClientCore {
   std::vector<HistoryEntry> LoadChatHistory(const std::string& conv_id,
                                             bool is_group,
                                             std::size_t limit = 200);
+  std::vector<HistoryEntry> ExportRecentHistorySnapshot(
+      std::size_t max_conversations = 20,
+      std::size_t max_messages_per_conversation = 50);
   bool AddHistorySystemMessage(const std::string& conv_id,
                                bool is_group,
                                const std::string& text_utf8);

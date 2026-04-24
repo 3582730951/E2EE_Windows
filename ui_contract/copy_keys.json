@@ -21,6 +21,34 @@
       "chat.send",
       "chat.placeholder"
     ],
+    "empty_state": [
+      "empty.chat.title",
+      "empty.chat.supporting",
+      "empty.calls.title",
+      "empty.calls.supporting",
+      "empty.security.title",
+      "empty.security.supporting"
+    ],
+    "approval": [
+      "approval.code.title",
+      "approval.code.supporting",
+      "approval.scan.title",
+      "approval.scan.supporting",
+      "approval.manual.title",
+      "approval.manual.supporting"
+    ],
+    "security_state": [
+      "security.state.healthy",
+      "security.state.checking",
+      "security.state.review",
+      "security.state.blocked"
+    ],
+    "identity": [
+      "identity.person",
+      "identity.group",
+      "identity.device",
+      "identity.system"
+    ],
     "settings": [
       "settings.title",
       "settings.theme",
@@ -57,7 +85,9 @@
     "ios": {
       "nav.chats": "nav.chats",
       "nav.settings": "nav.settings",
-      "chat.send": "chat.send"
+      "chat.send": "chat.send",
+      "approval.scan.title": "approval.scan.title",
+      "security.state.healthy": "security.state.healthy"
     }
   }
 }

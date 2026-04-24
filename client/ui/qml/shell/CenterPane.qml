@@ -15,17 +15,50 @@ Item {
     readonly property Window hostWindow: root.Window.window
     readonly property bool smokePostLoginScene: smokeMode && Ui.SmokeSceneStore.normalizedScene === "post_login"
     readonly property bool smokePostLoginLightScene: smokeMode && Ui.SmokeSceneStore.postLoginLightScene
+    readonly property string shellSurface: Ui.AppStore.currentShellSurface || "chat"
+    readonly property bool showingChatSurface: shellSurface === "chat"
+    readonly property bool showingContactsSurface: shellSurface === "contacts"
+    readonly property bool showingCallsSurface: shellSurface === "calls"
+    readonly property bool showingSettingsSurface: shellSurface === "settings"
+    readonly property bool showingSecuritySurface: shellSurface === "security"
+    readonly property int currentThemeOptionIndex: Math.max(0, Ui.SecurityDisplayStore.themeModeIndex(Ui.Style.themeMode))
+    readonly property int currentLocaleOptionIndex: Math.max(0, Ui.SecurityDisplayStore.localeModeIndex(Ui.I18n.localeMode))
+    readonly property var currentThemeOption: Ui.SecurityDisplayStore.themeOptions.length > 0
+                                              ? Ui.SecurityDisplayStore.themeOptions[Math.min(currentThemeOptionIndex,
+                                                                                              Ui.SecurityDisplayStore.themeOptions.length - 1)]
+                                              : null
+    readonly property var currentLocaleOption: Ui.SecurityDisplayStore.localeOptions.length > 0
+                                               ? Ui.SecurityDisplayStore.localeOptions[Math.min(currentLocaleOptionIndex,
+                                                                                               Ui.SecurityDisplayStore.localeOptions.length - 1)]
+                                               : null
 
     property bool chatSearchVisible: false
     property bool stickToBottom: true
     property bool hasChat: Ui.ChatDisplayStore.currentChatId.length > 0
     readonly property bool adaptiveThreeColumn: (hostWindow ? hostWindow.width : width) >= Ui.Style.threeColumnMinWidth
     readonly property bool detailsPaneActive: hasChat && (adaptiveThreeColumn || Ui.ChatDisplayStore.rightPaneVisible)
+    readonly property bool drawerDetailActive: hasChat &&
+                                              Ui.ChatDisplayStore.rightPaneVisible &&
+                                              !adaptiveThreeColumn
+    readonly property int drawerReserveWidth: drawerDetailActive
+                                              ? (((hostWindow ? hostWindow.width : width) >= Ui.Style.twoColumnDrawerMinWidth)
+                                                 ? Ui.Style.rightPaneDrawerCompactWidth
+                                                 : Ui.Style.rightPaneWidthDrawerNarrow)
+                                              : 0
+    readonly property int chatColumnMaxWidth: 860
+    readonly property int utilityColumnMaxWidth: 920
+    readonly property int centeredChatColumnWidth: Math.max(320,
+                                                            Math.min(chatColumnMaxWidth,
+                                                                     width - Ui.Style.paddingL * 2 - drawerReserveWidth))
+    readonly property int centeredUtilityColumnWidth: Math.max(320,
+                                                               Math.min(utilityColumnMaxWidth,
+                                                                        width - Ui.Style.paddingL * 2 - drawerReserveWidth))
+    readonly property real contentCenterOffset: drawerReserveWidth > 0 ? -drawerReserveWidth / 2 : 0
     property real actionScale: 1.0
     property real topBarScale: 1.0
-    property int actionButtonSize: 32
-    property int actionIconSize: 16
-    property int inputButtonSize: 32
+    property int actionButtonSize: 30
+    property int actionIconSize: 15
+    property int inputButtonSize: 30
     property int inputIconSize: 16
     property int composerCornerSafeInset: Ui.Style.paddingS
     property int actionTopBarHeight: Ui.Style.topBarHeight
@@ -80,6 +113,502 @@ Item {
         return hours > 0 ? (hh + ":" + mm + ":" + ss) : (mm + ":" + ss)
     }
 
+    function utilityFriendlyThemeDetail() {
+        return currentThemeOption && currentThemeOption.label
+                ? currentThemeOption.label
+                : Ui.I18n.t("settings.theme.system")
+    }
+
+    function utilityFriendlyLocaleDetail() {
+        return currentLocaleOption && currentLocaleOption.label
+                ? currentLocaleOption.label
+                : Ui.I18n.t("settings.language")
+    }
+
+    function utilityFriendlySecurityDetail() {
+        if (Ui.SecurityDisplayStore.transportHealthy) {
+            return Ui.I18n.usesCjkLocale ? "已加密并保持连接" : "Encrypted and connected"
+        }
+        return Ui.I18n.usesCjkLocale ? "需要重新检查会话" : "Session needs review"
+    }
+
+    function utilityFriendlyTrustDetail() {
+        var stateText = (Ui.SecurityDisplayStore.gatewayDisplayState || "").toLowerCase()
+        if (stateText.indexOf("pin") !== -1 || stateText.indexOf("固定") !== -1 ||
+                stateText.indexOf("local") !== -1 || stateText.indexOf("本地") !== -1) {
+            return Ui.I18n.usesCjkLocale ? "已验证" : "Verified"
+        }
+        return Ui.I18n.usesCjkLocale ? "待确认" : "Pending"
+    }
+
+    function utilityFriendlyGatewayDetail() {
+        if (Ui.SecurityDisplayStore.gatewayDisplayDetail.length > 0 ||
+                Ui.SecurityDisplayStore.gatewayDisplayState.length > 0) {
+            return Ui.I18n.usesCjkLocale ? "已连接受信网络" : "Connected over trusted transport"
+        }
+        return Ui.I18n.usesCjkLocale ? "等待连接" : "Waiting for connection"
+    }
+
+    function utilityFriendlyDeviceName(displayId, index, isCurrent) {
+        if (isCurrent === true) {
+            return Ui.I18n.usesCjkLocale ? "这台设备" : "This device"
+        }
+        var lowered = (displayId || "").toLowerCase()
+        if (lowered.indexOf("pad") !== -1 || lowered.indexOf("tab") !== -1) {
+            return Ui.I18n.usesCjkLocale ? "平板" : "Tablet"
+        }
+        if (lowered.indexOf("desk") !== -1 || lowered.indexOf("lap") !== -1 || lowered.indexOf("pc") !== -1) {
+            return Ui.I18n.usesCjkLocale ? "桌面端" : "Desktop"
+        }
+        return Ui.I18n.usesCjkLocale
+                ? ("已连接设备 " + (index + 1))
+                : ("Linked device " + (index + 1))
+    }
+
+    function utilityCallTargetId() {
+        if (Ui.ChatDisplayStore.currentChatId.length > 0) {
+            return Ui.ChatDisplayStore.currentChatId
+        }
+        if (Ui.ChatDisplayStore.filteredDialogsModel.count > 0) {
+            return Ui.ChatDisplayStore.filteredDialogsModel.get(0).chatId || ""
+        }
+        return ""
+    }
+
+    function utilityCallTargetTitle() {
+        if (Ui.ChatDisplayStore.currentChatId.length > 0) {
+            return Ui.ChatDisplayStore.currentChatTitle
+        }
+        if (Ui.ChatDisplayStore.filteredDialogsModel.count > 0) {
+            return Ui.ChatDisplayStore.filteredDialogsModel.get(0).title || ""
+        }
+        return ""
+    }
+
+    function utilityCallTargetAvatarSeed() {
+        if (Ui.ChatDisplayStore.currentChatId.length > 0) {
+            return Ui.ChatDisplayStore.currentChatId
+        }
+        if (Ui.ChatDisplayStore.filteredDialogsModel.count > 0) {
+            var dialogEntry = Ui.ChatDisplayStore.filteredDialogsModel.get(0)
+            return dialogEntry.avatarKey || dialogEntry.title || ""
+        }
+        return ""
+    }
+
+    function utilityCallTargetAvatarMode() {
+        if (Ui.ChatDisplayStore.currentChatId.length > 0) {
+            return Ui.ChatDisplayStore.currentChatType === "group" ? "group" : "person"
+        }
+        if (Ui.ChatDisplayStore.filteredDialogsModel.count > 0) {
+            return Ui.ChatDisplayStore.filteredDialogsModel.get(0).avatarMode || ""
+        }
+        return ""
+    }
+
+    function previewIconFor(kind) {
+        switch (kind) {
+        case "photo":
+            return "qrc:/mi/e2ee/ui/icons/image.svg"
+        case "video":
+            return "qrc:/mi/e2ee/ui/icons/video.svg"
+        case "voice":
+            return "qrc:/mi/e2ee/ui/icons/mic.svg"
+        case "link":
+            return "qrc:/mi/e2ee/ui/icons/location.svg"
+        default:
+            return "qrc:/mi/e2ee/ui/icons/file.svg"
+        }
+    }
+
+    function previewTintFor(kind) {
+        switch (kind) {
+        case "photo":
+            return Qt.rgba(37 / 255, 99 / 255, 235 / 255, Ui.Style.isDark ? 0.20 : 0.12)
+        case "video":
+            return Qt.rgba(59 / 255, 130 / 255, 246 / 255, Ui.Style.isDark ? 0.20 : 0.12)
+        case "voice":
+            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.20 : 0.12)
+        case "link":
+            return Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.20 : 0.12)
+        default:
+            return Qt.rgba(100 / 255, 116 / 255, 139 / 255, Ui.Style.isDark ? 0.16 : 0.10)
+        }
+    }
+
+    component UtilityNavRow: Item {
+        id: utilityNavRow
+        property string iconSource: ""
+        property color iconBg: Ui.Style.railAccentBg
+        property color iconBorder: Ui.Style.railAccentBorder
+        property string titleText: ""
+        property string detailText: ""
+        property string trailingText: ""
+        signal clicked()
+
+        implicitHeight: trailingText.length > 0 || detailText.length === 0 ? 48 : 54
+
+        Rectangle {
+            id: utilityNavIcon
+            width: 34
+            height: 34
+            radius: 17
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            color: utilityNavRow.iconBg
+            border.width: 1
+            border.color: utilityNavRow.iconBorder
+
+            Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                source: utilityNavRow.iconSource
+                smooth: true
+                antialiasing: true
+            }
+        }
+
+        Image {
+            id: utilityNavChevron
+            width: 12
+            height: 12
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            fillMode: Image.PreserveAspectFit
+            source: "qrc:/mi/e2ee/ui/icons/chevron-right.svg"
+            smooth: true
+            antialiasing: true
+        }
+
+        Text {
+            id: utilityNavTrailing
+            visible: utilityNavRow.trailingText.length > 0
+            width: visible ? 78 : 0
+            anchors.right: utilityNavChevron.left
+            anchors.rightMargin: visible ? Ui.Style.paddingS : 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: utilityNavRow.trailingText
+            maximumLineCount: 1
+            elide: Text.ElideRight
+            color: Ui.Style.textSecondary
+            font.pixelSize: 11
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignRight
+        }
+
+        Column {
+            anchors.left: utilityNavIcon.right
+            anchors.right: utilityNavTrailing.visible ? utilityNavTrailing.left : utilityNavChevron.left
+            anchors.leftMargin: Ui.Style.paddingM
+            anchors.rightMargin: Ui.Style.paddingS
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                text: utilityNavRow.titleText
+                color: Ui.Style.textPrimary
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+
+            Text {
+                visible: utilityNavRow.detailText.length > 0 && !utilityNavTrailing.visible
+                width: parent.width
+                text: utilityNavRow.detailText
+                color: Ui.Style.textSecondary
+                font.pixelSize: 11
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: utilityNavRow.clicked()
+        }
+
+    }
+
+    component UtilityToggleRow: Item {
+        id: utilityToggleRow
+        property string iconSource: ""
+        property color iconBg: Ui.Style.topBarPillBg
+        property color iconBorder: Ui.Style.topBarPillBorder
+        property string titleText: ""
+        property string detailText: ""
+        property bool checked: false
+        signal toggled(bool checked)
+
+        implicitHeight: 72
+
+        Rectangle {
+            id: utilityToggleIcon
+            width: 34
+            height: 34
+            radius: 17
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            color: utilityToggleRow.iconBg
+            border.width: 1
+            border.color: utilityToggleRow.iconBorder
+
+            Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                source: utilityToggleRow.iconSource
+                smooth: true
+                antialiasing: true
+            }
+        }
+
+        Components.InlineSwitch {
+            id: utilityToggleSwitch
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            checked: utilityToggleRow.checked
+            onToggled: utilityToggleRow.toggled(checked)
+        }
+
+        Column {
+            anchors.left: utilityToggleIcon.right
+            anchors.right: utilityToggleSwitch.left
+            anchors.leftMargin: Ui.Style.paddingM
+            anchors.rightMargin: Ui.Style.paddingM
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                text: utilityToggleRow.titleText
+                color: Ui.Style.textPrimary
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+
+            Text {
+                visible: utilityToggleRow.detailText.length > 0
+                width: parent.width
+                text: utilityToggleRow.detailText
+                color: Ui.Style.textSecondary
+                font.pixelSize: 11
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+        }
+
+    }
+
+    component UtilitySummaryRow: Item {
+        id: utilitySummaryRow
+        property string iconSource: ""
+        property color iconBg: Ui.Style.railAccentBg
+        property color iconBorder: Ui.Style.railAccentBorder
+        property string labelText: ""
+        property string valueText: ""
+
+        implicitHeight: Ui.Style.settingsRowMinHeight
+
+        Rectangle {
+            id: utilitySummaryIcon
+            width: 34
+            height: 34
+            radius: 17
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            color: utilitySummaryRow.iconBg
+            border.width: 1
+            border.color: utilitySummaryRow.iconBorder
+
+            Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                source: utilitySummaryRow.iconSource
+                smooth: true
+                antialiasing: true
+            }
+        }
+
+        Text {
+            id: utilitySummaryValue
+            width: 168
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: utilitySummaryRow.valueText
+            color: Ui.Style.textSecondary
+            font.pixelSize: 11
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignRight
+            maximumLineCount: 1
+            elide: Text.ElideRight
+        }
+
+        Text {
+            anchors.left: utilitySummaryIcon.right
+            anchors.right: utilitySummaryValue.left
+            anchors.leftMargin: Ui.Style.paddingM
+            anchors.rightMargin: Ui.Style.paddingM
+            anchors.verticalCenter: parent.verticalCenter
+            text: utilitySummaryRow.labelText
+            color: Ui.Style.textPrimary
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+            maximumLineCount: 1
+            elide: Text.ElideRight
+        }
+
+    }
+
+    component UtilityDeviceRow: Item {
+        id: utilityDeviceRow
+        property string titleText: ""
+        property string detailText: ""
+
+        implicitHeight: 40
+
+        Rectangle {
+            id: utilityDeviceIcon
+            width: 34
+            height: 34
+            radius: 17
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            color: Ui.Style.railAccentBg
+            border.width: 1
+            border.color: Ui.Style.railAccentBorder
+
+            Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                source: "qrc:/mi/e2ee/ui/icons/device.svg"
+            }
+        }
+
+        Column {
+            anchors.left: utilityDeviceIcon.right
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                text: utilityDeviceRow.titleText
+                color: Ui.Style.textPrimary
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width
+                text: utilityDeviceRow.detailText
+                color: Ui.Style.textSecondary
+                font.pixelSize: 11
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+        }
+
+    }
+
+    component UtilityCallRow: Item {
+        id: utilityCallRow
+        property string titleText: ""
+        property string subtitleText: ""
+        property string timeText: ""
+        property string avatarTitle: ""
+        property string avatarSeed: ""
+        property string avatarMode: ""
+        signal clicked()
+        signal actionClicked()
+
+        readonly property string detailLine: {
+            if (utilityCallRow.subtitleText.length > 0 && utilityCallRow.timeText.length > 0) {
+                return utilityCallRow.subtitleText + " · " + utilityCallRow.timeText
+            }
+            if (utilityCallRow.subtitleText.length > 0) {
+                return utilityCallRow.subtitleText
+            }
+            return utilityCallRow.timeText
+        }
+
+        implicitHeight: detailLine.length > 0 ? 54 : 48
+
+        Components.IdentityAvatar {
+            id: utilityCallAvatar
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            size: 38
+            titleText: utilityCallRow.avatarTitle
+            seedText: utilityCallRow.avatarSeed
+            mode: utilityCallRow.avatarMode
+            presenceState: "idle"
+        }
+
+        Components.IconButton {
+            id: utilityCallAction
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            accessibleName: Ui.I18n.t("chat.call")
+            icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+            buttonSize: 34
+            iconSize: 16
+            onClicked: utilityCallRow.actionClicked()
+        }
+
+        Column {
+            anchors.left: utilityCallAvatar.right
+            anchors.right: utilityCallAction.left
+            anchors.leftMargin: Ui.Style.paddingM
+            anchors.rightMargin: Ui.Style.paddingM
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                text: utilityCallRow.titleText
+                color: Ui.Style.textPrimary
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+
+            Text {
+                visible: detailLine.length > 0
+                width: parent.width
+                text: detailLine
+                color: Ui.Style.textSecondary
+                font.pixelSize: 11
+                maximumLineCount: 1
+                elide: Text.ElideRight
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            anchors.rightMargin: 42
+            cursorShape: Qt.PointingHandCursor
+            onClicked: utilityCallRow.clicked()
+        }
+
+    }
+
     function contextMenuWidth(labels) {
         var maxWidth = 0
         for (var i = 0; i < labels.length; ++i) {
@@ -103,8 +632,26 @@ Item {
         }
     }
 
+    function cycleThemeOption() {
+        var options = Ui.SecurityDisplayStore.themeOptions || []
+        if (options.length === 0) {
+            return
+        }
+        var nextIndex = (Ui.SecurityDisplayStore.themeModeIndex(Ui.Style.themeMode) + 1 + options.length) % options.length
+        Ui.SecurityDisplayStore.setThemeMode(options[nextIndex].mode)
+    }
+
+    function cycleLocaleOption() {
+        var options = Ui.SecurityDisplayStore.localeOptions || []
+        if (options.length === 0) {
+            return
+        }
+        var nextIndex = (Ui.SecurityDisplayStore.localeModeIndex(Ui.I18n.localeMode) + 1 + options.length) % options.length
+        Ui.SecurityDisplayStore.setLocaleMode(options[nextIndex].code)
+    }
+
     function showSearch() {
-        if (!hasChat) {
+        if (!showingChatSurface || !hasChat) {
             return
         }
         chatSearchVisible = true
@@ -127,6 +674,13 @@ Item {
         chatSearchVisible = false
         chatSearchField.text = ""
         return true
+    }
+
+    function handleEscape() {
+        if (chatSearchVisible) {
+            return clearChatSearch()
+        }
+        return false
     }
     function showAttachPopup() {
         if (!hasChat) {
@@ -617,169 +1171,264 @@ Item {
         Rectangle {
             id: topBar
             Layout.fillWidth: true
-            Layout.preferredHeight: hasChat ? actionTopBarHeight : 0
-            Layout.minimumHeight: hasChat ? actionTopBarHeight : 0
-            Layout.maximumHeight: hasChat ? actionTopBarHeight : 0
-            visible: hasChat
-            color: Ui.Style.topBarBg
+            Layout.preferredHeight: showingChatSurface && hasChat ? actionTopBarHeight : 0
+            Layout.minimumHeight: showingChatSurface && hasChat ? actionTopBarHeight : 0
+            Layout.maximumHeight: showingChatSurface && hasChat ? actionTopBarHeight : 0
+            visible: showingChatSurface && hasChat
+            color: "transparent"
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Ui.Style.paddingM
-                anchors.rightMargin: Ui.Style.paddingM
-                anchors.topMargin: 8
-                anchors.bottomMargin: 8
-                spacing: Ui.Style.paddingM
+            Rectangle {
+                id: topBarCard
+                width: root.centeredChatColumnWidth
+                height: parent.height - 10
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.horizontalCenterOffset: root.contentCenterOffset
+                anchors.verticalCenter: parent.verticalCenter
+                radius: Ui.Style.radiusContinuous
+                color: Ui.Style.topBarBg
+                border.width: 1
+                border.color: Ui.Style.topBarPillBorder
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: Math.max(0, parent.radius - 1)
+                    color: Ui.Style.alpha(Ui.Style.sidebarHairline, Ui.Style.isDark ? 0.03 : 0.20)
+                }
+
                 RowLayout {
-                    Layout.fillWidth: true
+                    anchors.fill: parent
+                    anchors.leftMargin: Ui.Style.paddingM
+                    anchors.rightMargin: Ui.Style.paddingM
+                    anchors.topMargin: 8
+                    anchors.bottomMargin: 8
                     spacing: Ui.Style.paddingM
 
-                    Rectangle {
-                        Layout.preferredWidth: 36
-                        Layout.preferredHeight: 36
-                        radius: 18
-                        color: Ui.Style.avatarColor(Ui.ChatDisplayStore.currentChatId)
-                        border.width: 1
-                        border.color: Ui.Style.borderStrong
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Ui.Style.paddingM
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
-                                  ? Ui.ChatDisplayStore.currentChatTitle.charAt(0).toUpperCase()
-                                  : "?"
-                            color: Ui.Style.textPrimary
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
+                        Components.IdentityAvatar {
+                            Layout.preferredWidth: 36
+                            Layout.preferredHeight: 36
+                            size: 36
+                            titleText: Ui.ChatDisplayStore.currentChatTitle
+                            seedText: Ui.ChatDisplayStore.currentChatId
+                            mode: Ui.ChatDisplayStore.currentChatType === "group" ? "group" : "person"
+                            presenceState: Ui.ChatDisplayStore.currentChatType === "group" ? "secure" : "online"
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+
+                            Text {
+                                text: Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                      ? Ui.ChatDisplayStore.currentChatTitle
+                                      : Ui.I18n.t("chat.selectChat")
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                                color: Ui.Style.textPrimary
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            RowLayout {
+                                id: chatHeaderStateChips
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Rectangle {
+                                    visible: Ui.ChatDisplayStore.currentChatId.length > 0
+                                    radius: 9
+                                    color: Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: Ui.Style.sidebarMetaChipBorder
+                                    implicitWidth: chatPrimaryStatusText.implicitWidth + 14
+                                    implicitHeight: 18
+
+                                    Text {
+                                        id: chatPrimaryStatusText
+                                        anchors.centerIn: parent
+                                        text: Ui.ChatDisplayStore.currentChatType === "group"
+                                              ? Ui.I18n.format("chat.members", Ui.ChatDisplayStore.currentChatMembers)
+                                              : (Ui.ChatDisplayStore.currentChatSubtitle.length > 0
+                                                 ? Ui.ChatDisplayStore.currentChatSubtitle
+                                                 : Ui.I18n.t("chat.online"))
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        color: Ui.Style.textSecondary
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: Ui.ChatDisplayStore.currentChatId.length > 0 &&
+                                             Ui.ChatDisplayStore.isChatMuted(Ui.ChatDisplayStore.currentChatId)
+                                    width: 18
+                                    height: 18
+                                    radius: 9
+                                    color: Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: Ui.Style.sidebarMetaChipBorder
+                                    Accessible.ignored: true
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 10
+                                        height: 10
+                                        source: "qrc:/mi/e2ee/ui/icons/bell.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: Ui.ChatDisplayStore.currentChatId.length > 0 &&
+                                             Ui.ChatDisplayStore.isChatStealth(Ui.ChatDisplayStore.currentChatId)
+                                    width: 18
+                                    height: 18
+                                    radius: 9
+                                    color: Ui.Style.railAccentBg
+                                    border.width: 1
+                                    border.color: Ui.Style.railAccentBorder
+                                    Accessible.ignored: true
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 10
+                                        height: 10
+                                        source: "qrc:/mi/e2ee/ui/icons/offline.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: Ui.ChatDisplayStore.currentChatId.length > 0 &&
+                                             Ui.ChatDisplayStore.isChatBlocked(Ui.ChatDisplayStore.currentChatId)
+                                    width: 18
+                                    height: 18
+                                    radius: 9
+                                    color: Qt.rgba(220 / 255, 38 / 255, 38 / 255, Ui.Style.isDark ? 0.20 : 0.10)
+                                    border.width: 1
+                                    border.color: Qt.rgba(220 / 255, 38 / 255, 38 / 255, Ui.Style.isDark ? 0.35 : 0.18)
+                                    Accessible.ignored: true
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 10
+                                        height: 10
+                                        source: "qrc:/mi/e2ee/ui/icons/close.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                }
+                            }
                         }
                     }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        Text {
-                            text: Ui.ChatDisplayStore.currentChatTitle.length > 0
-                                  ? Ui.ChatDisplayStore.currentChatTitle
-                                  : Ui.I18n.t("chat.selectChat")
-                            font.pixelSize: 16
-                            font.weight: Font.DemiBold
-                            color: Ui.Style.textPrimary
-                            elide: Text.ElideRight
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
+                    RowLayout {
+                        id: actionRow
+                        spacing: 2
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
 
-                            Rectangle {
-                                Layout.preferredHeight: 18
-                                radius: 9
-                                color: Ui.Style.topBarPillBg
-                                border.width: 1
-                                border.color: Ui.Style.topBarPillBorder
-                                implicitWidth: statusPillText.implicitWidth + 14
-
-                                Text {
-                                    id: statusPillText
-                                    anchors.centerIn: parent
-                                    text: Ui.I18n.t("chat.secureSession")
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    color: Ui.Style.accentSoft
+                        Components.SearchField {
+                            id: chatSearchField
+                            visible: chatSearchVisible
+                            Layout.preferredWidth: 148
+                            placeholderText: Ui.I18n.t("chat.find")
+                            onInputActiveFocusChanged: {
+                                if (!inputActiveFocus && text.length === 0) {
+                                    root.clearChatSearch()
                                 }
                             }
+                        }
 
-                            Text {
-                                Layout.fillWidth: true
-                                text: Ui.ChatDisplayStore.currentChatSubtitle
-                                font.pixelSize: Ui.Style.microTextSize
-                                font.weight: Font.Medium
-                                color: Ui.Style.textSecondary
-                                elide: Text.ElideRight
-                            }
+                        Components.IconButton {
+                            icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
+                            buttonSize: actionButtonSize
+                            iconSize: actionIconSize
+                            bgColor: Ui.Style.topBarPillBg
+                            hoverBg: Ui.Style.hoverBg
+                            pressedBg: Ui.Style.pressedBg
+                            visible: !chatSearchVisible
+                            onClicked: root.showSearch()
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("chat.find")
+                        }
+                        Components.IconButton {
+                            icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+                            buttonSize: actionButtonSize
+                            iconSize: actionIconSize
+                            bgColor: Ui.Style.topBarPillBg
+                            hoverBg: Ui.Style.hoverBg
+                            pressedBg: Ui.Style.pressedBg
+                            enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("chat.call")
+                            onClicked: Ui.ChatDisplayStore.handleCallAction(false)
+                        }
+                        Components.IconButton {
+                            icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
+                            buttonSize: actionButtonSize
+                            iconSize: actionIconSize
+                            bgColor: Ui.Style.topBarPillBg
+                            hoverBg: Ui.Style.hoverBg
+                            pressedBg: Ui.Style.pressedBg
+                            enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("chat.video")
+                            onClicked: Ui.ChatDisplayStore.handleCallAction(true)
+                        }
+                        Components.IconButton {
+                            id: detailsPaneButton
+                            icon.source: "qrc:/mi/e2ee/ui/icons/info.svg"
+                            buttonSize: actionButtonSize
+                            iconSize: actionIconSize
+                            bgColor: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.topBarPillBg
+                            hoverBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.hoverBg
+                            pressedBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.pressedBg
+                            baseColor: detailsPaneActive ? Ui.Style.iconActive : Ui.Style.iconMuted
+                            hoverColor: Ui.Style.iconActive
+                            pressColor: Ui.Style.iconActive
+                            enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("chat.details")
+                            onClicked: root.toggleDetailsPane()
+                        }
+                        Components.IconButton {
+                            id: chatMoreButton
+                            icon.source: "qrc:/mi/e2ee/ui/icons/more-vert.svg"
+                            buttonSize: actionButtonSize
+                            iconSize: actionIconSize
+                            bgColor: Ui.Style.topBarPillBg
+                            hoverBg: Ui.Style.hoverBg
+                            pressedBg: Ui.Style.pressedBg
+                            ToolTip.visible: hovered
+                            ToolTip.text: Ui.I18n.t("chat.more")
+                            onClicked: chatMoreMenu.popup(chatMoreButton, 0, chatMoreButton.height + 4)
                         }
                     }
                 }
 
-                RowLayout {
-                    id: actionRow
-                    spacing: 0.5
-                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-
-                    Components.SearchField {
-                        id: chatSearchField
-                        visible: chatSearchVisible
-                        Layout.preferredWidth: 148
-                        placeholderText: Ui.I18n.t("chat.searchInChat")
-                        onInputActiveFocusChanged: {
-                            if (!inputActiveFocus && text.length === 0) {
-                                root.clearChatSearch()
-                            }
-                        }
-                    }
-
-                    Components.IconButton {
-                        icon.source: "qrc:/mi/e2ee/ui/icons/search.svg"
-                        buttonSize: actionButtonSize
-                        iconSize: actionIconSize
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        visible: !chatSearchVisible
-                        onClicked: root.showSearch()
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.find")
-                    }
-                    Components.IconButton {
-                        icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
-                        buttonSize: actionButtonSize
-                        iconSize: actionIconSize
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.call")
-                        onClicked: Ui.ChatDisplayStore.handleCallAction(false)
-                    }
-                    Components.IconButton {
-                        icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
-                        buttonSize: actionButtonSize
-                        iconSize: actionIconSize
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.video")
-                        onClicked: Ui.ChatDisplayStore.handleCallAction(true)
-                    }
-                    Components.IconButton {
-                        id: detailsPaneButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/info.svg"
-                        buttonSize: actionButtonSize
-                        iconSize: actionIconSize
-                        bgColor: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.topBarPillBg
-                        hoverBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.hoverBg
-                        pressedBg: detailsPaneActive ? Ui.Style.dialogSelectedBg : Ui.Style.pressedBg
-                        baseColor: detailsPaneActive ? Ui.Style.iconActive : Ui.Style.iconMuted
-                        hoverColor: Ui.Style.iconActive
-                        pressColor: Ui.Style.iconActive
-                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.details")
-                        onClicked: root.toggleDetailsPane()
-                    }
-                    Components.IconButton {
-                        id: chatMoreButton
-                        icon.source: "qrc:/mi/e2ee/ui/icons/more-vert.svg"
-                        buttonSize: actionButtonSize
-                        iconSize: actionIconSize
-                        bgColor: Ui.Style.topBarPillBg
-                        hoverBg: Ui.Style.hoverBg
-                        pressedBg: Ui.Style.pressedBg
-                        ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.more")
-                        onClicked: chatMoreMenu.popup(chatMoreButton, 0, chatMoreButton.height + 4)
-                    }
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Ui.Style.borderSubtle
+                    opacity: 0.9
                 }
             }
 
@@ -826,13 +1475,6 @@ Item {
                 }
             }
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: Ui.Style.borderSubtle
-            }
         }
 
         Rectangle {
@@ -856,7 +1498,7 @@ Item {
                 cache: true
                 asynchronous: true
                 opacity: 0.10
-                visible: messageArea.hasChatBackground
+                visible: root.showingChatSurface && messageArea.hasChatBackground
             }
 
             Image {
@@ -865,19 +1507,20 @@ Item {
                 fillMode: Image.Tile
                 opacity: Ui.Style.isDark ? 0.04 : 0.02
                 smooth: true
-                visible: !messageArea.hasChatBackground
+                visible: root.showingChatSurface && !messageArea.hasChatBackground
             }
 
             Rectangle {
                 id: groupCallBanner
                 property var callInfo: Ui.ChatDisplayStore.groupCallInfo(Ui.ChatDisplayStore.currentChatId)
-                visible: Ui.ChatDisplayStore.currentChatType === "group" && callInfo
+                visible: root.showingChatSurface &&
+                         Ui.ChatDisplayStore.currentChatType === "group" &&
+                         callInfo
                 height: visible ? 44 : 0
-                anchors.left: parent.left
-                anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.leftMargin: Ui.Style.paddingL
-                anchors.rightMargin: Ui.Style.paddingL
+                width: root.centeredChatColumnWidth
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.horizontalCenterOffset: root.contentCenterOffset
                 anchors.topMargin: Ui.Style.paddingM
                 radius: 12
                 color: Ui.Style.panelBgAlt
@@ -953,16 +1596,20 @@ Item {
 
             ListView {
                 id: messageList
-                anchors.fill: parent
-                anchors.leftMargin: Ui.Style.paddingL
-                anchors.rightMargin: Ui.Style.paddingL
+                width: root.centeredChatColumnWidth
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.horizontalCenterOffset: root.contentCenterOffset
+                // anchors.rightMargin: Ui.Style.paddingL + root.drawerReserveWidth
                 anchors.bottomMargin: Ui.Style.paddingS + 2
                 anchors.topMargin: Ui.Style.paddingM +
                                    (groupCallBanner.visible
                                     ? groupCallBanner.height + Ui.Style.paddingS
                                     : 0)
                 clip: true
-                model: Ui.ChatDisplayStore.currentChatId.length > 0
+                visible: root.showingChatSurface
+                model: root.showingChatSurface && Ui.ChatDisplayStore.currentChatId.length > 0
                        ? Ui.ChatDisplayStore.messagesModel(Ui.ChatDisplayStore.currentChatId)
                        : null
                 boundsBehavior: Flickable.StopAtBounds
@@ -983,99 +1630,207 @@ Item {
 
             Item {
                 anchors.fill: parent
-                visible: Ui.ChatDisplayStore.currentChatId.length === 0
+                visible: root.showingChatSurface && Ui.ChatDisplayStore.currentChatId.length === 0
 
                 Rectangle {
+                    id: postLoginEmptyStateCard
                     anchors.centerIn: parent
-                    width: Math.min(parent.width - 64, 436)
-                    radius: 28
-                    color: Qt.rgba(12 / 255, 19 / 255, 28 / 255, 0.92)
-                    border.color: Ui.Style.borderStrong
+                    width: Math.min(parent.width - 64, 468)
+                    radius: Ui.Style.radiusXL
+                    color: Ui.Style.panelBgAlt
+                    border.color: Ui.Style.borderSubtle
                     border.width: 1
+                    implicitHeight: emptyStateColumn.implicitHeight + 48
 
                     ColumnLayout {
+                        id: emptyStateColumn
                         anchors.fill: parent
-                        anchors.margins: 28
-                        spacing: 16
+                        anchors.margins: 24
+                        spacing: 14
 
-                        Rectangle {
-                            Layout.preferredWidth: 64
-                            Layout.preferredHeight: 64
+                        Components.EmptyStateIllustration {
                             Layout.alignment: Qt.AlignHCenter
-                            radius: 32
-                            color: Ui.Style.railAccentBg
-                            border.color: Ui.Style.railAccentBorder
-                            border.width: 1
+                            kind: "chat"
+                            size: 68
+                        }
+
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: false
+                            spacing: 8
 
                             Rectangle {
-                                width: 18
-                                height: 18
-                                radius: 9
-                                anchors.centerIn: parent
-                                color: Ui.Style.accent
+                                radius: 10
+                                color: Ui.Style.topBarPillBg
+                                border.width: 1
+                                border.color: Ui.Style.topBarPillBorder
+                                implicitWidth: emptyStateSessionLabel.implicitWidth + 14
+                                implicitHeight: 22
+
+                                Text {
+                                    id: emptyStateSessionLabel
+                                    anchors.centerIn: parent
+                                    text: Ui.SecurityDisplayStore.transportHealthy
+                                          ? (Ui.I18n.usesCjkLocale ? "加密会话已就绪" : "Secure session ready")
+                                          : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Rectangle {
+                                visible: Ui.SecurityDisplayStore.gatewayDisplayState.length > 0
+                                radius: 10
+                                color: Ui.Style.railAccentBg
+                                border.width: 1
+                                border.color: Ui.Style.railAccentBorder
+                                implicitWidth: emptyStateTrustLabel.implicitWidth + 14
+                                implicitHeight: 22
+
+                                Text {
+                                    id: emptyStateTrustLabel
+                                    anchors.centerIn: parent
+                                    text: Ui.SecurityDisplayStore.gatewayDisplayState
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                }
                             }
                         }
 
-                        Rectangle {
-                            Layout.alignment: Qt.AlignHCenter
-                            radius: 14
-                            color: Qt.rgba(60 / 255, 207 / 255, 145 / 255, 0.16)
-                            border.color: Qt.rgba(126 / 255, 229 / 255, 176 / 255, 0.22)
-                            implicitWidth: emptyBadgeText.implicitWidth + 20
-                            implicitHeight: 28
-
-                            Text {
-                                id: emptyBadgeText
-                                anchors.centerIn: parent
-                                text: Ui.I18n.t("chat.secureSession")
-                            color: Ui.Style.success
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                        }
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            visible: true
                             text: Ui.I18n.t("left.emptyTitle")
                             color: Ui.Style.textPrimary
-                            wrapMode: Text.WordWrap
+                            wrapMode: Text.NoWrap
                             horizontalAlignment: Text.AlignHCenter
-                            font.pixelSize: 28
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            font.pixelSize: 18
                             font.weight: Font.DemiBold
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: Ui.I18n.t("left.emptyBody")
+                            visible: true
+                            text: Ui.I18n.usesCjkLocale
+                                  ? "从左侧选择会话开始消息"
+                                  : "Choose a conversation from the left"
                             color: Ui.Style.textSecondary
-                            wrapMode: Text.WordWrap
+                            wrapMode: Text.NoWrap
                             horizontalAlignment: Text.AlignHCenter
-                            lineHeight: 1.35
-                            font.pixelSize: 14
+                            lineHeight: 1.2
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
                         }
 
                         RowLayout {
+                            id: postLoginEmptyStateActions
                             Layout.alignment: Qt.AlignHCenter
                             spacing: 8
 
+                            Components.IconButton {
+                                id: chatEmptySecondaryAction
+                                accessibleName: Ui.I18n.t("left.contacts")
+                                icon.source: "qrc:/mi/e2ee/ui/icons/group.svg"
+                                buttonSize: 42
+                                iconSize: 18
+                                bgColor: Ui.Style.topBarPillBg
+                                hoverBg: Ui.Style.hoverBg
+                                pressedBg: Ui.Style.pressedBg
+                                onClicked: Ui.AppStore.setShellSurface("contacts")
+                                ToolTip.visible: hovered
+                                ToolTip.text: accessibleName
+                            }
+
+                            Components.IconButton {
+                                id: chatEmptyPrimaryAction
+                                accessibleName: Ui.I18n.t("left.newChat")
+                                icon.source: "qrc:/mi/e2ee/ui/icons/plus.svg"
+                                buttonSize: 42
+                                iconSize: 18
+                                bgColor: Ui.Style.accent
+                                baseColor: "#F6FAFF"
+                                hoverColor: "#F6FAFF"
+                                pressColor: "#F6FAFF"
+                                hoverBg: Ui.Style.accentHover
+                                pressedBg: Ui.Style.accentPressed
+                                onClicked: Ui.AppStore.openChatFromContact(Ui.ChatDisplayStore.contactsModel.count > 0
+                                                                          ? Ui.ChatDisplayStore.contactsModel.get(0).contactId
+                                                                          : "")
+                                ToolTip.visible: hovered
+                                ToolTip.text: accessibleName
+                            }
+                        }
+
+                        RowLayout {
+                            id: postLoginEmptyStateInsights
+                            visible: false
+                            Layout.fillWidth: true
+                            spacing: Ui.Style.paddingS
+
                             Repeater {
-                                model: ["OPAQUE", "Ratchet", "Sender Key"]
+                                model: [
+                                    {
+                                        icon: "qrc:/mi/e2ee/ui/icons/device.svg",
+                                        detail: Ui.SecurityDisplayStore.maskedCurrentDeviceId.length > 0
+                                                ? Ui.SecurityDisplayStore.maskedCurrentDeviceId
+                                                : Ui.I18n.t("dialog.deviceManager.thisDevice")
+                                    },
+                                    {
+                                        icon: "qrc:/mi/e2ee/ui/icons/info.svg",
+                                        detail: Ui.SecurityDisplayStore.gatewayDisplayDetail.length > 0
+                                                ? Ui.SecurityDisplayStore.gatewayDisplayDetail
+                                                : Ui.I18n.t("dialog.securityCenter.serverHint")
+                                    }
+                                ]
 
                                 delegate: Rectangle {
-                                    radius: 14
-                                    color: Ui.Style.authSurfaceStrong
+                                    Layout.fillWidth: true
+                                    radius: Ui.Style.radiusLarge
+                                    color: Ui.Style.panelBg
                                     border.width: 1
                                     border.color: Ui.Style.borderSubtle
-                                    implicitWidth: chipText.implicitWidth + 20
-                                    implicitHeight: 28
+                                    implicitHeight: insightRow.implicitHeight + Ui.Style.paddingM * 2
 
-                                    Text {
-                                        id: chipText
-                                        anchors.centerIn: parent
-                                        text: modelData
-                                        color: Ui.Style.textSecondary
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
+                                    RowLayout {
+                                        id: insightRow
+                                        anchors.fill: parent
+                                        anchors.margins: Ui.Style.paddingM
+                                        spacing: 8
+
+                                        Rectangle {
+                                            width: 26
+                                            height: 26
+                                            radius: 13
+                                            color: Ui.Style.railAccentBg
+                                            border.width: 1
+                                            border.color: Ui.Style.railAccentBorder
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 12
+                                                height: 12
+                                                source: modelData.icon
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                                antialiasing: true
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.detail
+                                            color: Ui.Style.textPrimary
+                                            font.pixelSize: 12
+                                            font.weight: Font.Medium
+                                            wrapMode: Text.NoWrap
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                        }
                                     }
                                 }
                             }
@@ -1086,14 +1841,15 @@ Item {
 
             Components.IconButton {
                 id: jumpButton
-                visible: !stickToBottom && messageList.count > 0
+                visible: root.showingChatSurface && !stickToBottom && messageList.count > 0
                 accessibleName: Ui.I18n.t("chat.jumpBottom")
                 icon.source: "qrc:/mi/e2ee/ui/icons/chevron-down.svg"
                 buttonSize: 30
                 iconSize: 14
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.margins: Ui.Style.paddingM
+                anchors.rightMargin: Ui.Style.paddingM + root.drawerReserveWidth
+                anchors.bottomMargin: Ui.Style.paddingM
                 bgColor: Ui.Style.panelBg
                 hoverBg: Ui.Style.hoverBg
                 pressedBg: Ui.Style.pressedBg
@@ -1103,10 +1859,1086 @@ Item {
             }
 
             Item {
+                id: contactsHub
+                anchors.fill: parent
+                visible: root.showingContactsSurface
+
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingL
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    ColumnLayout {
+                        width: Math.max(0, contactsHub.width - Ui.Style.paddingL * 2)
+                        spacing: Ui.Style.paddingM
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Ui.I18n.t("contacts.title")
+                                color: Ui.Style.textPrimary
+                                font.pixelSize: 22
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+
+                            Components.UiText {
+                                Layout.fillWidth: true
+                                text: Ui.I18n.usesCjkLocale
+                                      ? "联系人是一等入口，支持直接发起私聊、建群和查看身份。"
+                                      : "Contacts are a first-class surface for starting chats, groups, and identity checks."
+                                textRole: "supporting"
+                                roleColor: Ui.Style.textSecondary
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: contactsHeroRow.implicitHeight + Ui.Style.paddingL * 2
+
+                            RowLayout {
+                                id: contactsHeroRow
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingL
+                                spacing: Ui.Style.paddingM
+
+                                Components.EmptyStateIllustration {
+                                    kind: "chat"
+                                    size: 52
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: Ui.I18n.usesCjkLocale ? "快速发起聊天" : "Start a chat fast"
+                                        color: Ui.Style.textPrimary
+                                        font.pixelSize: 14
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: Ui.I18n.t("contacts.emptyHint")
+                                        color: Ui.Style.textSecondary
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                Components.PrimaryButton {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    text: Ui.I18n.t("contacts.startChat")
+                                    onClicked: {
+                                        if (Ui.ChatDisplayStore.contactsModel.count > 0) {
+                                            Ui.ChatDisplayStore.openChatFromContact(Ui.ChatDisplayStore.contactsModel.get(0).contactId)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: Ui.ChatDisplayStore.filteredContactsModel
+
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                radius: Ui.Style.radiusLarge
+                                color: contactsCardMouse.containsMouse ? Ui.Style.dialogHoverBg : Ui.Style.panelBg
+                                border.width: 1
+                                border.color: Ui.Style.borderSubtle
+                                implicitHeight: contactsCardRow.implicitHeight + Ui.Style.paddingM * 2
+
+                                RowLayout {
+                                    id: contactsCardRow
+                                    anchors.fill: parent
+                                    anchors.margins: Ui.Style.paddingM
+                                    spacing: Ui.Style.paddingM
+
+                                    Components.IdentityAvatar {
+                                        size: 44
+                                        titleText: displayName
+                                        seedText: avatarKey || displayName
+                                        mode: "person"
+                                        presenceState: "online"
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 3
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: displayName
+                                            color: Ui.Style.textPrimary
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: usernameOrPhone
+                                            color: Ui.Style.textSecondary
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Components.GhostButton {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        text: Ui.I18n.t("contacts.startChat")
+                                        Layout.preferredHeight: 32
+                                        onClicked: Ui.ChatDisplayStore.openChatFromContact(contactId)
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: contactsCardMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Ui.ChatDisplayStore.openChatFromContact(contactId)
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            visible: !Ui.ChatDisplayStore.filteredContactsModel ||
+                                     Ui.ChatDisplayStore.filteredContactsModel.count === 0
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: 108
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingL
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("contacts.emptyTitle")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("contacts.emptyHint")
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                id: utilitySurface
+                anchors.fill: parent
+                visible: root.showingCallsSurface || root.showingSettingsSurface || root.showingSecuritySurface
+
+                ScrollView {
+                    id: utilityScroll
+                    anchors.fill: parent
+                    anchors.margins: Ui.Style.paddingL
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    ColumnLayout {
+                        readonly property int utilityCardWidth: Math.min(width, Ui.Style.utilitySurfaceMaxWidth)
+                        width: Math.max(0, utilityScroll.availableWidth)
+                        spacing: Ui.Style.paddingL
+
+                        Item {
+                            id: utilityPageHeader
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.preferredHeight: 92
+                            readonly property bool hideBackAction: utilityScroll.availableWidth >= 700
+
+                            Rectangle {
+                                id: utilityBackButton
+                                width: 28
+                                height: 28
+                                radius: 14
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !utilityPageHeader.hideBackAction
+                                color: Ui.Style.topBarPillBg
+                                border.width: 1
+                                border.color: Ui.Style.topBarPillBorder
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 12
+                                    height: 12
+                                    source: "qrc:/mi/e2ee/ui/icons/chevron-right.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    antialiasing: true
+                                    rotation: 180
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (root.showingSecuritySurface) {
+                                            Ui.AppStore.setShellSurface("settings")
+                                        } else {
+                                            Ui.AppStore.setShellSurface("chat")
+                                        }
+                                    }
+                                }
+                            }
+
+                            Column {
+                                anchors.left: utilityBackButton.visible ? utilityBackButton.right : parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: utilityBackButton.visible ? Ui.Style.paddingM : 0
+                                anchors.rightMargin: 0
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 6
+
+                                Text {
+                                    id: utilityPageTitle
+                                    width: parent.width
+                                    maximumLineCount: 1
+                                    elide: Text.ElideRight
+                                    text: root.showingCallsSurface
+                                          ? Ui.I18n.t("chat.call")
+                                          : (root.showingSecuritySurface
+                                             ? Ui.I18n.t("dialog.securityCenter.title")
+                                             : Ui.I18n.t("settings.title"))
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 28
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: utilityBackButton.visible ? Text.AlignLeft : Text.AlignHCenter
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    maximumLineCount: 1
+                                    elide: Text.ElideRight
+                                    text: root.showingCallsSurface
+                                          ? (Ui.I18n.usesCjkLocale ? "最近记录与快速发起" : "Recent history and quick launch")
+                                          : (root.showingSecuritySurface
+                                             ? (Ui.I18n.usesCjkLocale ? "信任、设备与传输状态" : "Trust, devices, and transport status")
+                                             : (Ui.I18n.usesCjkLocale ? "外观、语言与隐私偏好" : "Appearance, language, and privacy"))
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 13
+                                    horizontalAlignment: utilityBackButton.visible ? Text.AlignLeft : Text.AlignHCenter
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: settingsPrimaryList
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.showingSettingsSurface
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: settingsPrimaryColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                            ColumnLayout {
+                                id: settingsPrimaryColumn
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingS
+                                spacing: 0
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: settingsAccountRow.implicitHeight
+
+                                UtilityNavRow {
+                                    id: settingsAccountRow
+                                    anchors.fill: parent
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("auth.brand")
+                                    trailingText: Ui.I18n.usesCjkLocale ? "账号" : "Account"
+                                }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: themeSettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                    id: themeSettingsRow
+                                    anchors.fill: parent
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/palette.svg"
+                                    iconBg: Ui.Style.railAccentBg
+                                    iconBorder: Ui.Style.railAccentBorder
+                                    titleText: Ui.I18n.t("settings.theme")
+                                        detailText: root.utilityFriendlyThemeDetail()
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.cycleThemeOption()
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: localeSettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                    id: localeSettingsRow
+                                    anchors.fill: parent
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/language.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("settings.language")
+                                        detailText: root.utilityFriendlyLocaleDetail()
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.cycleLocaleOption()
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: securitySettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                    id: securitySettingsRow
+                                    anchors.fill: parent
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/check.svg"
+                                    iconBg: Ui.Style.railAccentBg
+                                    iconBorder: Ui.Style.railAccentBorder
+                                    titleText: Ui.I18n.t("settings.securityCenter.title")
+                                        detailText: root.utilityFriendlySecurityDetail()
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Ui.AppStore.setShellSurface("security")
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: privacySettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                        id: privacySettingsRow
+                                        anchors.fill: parent
+                                        iconSource: "qrc:/mi/e2ee/ui/icons/file.svg"
+                                        iconBg: Ui.Style.topBarPillBg
+                                        iconBorder: Ui.Style.topBarPillBorder
+                                        titleText: Ui.I18n.t("settings.section.privacy")
+                                        detailText: ""
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: notificationsSettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                        id: notificationsSettingsRow
+                                        anchors.fill: parent
+                                        iconSource: "qrc:/mi/e2ee/ui/icons/bell.svg"
+                                        iconBg: Ui.Style.railAccentBg
+                                        iconBorder: Ui.Style.railAccentBorder
+                                        titleText: Ui.I18n.t("settings.section.notifications")
+                                        detailText: ""
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: devicesSettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                        id: devicesSettingsRow
+                                        anchors.fill: parent
+                                        iconSource: "qrc:/mi/e2ee/ui/icons/group.svg"
+                                        iconBg: Ui.Style.topBarPillBg
+                                        iconBorder: Ui.Style.topBarPillBorder
+                                        titleText: Ui.I18n.t("dialog.deviceManager.linkedDevices")
+                                        trailingText: Ui.SecurityDisplayStore.devicesModel.count > 0
+                                                      ? ("" + Ui.SecurityDisplayStore.devicesModel.count)
+                                                      : "0"
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Ui.AppStore.setShellSurface("security")
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: densitySettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                        id: densitySettingsRow
+                                        anchors.fill: parent
+                                        iconSource: "qrc:/mi/e2ee/ui/icons/chat.svg"
+                                        iconBg: Ui.Style.railAccentBg
+                                        iconBorder: Ui.Style.railAccentBorder
+                                        titleText: Ui.I18n.t("settings.messageDensity")
+                                        detailText: Ui.I18n.t("settings.density.normal")
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: fontSizeSettingsRow.implicitHeight
+
+                                    UtilityNavRow {
+                                        id: fontSizeSettingsRow
+                                        anchors.fill: parent
+                                        iconSource: "qrc:/mi/e2ee/ui/icons/language.svg"
+                                        iconBg: Ui.Style.topBarPillBg
+                                        iconBorder: Ui.Style.topBarPillBorder
+                                        titleText: Ui.I18n.t("settings.fontSize")
+                                        detailText: "16 px"
+                                    }
+                                }
+
+                            }
+                        }
+
+                        Rectangle {
+                            id: securitySummaryList
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.showingSecuritySurface
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: securitySummaryColumn.implicitHeight + Ui.Style.paddingM * 2
+
+                            ColumnLayout {
+                                id: securitySummaryColumn
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingS
+                                spacing: 0
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/check.svg"
+                                    iconBg: Ui.Style.railAccentBg
+                                    iconBorder: Ui.Style.railAccentBorder
+                                    titleText: Ui.I18n.t("dialog.securityCenter.transportTitle")
+                                    trailingText: root.utilityFriendlySecurityDetail()
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/group.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                                    trailingText: Ui.SecurityDisplayStore.devicesModel.count > 0
+                                                  ? (Ui.I18n.usesCjkLocale
+                                                     ? ("" + Ui.SecurityDisplayStore.devicesModel.count)
+                                                     : ("" + Ui.SecurityDisplayStore.devicesModel.count))
+                                                  : "0"
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/info.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("dialog.securityCenter.trustTitle")
+                                    trailingText: root.utilityFriendlyTrustDetail()
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/clock.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("dialog.securityCenter.serverTitle")
+                                    trailingText: root.utilityFriendlyGatewayDetail()
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/device.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.t("dialog.deviceManager.currentDevice")
+                                    trailingText: Ui.SecurityDisplayStore.maskedCurrentDeviceId.length > 0
+                                                  ? Ui.SecurityDisplayStore.maskedCurrentDeviceId
+                                                  : (Ui.I18n.usesCjkLocale ? "本机" : "This device")
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/info.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.usesCjkLocale ? "版本" : "Version"
+                                    trailingText: Ui.SecurityDisplayStore.versionText.length > 0
+                                                  ? Ui.SecurityDisplayStore.versionText
+                                                  : (Ui.I18n.usesCjkLocale ? "桌面版" : "Desktop")
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/file.svg"
+                                    iconBg: Ui.Style.topBarPillBg
+                                    iconBorder: Ui.Style.topBarPillBorder
+                                    titleText: Ui.I18n.usesCjkLocale ? "剪贴板隔离" : "Clipboard isolation"
+                                    trailingText: Ui.SecurityDisplayStore.clipboardIsolationEnabled
+                                                  ? (Ui.I18n.usesCjkLocale ? "已开启" : "On")
+                                                  : (Ui.I18n.usesCjkLocale ? "关闭" : "Off")
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                UtilityNavRow {
+                                    Layout.fillWidth: true
+                                    iconSource: "qrc:/mi/e2ee/ui/icons/group.svg"
+                                    iconBg: Ui.Style.railAccentBg
+                                    iconBorder: Ui.Style.railAccentBorder
+                                    titleText: Ui.I18n.t("dialog.securityCenter.manageDevices")
+                                    trailingText: ""
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: securityDevicesCard
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.showingSecuritySurface &&
+                                     Ui.SecurityDisplayStore.devicesModel.count > 0
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: devicesColumn.implicitHeight + Ui.Style.paddingL * 2
+
+                            ColumnLayout {
+                                id: devicesColumn
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingL
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    maximumLineCount: 1
+                                    elide: Text.ElideRight
+                                }
+
+                                Repeater {
+                                    model: Ui.SecurityDisplayStore.devicesModel
+
+                                    delegate: UtilityDeviceRow {
+                                        Layout.fillWidth: true
+                                        titleText: root.utilityFriendlyDeviceName(maskedDeviceDisplayId, index, false)
+                                        detailText: lastSeenDisplay
+                                    }
+                                }
+
+                                Text {
+                                    visible: Ui.SecurityDisplayStore.devicesModel.count === 0
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("dialog.securityCenter.noLinkedDevices")
+                                    color: Ui.Style.textSecondary
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                }
+
+                            }
+                        }
+
+                        Rectangle {
+                            id: callsCurrentCard
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.showingCallsSurface &&
+                                     (Ui.CallDisplayStore.activeCallId.length > 0 ||
+                                      Ui.CallDisplayStore.incomingCallActive)
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: callsCurrentColumn.implicitHeight + Ui.Style.paddingL * 2
+
+                            ColumnLayout {
+                                id: callsCurrentColumn
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingM
+                                spacing: Ui.Style.paddingM
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Ui.Style.paddingM
+
+                                    Rectangle {
+                                        width: 40
+                                        height: 40
+                                        radius: 20
+                                        color: Ui.Style.railAccentBg
+                                        border.width: 1
+                                        border.color: Ui.Style.railAccentBorder
+
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 16
+                                            height: 16
+                                            fillMode: Image.PreserveAspectFit
+                                            source: (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.incomingCallActive)
+                                                    ? (Ui.CallDisplayStore.activeCallVideo || Ui.CallDisplayStore.incomingCallVideo
+                                                       ? "qrc:/mi/e2ee/ui/icons/video.svg"
+                                                       : "qrc:/mi/e2ee/ui/icons/phone.svg")
+                                                    : "qrc:/mi/e2ee/ui/icons/phone.svg"
+                                            smooth: true
+                                            antialiasing: true
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                            text: Ui.CallDisplayStore.activeCallId.length > 0
+                                                  ? (Ui.CallDisplayStore.activeCallVideo
+                                                     ? Ui.I18n.t("chat.callActiveVideo")
+                                                     : Ui.I18n.t("chat.callActiveVoice"))
+                                                  : (Ui.CallDisplayStore.incomingCallActive
+                                                     ? (Ui.CallDisplayStore.incomingCallVideo
+                                                        ? Ui.I18n.t("chat.callIncomingVideo")
+                                                        : Ui.I18n.t("chat.callIncomingVoice"))
+                                                     : Ui.I18n.t("calls.ready"))
+                                            color: Ui.Style.textPrimary
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: (Ui.CallDisplayStore.activeCallId.length > 0 || Ui.CallDisplayStore.incomingCallActive)
+                                                  ? Ui.ChatDisplayStore.resolveTitle(Ui.CallDisplayStore.activeCallPeer.length > 0
+                                                                                    ? Ui.CallDisplayStore.activeCallPeer
+                                                                                    : Ui.CallDisplayStore.incomingCallPeer)
+                                                  : (Ui.ChatDisplayStore.currentChatTitle.length > 0
+                                                     ? Ui.ChatDisplayStore.currentChatTitle
+                                                     : Ui.I18n.t("calls.pickContact"))
+                                            color: Ui.Style.textSecondary
+                                            font.pixelSize: 12
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Text {
+                                        visible: Ui.CallDisplayStore.activeCallId.length > 0
+                                        text: Ui.I18n.t("chat.callDuration").arg(formatCallDuration(callDurationSec))
+                                        color: Ui.Style.textMuted
+                                        font.pixelSize: 11
+                                        font.weight: Font.Medium
+                                        horizontalAlignment: Text.AlignRight
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Components.GhostButton {
+                                        visible: Ui.CallDisplayStore.incomingCallActive &&
+                                                 Ui.CallDisplayStore.activeCallId.length === 0
+                                        text: Ui.I18n.t("chat.callDecline")
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        onClicked: Ui.CallDisplayStore.declineIncomingCall()
+                                    }
+
+                                    Components.PrimaryButton {
+                                        visible: Ui.CallDisplayStore.incomingCallActive &&
+                                                 Ui.CallDisplayStore.activeCallId.length === 0
+                                        text: Ui.I18n.t("chat.callAccept")
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        onClicked: Ui.CallDisplayStore.acceptIncomingCall()
+                                    }
+
+                                    Components.GhostButton {
+                                        visible: Ui.CallDisplayStore.activeCallId.length > 0
+                                        text: Ui.I18n.t("chat.callHangup")
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        onClicked: Ui.CallDisplayStore.endCall()
+                                    }
+
+                                    Components.PrimaryButton {
+                                        visible: !Ui.CallDisplayStore.incomingCallActive &&
+                                                 Ui.CallDisplayStore.activeCallId.length === 0
+                                        text: Ui.I18n.t("chat.call")
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                                        onClicked: Ui.ChatDisplayStore.handleCallAction(false)
+                                    }
+
+                                    Components.GhostButton {
+                                        visible: !Ui.CallDisplayStore.incomingCallActive &&
+                                                 Ui.CallDisplayStore.activeCallId.length === 0
+                                        text: Ui.I18n.t("chat.video")
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                                        onClicked: Ui.ChatDisplayStore.handleCallAction(true)
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: callsRecentCard
+                            Layout.preferredWidth: parent.utilityCardWidth
+                            Layout.alignment: Qt.AlignHCenter
+                            visible: root.showingCallsSurface
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.panelBg
+                            border.width: 1
+                            border.color: Ui.Style.borderSubtle
+                            implicitHeight: callsRecentColumn.implicitHeight + Ui.Style.paddingL * 2
+
+                            ColumnLayout {
+                                id: callsRecentColumn
+                                anchors.fill: parent
+                                anchors.margins: Ui.Style.paddingM
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: Ui.CallDisplayStore.activeCallId.length === 0 &&
+                                             !Ui.CallDisplayStore.incomingCallActive &&
+                                             root.utilityCallTargetId().length > 0
+                                    spacing: 10
+
+                                    Components.IdentityAvatar {
+                                        size: 42
+                                        titleText: root.utilityCallTargetTitle()
+                                        seedText: root.utilityCallTargetAvatarSeed()
+                                        mode: root.utilityCallTargetAvatarMode()
+                                        presenceState: "online"
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.utilityCallTargetTitle()
+                                            color: Ui.Style.textPrimary
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: Ui.I18n.usesCjkLocale ? "快速发起通话" : "Quick call"
+                                            color: Ui.Style.textSecondary
+                                            font.pixelSize: 12
+                                            maximumLineCount: 1
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Components.IconButton {
+                                        accessibleName: Ui.I18n.t("chat.call")
+                                        icon.source: "qrc:/mi/e2ee/ui/icons/phone.svg"
+                                        buttonSize: 36
+                                        iconSize: 16
+                                        onClicked: {
+                                            Ui.ChatDisplayStore.setCurrentChat(root.utilityCallTargetId())
+                                            Ui.ChatDisplayStore.handleCallAction(false)
+                                        }
+                                    }
+
+                                    Components.IconButton {
+                                        accessibleName: Ui.I18n.t("chat.video")
+                                        icon.source: "qrc:/mi/e2ee/ui/icons/video.svg"
+                                        buttonSize: 36
+                                        iconSize: 16
+                                        onClicked: {
+                                            Ui.ChatDisplayStore.setCurrentChat(root.utilityCallTargetId())
+                                            Ui.ChatDisplayStore.handleCallAction(true)
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    visible: Ui.CallDisplayStore.activeCallId.length === 0 &&
+                                             !Ui.CallDisplayStore.incomingCallActive &&
+                                             root.utilityCallTargetId().length > 0
+                                    height: 1
+                                    color: Ui.Style.borderSubtle
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Ui.I18n.t("calls.recent")
+                                    color: Ui.Style.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    maximumLineCount: 1
+                                    elide: Text.ElideRight
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 52
+                                        Layout.preferredHeight: 26
+                                        radius: 13
+                                        color: Ui.Style.railAccentBg
+                                        border.width: 1
+                                        border.color: Ui.Style.railAccentBorder
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Ui.I18n.usesCjkLocale ? "全部" : "All"
+                                            color: Ui.Style.textPrimary
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 60
+                                        Layout.preferredHeight: 26
+                                        radius: 13
+                                        color: Ui.Style.topBarPillBg
+                                        border.width: 1
+                                        border.color: Ui.Style.topBarPillBorder
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Ui.I18n.usesCjkLocale ? "未接" : "Missed"
+                                            color: Ui.Style.textSecondary
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
+                                        }
+                                    }
+
+                                    Item {
+                                        Layout.fillWidth: true
+                                    }
+                                }
+
+                                Repeater {
+                                    model: root.showingCallsSurface
+                                           ? Math.min(10, Ui.ChatDisplayStore.filteredDialogsModel.count)
+                                           : 0
+
+                                    delegate: Item {
+                                        property var dialogEntry: Ui.ChatDisplayStore.filteredDialogsModel.get(index)
+                                        Layout.fillWidth: true
+                                        implicitHeight: recentCallRow.implicitHeight
+
+                                        UtilityCallRow {
+                                            id: recentCallRow
+                                            anchors.fill: parent
+                                            avatarTitle: dialogEntry.title || ""
+                                            avatarSeed: dialogEntry.avatarKey || dialogEntry.title || ""
+                                            avatarMode: dialogEntry.avatarMode || ""
+                                            titleText: dialogEntry.title || ""
+                                            subtitleText: (Ui.CallDisplayStore.activeCallPeer === (dialogEntry.chatId || "") ||
+                                                           Ui.CallDisplayStore.incomingCallPeer === (dialogEntry.chatId || ""))
+                                                          ? (Ui.CallDisplayStore.activeCallVideo || Ui.CallDisplayStore.incomingCallVideo
+                                                             ? Ui.I18n.t("chat.callActiveVideo")
+                                                             : Ui.I18n.t("chat.callActiveVoice"))
+                                                          : Ui.I18n.t("chat.call")
+                                            timeText: dialogEntry.timeText || ""
+                                            onClicked: Ui.ChatDisplayStore.setCurrentChat(dialogEntry.chatId || "")
+                                            onActionClicked: {
+                                                Ui.ChatDisplayStore.setCurrentChat(dialogEntry.chatId || "")
+                                                Ui.ChatDisplayStore.handleCallAction(false)
+                                            }
+                                        }
+
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: Ui.ChatDisplayStore.filteredDialogsModel.count === 0
+                                    Layout.fillWidth: true
+                                    radius: Ui.Style.radiusMedium
+                                    color: Ui.Style.panelBgAlt
+                                    border.width: 1
+                                    border.color: Ui.Style.borderSubtle
+                                    implicitHeight: noRecentCallsLabel.implicitHeight + Ui.Style.paddingM * 2
+
+                                    Text {
+                                        id: noRecentCallsLabel
+                                        anchors.centerIn: parent
+                                        text: Ui.I18n.t("calls.noRecent")
+                                        color: Ui.Style.textSecondary
+                                        font.pixelSize: 12
+                                        font.weight: Font.Medium
+                                    }
+                                }
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Ui.Style.paddingL
+                        }
+                    }
+                }
+            }
+
+            Item {
                 id: callOverlay
                 anchors.fill: parent
                 z: 5
-                visible: Ui.CallDisplayStore.incomingCallActive &&
+                visible: root.showingChatSurface &&
+                         Ui.CallDisplayStore.incomingCallActive &&
                          Ui.CallDisplayStore.activeCallId.length === 0
                 property bool callVideo: Ui.CallDisplayStore.incomingCallVideo
                 property string callPeer: Ui.CallDisplayStore.incomingCallPeer
@@ -1122,7 +2954,8 @@ Item {
 
                 Rectangle {
                     id: incomingPanel
-                    visible: Ui.CallDisplayStore.incomingCallActive &&
+                    visible: root.showingChatSurface &&
+                             Ui.CallDisplayStore.incomingCallActive &&
                              Ui.CallDisplayStore.activeCallId.length === 0
                     width: 320
                     height: 210
@@ -1515,32 +3348,41 @@ Item {
         Rectangle {
             id: inputBar
             Layout.fillWidth: true
-            Layout.preferredHeight: hasChat ? implicitHeight : 0
-            Layout.minimumHeight: hasChat ? implicitHeight : 0
-            Layout.maximumHeight: hasChat ? implicitHeight : 0
-            visible: hasChat
-            color: Ui.Style.panelBg
-            implicitHeight: 48
-            property int inputFieldHeight: 36
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: root.centeredChatColumnWidth
+            Layout.maximumWidth: root.centeredChatColumnWidth
+            Layout.bottomMargin: Ui.Style.paddingM
+            Layout.preferredHeight: showingChatSurface && hasChat ? implicitHeight : 0
+            Layout.minimumHeight: showingChatSurface && hasChat ? implicitHeight : 0
+            Layout.maximumHeight: showingChatSurface && hasChat ? implicitHeight : 0
+            visible: showingChatSurface && hasChat
+            color: Ui.Style.tgGlassSurface
+            radius: Ui.Style.radiusContinuous
+            border.width: 1
+            border.color: Ui.Style.tgCardBorder
+            implicitHeight: 64
+            property int inputFieldHeight: 40
 
             ColumnLayout {
                 id: inputColumn
                 anchors.fill: parent
-                anchors.margins: 6
-                spacing: 0
+                anchors.margins: 10
+                spacing: 6
 
                 Text {
-                    visible: false
+                    visible: Ui.ChatDisplayStore.sendErrorMessage.length > 0
                     text: Ui.ChatDisplayStore.sendErrorMessage
                     color: Ui.Style.danger
                     font.pixelSize: 11
                     elide: Text.ElideRight
                     Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    maximumLineCount: 1
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.rightMargin: 0
+                    // Layout.rightMargin: root.drawerReserveWidth
                     Layout.bottomMargin: 0
                     spacing: Ui.Style.paddingS
 
@@ -1549,6 +3391,9 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/paperclip.svg"
                         buttonSize: inputButtonSize
                         iconSize: inputIconSize
+                        bgColor: Ui.Style.sidebarMetaChipBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
                         onClicked: root.showAttachPopup()
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.attach")
@@ -1676,20 +3521,46 @@ Item {
                         icon.source: "qrc:/mi/e2ee/ui/icons/emoji.svg"
                         buttonSize: inputButtonSize
                         iconSize: inputIconSize
+                        bgColor: Ui.Style.sidebarMetaChipBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
                         onClicked: root.showEmojiPopup()
                         onRightClicked: root.showStickerImport()
                         ToolTip.visible: hovered
                         ToolTip.text: Ui.I18n.t("chat.emoji")
                     }
 
-                    Button {
+                    Components.IconButton {
+                        id: micButton
+                        icon.source: "qrc:/mi/e2ee/ui/icons/mic.svg"
+                        accessibleName: Ui.I18n.usesCjkLocale ? "语音" : "Voice"
+                        buttonSize: inputButtonSize
+                        iconSize: inputIconSize
+                        bgColor: Ui.Style.sidebarMetaChipBg
+                        hoverBg: Ui.Style.hoverBg
+                        pressedBg: Ui.Style.pressedBg
+                        enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                        ToolTip.visible: hovered
+                        ToolTip.text: accessibleName
+                    }
+
+                    Components.IconButton {
                         id: sendButton
                         property bool hasDraft: messageInput.text.trim().length > 0
-                        Layout.preferredWidth: 86
-                        Layout.preferredHeight: 36
+                        Layout.preferredWidth: inputButtonSize
+                        Layout.preferredHeight: inputButtonSize
                         Layout.alignment: Qt.AlignVCenter
-                        Accessible.name: Ui.I18n.t("chat.send")
+                        accessibleName: Ui.I18n.t("chat.send")
+                        icon.source: "qrc:/mi/e2ee/ui/icons/send.svg"
+                        iconSize: inputIconSize
+                        buttonSize: inputButtonSize
                         enabled: Ui.ChatDisplayStore.currentChatId.length > 0
+                        baseColor: hasDraft ? "#F6FAFF" : Ui.Style.textMuted
+                        hoverColor: "#F6FAFF"
+                        pressColor: "#F6FAFF"
+                        bgColor: hasDraft ? Ui.Style.accent : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.34)
+                        hoverBg: hasDraft ? Ui.Style.accentHover : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.42)
+                        pressedBg: hasDraft ? Ui.Style.accentPressed : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.42)
                         onClicked: {
                             if (!hasDraft) {
                                 messageInput.forceActiveFocus()
@@ -1697,30 +3568,8 @@ Item {
                             }
                             inputBar.sendMessage()
                         }
-                        contentItem: Text {
-                            text: Ui.I18n.t("chat.send")
-                            color: "#F6FAFF"
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        background: Rectangle {
-                            radius: Ui.Style.radiusMedium
-                            color: sendButton.down
-                                   ? Ui.Style.accentPressed
-                                   : (sendButton.hovered
-                                      ? Ui.Style.accentHover
-                                      : (sendButton.hasDraft
-                                         ? Ui.Style.accent
-                                         : Qt.rgba(75 / 255, 137 / 255, 255 / 255, 0.34)))
-                            border.width: sendButton.hasDraft ? 0 : 1
-                            border.color: sendButton.hasDraft
-                                          ? "transparent"
-                                          : Qt.rgba(156 / 255, 192 / 255, 255 / 255, 0.70)
-                        }
                         ToolTip.visible: hovered
-                        ToolTip.text: Ui.I18n.t("chat.send")
+                        ToolTip.text: accessibleName
                     }
                 }
             }
@@ -1786,14 +3635,6 @@ Item {
                 }
             }
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 1
-                color: Ui.Style.borderSubtle
-            }
-
             Menu {
                 id: inputContextMenu
                 MenuItem {
@@ -1835,7 +3676,7 @@ Item {
             }
 
             function updateInputHeight() {
-                inputFieldHeight = 36
+                inputFieldHeight = 40
                 Qt.callLater(ensureCursorVisible)
             }
 
@@ -2763,15 +4604,16 @@ Item {
                     return
                 }
                 var expectedKind = Ui.ChatDisplayStore.detectFileKind(fileName || "")
+                var bridge = (typeof clientBridge !== "undefined") ? clientBridge : null
                 if (!fileId || !fileKey || hasLocalUrl(fileUrl)) {
                     return
                 }
-                if (!clientBridge || !clientBridge.ensureAttachmentCached) {
+                if (!bridge || !bridge.ensureAttachmentCached) {
                     return
                 }
                 attachmentRequested = true
                 Qt.callLater(function() {
-                    var result = clientBridge.ensureAttachmentCached(fileId, fileKey, fileName, fileSize)
+                    var result = bridge.ensureAttachmentCached(fileId, fileKey, fileName, fileSize)
                     if (result && result.ok && ListView.view && ListView.view.model) {
                         if (result.fileUrl) {
                             ListView.view.model.setProperty(index, "fileUrl", result.fileUrl)
@@ -2826,20 +4668,19 @@ Item {
                 visible: showSender
                 width: senderAvatarSize
                 height: senderAvatarSize
-                radius: width / 2
-                color: Ui.Style.avatarColor(senderName || "")
                 anchors.left: parent.left
                 anchors.leftMargin: Ui.Style.paddingL
                 anchors.top: bubbleBlock.top
                 anchors.topMargin: 2
-                Text {
-                    anchors.centerIn: parent
-                    text: (senderName || "").length > 0
-                          ? senderName.charAt(0).toUpperCase()
-                          : "?"
-                    color: Ui.Style.textPrimary
-                    font.pixelSize: 10
-                    font.weight: Font.DemiBold
+                color: "transparent"
+
+                Components.IdentityAvatar {
+                    anchors.fill: parent
+                    size: senderAvatarSize
+                    titleText: senderName || ""
+                    seedText: senderName || ""
+                    mode: "person"
+                    presenceState: "online"
                 }
             }
 
@@ -2867,8 +4708,8 @@ Item {
                 property real availableBubbleWidth: Math.max(220,
                                                              (ListView.view ? ListView.view.width : root.width)
                                                              - bubbleEdgeInset * 2)
-                property real maxBubbleWidth: Math.min(Math.max(isOutgoing ? 216 : 224,
-                                                                availableBubbleWidth * (isOutgoing ? 0.64 : 0.60)),
+                property real maxBubbleWidth: Math.min(Math.max(isOutgoing ? 204 : 212,
+                                                                availableBubbleWidth * (isOutgoing ? 0.66 : 0.62)),
                                                        Math.max(208,
                                                                 availableBubbleWidth - (transparentBubble
                                                                                         ? 0
@@ -2904,7 +4745,7 @@ Item {
                             id: textBlock
                             text: model.text || ""
                             width: parent.width
-                            wrapMode: Text.Wrap
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
                             font.pixelSize: 13
                         }
@@ -3183,47 +5024,113 @@ Item {
                 Component {
                     id: fileContent
                     Item {
-                        implicitWidth: 220
-                        implicitHeight: 60
+                        implicitWidth: 248
+                        implicitHeight: 92
                         property real progressValue: (downloadProgress !== undefined
                                                        && downloadProgress !== null)
                                                       ? downloadProgress : 0
+                        readonly property string previewKind: {
+                            var detectedKind = Ui.ChatDisplayStore.detectFileKind(fileName || "")
+                            if (detectedKind === "image" || detectedKind === "gif") {
+                                return "photo"
+                            }
+                            if (detectedKind === "video") {
+                                return "video"
+                            }
+                            return "file"
+                        }
                         Rectangle {
                             anchors.fill: parent
-                            radius: 10
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
-                        }
-                        Row {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 8
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.heroCardBgAlt
+                            border.width: 1
+                            border.color: Ui.Style.heroCardBorder
+
                             Rectangle {
-                                width: 32
-                                height: 32
-                                radius: 8
-                                color: Ui.Style.hoverBg
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: Ui.I18n.t("right.files").toUpperCase()
-                                    font.pixelSize: 9
-                                    color: Ui.Style.textMuted
-                                }
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                height: 34
+                                radius: Ui.Style.radiusLarge
+                                color: root.previewTintFor(fileContent.previewKind)
+                                opacity: Ui.Style.isDark ? 0.34 : 0.56
                             }
-                            Column {
-                                spacing: 2
-                                width: parent.width - 48
-                                Text {
-                                    text: fileName || ""
-                                    font.pixelSize: 11
-                                    color: Ui.Style.textPrimary
-                                    elide: Text.ElideRight
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 10
+
+                                Rectangle {
+                                    Layout.preferredWidth: 42
+                                    Layout.preferredHeight: 42
+                                    radius: 16
+                                    color: Ui.Style.badgeSurfaceStrong
+                                    border.width: 1
+                                    border.color: Ui.Style.badgeBorder
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 18
+                                        height: 18
+                                        source: root.previewIconFor(fileContent.previewKind)
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
                                 }
-                                Text {
-                                    text: fileSize > 0 ? (Math.round(fileSize / 1024) + " KB") : ""
-                                    font.pixelSize: 10
-                                    color: Ui.Style.textMuted
-                                    elide: Text.ElideRight
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: fileName || ""
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        color: Ui.Style.textPrimary
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: fileSize > 0
+                                              ? (Math.round(fileSize / 1024) + " KB")
+                                              : Ui.I18n.t("right.files")
+                                        font.pixelSize: 10
+                                        color: Ui.Style.textSecondary
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
+                                    }
+
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignLeft
+                                        radius: 9
+                                        color: Ui.Style.sidebarMetaChipBg
+                                        border.width: 1
+                                        border.color: Ui.Style.sidebarMetaChipBorder
+                                        implicitWidth: fileMetaLabel.implicitWidth + 12
+                                        implicitHeight: 18
+
+                                        Text {
+                                            id: fileMetaLabel
+                                            anchors.centerIn: parent
+                                            text: hasLocalUrl(fileUrl)
+                                                  ? (Ui.I18n.usesCjkLocale ? "已缓存" : "Cached")
+                                                  : (Ui.I18n.usesCjkLocale ? "点击下载" : "Tap to download")
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            color: Ui.Style.textSecondary
+                                            renderType: Text.NativeRendering
+                                            antialiasing: true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3321,34 +5228,109 @@ Item {
                 Component {
                     id: locationContent
                     Item {
-                        implicitWidth: 220
-                        implicitHeight: 72
+                        implicitWidth: 248
+                        implicitHeight: 108
                         Rectangle {
                             anchors.fill: parent
-                            radius: 10
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.heroCardBgAlt
+                            border.width: 1
+                            border.color: Ui.Style.heroCardBorder
                         }
-                        Column {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 4
-                            Text {
-                                text: (locationLabel && locationLabel.length > 0)
-                                      ? locationLabel
-                                      : Ui.I18n.t("attach.location")
-                                font.pixelSize: 12
-                                color: Ui.Style.textPrimary
-                                elide: Text.ElideRight
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            height: 44
+                            radius: Ui.Style.radiusLarge
+                            color: Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.20 : 0.14)
+                            border.width: 1
+                            border.color: Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.24 : 0.12)
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 8
+
+                                Rectangle {
+                                    width: 28
+                                    height: 28
+                                    radius: 14
+                                    color: Ui.Style.badgeSurfaceStrong
+                                    border.width: 1
+                                    border.color: Ui.Style.badgeBorder
+
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 14
+                                        height: 14
+                                        source: "qrc:/mi/e2ee/ui/icons/location.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                        antialiasing: true
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: (locationLabel && locationLabel.length > 0)
+                                          ? locationLabel
+                                          : Ui.I18n.t("attach.location")
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textPrimary
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
                             }
+                        }
+
+                        ColumnLayout {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 10
+                            anchors.topMargin: 54
+                            spacing: 6
+
                             Text {
-                                text: Ui.I18n.t("attach.locationLat") + ":" +
-                                      Number(locationLat).toFixed(5) + ", " +
-                                      Ui.I18n.t("attach.locationLon") + ":" +
+                                Layout.fillWidth: true
+                                text: Ui.I18n.t("attach.locationLat") + ": " +
+                                      Number(locationLat).toFixed(5) + "   " +
+                                      Ui.I18n.t("attach.locationLon") + ": " +
                                       Number(locationLon).toFixed(5)
                                 font.pixelSize: 10
-                                color: Ui.Style.textMuted
-                                elide: Text.ElideRight
+                                color: Ui.Style.textSecondary
+                                wrapMode: Text.Wrap
+                                maximumLineCount: 2
+                                renderType: Text.NativeRendering
+                                antialiasing: true
+                            }
+
+                            Rectangle {
+                                Layout.alignment: Qt.AlignLeft
+                                radius: 9
+                                color: Ui.Style.sidebarMetaChipBg
+                                border.width: 1
+                                border.color: Ui.Style.sidebarMetaChipBorder
+                                implicitWidth: locationMetaLabel.implicitWidth + 12
+                                implicitHeight: 18
+
+                                Text {
+                                    id: locationMetaLabel
+                                    anchors.centerIn: parent
+                                    text: Ui.I18n.usesCjkLocale ? "共享位置卡片" : "Shared location card"
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: Ui.Style.textSecondary
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
+                                }
                             }
                         }
                     }
@@ -3357,19 +5339,35 @@ Item {
                 Component {
                     id: contactContent
                     Item {
-                        implicitWidth: 230
-                        implicitHeight: 108
+                        implicitWidth: 248
+                        implicitHeight: 126
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 12
-                            color: Ui.Style.panelBgAlt
-                            border.color: Ui.Style.borderSubtle
+                            radius: Ui.Style.radiusLarge
+                            color: Ui.Style.heroCardBgAlt
+                            border.width: 1
+                            border.color: Ui.Style.heroCardBorder
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            height: 42
+                            radius: Ui.Style.radiusLarge
+                            color: Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.20 : 0.12)
+                            border.width: 1
+                            border.color: Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.24 : 0.14)
                         }
 
                         ColumnLayout {
-                            anchors.fill: parent
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
                             anchors.margins: 10
+                            anchors.topMargin: 8
                             spacing: 6
 
                             RowLayout {
@@ -3378,7 +5376,10 @@ Item {
                                     width: 38
                                     height: 38
                                     radius: 19
-                                    color: Ui.Style.avatarColor(contactDisplay || contactUsername || "")
+                                    color: Ui.Style.alpha(Ui.Style.avatarColor(contactDisplay || contactUsername || ""),
+                                                          Ui.Style.isDark ? 0.92 : 1.0)
+                                    border.width: 1
+                                    border.color: Ui.Style.badgeBorder
                                     Text {
                                         anchors.centerIn: parent
                                         text: (contactDisplay || contactUsername || "?").charAt(0).toUpperCase()
@@ -3405,8 +5406,29 @@ Item {
                                         text: contactUsername
                                         visible: contactUsername.length > 0
                                         font.pixelSize: 10
-                                        color: Ui.Style.textMuted
+                                        color: Ui.Style.textSecondary
                                         elide: Text.ElideRight
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    radius: 9
+                                    color: Ui.Style.sidebarMetaChipBg
+                                    border.width: 1
+                                    border.color: Ui.Style.sidebarMetaChipBorder
+                                    implicitWidth: contactMetaLabel.implicitWidth + 12
+                                    implicitHeight: 18
+
+                                    Text {
+                                        id: contactMetaLabel
+                                        anchors.centerIn: parent
+                                        text: Ui.I18n.usesCjkLocale ? "联系人卡片" : "Contact card"
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        color: Ui.Style.textSecondary
+                                        renderType: Text.NativeRendering
+                                        antialiasing: true
                                     }
                                 }
                             }
@@ -3414,9 +5436,11 @@ Item {
                             Text {
                                 text: model.text || ""
                                 font.pixelSize: 10
-                                color: Ui.Style.textMuted
+                                color: Ui.Style.textSecondary
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
+                                maximumLineCount: 3
+                                elide: Text.ElideRight
                             }
 
                             RowLayout {
@@ -3529,35 +5553,38 @@ Item {
                             id: metaBadge
                             anchors.right: parent.right
                             anchors.rightMargin: isOutgoing ? Math.max(10, bubbleBlock.outgoingMetaSafeInset - 2) : 0
-                            radius: 7
+                            radius: 6
                             color: bubbleBlock.transparentBubble
                                    ? Qt.rgba(7 / 255, 12 / 255, 18 / 255, 0.78)
                                    : (isOutgoing
-                                      ? Qt.rgba(8 / 255, 26 / 255, 20 / 255, 0.42)
-                                      : Qt.rgba(8 / 255, 14 / 255, 21 / 255, 0.40))
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, bubbleBlock.transparentBubble ? 0.18 : 0.10)
-                            implicitWidth: metaRow.implicitWidth + 12
-                            implicitHeight: metaRow.implicitHeight + 4
+                                      ? Qt.rgba(8 / 255, 26 / 255, 20 / 255, 0.34)
+                                      : Qt.rgba(8 / 255, 14 / 255, 21 / 255, 0.30))
+                            border.width: 0
+                            implicitWidth: metaRow.implicitWidth + 10
+                            implicitHeight: metaRow.implicitHeight + 2
 
                             Row {
                                 id: metaRow
                                 anchors.centerIn: parent
-                                spacing: 6
+                                spacing: 4
                                 Text {
                                     text: timeText || ""
-                                    font.pixelSize: Math.max(Ui.Style.microTextSize, 14)
+                                    font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     color: isOutgoing
                                            ? Qt.lighter(Ui.Style.bubbleMetaOutFg, 1.08)
                                            : Qt.lighter(Ui.Style.bubbleMetaInFg, 1.08)
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
                                 }
                                 Text {
                                     visible: isOutgoing
                                     text: tickText(statusTicks)
-                                    font.pixelSize: Math.max(Ui.Style.microTextSize, 14)
+                                    font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     color: Qt.lighter(Ui.Style.bubbleMetaOutFg, 1.08)
+                                    renderType: Text.NativeRendering
+                                    antialiasing: true
                                 }
                             }
                         }

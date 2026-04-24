@@ -181,6 +181,8 @@ int main() {
   assert(member_count == 0);
   mi_history_entry_t history_entries[1]{};
   assert(mi_client_load_chat_history(nullptr, "conv", 0, 1, history_entries, 1) == 0);
+  assert(mi_client_export_recent_history_snapshot(nullptr, 20, 50,
+                                                  history_entries, 1) == 0);
   assert(mi_client_delete_chat_history(nullptr, "conv", 0, 1, 0) == 0);
   assert(mi_client_set_history_enabled(nullptr, 1) == 0);
   assert(mi_client_clear_all_history(nullptr, 1, 0) == 0);
@@ -236,6 +238,8 @@ int main() {
   assert(mi_client_remote_ok(handle) == 1);
   assert(std::strlen(mi_client_remote_error(handle)) == 0);
   assert(mi_client_heartbeat(handle) == 0);
+  assert(mi_client_export_recent_history_snapshot(handle, 20, 50,
+                                                  history_entries, 1) == 0);
 
   mi_client_destroy(handle);
   RemoveConfig(config_path);

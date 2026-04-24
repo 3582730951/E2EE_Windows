@@ -33,6 +33,97 @@ internal sealed interface FlowScreen {
     data object BlockedUsers : FlowScreen
 }
 
+enum class ScreenshotSceneDestination {
+    Login,
+    ChatList,
+    ChatDetail,
+    CallsHome,
+    SettingsHome,
+    SecurityCenter
+}
+
+data class ScreenshotSceneRoute(
+    val sceneId: String,
+    val root: ScreenshotSceneDestination,
+    val target: ScreenshotSceneDestination,
+    val conversationId: String? = null
+)
+
+data class ScreenshotBootstrapState(
+    val sceneId: String,
+    val root: ScreenshotSceneDestination,
+    val target: ScreenshotSceneDestination,
+    val conversationId: String? = null
+)
+
+fun resolveScreenshotSceneRoute(mode: String): ScreenshotSceneRoute {
+    return when (mode.trim().lowercase()) {
+        "login", "auth_login" -> ScreenshotSceneRoute(
+            sceneId = "auth_login",
+            root = ScreenshotSceneDestination.Login,
+            target = ScreenshotSceneDestination.Login
+        )
+        "detail", "chat_detail" -> ScreenshotSceneRoute(
+            sceneId = "chat_detail",
+            root = ScreenshotSceneDestination.ChatList,
+            target = ScreenshotSceneDestination.ChatDetail,
+            conversationId = "c1"
+        )
+        "calls", "calls_home" -> ScreenshotSceneRoute(
+            sceneId = "calls_home",
+            root = ScreenshotSceneDestination.CallsHome,
+            target = ScreenshotSceneDestination.CallsHome
+        )
+        "settings", "settings_home" -> ScreenshotSceneRoute(
+            sceneId = "settings_home",
+            root = ScreenshotSceneDestination.SettingsHome,
+            target = ScreenshotSceneDestination.SettingsHome
+        )
+        "security", "security_center" -> ScreenshotSceneRoute(
+            sceneId = "security_center",
+            root = ScreenshotSceneDestination.SettingsHome,
+            target = ScreenshotSceneDestination.SecurityCenter
+        )
+        "chats", "chat_list" -> ScreenshotSceneRoute(
+            sceneId = "chat_list",
+            root = ScreenshotSceneDestination.ChatList,
+            target = ScreenshotSceneDestination.ChatList
+        )
+        else -> ScreenshotSceneRoute(
+            sceneId = "chat_list",
+            root = ScreenshotSceneDestination.ChatList,
+            target = ScreenshotSceneDestination.ChatList
+        )
+    }
+}
+
+fun resolveScreenshotBootstrapState(mode: String): ScreenshotBootstrapState {
+    val route = resolveScreenshotSceneRoute(mode)
+    return ScreenshotBootstrapState(
+        sceneId = route.sceneId,
+        root = route.root,
+        target = route.target,
+        conversationId = route.conversationId
+    )
+}
+
+internal fun ScreenshotBootstrapState.rootScreen(): FlowScreen {
+    return root.toFlowScreen(conversationId)
+}
+
+internal fun ScreenshotBootstrapState.targetScreen(): FlowScreen {
+    return target.toFlowScreen(conversationId)
+}
+
+private fun ScreenshotSceneDestination.toFlowScreen(conversationId: String?): FlowScreen = when (this) {
+    ScreenshotSceneDestination.Login -> FlowScreen.Login
+    ScreenshotSceneDestination.ChatList -> FlowScreen.Conversations
+    ScreenshotSceneDestination.ChatDetail -> FlowScreen.Chat(conversationId ?: "c1")
+    ScreenshotSceneDestination.CallsHome -> FlowScreen.Calls
+    ScreenshotSceneDestination.SettingsHome -> FlowScreen.Settings
+    ScreenshotSceneDestination.SecurityCenter -> FlowScreen.SecurityCenter
+}
+
 @Stable
 internal class UiNavigationState(
     initialStack: List<FlowScreen> = listOf(FlowScreen.Login)

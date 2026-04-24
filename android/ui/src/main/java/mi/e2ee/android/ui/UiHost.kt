@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -25,17 +26,39 @@ import java.io.File
 import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupMemberRole
 
+data class UiHostPreviewState(
+    val conversations: List<ConversationPreview>,
+    val chatItems: Map<String, List<ChatItem>>,
+    val groupChatItems: Map<String, List<GroupChatItem>>,
+    val pendingCall: IncomingCall?,
+    val activePeerCall: PeerCallState?,
+    val activeGroupCall: GroupCallState?,
+    val groupRooms: List<GroupCallRoomUi>
+) {
+    fun chatItemsFor(conversationId: String): List<ChatItem> {
+        return chatItems[conversationId].orEmpty()
+    }
+
+    fun groupChatItemsFor(conversationId: String): List<GroupChatItem> {
+        return groupChatItems[conversationId].orEmpty()
+    }
+}
+
 @Composable
 fun UiHost(
     sdk: SdkBridge,
     themeMode: Int = ThemeMode.FollowSystem,
-    onThemeModeChange: (Int) -> Unit = {}
+    onThemeModeChange: (Int) -> Unit = {},
+    screenshotBootstrapState: ScreenshotBootstrapState? = null,
+    screenshotPreviewState: UiHostPreviewState? = null
 ) {
     val facade = remember(sdk) { SdkUiBridgeFacade(sdk) }
     UiHost(
         facade = facade,
         themeMode = themeMode,
-        onThemeModeChange = onThemeModeChange
+        onThemeModeChange = onThemeModeChange,
+        screenshotBootstrapState = screenshotBootstrapState,
+        screenshotPreviewState = screenshotPreviewState
     )
 }
 
@@ -43,13 +66,18 @@ fun UiHost(
 private fun UiHost(
     facade: UiBridgeFacade,
     themeMode: Int = ThemeMode.FollowSystem,
-    onThemeModeChange: (Int) -> Unit = {}
+    onThemeModeChange: (Int) -> Unit = {},
+    screenshotBootstrapState: ScreenshotBootstrapState? = null,
+    screenshotPreviewState: UiHostPreviewState? = null
 ) {
     val sdk = facade.sdk
-    val navState = rememberUiNavigationState()
+    val navState = rememberUiNavigationState(initial = screenshotBootstrapState?.rootScreen() ?: FlowScreen.Login)
     val current = navState.current
     val context = LocalContext.current
     val callController = remember(context, sdk) { CallMediaController(context, sdk) }
+    val canNavigateBack = navState.stackSnapshot().size > 1
+    val previewMode = screenshotBootstrapState != null && screenshotPreviewState != null
+    val previewState = screenshotPreviewState
 
     fun navigate(screen: FlowScreen) {
         navState.navigate(screen)
@@ -63,13 +91,26 @@ private fun UiHost(
         navState.goBack()
     }
 
-    LaunchedEffect(facade.loggedIn) {
-        if (facade.loggedIn) {
-            resetTo(FlowScreen.Conversations)
-        } else {
-            callController.stop()
-            resetTo(FlowScreen.Login)
+    LaunchedEffect(facade.loggedIn, previewMode) {
+        if (!previewMode) {
+            if (facade.loggedIn) {
+                resetTo(FlowScreen.Conversations)
+            } else {
+                callController.stop()
+                resetTo(FlowScreen.Login)
+            }
         }
+    }
+    LaunchedEffect(screenshotBootstrapState?.sceneId) {
+        val bootstrap = screenshotBootstrapState ?: return@LaunchedEffect
+        val bootstrapRoot = bootstrap.rootScreen()
+        val bootstrapTarget = bootstrap.targetScreen()
+        if (bootstrapRoot != bootstrapTarget && navState.current == bootstrapRoot) {
+            navigate(bootstrapTarget)
+        }
+    }
+    BackHandler(enabled = canNavigateBack) {
+        goBack()
     }
 
     fun selfInitials(): String {
@@ -87,17 +128,34 @@ private fun UiHost(
         sdk.downloadAttachmentToPath(attachment, outPath, wipeAfterRead = false)
     }
 
+    fun previewConversation(convId: String): ConversationPreview? {
+        return previewState?.conversations?.firstOrNull { it.id == convId }
+    }
+
+    fun openConversationRoute(conversation: ConversationPreview): FlowScreen {
+        return if (previewMode) {
+            if (conversation.isGroup) {
+                FlowScreen.GroupChat(conversation.id)
+            } else {
+                FlowScreen.Chat(conversation.id)
+            }
+        } else {
+            facade.openConversationRoute(conversation)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AppBackdrop()
         when (current) {
         FlowScreen.Login -> LoginScreen(
+            initialUsername = "",
+            initialPassword = "",
             onRegister = { navigate(FlowScreen.Register) },
             onLogin = { username, password, rootCode ->
                 if (facade.login(username, password, rootCode)) {
                     resetTo(FlowScreen.Conversations)
                 }
             },
-            onShowQr = { username -> navigate(FlowScreen.QrLoginDisplay(username)) },
             onScanQr = { navigate(FlowScreen.QrLoginScan) },
             errorMessage = sdk.lastError.takeIf { it.isNotBlank() },
             statusMessage = sdk.statusMessage,
@@ -126,40 +184,62 @@ private fun UiHost(
             onBack = { goBack() }
         )
         FlowScreen.Conversations -> ConversationListScreen(
-            conversations = sdk.conversations,
-            onTogglePin = { facade.togglePinned(it.id) },
-            onToggleRead = { facade.markConversationRead(it.id) },
-            onToggleMute = { facade.toggleConversationMute(it.id) },
-            onDeleteConversation = { conversation -> facade.deleteConversation(conversation) },
-            onOpenConversation = { conversation -> navigate(facade.openConversationRoute(conversation)) },
+            conversations = previewState?.conversations ?: sdk.conversations,
+            onTogglePin = { conversation ->
+                if (!previewMode) {
+                    facade.togglePinned(conversation.id)
+                }
+            },
+            onToggleRead = { conversation ->
+                if (!previewMode) {
+                    facade.markConversationRead(conversation.id)
+                }
+            },
+            onToggleMute = { conversation ->
+                if (!previewMode) {
+                    facade.toggleConversationMute(conversation.id)
+                }
+            },
+            onDeleteConversation = { conversation ->
+                if (!previewMode) {
+                    facade.deleteConversation(conversation)
+                }
+            },
+            onOpenConversation = { conversation -> navigate(openConversationRoute(conversation)) },
             onOpenSettings = { resetTo(FlowScreen.Settings) },
             onOpenContacts = { resetTo(FlowScreen.AddFriend) },
             onOpenCalls = { resetTo(FlowScreen.Calls) },
             onOpenNewGroup = {
-                val route = facade.createGroupAndRoute()
-                if (route != null) {
-                    navigate(route)
+                if (!previewMode) {
+                    val route = facade.createGroupAndRoute()
+                    if (route != null) {
+                        navigate(route)
+                    }
                 }
             }
         )
         FlowScreen.Calls -> CallsHomeScreen(
-            pendingCall = sdk.pendingCall,
-            activePeerCall = sdk.activePeerCall,
-            activeGroupCall = sdk.activeGroupCall,
-            groupRooms = sdk.groupCallRooms,
+            pendingCall = previewState?.pendingCall ?: sdk.pendingCall,
+            activePeerCall = previewState?.activePeerCall ?: sdk.activePeerCall,
+            activeGroupCall = previewState?.activeGroupCall ?: sdk.activeGroupCall,
+            groupRooms = previewState?.groupRooms ?: sdk.groupCallRooms,
             onOpenPeerCall = { state -> navigate(FlowScreen.PeerCall(state.callIdHex)) },
             onOpenGroupCall = { state -> navigate(FlowScreen.GroupCall(state.groupId, state.callIdHex)) },
             onAcceptPendingCall = {
-                val state = facade.acceptIncomingCall()
-                if (state != null) {
-                    navigate(FlowScreen.PeerCall(state.callIdHex))
+                if (!previewMode) {
+                    val state = facade.acceptIncomingCall()
+                    if (state != null) {
+                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    }
                 }
             },
             onJoinGroupRoom = { room ->
-                val info = sdk.joinGroupCallHex(room.groupId, room.callId, room.video)
-                val active = sdk.activeGroupCall
-                if (info != null && active != null) {
-                    navigate(FlowScreen.GroupCall(room.groupId, active.callIdHex))
+                if (!previewMode) {
+                    val info = sdk.joinGroupCallHex(room.groupId, room.callId, room.video)
+                    val active = sdk.activeGroupCall
+                    if (info != null && active != null) {
+                        navigate(FlowScreen.GroupCall(room.groupId, active.callIdHex))
+                    }
                 }
             },
             onOpenChats = { resetTo(FlowScreen.Conversations) },
@@ -168,13 +248,17 @@ private fun UiHost(
         )
         is FlowScreen.Chat -> {
             val convId = current.conversationId
-            val conversation = sdk.conversations.firstOrNull { it.id == convId }
+            val conversation = previewConversation(convId) ?: sdk.conversations.firstOrNull { it.id == convId }
             val title = conversation?.name ?: convId
             val initials = conversation?.initials ?: title.take(2).uppercase()
-            val status = sdk.friends.firstOrNull { it.username == convId }?.status
-                ?: tr("chat_status_unknown", "Unknown")
+            val status = if (previewMode) {
+                if (conversation?.isTyping == true) "Typing..." else "Online"
+            } else {
+                sdk.friends.firstOrNull { it.username == convId }?.status
+                    ?: tr("chat_status_unknown", "Unknown")
+            }
             ChatScreen(
-                items = sdk.chatItemsFor(convId),
+                items = previewState?.chatItemsFor(convId) ?: sdk.chatItemsFor(convId),
                 conversationId = convId,
                 title = title,
                 status = status,
@@ -182,99 +266,242 @@ private fun UiHost(
                 selfInitials = selfInitials(),
                 showTyping = conversation?.isTyping ?: false,
                 onBack = {
-                    sdk.clearActiveConversation()
+                    if (!previewMode) {
+                        sdk.clearActiveConversation()
+                    }
                     goBack()
                 },
-                onOpenAccount = { navigate(FlowScreen.Account) },
+                onOpenAccount = {
+                    if (!previewMode) {
+                        navigate(FlowScreen.Account)
+                    }
+                },
                 onOpenSettings = { navigate(FlowScreen.Settings) },
                 onStartCall = {
-                    val state = sdk.startPeerCall(convId, video = false)
-                    if (state != null) {
-                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    if (!previewMode) {
+                        val state = sdk.startPeerCall(convId, video = false)
+                        if (state != null) {
+                            navigate(FlowScreen.PeerCall(state.callIdHex))
+                        }
                     }
                 },
                 onStartVideoCall = {
-                    val state = sdk.startPeerCall(convId, video = true)
-                    if (state != null) {
-                        navigate(FlowScreen.PeerCall(state.callIdHex))
+                    if (!previewMode) {
+                        val state = sdk.startPeerCall(convId, video = true)
+                        if (state != null) {
+                            navigate(FlowScreen.PeerCall(state.callIdHex))
+                        }
                     }
                 },
-                onSendPresence = { online -> sdk.sendPresence(convId, online) },
-                onSendReadReceipt = { messageId -> sdk.sendReadReceipt(convId, messageId) },
-                onResendText = { messageId, text -> sdk.resendPrivateText(convId, messageId, text) },
+                onSendPresence = { online ->
+                    if (!previewMode) {
+                        sdk.sendPresence(convId, online)
+                    }
+                },
+                onSendReadReceipt = { messageId ->
+                    if (!previewMode) {
+                        sdk.sendReadReceipt(convId, messageId)
+                    }
+                },
+                onResendText = { messageId, text ->
+                    if (!previewMode) {
+                        sdk.resendPrivateText(convId, messageId, text)
+                    } else {
+                        false
+                    }
+                },
                 onResendTextWithReply = { messageId, text, replyId, preview ->
-                    sdk.resendPrivateTextWithReply(convId, messageId, text, replyId, preview)
+                    if (!previewMode) {
+                        sdk.resendPrivateTextWithReply(convId, messageId, text, replyId, preview)
+                    } else {
+                        false
+                    }
                 },
                 onResendFile = { messageId, filePath ->
-                    sdk.resendPrivateFile(convId, messageId, filePath)
+                    if (!previewMode) {
+                        sdk.resendPrivateFile(convId, messageId, filePath)
+                    } else {
+                        false
+                    }
                 },
-                onSendMessage = { text, reply -> sdk.sendText(convId, text, reply, isGroup = false) },
-                onSendFile = { path -> sdk.sendFile(convId, path, isGroup = false) },
-                onSendLocation = { lat, lon, label -> sdk.sendLocation(convId, lat, lon, label, isGroup = false) },
-                onSendSticker = { stickerId -> sdk.sendSticker(convId, stickerId) },
-                onSendContact = { cardUsername, cardDisplay -> sdk.sendContact(convId, cardUsername, cardDisplay) },
-                onTyping = { typing -> sdk.sendTyping(convId, typing) },
-                onRecallMessage = { messageId -> sdk.sendRecall(convId, messageId, isGroup = false) },
-                onDownloadAttachment = { attachment -> downloadAttachment(attachment) }
+                onSendMessage = { text, reply ->
+                    if (!previewMode) {
+                        sdk.sendText(convId, text, reply, isGroup = false)
+                    } else {
+                        false
+                    }
+                },
+                onSendFile = { path ->
+                    if (!previewMode) {
+                        sdk.sendFile(convId, path, isGroup = false)
+                    } else {
+                        false
+                    }
+                },
+                onSendLocation = { lat, lon, label ->
+                    if (!previewMode) {
+                        sdk.sendLocation(convId, lat, lon, label, isGroup = false)
+                    } else {
+                        false
+                    }
+                },
+                onSendSticker = { stickerId ->
+                    if (!previewMode) {
+                        sdk.sendSticker(convId, stickerId)
+                    } else {
+                        false
+                    }
+                },
+                onSendContact = { cardUsername, cardDisplay ->
+                    if (!previewMode) {
+                        sdk.sendContact(convId, cardUsername, cardDisplay)
+                    } else {
+                        false
+                    }
+                },
+                onTyping = { typing ->
+                    if (!previewMode) {
+                        sdk.sendTyping(convId, typing)
+                    }
+                },
+                onRecallMessage = { messageId ->
+                    if (!previewMode) {
+                        sdk.sendRecall(convId, messageId, isGroup = false)
+                    } else {
+                        false
+                    }
+                },
+                onDownloadAttachment = { attachment ->
+                    if (!previewMode) {
+                        downloadAttachment(attachment)
+                    }
+                }
             )
         }
         is FlowScreen.GroupChat -> {
             val groupId = current.groupId
-            val conversation = sdk.conversations.firstOrNull { it.id == groupId }
-            val groupName = sdk.groups.firstOrNull { it.id == groupId }?.name ?: groupId
-            val members = sdk.groupMembersFor(groupId)
-            val subtitle = if (members.isNotEmpty()) {
+            val previewConversation = previewConversation(groupId)
+            val conversation = previewConversation ?: sdk.conversations.firstOrNull { it.id == groupId }
+            val groupName = if (previewMode) {
+                conversation?.name ?: groupId
+            } else {
+                sdk.groups.firstOrNull { it.id == groupId }?.name ?: groupId
+            }
+            val members = if (previewMode) emptyList() else sdk.groupMembersFor(groupId)
+            val subtitle = if (!previewMode && members.isNotEmpty()) {
                 tr("group_member_count", "%d members / Secure group").format(members.size)
             } else {
                 tr("group_member_count", "Secure group")
             }
-            val activeCall = sdk.groupCallRooms.firstOrNull { it.groupId == groupId }
+            val activeCall = if (previewMode) {
+                previewState?.groupRooms?.firstOrNull { it.groupId == groupId || it.groupId == groupName }
+            } else {
+                sdk.groupCallRooms.firstOrNull { it.groupId == groupId }
+            }
             GroupChatScreen(
-                items = sdk.groupItemsFor(groupId),
+                items = if (previewMode) {
+                    previewState?.groupChatItemsFor(groupId).orEmpty()
+                } else {
+                    sdk.groupItemsFor(groupId)
+                },
                 conversationId = groupId,
                 title = conversation?.name ?: groupName,
                 subtitle = subtitle,
                 onBack = {
-                    sdk.clearActiveConversation()
+                    if (!previewMode) {
+                        sdk.clearActiveConversation()
+                    }
                     goBack()
                 },
-                onOpenGroupDetail = { navigate(FlowScreen.GroupDetail(groupId)) },
+                onOpenGroupDetail = {
+                    if (!previewMode) {
+                        navigate(FlowScreen.GroupDetail(groupId))
+                    }
+                },
                 activeCall = activeCall,
                 onStartVoiceCall = {
-                    val info = sdk.startGroupCall(groupId, video = false)
-                    val active = sdk.activeGroupCall
-                    if (info != null && active != null) {
-                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    if (!previewMode) {
+                        val info = sdk.startGroupCall(groupId, video = false)
+                        val active = sdk.activeGroupCall
+                        if (info != null && active != null) {
+                            navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                        }
                     }
                 },
                 onStartVideoCall = {
-                    val info = sdk.startGroupCall(groupId, video = true)
-                    val active = sdk.activeGroupCall
-                    if (info != null && active != null) {
-                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    if (!previewMode) {
+                        val info = sdk.startGroupCall(groupId, video = true)
+                        val active = sdk.activeGroupCall
+                        if (info != null && active != null) {
+                            navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                        }
                     }
                 },
                 onJoinCall = { room ->
-                    val info = sdk.joinGroupCallHex(groupId, room.callId, room.video)
-                    val active = sdk.activeGroupCall
-                    if (info != null && active != null) {
-                        navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                    if (!previewMode) {
+                        val info = sdk.joinGroupCallHex(groupId, room.callId, room.video)
+                        val active = sdk.activeGroupCall
+                        if (info != null && active != null) {
+                            navigate(FlowScreen.GroupCall(groupId, active.callIdHex))
+                        }
                     }
                 },
                 onLeaveCall = { room ->
-                    sdk.leaveGroupCallHex(groupId, room.callId)
-                    val active = sdk.activeGroupCall
-                    if (active != null && active.groupId == groupId && active.callIdHex == room.callId) {
-                        callController.stop()
+                    if (!previewMode) {
+                        sdk.leaveGroupCallHex(groupId, room.callId)
+                        val active = sdk.activeGroupCall
+                        if (active != null && active.groupId == groupId && active.callIdHex == room.callId) {
+                            callController.stop()
+                        }
                     }
                 },
-                onSendMessage = { text -> sdk.sendText(groupId, text, isGroup = true) },
-                onSendFile = { path -> sdk.sendFile(groupId, path, isGroup = true) },
-                onSendLocation = { lat, lon, label -> sdk.sendLocation(groupId, lat, lon, label, isGroup = true) },
-                onRecallMessage = { messageId -> sdk.sendRecall(groupId, messageId, isGroup = true) },
-                onResendText = { messageId, text -> sdk.resendGroupText(groupId, messageId, text) },
-                onResendFile = { messageId, filePath -> sdk.resendGroupFile(groupId, messageId, filePath) },
-                onDownloadAttachment = { attachment -> downloadAttachment(attachment) }
+                onSendMessage = { text ->
+                    if (!previewMode) {
+                        sdk.sendText(groupId, text, isGroup = true)
+                    } else {
+                        false
+                    }
+                },
+                onSendFile = { path ->
+                    if (!previewMode) {
+                        sdk.sendFile(groupId, path, isGroup = true)
+                    } else {
+                        false
+                    }
+                },
+                onSendLocation = { lat, lon, label ->
+                    if (!previewMode) {
+                        sdk.sendLocation(groupId, lat, lon, label, isGroup = true)
+                    } else {
+                        false
+                    }
+                },
+                onRecallMessage = { messageId ->
+                    if (!previewMode) {
+                        sdk.sendRecall(groupId, messageId, isGroup = true)
+                    } else {
+                        false
+                    }
+                },
+                onResendText = { messageId, text ->
+                    if (!previewMode) {
+                        sdk.resendGroupText(groupId, messageId, text)
+                    } else {
+                        false
+                    }
+                },
+                onResendFile = { messageId, filePath ->
+                    if (!previewMode) {
+                        sdk.resendGroupFile(groupId, messageId, filePath)
+                    } else {
+                        false
+                    }
+                },
+                onDownloadAttachment = { attachment ->
+                    if (!previewMode) {
+                        downloadAttachment(attachment)
+                    }
+                }
             )
         }
         is FlowScreen.PeerCall -> {
@@ -334,7 +561,6 @@ private fun UiHost(
             onOpenSecurityCenter = { navigate(FlowScreen.SecurityCenter) },
             onOpenAccount = { navigate(FlowScreen.Account) },
             onOpenPrivacy = { navigate(FlowScreen.Privacy) },
-            onOpenDiagnostics = { navigate(FlowScreen.Diagnostics) },
             onOpenChats = { resetTo(FlowScreen.Conversations) },
             onOpenCalls = { resetTo(FlowScreen.Calls) },
             onOpenContacts = { resetTo(FlowScreen.AddFriend) }
@@ -342,6 +568,7 @@ private fun UiHost(
         FlowScreen.SecurityCenter -> SecurityCenterScreen(
             sdk = sdk,
             title = tr("security_center_title", "Security Center"),
+            previewMode = previewMode,
             onBack = { goBack() }
         )
         FlowScreen.Account -> AccountScreen(sdk = sdk, onBack = { goBack() })

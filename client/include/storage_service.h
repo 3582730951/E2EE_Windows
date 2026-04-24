@@ -17,6 +17,7 @@ class StorageService {
   bool DownloadChatFileToPath(ClientCore& core, const ClientCore::ChatFileMessage& file, const std::filesystem::path& out_path, bool wipe_after_read, const std::function<void(std::uint64_t, std::uint64_t)>& on_progress) const;
   bool DownloadChatFileToBytes(ClientCore& core, const ClientCore::ChatFileMessage& file, std::vector<std::uint8_t>& out_bytes, bool wipe_after_read) const;
   std::vector<ClientCore::HistoryEntry> LoadChatHistory(ClientCore& core, const std::string& conv_id, bool is_group, std::size_t limit) const;
+  std::vector<ClientCore::HistoryEntry> ExportRecentHistorySnapshot(ClientCore& core, std::size_t max_conversations, std::size_t max_messages_per_conversation) const;
   bool AddHistorySystemMessage(ClientCore& core, const std::string& conv_id, bool is_group, const std::string& text_utf8) const;
   void SetHistoryEnabled(ClientCore& core, bool enabled) const;
   bool ClearAllHistory(ClientCore& core, bool delete_attachments, bool secure_wipe, std::string& error) const;

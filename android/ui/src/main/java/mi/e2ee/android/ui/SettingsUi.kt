@@ -1,7 +1,6 @@
 package mi.e2ee.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,18 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,8 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import mi.e2ee.android.BuildConfig
 
 data class SettingEntry(
     val title: String,
@@ -74,19 +69,13 @@ fun SettingsScreen(
     onOpenSecurityCenter: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onOpenPrivacy: () -> Unit = {},
-    onOpenDiagnostics: () -> Unit = {},
     onOpenChats: () -> Unit = {},
     onOpenCalls: () -> Unit = {},
     onOpenContacts: () -> Unit = {}
 ) {
+    val colors = phaseOneColors()
     val languageController = LocalLanguageController.current
     var notificationsEnabled by remember { mutableStateOf(true) }
-    val themeModeLabel = when (themeMode) {
-        ThemeMode.FollowSystem -> tr("settings_theme_system", "System")
-        ThemeMode.ForceLight -> tr("settings_theme_light", "Light")
-        ThemeMode.ForceDark -> tr("settings_theme_dark", "Dark")
-        else -> tr("settings_theme_system", "System")
-    }
     val cycleThemeMode = {
         val next = when (themeMode) {
             ThemeMode.FollowSystem -> ThemeMode.ForceDark
@@ -104,46 +93,59 @@ fun SettingsScreen(
             }
         }
     }
-    val accountSettings = listOf(
+    val accountEntry = SettingEntry(
+        title = sdk.deviceDisplayId.ifBlank { tr("app_name", "MI E2EE") },
+        subtitle = tr("settings_account_section", "Account"),
+        icon = {
+            IdentityAvatar(
+                label = sdk.deviceDisplayId.ifBlank { tr("app_name", "MI E2EE") },
+                seed = sdk.deviceDisplayId.ifBlank { "mi-e2ee" },
+                kind = IdentityAvatarKind.Person,
+                size = 36.dp
+            )
+        },
+        trailing = { UiChevron() },
+        onClick = onOpenAccount
+    )
+
+    val coreSettings = listOf(
         SettingEntry(
             title = tr("settings_security_center", "Security Center"),
-            subtitle = tr("settings_security_center_subtitle", "Devices, sessions, and approval identity"),
+            subtitle = null,
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.ShieldCheck, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenSecurityCenter
         ),
         SettingEntry(
             title = tr("settings_account_security", "Account and security"),
-            subtitle = tr("settings_account_security_subtitle", "Password, linked devices, and recovery"),
+            subtitle = null,
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Lock, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenAccount
         ),
         SettingEntry(
             title = tr("settings_privacy", "Privacy"),
-            subtitle = tr("settings_privacy_subtitle", "Read receipts, blocked users, and visibility"),
+            subtitle = null,
             icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Eye, tone = UiIconTone.Primary) },
             trailing = { UiChevron() },
             onClick = onOpenPrivacy
-        ),
-        SettingEntry(
-            title = tr("settings_notifications", "Notifications"),
-            subtitle = tr("settings_notifications_subtitle", "Calls, mentions, and message alerts"),
-            icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Bell, tone = UiIconTone.Accent) },
-            trailing = {
-                Switch(
-                    checked = notificationsEnabled,
-                    onCheckedChange = { notificationsEnabled = it }
-                )
-            }
         )
     )
 
-    val appSettings = buildList {
+    val preferenceSettings = buildList {
+        add(
+            SettingEntry(
+                title = tr("settings_notifications", "Notifications"),
+                subtitle = null,
+                icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Bell, tone = UiIconTone.Accent) },
+                trailing = { UiChevron() },
+                onClick = { notificationsEnabled = !notificationsEnabled }
+            )
+        )
         add(
             SettingEntry(
                 title = tr("settings_chat_storage", "Chat and storage"),
-                subtitle = tr("settings_chat_storage_subtitle", "Media, cache, and auto-download"),
+                subtitle = null,
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Chat, tone = UiIconTone.Primary) },
                 trailing = { UiChevron() },
                 onClick = onOpenChats
@@ -152,7 +154,7 @@ fun SettingsScreen(
         add(
             SettingEntry(
                 title = tr("settings_devices", "Devices"),
-                subtitle = tr("settings_devices_subtitle", "Manage trusted phones and tablets"),
+                subtitle = null,
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Devices, tone = UiIconTone.Accent) },
                 trailing = { UiChevron() },
                 onClick = onOpenSecurityCenter
@@ -161,9 +163,9 @@ fun SettingsScreen(
         add(
             SettingEntry(
                 title = tr("settings_theme_mode", "Theme mode"),
-                subtitle = tr("settings_appearance_subtitle", "Theme and reading comfort"),
+                subtitle = null,
                 icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Settings, tone = UiIconTone.Neutral) },
-                trailing = { SettingsTrailingValue(text = themeModeLabel) },
+                trailing = { UiChevron() },
                 onClick = cycleThemeMode
             )
         )
@@ -171,52 +173,18 @@ fun SettingsScreen(
             add(
                 SettingEntry(
                     title = tr("settings_language", "Language"),
-                    subtitle = tr("settings_language_subtitle", "App language"),
+                    subtitle = null,
                     icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Link, tone = UiIconTone.Primary) },
-                    trailing = { SettingsTrailingValue(text = languageController.current.label) },
+                    trailing = { UiChevron() },
                     onClick = cycleLanguage
                 )
             )
         }
-        if (BuildConfig.DEBUG) {
-            add(
-                SettingEntry(
-                    title = tr("settings_diagnostics", "Diagnostics"),
-                    subtitle = tr("settings_diagnostics_subtitle", "Bridge, logs, and smoke tools"),
-                    icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Bug, tone = UiIconTone.Warning) },
-                    trailing = { UiChevron() },
-                    onClick = onOpenDiagnostics
-                )
-            )
-        }
     }
-    val connectionEntries = listOf(
-        SettingEntry(
-            title = tr("settings_heartbeat", "Heartbeat"),
-            subtitle = tr("settings_heartbeat_subtitle", "Ping transport and refresh status"),
-            icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Clock, tone = UiIconTone.Accent) },
-            trailing = {
-                TextButton(onClick = { sdk.heartbeat() }) {
-                    Text(tr("settings_run", "Run"))
-                }
-            }
-        ),
-        SettingEntry(
-            title = tr("settings_relogin", "Reconnect"),
-            subtitle = tr("settings_relogin_subtitle", "Rebuild the secure session"),
-            icon = { SettingsLeadingIcon(icon = MiOwnedIcons.Link, tone = UiIconTone.Primary) },
-            trailing = {
-                TextButton(onClick = { sdk.relogin() }) {
-                    Text(tr("settings_run", "Run"))
-                }
-            }
-        )
-    )
 
     Scaffold(
         topBar = {
             SettingsTopBar(
-                title = tr("settings_title", "Settings"),
                 showBackButton = showBackButton,
                 onBack = onBack
             )
@@ -230,98 +198,44 @@ fun SettingsScreen(
                 onSettings = {}
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = colors.background
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 14.dp)
+                .background(colors.background)
+                .padding(horizontal = 12.dp)
                 .testTag("settings-screen"),
             contentPadding = PaddingValues(
-                top = 8.dp,
-                bottom = 12.dp
+                top = 10.dp,
+                bottom = 96.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
-                SettingsHeader(
-                    displayName = sdk.username.ifBlank { tr("settings_user_placeholder", "MI User") },
-                    username = sdk.username.ifBlank { "mi_user" },
-                    deviceId = sdk.deviceDisplayId,
-                    remoteOk = sdk.remoteOk
-                )
-            }
-            item {
-                SectionHeader(text = tr("settings_account_section", "Account"))
-                Spacer(modifier = Modifier.height(6.dp))
-                SettingsSection(entries = accountSettings)
-            }
-            item {
-                SectionHeader(text = tr("settings_preferences_section", "Preferences"))
-                Spacer(modifier = Modifier.height(6.dp))
-                SettingsSection(entries = appSettings)
-                Spacer(modifier = Modifier.height(8.dp))
-                SectionHeader(text = tr("settings_connection", "Connection"))
-                Spacer(modifier = Modifier.height(6.dp))
-                SettingsSection(entries = connectionEntries)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsHeader(
-    displayName: String,
-    username: String,
-    deviceId: String,
-    remoteOk: Boolean
-) {
-    GroupedSettingsContainer {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            UiSemanticIcon(
-                icon = MiOwnedIcons.Person,
-                contentDescription = tr("settings_user_placeholder", "MI User"),
-                tone = UiIconTone.Primary,
-                size = ChatUiTokens.IconContainerMd,
-                iconSize = ChatUiTokens.IconGlyphMd,
-                framed = false
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = displayName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = username,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (deviceId.isNotBlank()) {
-                    Text(
-                        text = tr("settings_device_id", "Device: %s").format(deviceId),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            item(key = "settings-account") {
+                InsetGroupedCard {
+                    SettingsRow(accountEntry, showDivider = false)
                 }
             }
-            UiStatusCountBadge(
-                label = if (remoteOk) tr("settings_remote_ok", "Online") else tr("settings_remote_error", "Offline"),
-                tone = if (remoteOk) UiBadgeTone.Accent else UiBadgeTone.Danger
-            )
+            item(key = "settings-core-group") {
+                InsetGroupedCard {
+                    // items(coreSettings)
+                    coreSettings.forEachIndexed { index, entry ->
+                        SettingsRow(entry = entry, showDivider = index != coreSettings.lastIndex)
+                    }
+                }
+            }
+            item(key = "settings-preferences-group") {
+                InsetGroupedCard {
+                    // items(preferenceSettings)
+                    preferenceSettings.forEachIndexed { index, entry ->
+                        SettingsRow(entry = entry, showDivider = index != preferenceSettings.lastIndex)
+                    }
+                }
+            }
         }
     }
-}
-
-@Composable
-private fun SettingsTrailingValue(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
 }
 
 @Composable
@@ -333,88 +247,67 @@ private fun SettingsLeadingIcon(
         icon = icon,
         contentDescription = null,
         tone = tone,
-        size = ChatUiTokens.IconContainerSm,
+        size = 34.dp,
         iconSize = ChatUiTokens.IconGlyphSm
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsTopBar(
-    title: String,
     showBackButton: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    TopAppBar(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .statusBarsPadding(),
-        navigationIcon = {
-            if (showBackButton) {
+    val colors = phaseOneColors()
+    // CenterAlignedTopAppBar(
+    GlassTopAppBar(
+        modifier = modifier,
+        leadingContent = if (showBackButton) {
+            {
                 UiToolbarIconButton(
                     icon = MiOwnedIcons.ArrowBack,
                     contentDescription = tr("settings_back", "Back"),
                     onClick = onBack
                 )
             }
+        } else {
+            null
         },
-        title = {
+        titleContent = {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                text = tr("settings_title", "Settings"),
+                modifier = Modifier.padding(
+                    top = PhaseOneTokens.LargeTitleTopPadding,
+                    bottom = PhaseOneTokens.LargeTitleBottomPadding
+                ),
+                style = phaseOneLargeTitleTextStyle(),
+                color = colors.onSurface
             )
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            Text(
+                text = tr("settings_subtitle", "Privacy, devices, and chat preferences"),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceMuted
+            )
+        }
     )
 }
 
 @Composable
-private fun SettingsSection(entries: List<SettingEntry>) {
-    GroupedSettingsContainer {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            entries.forEachIndexed { index, entry ->
-                SettingsRow(entry)
-                if (index < entries.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                    )
-                }
-            }
-        }
-    }
+private fun UiChevron() {
+    Icon(
+        imageVector = MiOwnedIcons.ChevronRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(16.dp)
+    )
 }
 
 @Composable
-private fun GroupedSettingsContainer(content: @Composable () -> Unit) {
-    val shape = RoundedCornerShape(ChatUiTokens.CornerLarge)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = ChatUiTokens.SurfaceBorderAlpha),
-                shape = shape
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun SettingsRow(entry: SettingEntry) {
+private fun SettingsRow(
+    entry: SettingEntry,
+    showDivider: Boolean
+) {
+    val colors = phaseOneColors()
     val clickableModifier = if (entry.onClick != null) {
         Modifier.clickable { entry.onClick.invoke() }
     } else {
@@ -424,25 +317,39 @@ private fun SettingsRow(entry: SettingEntry) {
         modifier = Modifier
             .fillMaxWidth()
             .then(clickableModifier)
-            .clip(RoundedCornerShape(12.dp))
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         entry.icon()
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = entry.title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = entry.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.onSurface
+            )
             if (!entry.subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = entry.subtitle.orEmpty(),
+                    text = entry.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = colors.onSurfaceMuted
                 )
             }
         }
         Spacer(modifier = Modifier.width(8.dp))
         entry.trailing()
+    }
+
+    if (showDivider) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 60.dp)
+                .height(1.dp)
+                .background(colors.outline.copy(alpha = 0.28f))
+        )
     }
 }
 

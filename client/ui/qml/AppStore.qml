@@ -13,6 +13,7 @@ Item {
     property string currentChatType: "private"
     property int currentChatMembers: 0
     property int currentLeftTab: 0
+    property string currentShellSurface: "chat"
     property bool rightPaneVisible: false
     property string searchQuery: ""
     property bool initialized: false
@@ -58,6 +59,9 @@ Item {
     property ListModel friendRequestsModel: ListModel {}
     property ListModel groupInvitesModel: ListModel {}
     property ListModel noticesModel: ListModel {}
+    property ListModel sharedMediaModel: ListModel {}
+    property ListModel sharedFilesModel: ListModel {}
+    property ListModel sharedLinksModel: ListModel {}
     property int notificationCount: friendRequestsModel.count + groupInvitesModel.count + noticesModel.count
     property var knownFriendIds: ({})
     property bool friendIdsInitialized: false
@@ -127,6 +131,10 @@ Item {
         syncDomainStores()
     }
 
+    function smokeCopy(zhText, enText) {
+        return Ui.I18n.usesCjkLocale ? zhText : enText
+    }
+
     function resetSmokePreviewState() {
         internalImeEnabled = false
         currentChatId = ""
@@ -135,6 +143,7 @@ Item {
         currentChatType = "private"
         currentChatMembers = 0
         currentLeftTab = 0
+        currentShellSurface = "chat"
         rightPaneVisible = false
         searchQuery = ""
         sendErrorMessage = ""
@@ -158,31 +167,37 @@ Item {
         friendRequestsModel.clear()
         groupInvitesModel.clear()
         noticesModel.clear()
+        sharedMediaModel.clear()
+        sharedFilesModel.clear()
+        sharedLinksModel.clear()
     }
 
     function seedSmokePreview() {
         resetSmokePreviewState()
-        statusMessage = "Smoke preview ready"
+        statusMessage = ""
 
-        var primaryChatId = "smoke-design-ops"
+        var primaryChatId = "smoke-river-walk"
         var secondChatId = "smoke-alex"
-        var lightChatId = "smoke-platform"
+        var lightChatId = "smoke-weekend-house"
         var now = Date.now()
 
         dialogsModel.append({
             chatId: primaryChatId,
-            title: "Design Ops",
+            title: smokeCopy("河边散步", "River Walk"),
             type: "group",
             memberCount: 6,
-            avatarKey: "Design Ops",
-            preview: "Cool review palette is now locked for desktop handoff.",
-            timeText: "09:41",
+            avatarKey: "River Walk",
+            avatarMode: "group",
+            previewKind: "photo",
+            presenceState: "secure",
+            preview: smokeCopy("我把路线图发群里了。", "I shared the route in the group."),
+            timeText: "16:59",
             unread: 2,
             pinned: true,
             muted: false,
             stealth: false,
-            lastSenderName: "Mina",
-            lastSenderAvatarKey: "Mina"
+            lastSenderName: "Aster",
+            lastSenderAvatarKey: "Aster"
         })
         dialogsModel.append({
             chatId: secondChatId,
@@ -190,9 +205,12 @@ Item {
             type: "private",
             memberCount: 2,
             avatarKey: "Alex",
-            preview: "Android screenshots are queued for upload.",
-            timeText: "08:12",
-            unread: 0,
+            avatarMode: "person",
+            previewKind: "",
+            presenceState: "online",
+            preview: smokeCopy("出站后给我打电话。", "Call me when you get out of the station."),
+            timeText: "16:58",
+            unread: 1,
             pinned: false,
             muted: false,
             stealth: false,
@@ -201,12 +219,15 @@ Item {
         })
         dialogsModel.append({
             chatId: "smoke-mina",
-            title: "Mina",
+            title: "Rhea North",
             type: "private",
             memberCount: 2,
-            avatarKey: "Mina",
-            preview: "Security center hierarchy is cleaner now.",
-            timeText: "07:58",
+            avatarKey: "Rhea North",
+            avatarMode: "person",
+            previewKind: "photo",
+            presenceState: "online",
+            preview: smokeCopy("我刚拍了张窗边的照片。", "I just sent a photo from the window seat."),
+            timeText: "16:56",
             unread: 0,
             pinned: false,
             muted: false,
@@ -216,57 +237,51 @@ Item {
         })
         dialogsModel.append({
             chatId: lightChatId,
-            title: "Platform",
+            title: smokeCopy("周末小屋", "Weekend House"),
             type: "group",
             memberCount: 8,
-            avatarKey: "Platform",
-            preview: "Rollout shell now uses a softer mint light palette.",
-            timeText: "09:26",
-            unread: 0,
-            pinned: false,
-            muted: false,
-            stealth: false,
-            lastSenderName: "Rhea",
-            lastSenderAvatarKey: "Rhea"
-        })
-        dialogsModel.append({
-            chatId: "smoke-rhea",
-            title: "Rhea",
-            type: "private",
-            memberCount: 2,
-            avatarKey: "Rhea",
-            preview: "Android calls page feels closer to a real IM now.",
+            avatarKey: "Weekend House",
+            avatarMode: "group",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("院子已经收拾好了，晚上见。", "The patio is ready. See you tonight."),
             timeText: "Yesterday",
             unread: 0,
             pinned: false,
             muted: true,
+            stealth: false,
+            lastSenderName: "Mira",
+            lastSenderAvatarKey: "Mira"
+        })
+        dialogsModel.append({
+            chatId: "smoke-rhea",
+            title: "Mira Chen",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Mira Chen",
+            avatarMode: "person",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("我已经到楼下了。", "I am downstairs now."),
+            timeText: "Yesterday",
+            unread: 0,
+            pinned: false,
+            muted: false,
             stealth: false,
             lastSenderName: "",
             lastSenderAvatarKey: ""
         })
         dialogsModel.append({
             chatId: "smoke-ops",
-            title: "Ops Sync",
+            title: smokeCopy("晚餐计划", "Dinner Plan"),
             type: "group",
             memberCount: 5,
-            avatarKey: "Ops Sync",
-            preview: "TLS reconnect budget raised for the next smoke pass.",
+            avatarKey: "Dinner Plan",
+            avatarMode: "group",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("七点在老地方见。", "Meet at the usual place at seven."),
             timeText: "Mon",
-            unread: 0,
-            pinned: false,
-            muted: false,
-            stealth: false,
-            lastSenderName: "Jules",
-            lastSenderAvatarKey: "Jules"
-        })
-        dialogsModel.append({
-            chatId: "smoke-release",
-            title: "Release",
-            type: "group",
-            memberCount: 4,
-            avatarKey: "Release",
-            preview: "Desktop light mode now keeps the active thread visible.",
-            timeText: "Sun",
             unread: 0,
             pinned: false,
             muted: false,
@@ -275,19 +290,112 @@ Item {
             lastSenderAvatarKey: "Nora"
         })
         dialogsModel.append({
+            chatId: "smoke-release",
+            title: smokeCopy("家人", "Family"),
+            type: "group",
+            memberCount: 4,
+            avatarKey: "Family",
+            avatarMode: "group",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("到家记得发个消息。", "Send a message when you get home."),
+            timeText: "Wed",
+            unread: 3,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: smokeCopy("妈妈", "Mom"),
+            lastSenderAvatarKey: "Mom"
+        })
+        dialogsModel.append({
             chatId: "smoke-gateway",
-            title: "Gateway",
+            title: "Lena North",
             type: "private",
             memberCount: 2,
-            avatarKey: "Gateway",
-            preview: "Pinned transport fingerprint rotated after maintenance.",
-            timeText: "Sun",
+            avatarKey: "Lena North",
+            avatarMode: "person",
+            previewKind: "",
+            presenceState: "online",
+            preview: smokeCopy("到了给我发定位。", "Send me your location when you arrive."),
+            timeText: "07:52",
             unread: 0,
             pinned: false,
             muted: false,
             stealth: false,
             lastSenderName: "",
             lastSenderAvatarKey: ""
+        })
+        dialogsModel.append({
+            chatId: "smoke-nora",
+            title: "Nora Park",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Nora Park",
+            avatarMode: "person",
+            previewKind: "",
+            presenceState: "online",
+            preview: smokeCopy("我已经订好靠窗的位置。", "I booked the table by the window."),
+            timeText: "Thu",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
+        dialogsModel.append({
+            chatId: "smoke-harbor",
+            title: smokeCopy("港口小队", "Harbor Crew"),
+            type: "group",
+            memberCount: 7,
+            avatarKey: "Harbor Crew",
+            avatarMode: "group",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("甲板已经清空，可以直接登船。", "The deck is clear now. You can board directly."),
+            timeText: "Thu",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "Theo",
+            lastSenderAvatarKey: "Theo"
+        })
+        dialogsModel.append({
+            chatId: "smoke-theo",
+            title: "Theo Kim",
+            type: "private",
+            memberCount: 2,
+            avatarKey: "Theo Kim",
+            avatarMode: "person",
+            previewKind: "",
+            presenceState: "online",
+            preview: smokeCopy("我会带上投影仪。", "I will bring the projector."),
+            timeText: "Fri",
+            unread: 0,
+            pinned: false,
+            muted: false,
+            stealth: false,
+            lastSenderName: "",
+            lastSenderAvatarKey: ""
+        })
+        dialogsModel.append({
+            chatId: "smoke-books",
+            title: smokeCopy("读书会", "Book Club"),
+            type: "group",
+            memberCount: 9,
+            avatarKey: "Book Club",
+            avatarMode: "group",
+            previewKind: "",
+            presenceState: "secure",
+            preview: smokeCopy("下一章改到周日晚上讨论。", "We moved the next chapter to Sunday night."),
+            timeText: "Sun",
+            unread: 0,
+            pinned: false,
+            muted: true,
+            stealth: false,
+            lastSenderName: smokeCopy("Lena", "Lena"),
+            lastSenderAvatarKey: "Lena"
         })
 
         contactsModel.append({
@@ -366,7 +474,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Mina",
-            text: "Windows review shell is ready for the final screenshot pass.",
+            text: smokeCopy("我已经到河边了，桌子靠近桥边。", "I am by the river now. The table is near the bridge."),
             timeText: "09:38",
             timestampMs: now - 180000,
             statusTicks: "none",
@@ -395,7 +503,7 @@ Item {
             kind: "out",
             contentKind: "text",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Keep density. Keep the cooler review palette.",
+            text: smokeCopy("收到，我五分钟到。", "Got it. I will be there in five."),
             timeText: "09:39",
             timestampMs: now - 120000,
             statusTicks: "read",
@@ -451,12 +559,41 @@ Item {
             chatId: primaryChatId,
             msgId: "smoke-msg-4",
             kind: "out",
-            contentKind: "text",
+            contentKind: "file",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Default post-login should read like the active review workspace.",
+            text: "",
             timeText: "09:40",
             timestampMs: now - 45000,
             statusTicks: "read",
+            edited: false,
+            fileName: "river-walk-map.png",
+            fileSize: 2840064,
+            fileId: "smoke-river-walk-map",
+            fileKey: "smoke-file-key-v2",
+            fileUrl: "",
+            downloadProgress: 1,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        model.append({
+            chatId: primaryChatId,
+            msgId: "smoke-msg-4b",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Aster",
+            text: smokeCopy("位置我放这里了：https://maps.example/riverwalk", "Pinned the location here: https://maps.example/riverwalk"),
+            timeText: "09:41",
+            timestampMs: now - 28000,
+            statusTicks: "none",
             edited: false,
             fileName: "",
             fileSize: 0,
@@ -482,7 +619,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Mina",
-            text: "Good. Keep devices ahead of dashboard cards in security center.",
+            text: smokeCopy("太好了，我把票一起带过去。", "Perfect. I will bring the tickets too."),
             timeText: "09:41",
             timestampMs: now - 15000,
             statusTicks: "none",
@@ -543,7 +680,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Rhea",
-            text: "The rollout lane is green again, and the softer light shell is stable.",
+            text: smokeCopy("院子已经开灯了，风很舒服。", "The patio lights are on. It feels great outside."),
             timeText: "09:23",
             timestampMs: now - 210000,
             statusTicks: "none",
@@ -572,7 +709,7 @@ Item {
             kind: "out",
             contentKind: "text",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Good. Keep the desktop density and let the rollout palette do the separation.",
+            text: smokeCopy("好，我顺路带点零食过去。", "Great. I will bring some snacks on the way."),
             timeText: "09:24",
             timestampMs: now - 155000,
             statusTicks: "read",
@@ -601,7 +738,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Jules",
-            text: "Platform rollout now carries the mint light shell. No blank center pane, no fake search diff.",
+            text: smokeCopy("我大概还有十分钟到。", "I should be there in about ten minutes."),
             timeText: "09:25",
             timestampMs: now - 94000,
             statusTicks: "none",
@@ -630,7 +767,7 @@ Item {
             kind: "out",
             contentKind: "text",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Ship this thread as the light rollout smoke sample.",
+            text: smokeCopy("那就把这条线程留着晚上集合。", "Let us keep this thread for tonight."),
             timeText: "09:26",
             timestampMs: now - 35000,
             statusTicks: "read",
@@ -691,7 +828,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Alex",
-            text: "Ship the package after the Windows security center reads like a real desktop client.",
+            text: smokeCopy("你出站的时候给我打个电话。", "Give me a call when you exit the station."),
             timeText: "08:09",
             timestampMs: now - 260000,
             statusTicks: "none",
@@ -718,19 +855,48 @@ Item {
             chatId: secondChatId,
             msgId: "smoke-alex-msg-2",
             kind: "out",
-            contentKind: "text",
+            contentKind: "file",
             senderName: Ui.I18n.t("chat.you"),
-            text: "Understood. The shell keeps density, and the detail thread opens with the side pane visible.",
+            text: "",
             timeText: "08:10",
             timestampMs: now - 190000,
             statusTicks: "read",
             edited: false,
-            fileName: "",
-            fileSize: 0,
-            fileId: "",
-            fileKey: "",
+            fileName: "meetup-notes.zip",
+            fileSize: 12845056,
+            fileId: "smoke-meetup-notes",
+            fileKey: "smoke-meetup-notes-key",
             fileUrl: "",
-            downloadProgress: 0,
+            downloadProgress: 1,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-msg-2b",
+            kind: "in",
+            contentKind: "file",
+            senderName: "Alex",
+            text: "",
+            timeText: "08:11",
+            timestampMs: now - 160000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "station-photo.png",
+            fileSize: 1964032,
+            fileId: "smoke-station-photo",
+            fileKey: "smoke-station-photo-key",
+            fileUrl: "",
+            downloadProgress: 1,
             imageEnhanced: false,
             stickerId: "",
             stickerUrl: "",
@@ -749,7 +915,7 @@ Item {
             kind: "in",
             contentKind: "text",
             senderName: "Alex",
-            text: "Good. That makes chat detail distinct from the general post-login shell.",
+            text: smokeCopy("我把站外那家咖啡店也发给你。", "I also sent you the cafe outside the station."),
             timeText: "08:12",
             timestampMs: now - 120000,
             statusTicks: "none",
@@ -772,12 +938,42 @@ Item {
             locationLon: 0,
             animateEmoji: false
         })
+        alexModel.append({
+            chatId: secondChatId,
+            msgId: "smoke-alex-msg-4",
+            kind: "in",
+            contentKind: "text",
+            senderName: "Alex",
+            text: smokeCopy("定位在这里：https://maps.example/cafe", "Location is here: https://maps.example/cafe"),
+            timeText: "08:13",
+            timestampMs: now - 80000,
+            statusTicks: "none",
+            edited: false,
+            fileName: "",
+            fileSize: 0,
+            fileId: "",
+            fileKey: "",
+            fileUrl: "",
+            downloadProgress: 0,
+            imageEnhanced: false,
+            stickerId: "",
+            stickerUrl: "",
+            stickerAnimated: false,
+            previewUrl: "",
+            contactUsername: "",
+            contactDisplay: "",
+            locationLabel: "",
+            locationLat: 0,
+            locationLon: 0,
+            animateEmoji: false
+        })
 
         currentChatId = primaryChatId
-        currentChatTitle = "Design Ops"
+        currentChatTitle = smokeCopy("河边散步", "River Walk")
         currentChatSubtitle = Ui.I18n.format("chat.members", 6)
         currentChatType = "group"
         currentChatMembers = 6
+        rebuildSharedDetailModels(currentChatId)
         rebuildFiltered()
         syncDomainStores()
     }
@@ -788,10 +984,11 @@ Item {
         currentChatSubtitle = ""
         currentChatType = "private"
         currentChatMembers = 0
+        currentShellSurface = "chat"
         rightPaneVisible = false
         searchQuery = ""
         currentLeftTab = 0
-        statusMessage = statusText || "Conversation inbox ready"
+        statusMessage = statusText || ""
     }
 
     function applySmokeConversationScene(chatId, title, subtitle, type, members, statusText, showDetailsPane) {
@@ -800,14 +997,17 @@ Item {
         currentChatSubtitle = subtitle
         currentChatType = type
         currentChatMembers = members
+        currentShellSurface = "chat"
         rightPaneVisible = showDetailsPane === true
         searchQuery = ""
         currentLeftTab = 0
-        statusMessage = statusText || "Post-login conversation ready"
+        statusMessage = statusText || ""
     }
 
     function applySmokeSettingsScene() {
         clearSmokeConversationScene("Settings dialog ready")
+        currentShellSurface = "settings"
+        currentLeftTab = 3
         clipboardIsolationEnabled = true
         internalImeEnabled = false
         historySaveEnabled = true
@@ -834,7 +1034,7 @@ Item {
                          scene === "security_center"
         if (!validScene) {
             resetSmokePreviewState()
-            statusMessage = "Invalid smoke scene"
+            statusMessage = ""
             rebuildFiltered()
             syncDomainStores()
             return false
@@ -843,49 +1043,49 @@ Item {
         seedSmokePreview()
 
         if (scene === "chat_list" || scene === "chat_list_light") {
-            clearSmokeConversationScene("Conversation inbox ready")
+            clearSmokeConversationScene("")
         } else if (scene === "chat_detail") {
-            applySmokeConversationScene("smoke-alex",
-                                        "Alex",
-                                        "Secure review thread",
-                                        "private",
-                                        2,
-                                        "Secure detail view ready",
-                                        true)
-        } else if (scene === "post_login") {
-            applySmokeConversationScene("smoke-design-ops",
-                                        "Design Ops",
+            applySmokeConversationScene("smoke-river-walk",
+                                        smokeCopy("河边散步", "River Walk"),
                                         Ui.I18n.format("chat.members", 6),
                                         "group",
                                         6,
-                                        "Post-login conversation ready",
+                                        "",
+                                        true)
+        } else if (scene === "post_login") {
+            applySmokeConversationScene("smoke-river-walk",
+                                        smokeCopy("河边散步", "River Walk"),
+                                        Ui.I18n.format("chat.members", 6),
+                                        "group",
+                                        6,
+                                        "",
                                         false)
         } else if (scene === "post_login_light") {
-            applySmokeConversationScene("smoke-platform",
-                                        "Platform",
-                                        Ui.I18n.format("chat.members", 8),
+            applySmokeConversationScene("smoke-river-walk",
+                                        smokeCopy("河边散步", "River Walk"),
+                                        Ui.I18n.format("chat.members", 6),
                                         "group",
-                                        8,
-                                        "Light post-login conversation ready",
+                                        6,
+                                        "",
                                         false)
         } else if (scene === "calls_home") {
-            currentChatId = "smoke-alex"
-            currentChatTitle = "Alex"
-            currentChatSubtitle = "Incoming secure video call"
-            currentChatType = "private"
-            currentChatMembers = 2
+            clearSmokeConversationScene("")
+            currentShellSurface = "calls"
             rightPaneVisible = false
-            currentLeftTab = 0
-            incomingCallActive = true
-            incomingCallPeer = "Alex"
-            incomingCallId = "smoke-call-1"
-            incomingCallVideo = true
-            statusMessage = "Calls surface ready"
+            currentLeftTab = 2
+            incomingCallActive = false
+            incomingCallPeer = ""
+            incomingCallId = ""
+            incomingCallVideo = false
+            statusMessage = ""
         } else if (scene === "settings_home") {
             applySmokeSettingsScene()
         } else if (scene === "security_center") {
-            clearSmokeConversationScene("Security Center ready")
+            clearSmokeConversationScene("")
+            currentShellSurface = "security"
+            currentLeftTab = 3
         }
+        rebuildSharedDetailModels(currentChatId)
         rebuildFiltered()
         syncDomainStores()
         return true
@@ -955,6 +1155,149 @@ Item {
             return "video"
         }
         return "file"
+    }
+
+    function extractFirstLink(text) {
+        var value = (text || "").trim()
+        if (value.length === 0) {
+            return ""
+        }
+        var match = /(https?:\/\/[^\s]+)/i.exec(value)
+        return match && match.length > 1 ? match[1] : ""
+    }
+
+    function summarizeSharedDetailText(text, limit) {
+        var value = (text || "").replace(/\s+/g, " ").trim()
+        var maxLength = limit || 72
+        if (value.length <= maxLength) {
+            return value
+        }
+        return value.slice(0, Math.max(0, maxLength - 3)) + "..."
+    }
+
+    function sharedDetailMeta(entry) {
+        var parts = []
+        var sender = (entry.senderName || "").trim()
+        var timeText = (entry.timeText || "").trim()
+        if (sender.length > 0) {
+            parts.push(sender)
+        }
+        if (timeText.length > 0) {
+            parts.push(timeText)
+        }
+        return parts.join(" / ")
+    }
+
+    function formatSharedFileSize(bytes) {
+        if (typeof bytes !== "number" || isNaN(bytes) || bytes <= 0) {
+            return ""
+        }
+        if (bytes >= 1024 * 1024) {
+            var mb = bytes / (1024 * 1024)
+            return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)) + " MB"
+        }
+        if (bytes >= 1024) {
+            return Math.round(bytes / 1024) + " KB"
+        }
+        return bytes + " B"
+    }
+
+    function sharedMediaCardKind(entry) {
+        var contentKind = entry.contentKind || ""
+        if (contentKind === "image" || contentKind === "gif" || contentKind === "sticker") {
+            return "photo"
+        }
+        if (contentKind === "video") {
+            return "video"
+        }
+        if (contentKind === "voice" || contentKind === "audio") {
+            return "voice"
+        }
+        if (contentKind === "file") {
+            var detectedKind = detectFileKind(entry.fileName || "")
+            if (detectedKind === "image" || detectedKind === "gif") {
+                return "photo"
+            }
+            if (detectedKind === "video") {
+                return "video"
+            }
+        }
+        return ""
+    }
+
+    function rebuildSharedDetailModels(chatId) {
+        sharedMediaModel.clear()
+        sharedFilesModel.clear()
+        sharedLinksModel.clear()
+        if (!chatId || chatId.length === 0) {
+            return
+        }
+        var model = messagesModel(chatId)
+        if (!model) {
+            return
+        }
+        var mediaKeys = {}
+        var fileKeys = {}
+        var linkKeys = {}
+        for (var i = model.count - 1; i >= 0; --i) {
+            var entry = model.get(i)
+            if (!entry || (entry.kind !== "in" && entry.kind !== "out")) {
+                continue
+            }
+            var meta = sharedDetailMeta(entry)
+            var mediaKind = sharedMediaCardKind(entry)
+            var fileName = (entry.fileName || "").trim()
+            if (mediaKind.length > 0 && sharedMediaModel.count < 4) {
+                var mediaTitle = fileName.length > 0 ? fileName : summarizeSharedDetailText(entry.text || meta, 48)
+                if (mediaTitle.length === 0) {
+                    mediaTitle = meta
+                }
+                if (mediaTitle.length > 0 && !mediaKeys[mediaTitle]) {
+                    mediaKeys[mediaTitle] = true
+                    sharedMediaModel.append({
+                                                entryKind: mediaKind,
+                                                entryTitle: mediaTitle,
+                                                entryDetail: meta
+                                            })
+                }
+            }
+            if (fileName.length > 0 && sharedFilesModel.count < 4) {
+                var fileKind = detectFileKind(fileName)
+                if (fileKind === "file" && !fileKeys[fileName]) {
+                    fileKeys[fileName] = true
+                    var sizeText = formatSharedFileSize(entry.fileSize || 0)
+                    var fileDetail = meta
+                    if (sizeText.length > 0) {
+                        fileDetail = fileDetail.length > 0 ? (fileDetail + " / " + sizeText) : sizeText
+                    }
+                    sharedFilesModel.append({
+                                                entryKind: "file",
+                                                entryTitle: fileName,
+                                                entryDetail: fileDetail
+                                            })
+                }
+            }
+            if (sharedLinksModel.count < 4) {
+                var link = extractFirstLink(entry.text || "")
+                if (link.length > 0 && !linkKeys[link]) {
+                    linkKeys[link] = true
+                    var linkDetail = summarizeSharedDetailText((entry.text || "").replace(link, "").trim(), 72)
+                    if (linkDetail.length === 0) {
+                        linkDetail = meta
+                    }
+                    sharedLinksModel.append({
+                                                entryKind: "link",
+                                                entryTitle: link.replace(/^https?:\/\//i, ""),
+                                                entryDetail: linkDetail
+                                            })
+                }
+            }
+            if (sharedMediaModel.count >= 4 &&
+                sharedFilesModel.count >= 4 &&
+                sharedLinksModel.count >= 4) {
+                break
+            }
+        }
     }
 
     function parseLocationText(text) {
@@ -1117,6 +1460,9 @@ Item {
             }
         }
         refreshDialogPreviewFromModel(chatId)
+        if (chatId === currentChatId) {
+            rebuildSharedDetailModels(chatId)
+        }
         return true
     }
 
@@ -1642,6 +1988,8 @@ Item {
             return
         }
         clearSendError()
+        currentShellSurface = "chat"
+        currentLeftTab = 0
         currentChatId = chatId
         updateCurrentChatDetails()
         loadHistoryForChat(chatId)
@@ -1658,6 +2006,7 @@ Item {
             currentChatType = "private"
             currentChatMembers = 0
             membersModel.clear()
+            rebuildSharedDetailModels("")
             return
         }
         var dialog = dialogsModel.get(idx)
@@ -1872,6 +2221,9 @@ Item {
         } else {
             updateDialogPreview(chatId, "", "", "")
         }
+        if (chatId === currentChatId) {
+            rebuildSharedDetailModels(chatId)
+        }
     }
 
     function setLeftTab(tabIndex) {
@@ -1879,7 +2231,53 @@ Item {
             return
         }
         currentLeftTab = tabIndex
+        if (tabIndex === 1) {
+            currentShellSurface = "contacts"
+        } else if (tabIndex === 2) {
+            currentShellSurface = "calls"
+        } else if (tabIndex === 3) {
+            if (currentShellSurface !== "security") {
+                currentShellSurface = "settings"
+            }
+        } else {
+            currentShellSurface = "chat"
+        }
         leftTabChanged(tabIndex)
+    }
+
+    function normalizeShellSurface(surfaceName) {
+        var surface = (surfaceName || "").toLowerCase()
+        if (surface === "contacts" ||
+                surface === "calls" ||
+                surface === "settings" ||
+                surface === "security") {
+            return surface
+        }
+        return "chat"
+    }
+
+    function setShellSurface(surfaceName) {
+        var nextSurface = normalizeShellSurface(surfaceName)
+        if (currentShellSurface === nextSurface) {
+            return
+        }
+        currentShellSurface = nextSurface
+        if (nextSurface === "contacts") {
+            currentLeftTab = 1
+            rightPaneVisible = false
+            return
+        }
+        if (nextSurface === "calls") {
+            currentLeftTab = 2
+            rightPaneVisible = false
+            return
+        }
+        if (nextSurface === "settings" || nextSurface === "security") {
+            currentLeftTab = 3
+            rightPaneVisible = false
+            return
+        }
+        currentLeftTab = 0
     }
 
     function toggleRightPane() {
@@ -2147,6 +2545,9 @@ Item {
         var model = messagesModel(chatId)
         model.append(message)
         updateDialogPreview(chatId, message.text || "", message.timeText || "", message.senderName || "")
+        if (chatId === currentChatId) {
+            rebuildSharedDetailModels(chatId)
+        }
         if (markUnread) {
             bumpUnread(chatId)
         }
@@ -2347,6 +2748,7 @@ Item {
             dialogsModel.setProperty(i, "subtitle", "")
         }
         recalledMessageIdsByChat = ({})
+        rebuildSharedDetailModels(currentChatId)
     }
 
     function clearSendError() {
@@ -2541,6 +2943,9 @@ Item {
             setString("callId", incoming.callId)
             setBoolTrue("callVideo", incoming.callVideo)
         }
+        if (updated && chatId === currentChatId) {
+            rebuildSharedDetailModels(chatId)
+        }
         return true
     }
 
@@ -2561,6 +2966,7 @@ Item {
         if (!fileId) {
             return
         }
+        var currentChatUpdated = false
         for (var chatId in messagesByChatId) {
             if (!messagesByChatId.hasOwnProperty(chatId)) {
                 continue
@@ -2584,9 +2990,15 @@ Item {
                 if (previewUrl) {
                     model.setProperty(i, "previewUrl", previewUrl)
                 }
+                if (chatId === currentChatId) {
+                    currentChatUpdated = true
+                }
             }
         }
         updateDownloadProgress(fileId, 1)
+        if (currentChatUpdated) {
+            rebuildSharedDetailModels(currentChatId)
+        }
     }
 
     function applyImageEnhance(messageId, outputUrl) {

@@ -51,6 +51,16 @@ def main() -> int:
     if args.scene == "post_login_light" and "post-login-light" not in png_path.stem:
         print(f"ERROR: post_login_light capture must be a real post-login-light scene: {png_path}")
         return 1
+    expected_stem = {
+        "post_login": "post-login",
+        "chat_detail": "chat-detail",
+        "settings_home": "settings-home",
+        "calls_home": "calls-home",
+        "security_center": "security-center",
+    }.get(args.scene)
+    if expected_stem and expected_stem not in png_path.stem:
+        print(f"ERROR: {args.scene} capture must be a real {expected_stem} scene: {png_path}")
+        return 1
 
     print(f"Windows smoke matrix check passed for {png_path.name}.")
     return 0

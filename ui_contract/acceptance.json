@@ -4,6 +4,7 @@
       "login",
       "chats",
       "detail",
+      "calls",
       "security",
       "settings"
     ],
@@ -12,14 +13,138 @@
       "chats",
       "detail",
       "settings",
-      "calls"
+      "calls",
+      "security_center"
     ],
     "windows": [
       "login",
       "post_login",
+      "chat_detail",
+      "calls_home",
+      "settings_home",
       "post_login_light",
       "security_center"
     ]
+  },
+  "theme_matrix": [
+    "light",
+    "dark"
+  ],
+  "state_matrix": [
+    "healthy",
+    "attention",
+    "blocking"
+  ],
+  "platform_requirements": {
+    "ios": {
+      "required_native_interactions": [
+        "swipe_actions",
+        "context_menu",
+        "detail_hides_root_tab"
+      ],
+      "required_fixture_pairs": [
+        [
+          "login",
+          "detail"
+        ],
+        [
+          "chats",
+          "calls"
+        ],
+        [
+          "settings",
+          "security"
+        ]
+      ],
+      "fixture_viewports": {
+        "login": [
+          430,
+          932
+        ],
+        "chats": [
+          430,
+          932
+        ],
+        "detail": [
+          430,
+          932
+        ],
+        "calls": [
+          430,
+          932
+        ],
+        "settings": [
+          430,
+          932
+        ],
+        "security": [
+          430,
+          932
+        ]
+      }
+    },
+    "android": {
+      "required_composer_surfaces": [
+        "collapsed",
+        "quick_actions",
+        "emoji",
+        "voice"
+      ],
+      "required_fixture_pairs": [
+        [
+          "login",
+          "detail"
+        ],
+        [
+          "chats",
+          "calls"
+        ],
+        [
+          "settings",
+          "security_center"
+        ]
+      ],
+      "fixture_viewports": {
+        "login": [
+          412,
+          915
+        ],
+        "chats": [
+          412,
+          915
+        ],
+        "detail": [
+          412,
+          915
+        ],
+        "calls": [
+          412,
+          915
+        ],
+        "settings": [
+          412,
+          915
+        ],
+        "security_center": [
+          412,
+          915
+        ]
+      }
+    },
+    "windows": {
+      "required_shell_features": [
+        "open_new_chat_shortcut",
+        "compact_two_column",
+        "drawer_two_column",
+        "escape_close_priority"
+      ],
+      "required_shortcuts": [
+        "Ctrl+K",
+        "Ctrl+F",
+        "Ctrl+N",
+        "Esc"
+      ]
+    }
   },
   "windows": {
     "dpi_matrix": [
@@ -35,6 +160,18 @@
         620
       ],
       "post_login": [
+        900,
+        620
+      ],
+      "chat_detail": [
+        900,
+        620
+      ],
+      "calls_home": [
+        900,
+        620
+      ],
+      "settings_home": [
         900,
         620
       ],
@@ -87,8 +224,347 @@
     "ownership_manifest",
     "text_policy",
     "literal_copy",
-    "smoke_matrix"
+    "identity_visuals",
+    "security_tone_matrix",
+    "empty_state_art",
+    "detail_tab_hidden_parity",
+    "smoke_matrix",
+    "scene_matrix",
+    "viewport_matrix",
+    "tuple_matrix"
   ],
+  "runtime_artifact_contract": {
+    "evidence_manifests": {
+      "static_contract": {
+        "artifact_name": "mi_e2ee_ui_contract_evidence",
+        "manifest_file": "ui-contract-static-evidence.json",
+        "required_evidence": [
+          "accessibility",
+          "ownership_manifest",
+          "text_policy",
+          "literal_copy"
+        ]
+      },
+      "windows_runtime": {
+        "artifact_name": "mi_e2ee_windows_ui_smoke",
+        "manifest_file": "windows-runtime-evidence.json",
+        "theme_marker_prefix": "windows-theme-",
+        "state_marker_prefix": "windows-state-",
+        "scene_marker_prefix": "windows-scene-",
+        "tuple_marker_prefix": "windows-tuple-"
+      },
+      "ios_runtime": {
+        "artifact_name": "mi_e2ee_ios_rootauth_logs",
+        "manifest_file": "ios-runtime-evidence.json",
+        "theme_marker_prefix": "ios-theme-",
+        "state_marker_prefix": "ios-state-",
+        "scene_marker_prefix": "ios-scene-",
+        "tuple_marker_prefix": "ios-tuple-"
+      },
+      "android_runtime": {
+        "artifact_name": "mi_e2ee_android_ui_smoke",
+        "manifest_file": "android-runtime-evidence.json",
+        "theme_marker_prefix": "android-theme-",
+        "state_marker_prefix": "android-state-",
+        "scene_marker_prefix": "android-scene-",
+        "tuple_marker_prefix": "android-tuple-",
+        "required_runtime_markers": [
+          "scene",
+          "theme",
+          "state",
+          "tuple"
+        ],
+        "runtime_marker_source": "android/scripts/ci_ui_smoke.sh"
+      }
+    },
+    "artifact_expectations": {
+      "windows_packages": [
+        "mi_e2ee_client",
+        "mi_e2ee_server"
+      ],
+      "ios_bundle_glob": "RootAuthApp-sim.zip",
+      "android_packages": [
+        "mi_e2ee_android_debug",
+        "mi_e2ee_android_rootauth_debug",
+        "mi_e2ee_android_release",
+        "mi_e2ee_android_rootauth_release"
+      ],
+      "android_arm64_validation_manifest": "android-arm64-validation.json",
+      "android_arm64_requirement": {
+        "mode": "required_or_waived",
+        "allowed_waiver_reasons": [
+          "android_tests_skipped",
+          "missing_gcp_credentials"
+        ],
+        "validated_evidence_source": "firebase_test_lab",
+        "waived_evidence_source": "ci_waiver",
+        "required_audit_fields": [
+          "skip_android_tests",
+          "has_gcp_service_account_json",
+          "has_gcp_project_id",
+          "ftl_validated_reported",
+          "ftl_requested_device_matrix_non_empty",
+          "ftl_device_matrix_arm64_approved"
+        ],
+        "validated_requires_audit_true": [
+          "ftl_validated_reported",
+          "ftl_requested_device_matrix_non_empty",
+          "ftl_device_matrix_arm64_approved"
+        ],
+        "required_manifest_fields": [
+          "platform",
+          "requirement_mode",
+          "validated",
+          "waived",
+          "waiver_reason",
+          "reason_detail",
+          "gate_passed",
+          "evidence_source",
+          "audit",
+          "requested_device_matrix"
+        ]
+      }
+    },
+    "screenshot_inventory": {
+      "windows": {
+        "login": "login-{locale}-{theme}-{scale}.png",
+        "post_login": "post-login-{locale}-{theme}-{scale}.png",
+        "chat_detail": "chat-detail-{locale}-{theme}-{scale}.png",
+        "calls_home": "calls-home-{locale}-{theme}-{scale}.png",
+        "settings_home": "settings-home-{locale}-{theme}-{scale}.png",
+        "post_login_light": "post-login-light-{locale}-{theme}-{scale}.png",
+        "security_center": "security-center-{locale}-{theme}-{scale}.png"
+      },
+      "ios": {
+        "login": "rootauth-ios-login.png",
+        "chats": "rootauth-ios-home.png",
+        "chats_dark": "rootauth-ios-home-dark.png",
+        "detail": "rootauth-ios-detail.png",
+        "calls": "rootauth-ios-calls.png",
+        "settings": "rootauth-ios-settings.png",
+        "security": "rootauth-ios-security.png",
+        "security_dark": "rootauth-ios-security-dark.png"
+      },
+      "android": {
+        "login": "android-login.png",
+        "chats": "android-chats.png",
+        "chats_dark": "android-chats-dark.png",
+        "detail": "android-detail.png",
+        "calls": "android-calls.png",
+        "settings": "android-settings.png",
+        "security_center": "android-security.png",
+        "security_center_dark": "android-security-dark.png"
+      }
+    },
+    "tuple_inventory": {
+      "windows": [
+        {
+          "scene": "login",
+          "theme": "light",
+          "state": "blocking",
+          "evidence_files": [
+            "build/login-zh-CN-light-100.png",
+            "dist/login-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "post_login",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "build/post-login-zh-CN-light-100.png",
+            "dist/post-login-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "post_login",
+          "theme": "dark",
+          "state": "healthy",
+          "evidence_files": [
+            "build/post-login-zh-CN-dark-100.png",
+            "dist/post-login-zh-CN-dark-100.png"
+          ]
+        },
+        {
+          "scene": "chat_detail",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "build/chat-detail-zh-CN-light-100.png",
+            "dist/chat-detail-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "calls_home",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "build/calls-home-zh-CN-light-100.png",
+            "dist/calls-home-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "settings_home",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "build/settings-home-zh-CN-light-100.png",
+            "dist/settings-home-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "post_login_light",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "build/post-login-light-zh-CN-light-100.png",
+            "dist/post-login-light-zh-CN-light-100.png"
+          ]
+        },
+        {
+          "scene": "security_center",
+          "theme": "light",
+          "state": "attention",
+          "evidence_files": [
+            "build/security-center-zh-CN-light-100.png",
+            "dist/security-center-zh-CN-light-100.png"
+          ]
+        }
+      ],
+      "ios": [
+        {
+          "scene": "login",
+          "theme": "light",
+          "state": "blocking",
+          "evidence_files": [
+            "rootauth-ios-login.png"
+          ]
+        },
+        {
+          "scene": "chats",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "rootauth-ios-home.png"
+          ]
+        },
+        {
+          "scene": "chats",
+          "theme": "dark",
+          "state": "healthy",
+          "evidence_files": [
+            "rootauth-ios-home-dark.png"
+          ]
+        },
+        {
+          "scene": "detail",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "rootauth-ios-detail.png"
+          ]
+        },
+        {
+          "scene": "calls",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "rootauth-ios-calls.png"
+          ]
+        },
+        {
+          "scene": "settings",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "rootauth-ios-settings.png"
+          ]
+        },
+        {
+          "scene": "security",
+          "theme": "light",
+          "state": "attention",
+          "evidence_files": [
+            "rootauth-ios-security.png"
+          ]
+        },
+        {
+          "scene": "security",
+          "theme": "dark",
+          "state": "attention",
+          "evidence_files": [
+            "rootauth-ios-security-dark.png"
+          ]
+        }
+      ],
+      "android": [
+        {
+          "scene": "login",
+          "theme": "light",
+          "state": "blocking",
+          "evidence_files": [
+            "android-login.png"
+          ]
+        },
+        {
+          "scene": "chats",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "android-chats.png"
+          ]
+        },
+        {
+          "scene": "chats",
+          "theme": "dark",
+          "state": "healthy",
+          "evidence_files": [
+            "android-chats-dark.png"
+          ]
+        },
+        {
+          "scene": "detail",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "android-detail.png"
+          ]
+        },
+        {
+          "scene": "calls",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "android-calls.png"
+          ]
+        },
+        {
+          "scene": "settings",
+          "theme": "light",
+          "state": "healthy",
+          "evidence_files": [
+            "android-settings.png"
+          ]
+        },
+        {
+          "scene": "security_center",
+          "theme": "light",
+          "state": "attention",
+          "evidence_files": [
+            "android-security.png"
+          ]
+        },
+        {
+          "scene": "security_center",
+          "theme": "dark",
+          "state": "attention",
+          "evidence_files": [
+            "android-security-dark.png"
+          ]
+        }
+      ]
+    }
+  },
   "metrics": {
     "conversation_row_height": 64,
     "avatar_size": 44,

@@ -10,10 +10,10 @@ Button {
     property color fillDisabled: Ui.Style.pressedBg
     property color textColor: "#FFFFFF"
 
-    implicitHeight: 36
+    implicitHeight: 40
 
     background: Rectangle {
-        radius: Ui.Style.radiusMedium
+        radius: 14
         color: root.enabled
                ? (root.down ? root.fillPressed : (root.hovered ? root.fillHover : root.fill))
                : root.fillDisabled
@@ -21,7 +21,7 @@ Button {
     contentItem: Text {
         text: root.text
         color: root.textColor
-        font.pixelSize: 12
+        font.pixelSize: 13
         font.weight: Font.DemiBold
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
