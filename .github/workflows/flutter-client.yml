@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'app_flutter/**'
+      - 'sdk/**'
       - '.github/workflows/flutter-client.yml'
   pull_request:
     paths:
       - 'app_flutter/**'
+      - 'sdk/**'
       - '.github/workflows/flutter-client.yml'
   workflow_dispatch:
 
