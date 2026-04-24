@@ -3,17 +3,20 @@
 #include <string>
 
 #include "group_manager.h"
+#include "test_permissions.h"
 
 using mi::server::GroupManager;
 using mi::server::RotationReason;
 
 int main() {
-  const auto base_dir =
-      std::filesystem::current_path() / "test_state_group_manager";
   std::error_code ec;
-  std::filesystem::remove_all(base_dir, ec);
-  std::filesystem::create_directories(base_dir, ec);
+  const auto base_dir =
+      std::filesystem::temp_directory_path(ec) / "mi_e2ee_group_manager_test";
   if (ec) {
+    return 1;
+  }
+  std::filesystem::remove_all(base_dir, ec);
+  if (!mi::server::test::EnsureOwnerOnlyDirectory(base_dir)) {
     return 1;
   }
 

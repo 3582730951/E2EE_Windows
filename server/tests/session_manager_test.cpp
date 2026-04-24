@@ -5,6 +5,7 @@
 
 #include "auth_provider.h"
 #include "session_manager.h"
+#include "test_permissions.h"
 
 using mi::server::DemoAuthProvider;
 using mi::server::DemoUser;
@@ -13,12 +14,14 @@ using mi::server::Session;
 using mi::server::SessionManager;
 
 int main() {
-  const auto persist_dir =
-      std::filesystem::current_path() / "test_state_sessions";
   std::error_code ec;
-  std::filesystem::remove_all(persist_dir, ec);
-  std::filesystem::create_directories(persist_dir, ec);
+  const auto persist_dir =
+      std::filesystem::temp_directory_path(ec) / "mi_e2ee_session_manager_test";
   if (ec) {
+    return 1;
+  }
+  std::filesystem::remove_all(persist_dir, ec);
+  if (!mi::server::test::EnsureOwnerOnlyDirectory(persist_dir)) {
     return 1;
   }
 

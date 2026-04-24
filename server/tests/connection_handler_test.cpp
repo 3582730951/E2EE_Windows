@@ -11,6 +11,7 @@
 #include "protocol.h"
 #include "secure_channel.h"
 #include "server_app.h"
+#include "test_permissions.h"
 
 using mi::server::ConnectionHandler;
 using mi::server::Frame;
@@ -24,10 +25,25 @@ using mi::server::proto::WriteUint32;
 static void WriteFile(const std::string& path, const std::string& content) {
   std::ofstream f(path, std::ios::binary);
   f << content;
+  f.close();
+  mi::server::test::SetOwnerOnlyFile(path);
 }
 
 int main() {
   std::error_code ec;
+  const auto test_root = std::filesystem::temp_directory_path(ec) /
+                         "mi_e2ee_connection_handler_test";
+  if (ec) {
+    return 1;
+  }
+  std::filesystem::remove_all(test_root, ec);
+  if (!mi::server::test::EnsureOwnerOnlyDirectory(test_root)) {
+    return 1;
+  }
+  std::filesystem::current_path(test_root, ec);
+  if (ec) {
+    return 1;
+  }
   std::filesystem::remove_all("offline_connection_handler", ec);
 
   WriteFile("config.ini",
@@ -48,6 +64,8 @@ int main() {
     }
     kf.write(reinterpret_cast<const char*>(key.data()),
              static_cast<std::streamsize>(key.size()));
+    kf.close();
+    mi::server::test::SetOwnerOnlyFile("kt_signing_key.bin");
   }
 
   ServerApp app;

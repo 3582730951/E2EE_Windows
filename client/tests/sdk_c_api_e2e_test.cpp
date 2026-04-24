@@ -18,6 +18,7 @@
 #include "platform_net.h"
 #include "platform_time.h"
 #include "server_app.h"
+#include "test_permissions.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -146,6 +147,8 @@ bool WriteTestUsers() {
   out << "alice:alice123\n";
   out << "bob:bob123\n";
   out.flush();
+  out.close();
+  mi::client::test::SetOwnerOnlyFile(path);
   return static_cast<bool>(out);
 }
 
@@ -225,10 +228,10 @@ constexpr char kTestMetadataKeyHex[] =
 
 std::filesystem::path MakeUniqueDir(const std::string& prefix) {
   std::error_code ec;
-  auto base = std::filesystem::current_path(ec);
+  auto base = std::filesystem::temp_directory_path(ec);
   if (ec || base.empty()) {
     ec.clear();
-    base = std::filesystem::temp_directory_path(ec);
+    base = std::filesystem::current_path(ec);
   }
   if (ec || base.empty()) {
     base = std::filesystem::path(".");
@@ -404,6 +407,8 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "[kcp]\n";
   out << "enable=0\n";
   out.flush();
+  out.close();
+  mi::client::test::SetOwnerOnlyFile(path);
   return path.string();
 }
 
@@ -431,6 +436,8 @@ std::string WriteClientConfig(const std::filesystem::path& dir,
   out << "role=" << (primary ? "primary" : "linked") << "\n";
   out << "ratchet_enable=1\n";
   out.flush();
+  out.close();
+  mi::client::test::SetOwnerOnlyFile(path);
   return path.string();
 }
 
@@ -457,8 +464,7 @@ bool StartServer(std::unique_ptr<mi::server::ServerApp>& app,
     std::error_code ec;
     std::filesystem::remove_all(run_dir, ec);
     ec.clear();
-    std::filesystem::create_directories(run_dir, ec);
-    if (ec) {
+    if (!HardenDirForTest(run_dir, error)) {
       continue;
     }
     const std::string cfg_path = WriteServerConfig(run_dir, port);

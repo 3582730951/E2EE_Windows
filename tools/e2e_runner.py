@@ -20,6 +20,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Iterable
@@ -111,18 +112,18 @@ def require_cargo_opaque_metadata(repo: Path, env: dict[str, str]) -> CommandRes
         return None
     if not tool_exists("cargo"):
         raise RunnerError("Rust OPAQUE build requires cargo, but cargo is not on PATH")
+    base_cmd = [
+        "cargo",
+        "metadata",
+        "--locked",
+        "--manifest-path",
+        str(manifest),
+        "--format-version",
+        "1",
+    ]
     result = run_command(
-        "cargo opaque metadata",
-        [
-            "cargo",
-            "metadata",
-            "--locked",
-            "--offline",
-            "--manifest-path",
-            str(manifest),
-            "--format-version",
-            "1",
-        ],
+        "cargo opaque metadata offline",
+        [*base_cmd[:3], "--offline", *base_cmd[3:]],
         cwd=repo,
         env=env,
         timeout_sec=90,
@@ -133,6 +134,14 @@ def require_cargo_opaque_metadata(repo: Path, env: dict[str, str]) -> CommandRes
             f"{manifest.parent / 'Cargo.lock'}.\n"
             f"cargo stderr:\n{result.stderr}"
         )
+    if result.returncode != 0 and "no matching package named" in result.stderr:
+        result = run_command(
+            "cargo opaque metadata",
+            base_cmd,
+            cwd=repo,
+            env=env,
+            timeout_sec=180,
+        )
     require_ok(result)
     return result
 
@@ -140,6 +149,8 @@ def require_cargo_opaque_metadata(repo: Path, env: dict[str, str]) -> CommandRes
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+    with contextlib.suppress(OSError):
+        path.chmod(0o600)
 
 
 def write_json(path: Path, value: object) -> None:
@@ -161,6 +172,38 @@ def wait_tcp(host: str, port: int, timeout_sec: int) -> None:
 
 def tool_exists(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def chmod_effective(dir_path: Path) -> bool:
+    probe = dir_path / f".chmod-probe-{secrets.token_hex(4)}"
+    try:
+        probe.write_text("probe", encoding="utf-8")
+        probe.chmod(0o600)
+        return (probe.stat().st_mode & 0o777) == 0o600
+    except OSError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            probe.unlink()
+
+
+def prepare_run_dir(repo: Path, run_name: str) -> Path:
+    logical = repo / "build" / "e2e" / run_name
+    logical.parent.mkdir(parents=True, exist_ok=True)
+    if logical.exists() or logical.is_symlink():
+        if logical.is_symlink() or logical.is_file():
+            logical.unlink()
+        else:
+            shutil.rmtree(logical)
+    logical.mkdir(parents=True, exist_ok=True)
+    if chmod_effective(logical):
+        return logical
+
+    shutil.rmtree(logical)
+    physical = Path(tempfile.mkdtemp(prefix=f"mi-e2ee-{run_name}-"))
+    physical.chmod(0o700)
+    logical.symlink_to(physical, target_is_directory=True)
+    return logical
 
 
 def docker_image_exists(tool: str, image: str) -> bool:
@@ -239,24 +282,41 @@ def start_local_mysql(run_dir: Path) -> MysqlRuntime | None:
     socket_path = run_dir / "mysql" / "mysql.sock"
     port = free_port()
     datadir.mkdir(parents=True, exist_ok=True)
-    init = run_command(
-        "mysql init",
-        [server, "--initialize-insecure", f"--datadir={datadir}"],
-        cwd=run_dir,
-        env=os.environ.copy(),
-        timeout_sec=90,
-    )
+    init_cmd = [server, "--initialize-insecure", f"--datadir={datadir}"]
+    if "mariadb" in Path(server).name:
+        init_cmd.insert(1, "--user=root")
+    init = run_command("mysql init", init_cmd, cwd=run_dir, env=os.environ.copy(), timeout_sec=90)
+    if init.returncode != 0 and tool_exists("mariadb-install-db"):
+        shutil.rmtree(datadir, ignore_errors=True)
+        datadir.mkdir(parents=True, exist_ok=True)
+        init = run_command(
+            "mariadb install db",
+            [
+                "mariadb-install-db",
+                f"--datadir={datadir}",
+                "--auth-root-authentication-method=normal",
+                "--skip-test-db",
+                "--user=root",
+            ],
+            cwd=run_dir,
+            env=os.environ.copy(),
+            timeout_sec=90,
+        )
     if init.returncode != 0:
         return None
+    server_cmd = [
+        server,
+        f"--datadir={datadir}",
+        f"--socket={socket_path}",
+        f"--pid-file={run_dir / 'mysql' / 'mysql.pid'}",
+        f"--port={port}",
+        "--bind-address=127.0.0.1",
+        "--skip-networking=0",
+    ]
+    if "mariadb" in Path(server).name:
+        server_cmd.insert(1, "--user=root")
     proc = subprocess.Popen(
-        [
-            server,
-            f"--datadir={datadir}",
-            f"--socket={socket_path}",
-            f"--port={port}",
-            "--bind-address=127.0.0.1",
-            "--skip-networking=0",
-        ],
+        server_cmd,
         cwd=str(run_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -333,6 +393,10 @@ def create_configs(run_dir: Path, mysql: MysqlRuntime | None, server_port: int) 
     offline_dir.mkdir(parents=True, exist_ok=True)
     if mysql is None:
         raise RunnerError("server e2e requires MySQL mode=0; --mysql skip is only for dry setup")
+    kt_signing_key = server_dir / "kt_signing_key.bin"
+    kt_signing_key.write_bytes(secrets.token_bytes(4032))
+    with contextlib.suppress(OSError):
+        kt_signing_key.chmod(0o600)
     server_config = f"""[mode]
 mode=0
 [mysql]
@@ -347,7 +411,11 @@ rotation_threshold=17
 offline_dir={offline_dir}
 debug_log=0
 tls_enable=0
+require_tls=0
 tls_cert={server_dir / 'mi_e2ee_server.pfx'}
+key_protection=none
+metadata_key_hex={secrets.token_hex(32)}
+kt_signing_key={kt_signing_key}
 ops_enable=1
 ops_allow_remote=0
 ops_token={ops_token}
@@ -493,6 +561,13 @@ def add_library_search_path(env: dict[str, str], directory: Path) -> None:
     env[key] = str(directory) if not current else f"{directory}{os.pathsep}{current}"
 
 
+def configure_android_sdk_env(env: dict[str, str]) -> None:
+    sdk_root = Path("/usr/lib/android-sdk")
+    if sdk_root.exists():
+        env.setdefault("ANDROID_HOME", str(sdk_root))
+        env.setdefault("ANDROID_SDK_ROOT", str(sdk_root))
+
+
 def server_exe(run_dir: Path) -> Path:
     candidates = [
         run_dir / "build" / "server-mysql" / "mi_e2ee_server",
@@ -514,11 +589,27 @@ def start_server(run_dir: Path, config_path: str, port: int) -> subprocess.Popen
         stderr=subprocess.PIPE,
         text=True,
     )
-    try:
-        wait_tcp("127.0.0.1", port, 60)
-    except Exception:
-        terminate_process(proc)
-        raise
+    deadline = time.monotonic() + 60
+    last_error: OSError | None = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            stdout, stderr = proc.communicate()
+            raise RunnerError(
+                f"server exited before TCP ready with exit {proc.returncode}\n"
+                f"stdout:\n{stdout}\nstderr:\n{stderr}"
+            )
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return proc
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.25)
+    terminate_process(proc)
+    stdout, stderr = proc.communicate()
+    raise RunnerError(
+        f"TCP endpoint 127.0.0.1:{port} not ready: {last_error}\n"
+        f"stdout:\n{stdout}\nstderr:\n{stderr}"
+    )
     return proc
 
 
@@ -593,8 +684,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     repo = repo_root()
-    run_dir = repo / "build" / "e2e" / args.run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = prepare_run_dir(repo, args.run_id)
 
     evidence: dict[str, object] = {
         "run_id": args.run_id,
@@ -610,6 +700,7 @@ def main(argv: list[str]) -> int:
         config = create_configs(run_dir, mysql, free_port())
         evidence["config"] = config
         env = os.environ.copy()
+        configure_android_sdk_env(env)
         env["MI_E2EE_CLIENT_CONFIG"] = config["clients"]["alice"]["config"]  # type: ignore[index]
         env["MI_E2EE_SDK_MODE"] = "ffi"
         if args.update_goldens:

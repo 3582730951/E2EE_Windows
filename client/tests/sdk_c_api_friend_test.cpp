@@ -10,6 +10,7 @@
 #include <system_error>
 
 #include "path_security.h"
+#include "test_permissions.h"
 
 namespace {
 
@@ -27,6 +28,8 @@ std::string WriteTestConfig() {
   out << "\n[kt]\n";
   out << "require_signature=0\n";
   out.flush();
+  out.close();
+  mi::client::test::SetOwnerOnlyFile(path);
   return path.string();
 }
 
@@ -87,6 +90,9 @@ const char* SafeError(mi_client_handle* handle) {
 }  // namespace
 
 int main() {
+  if (!mi::client::test::UseTempWorkingDirectory("mi_e2ee_sdk_friend_test")) {
+    return 1;
+  }
   assert(mi_client_add_friend(nullptr, "alice", "") == 0);
   assert(mi_client_delete_friend(nullptr, "alice") == 0);
   assert(mi_client_send_friend_request(nullptr, "alice", "") == 0);

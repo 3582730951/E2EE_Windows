@@ -10,6 +10,7 @@
 #include <system_error>
 
 #include "path_security.h"
+#include "test_permissions.h"
 
 namespace {
 
@@ -27,6 +28,8 @@ std::string WriteTestConfig() {
   out << "\n[kt]\n";
   out << "require_signature=0\n";
   out.flush();
+  out.close();
+  mi::client::test::SetOwnerOnlyFile(path);
   return path.string();
 }
 
@@ -77,6 +80,9 @@ bool PrepareDataDir(std::string& error) {
 }  // namespace
 
 int main() {
+  if (!mi::client::test::UseTempWorkingDirectory("mi_e2ee_sdk_event_test")) {
+    return 1;
+  }
   std::string data_err;
   if (!PrepareDataDir(data_err)) {
     return 1;

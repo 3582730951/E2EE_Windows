@@ -1,8 +1,10 @@
 #include <cassert>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
 #include "config.h"
+#include "test_permissions.h"
 
 using mi::server::AuthMode;
 using mi::server::ServerConfig;
@@ -11,9 +13,26 @@ using mi::server::LoadConfig;
 static void WriteFile(const std::string& path, const std::string& content) {
   std::ofstream f(path, std::ios::binary);
   f << content;
+  f.close();
+  mi::server::test::SetOwnerOnlyFile(path);
 }
 
 int main() {
+  std::error_code ec;
+  const auto test_root =
+      std::filesystem::temp_directory_path(ec) / "mi_e2ee_config_test";
+  if (ec) {
+    return 1;
+  }
+  std::filesystem::remove_all(test_root, ec);
+  if (!mi::server::test::EnsureOwnerOnlyDirectory(test_root)) {
+    return 1;
+  }
+  std::filesystem::current_path(test_root, ec);
+  if (ec) {
+    return 1;
+  }
+
   {
     const std::string path = "tmp_config_mysql.ini";
     WriteFile(path,
