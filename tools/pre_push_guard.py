@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard Git pushes against forbidden artifact types and unsanitized secrets."""
+"""Guard Git pushes against repository-forbidden artifacts and secrets."""
 
 from __future__ import annotations
 
@@ -11,54 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-CODE_EXTENSIONS = {
-    ".bat",
-    ".c",
-    ".cc",
-    ".cmd",
-    ".cmake",
-    ".cpp",
-    ".cxx",
-    ".css",
-    ".dart",
-    ".go",
-    ".h",
-    ".hh",
-    ".hpp",
-    ".inl",
-    ".ipp",
-    ".java",
-    ".js",
-    ".jsx",
-    ".kt",
-    ".kts",
-    ".m",
-    ".mm",
-    ".ps1",
-    ".psm1",
-    ".py",
-    ".qml",
-    ".rs",
-    ".scss",
-    ".sh",
-    ".sql",
-    ".swift",
-    ".ts",
-    ".tsx",
-}
-
-CODE_FILENAMES = {
-    "CMakeLists.txt",
-    "Dockerfile",
-    "Makefile",
-    "README.md",
-    "gradlew",
-    "gradlew.bat",
-    "readme.md",
-}
-
-ALLOWED_YAML_PATH_PREFIXES = (
-    ".github/workflows/",
+FORBIDDEN_PATH_PREFIXES = (
+    "client/assets/ref/",
+    "client/ui_example/",
 )
 
 PATTERN_MAP = {
@@ -206,14 +161,23 @@ def list_changed_paths(repo: Path, base_ref: str, head_ref: str) -> list[Changed
 
 
 def is_allowed_push_path(path: str) -> bool:
-    file_name = Path(path).name
-    if file_name in CODE_FILENAMES:
-        return True
-    suffix = Path(path).suffix.lower()
-    if suffix in {".yaml", ".yml"}:
-        normalized = path.replace("\\", "/")
-        return normalized.startswith(ALLOWED_YAML_PATH_PREFIXES)
-    return suffix in CODE_EXTENSIONS
+    normalized = path.replace("\\", "/")
+    if normalized.startswith(FORBIDDEN_PATH_PREFIXES):
+        return False
+    file_name = Path(normalized).name
+    suffix = Path(normalized).suffix.lower()
+    suffixes = [part.lower() for part in Path(normalized).suffixes]
+    if suffix == ".png":
+        return False
+    if suffix == ".md":
+        return file_name.lower() == "readme.md"
+    if suffix == ".txt":
+        return file_name == "CMakeLists.txt"
+    if suffix == ".log" or any(part.startswith(".log") for part in suffixes):
+        return False
+    if "__pycache__" in Path(normalized).parts or suffix == ".pyc":
+        return False
+    return True
 
 
 def is_placeholder_value(value: str) -> bool:
@@ -314,7 +278,7 @@ def format_report(forbidden_paths: list[str], findings: list[SensitiveFinding]) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Block Git pushes that include non-code artifacts or unsanitized sensitive data."
+        description="Block Git pushes that include repository-forbidden artifacts or unsanitized sensitive data."
     )
     parser.add_argument("--repo", default=".", help="Repository root to inspect.")
     parser.add_argument("--base-ref", help="Base ref for the push diff.")

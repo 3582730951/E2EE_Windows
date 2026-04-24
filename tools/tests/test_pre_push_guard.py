@@ -57,9 +57,11 @@ class PrePushGuardTest(unittest.TestCase):
             text=True,
         )
 
-    def test_allows_code_and_readme_only_push(self) -> None:
+    def test_allows_code_resources_and_readme_push(self) -> None:
         repo = self.make_repo()
         write_file(repo / "README.md", "# demo\n")
+        write_file(repo / "app" / "Info.plist", "<plist></plist>\n")
+        write_file(repo / "app" / "strings.json", '{"hello": "world"}\n')
         write_file(
             repo / "src" / "main.cpp",
             textwrap.dedent(
@@ -74,6 +76,8 @@ class PrePushGuardTest(unittest.TestCase):
         self.commit_all(repo, "base")
 
         write_file(repo / "README.md", "# demo\n\nupdated\n")
+        write_file(repo / "app" / "Info.plist", "<plist><dict /></plist>\n")
+        write_file(repo / "app" / "strings.json", '{"hello": "repo"}\n')
         write_file(
             repo / "src" / "main.cpp",
             textwrap.dedent(
@@ -110,26 +114,44 @@ class PrePushGuardTest(unittest.TestCase):
         self.assertIn("preview.png", result.stdout)
         self.assertIn("forbidden", result.stdout.lower())
 
-    def test_allows_ci_workflow_yaml(self) -> None:
+    def test_blocks_non_readme_markdown_and_plain_text(self) -> None:
         repo = self.make_repo()
         write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
         self.commit_all(repo, "base")
 
-        write_file(
-            repo / ".github" / "workflows" / "ci.yaml",
-            textwrap.dedent(
-                """
-                name: CI
-                on: [push]
-                jobs:
-                  build:
-                    runs-on: ubuntu-latest
-                    steps:
-                      - uses: actions/checkout@v4
-                """
-            ).strip()
-            + "\n",
-        )
+        write_file(repo / "docs" / "plan.md", "# plan\n")
+        write_file(repo / "notes.txt", "scratch\n")
+        self.commit_all(repo, "head")
+
+        result = self.run_guard(repo)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("docs/plan.md", result.stdout)
+        self.assertIn("notes.txt", result.stdout)
+
+    def test_blocks_logs_and_forbidden_asset_directories(self) -> None:
+        repo = self.make_repo()
+        write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
+        self.commit_all(repo, "base")
+
+        write_file(repo / "debug.log.old", "secret-ish output\n")
+        write_file(repo / "client" / "ui_example" / "demo.qml", "Item {}\n")
+        write_file(repo / "client" / "assets" / "ref" / "palette.json", "{}\n")
+        self.commit_all(repo, "head")
+
+        result = self.run_guard(repo)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("debug.log.old", result.stdout)
+        self.assertIn("client/ui_example/demo.qml", result.stdout)
+        self.assertIn("client/assets/ref/palette.json", result.stdout)
+
+    def test_allows_cmakelists_txt(self) -> None:
+        repo = self.make_repo()
+        write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
+        self.commit_all(repo, "base")
+
+        write_file(repo / "src" / "CMakeLists.txt", "add_executable(app main.cpp)\n")
         self.commit_all(repo, "head")
 
         result = self.run_guard(repo)
@@ -139,31 +161,29 @@ class PrePushGuardTest(unittest.TestCase):
             0,
             msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
         )
-        self.assertIn("push guard passed", result.stdout.lower())
 
-    def test_blocks_changed_json_and_detects_sensitive_token_literal(self) -> None:
+    def test_detects_sensitive_token_literal(self) -> None:
         repo = self.make_repo()
         write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
         self.commit_all(repo, "base")
+        fake_pat = "github_" + "pat_abcdefghijklmnopqrstuvwxyz1234567890"
 
         write_file(
             repo / "src" / "main.cpp",
             textwrap.dedent(
                 """
                 const char* kGithubPat =
-                    "github_pat_abcdefghijklmnopqrstuvwxyz1234567890";
+                    "__FAKE_PAT__";
                 int main() { return kGithubPat[0] == '\\0'; }
                 """
-            ).strip()
+            ).replace("__FAKE_PAT__", fake_pat).strip()
             + "\n",
         )
-        write_file(repo / "policy.json", '{"unsafe": true}\n')
         self.commit_all(repo, "head")
 
         result = self.run_guard(repo)
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("policy.json", result.stdout)
         self.assertIn("[github_pat]", result.stdout)
         self.assertIn("gith...90", result.stdout)
         self.assertIn("sensitive", result.stdout.lower())
