@@ -58,3 +58,38 @@ jobs:
           name: app_flutter_pngs_${{ github.sha }}
           path: app_flutter/pngs/*.png
           if-no-files-found: error
+
+  build-ios-simulator:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: app_flutter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Xcode and Flutter Versions
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          flutter --version
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build iOS Simulator App
+        run: flutter build ios --simulator --debug
+
+      - name: Upload iOS Simulator App
+        uses: actions/upload-artifact@v4
+        with:
+          name: app_flutter_ios_simulator_${{ github.sha }}
+          path: app_flutter/build/ios/iphonesimulator/Runner.app
+          if-no-files-found: error
