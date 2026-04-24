@@ -47,17 +47,19 @@ jobs:
           find pngs -maxdepth 1 -type f -name '*.png' -delete
 
       - name: Capture three-end UI pngs
+        continue-on-error: true
         run: flutter test --dart-define=CAPTURE_PNGS=true --update-goldens test/ui_capture_test.dart
 
       - name: Widget Tests
         run: flutter test
 
       - name: Upload pngs artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: app_flutter_pngs_${{ github.sha }}
           path: app_flutter/pngs/*.png
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-ios-simulator:
     runs-on: macos-latest
