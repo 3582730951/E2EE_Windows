@@ -441,7 +441,7 @@ def verify_runtime_artifact_contract(acceptance: dict[str, Any], errors: list[st
             "windows-tuple-",
         ),
         "ios_runtime": (
-            "mi_e2ee_ios_rootauth_logs",
+            "mi_e2ee_ios_rootauth_privacy_evidence",
             "ios-runtime-evidence.json",
             "ios-theme-",
             "ios-state-",

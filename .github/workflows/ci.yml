@@ -2168,6 +2168,7 @@ jobs:
         with:
           name: mi_e2ee_ios_rootauth_privacy_evidence
           path: |
+            build/ios_rootauth_artifacts/RootAuthApp-sim.zip
             build/ios_rootauth_artifacts/rootauth-ios-*.png
             build/ios_rootauth_artifacts/ios-*.json
           if-no-files-found: ignore
