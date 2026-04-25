@@ -146,6 +146,42 @@ class PrePushGuardTest(unittest.TestCase):
         self.assertIn("client/ui_example/demo.qml", result.stdout)
         self.assertIn("client/assets/ref/palette.json", result.stdout)
 
+    def test_blocks_privacy_artifacts(self) -> None:
+        repo = self.make_repo()
+        write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
+        self.commit_all(repo, "base")
+
+        write_file(repo / "build" / "android" / "diagnostics_report.json", "{}\n")
+        write_file(repo / "dist" / "server" / "mi_e2ee_ops_health_view.exe", "bin", binary=True)
+        write_file(repo / "release" / "crash_dump.dmp", "dump", binary=True)
+        self.commit_all(repo, "head")
+
+        result = self.run_guard(repo)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("diagnostics_report.json", result.stdout)
+        self.assertIn("mi_e2ee_ops_health_view.exe", result.stdout)
+        self.assertIn("crash_dump.dmp", result.stdout)
+
+    def test_allows_privacy_terms_in_source_tests(self) -> None:
+        repo = self.make_repo()
+        write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")
+        self.commit_all(repo, "base")
+
+        write_file(
+            repo / "server" / "tests" / "ops_health_test.cpp",
+            "int main() { return 0; }\n",
+        )
+        self.commit_all(repo, "head")
+
+        result = self.run_guard(repo)
+
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+
     def test_allows_cmakelists_txt(self) -> None:
         repo = self.make_repo()
         write_file(repo / "src" / "main.cpp", "int main() { return 0; }\n")

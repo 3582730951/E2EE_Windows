@@ -167,6 +167,9 @@ require_absent "$client_root/e2ee_login"
 require_absent "$client_root/e2ee_main_list"
 require_absent "$client_root/e2ee_group_chat"
 require_absent "$client_root/e2ee_chat_empty"
+require_absent "$server_root/tools/mi_e2ee_ops_health_view"
+require_absent "$server_root/tools/mi_e2ee_third_party_audit"
+require_absent "$server_root/tools/mi_e2ee_third_party_policy_check"
 
 require_file "$server_root/mi_e2ee_server"
 require_file "$server_root/config/config.ini"
@@ -175,9 +178,6 @@ require_file "$server_root/config/kt_signing_key.bin"
 require_file "$server_root/config/kt_root_pub.bin"
 require_file "$server_root/tools/mi_e2ee_kt_keygen"
 require_file "$server_root/tools/mi_e2ee_kt_pubinfo"
-require_file "$server_root/tools/mi_e2ee_perf_baseline"
-require_file "$server_root/tools/mi_e2ee_ops_health_view"
-require_file "$server_root/tools/mi_e2ee_third_party_audit"
 require_file "$server_root/test_user.txt"
 require_file "$server_root/run_server.sh"
 
@@ -288,6 +288,30 @@ check_blob_budget() {
 }
 
 check_blob_budget "$server_root/config/config.ini"
+
+privacy_scan_names() {
+  local root="$1"
+  local label="$2"
+  local hit
+  hit="$(
+    find "$root" -type f -print | while IFS= read -r f; do
+      base="$(basename "$f" | tr '[:upper:]' '[:lower:]')"
+      case "$base" in
+        *.log|*.log.*|*.dmp|*.dump|*crash*|*telemetry*|*diagnostic*|*diagnostics*|*ops_health*|*audit*)
+          printf '%s\n' "$f"
+          break
+          ;;
+      esac
+    done
+  )"
+  if [[ -n "$hit" ]]; then
+    echo "$label package contains forbidden privacy artifact: $hit" >&2
+    exit 1
+  fi
+}
+
+privacy_scan_names "$client_root" "client"
+privacy_scan_names "$server_root" "server"
 
 verify_manifest() {
   local root="$1"
@@ -403,19 +427,13 @@ if [[ "$platform" == "linux" ]]; then
   verify_deps_linux "$server_root/lib" \
     "$server_root/mi_e2ee_server" \
     "$server_root/tools/mi_e2ee_kt_keygen" \
-    "$server_root/tools/mi_e2ee_kt_pubinfo" \
-    "$server_root/tools/mi_e2ee_perf_baseline" \
-    "$server_root/tools/mi_e2ee_ops_health_view" \
-    "$server_root/tools/mi_e2ee_third_party_audit"
+    "$server_root/tools/mi_e2ee_kt_pubinfo"
 elif [[ "$platform" == "macos" ]]; then
   verify_deps_macos "$client_root/lib" "$client_root/lib/libmi_e2ee_client_sdk.${sdk_ext}"
   verify_deps_macos "$server_root/lib" \
     "$server_root/mi_e2ee_server" \
     "$server_root/tools/mi_e2ee_kt_keygen" \
-    "$server_root/tools/mi_e2ee_kt_pubinfo" \
-    "$server_root/tools/mi_e2ee_perf_baseline" \
-    "$server_root/tools/mi_e2ee_ops_health_view" \
-    "$server_root/tools/mi_e2ee_third_party_audit"
+    "$server_root/tools/mi_e2ee_kt_pubinfo"
 fi
 
 verify_manifest "$client_root"

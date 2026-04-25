@@ -56,9 +56,9 @@
       "client/ui/CMakeLists.txt",
       ".github/workflows/ci.yml",
       "tools/verify_ui_contract.py",
-      "tools/windows_qml_accessibility_audit.py",
-      "tools/windows_qml_text_policy_audit.py",
-      "tools/windows_qml_literal_copy_audit.py",
+      "tools/windows_qml_accessibility_policy_check.py",
+      "tools/windows_qml_text_policy_check.py",
+      "tools/windows_qml_literal_copy_policy_check.py",
       "tools/windows_smoke_matrix_check.py",
       "tools/windows_smoke_golden_diff.py",
       "tools/agent_ownership_windows_ui.json"

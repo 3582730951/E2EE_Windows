@@ -70,6 +70,12 @@ int main() {
 
   ServerApp app;
   std::string err;
+#ifdef MI_E2EE_PRIVACY_STRICT
+  if (app.Init("config.ini", err)) {
+    return 1;
+  }
+  return err.find("ops_enable forbidden") == std::string::npos ? 1 : 0;
+#else
   if (!app.Init("config.ini", err)) {
     std::cerr << "app init failed: " << err << "\n";
     return 1;
@@ -146,4 +152,5 @@ int main() {
   }
 
   return 0;
+#endif
 }

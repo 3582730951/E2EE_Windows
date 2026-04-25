@@ -22,7 +22,6 @@ internal sealed interface FlowScreen {
     data object SecurityCenter : FlowScreen
     data object Account : FlowScreen
     data object Privacy : FlowScreen
-    data object Diagnostics : FlowScreen
     data object AddFriend : FlowScreen
     data object FriendRequests : FlowScreen
     data class ContactDetail(val username: String) : FlowScreen
@@ -163,7 +162,6 @@ private fun FlowScreen.toSaveKey(): String = when (this) {
     FlowScreen.SecurityCenter -> "securityCenter"
     FlowScreen.Account -> "account"
     FlowScreen.Privacy -> "privacy"
-    FlowScreen.Diagnostics -> "diagnostics"
     FlowScreen.AddFriend -> "addFriend"
     FlowScreen.FriendRequests -> "friendRequests"
     is FlowScreen.ContactDetail -> "contact:${Uri.encode(username)}"
@@ -187,7 +185,6 @@ private fun flowScreenFromSaveKey(value: String): FlowScreen = when {
     value == "securityCenter" -> FlowScreen.SecurityCenter
     value == "account" -> FlowScreen.Account
     value == "privacy" -> FlowScreen.Privacy
-    value == "diagnostics" -> FlowScreen.Diagnostics
     value == "addFriend" -> FlowScreen.AddFriend
     value == "friendRequests" -> FlowScreen.FriendRequests
     value.startsWith("contact:") -> FlowScreen.ContactDetail(Uri.decode(value.substringAfter("contact:")))

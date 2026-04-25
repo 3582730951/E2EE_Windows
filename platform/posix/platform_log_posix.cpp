@@ -15,6 +15,14 @@ std::mutex g_log_mutex;
 LogCallback g_log_cb = nullptr;
 void* g_log_user = nullptr;
 
+bool StrictNoop() {
+#ifdef MI_E2EE_PRIVACY_STRICT
+  return true;
+#else
+  return false;
+#endif
+}
+
 const char* LevelToString(Level level) {
   switch (level) {
     case Level::kDebug:
@@ -106,10 +114,22 @@ void DefaultLog(Level level,
 
 }  // namespace
 
+bool PrivacyStrictRuntime() {
+  return StrictNoop();
+}
+
 void SetLogCallback(LogCallback cb, void* user_data) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
+#ifdef MI_E2EE_PRIVACY_STRICT
+  g_log_cb = nullptr;
+  g_log_user = nullptr;
+  (void)cb;
+  (void)user_data;
+  return;
+#else
   g_log_cb = cb;
   g_log_user = user_data;
+#endif
 }
 
 void Log(Level level, std::string_view tag, std::string_view message) {
@@ -120,6 +140,13 @@ void Log(Level level,
          std::string_view tag,
          std::string_view message,
          std::initializer_list<Field> fields) {
+#ifdef MI_E2EE_PRIVACY_STRICT
+  (void)level;
+  (void)tag;
+  (void)message;
+  (void)fields;
+  return;
+#else
   std::lock_guard<std::mutex> lock(g_log_mutex);
   if (g_log_cb) {
     const std::string safe_message = RedactInline(message);
@@ -132,6 +159,7 @@ void Log(Level level,
     return;
   }
   DefaultLog(level, tag, message, fields.begin(), fields.size());
+#endif
 }
 
 bool IsSensitiveKey(std::string_view key) {

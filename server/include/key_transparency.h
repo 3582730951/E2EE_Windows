@@ -45,9 +45,9 @@ struct KeyTransparencyProof {
   std::vector<Sha256Hash> consistency_path;
 };
 
-class KeyTransparencyLog {
+class KeyTransparencyDirectory {
  public:
-  explicit KeyTransparencyLog(std::filesystem::path log_path);
+  explicit KeyTransparencyDirectory(std::filesystem::path state_path);
 
   bool Load(std::string& error);
 
@@ -87,7 +87,7 @@ class KeyTransparencyLog {
 
   void RecomputeRootLocked();
 
-  std::filesystem::path log_path_;
+  std::filesystem::path state_path_;
   mutable std::mutex mutex_;
   std::vector<Sha256Hash> leaves_;
   std::vector<std::vector<Sha256Hash>> pow2_levels_;

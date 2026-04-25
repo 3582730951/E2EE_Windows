@@ -47,7 +47,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("Windows QML text policy audit passed.")
+    print("Windows QML text policy check passed.")
     return 0
 
 

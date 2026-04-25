@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
     } else if (arg == "--verify") {
       verify = true;
     } else if (arg == "--help") {
-      std::cout << "Usage: third_party_audit --lock <path> [--verify] [--sbom <out>]\n";
+      std::cout << "Usage: third_party_policy_check --lock <path> [--verify] [--sbom <out>]\n";
       return 0;
     }
   }

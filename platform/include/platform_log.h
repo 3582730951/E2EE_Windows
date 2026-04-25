@@ -28,6 +28,7 @@ using LogCallback = void (*)(Level level,
                              std::size_t field_count,
                              void* user_data);
 
+bool PrivacyStrictRuntime();
 void SetLogCallback(LogCallback cb, void* user_data);
 
 void Log(Level level, std::string_view tag, std::string_view message);

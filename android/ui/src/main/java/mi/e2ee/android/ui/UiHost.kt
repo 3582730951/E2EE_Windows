@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import java.io.File
-import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupMemberRole
 
 data class UiHostPreviewState(
@@ -577,16 +576,6 @@ private fun UiHost(
             onBack = { goBack() },
             onOpenBlockedUsers = { navigate(FlowScreen.BlockedUsers) }
         )
-        FlowScreen.Diagnostics -> {
-            if (BuildConfig.DEBUG) {
-                DiagnosticsScreen(
-                    sdk = sdk,
-                    onBack = { goBack() }
-                )
-            } else {
-                LaunchedEffect(Unit) { goBack() }
-            }
-        }
         FlowScreen.BlockedUsers -> BlockedUsersScreen(
             sdk = sdk,
             onBack = { goBack() }

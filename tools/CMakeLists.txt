@@ -1,16 +1,16 @@
-add_executable(mi_e2ee_third_party_audit
-    third_party_audit.cpp
+add_executable(mi_e2ee_third_party_policy_check
+    third_party_policy_check.cpp
 )
 
-target_include_directories(mi_e2ee_third_party_audit PRIVATE ../server/include)
-target_link_libraries(mi_e2ee_third_party_audit PRIVATE mi_crypto mi_e2ee_build_flags)
+target_include_directories(mi_e2ee_third_party_policy_check PRIVATE ../server/include)
+target_link_libraries(mi_e2ee_third_party_policy_check PRIVATE mi_crypto mi_e2ee_build_flags)
 
 if (COMMAND mi_copy_msvc_runtime)
-  mi_copy_msvc_runtime(mi_e2ee_third_party_audit)
+  mi_copy_msvc_runtime(mi_e2ee_third_party_policy_check)
 endif()
 
 if(MSVC)
-  target_compile_options(mi_e2ee_third_party_audit PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  target_compile_options(mi_e2ee_third_party_policy_check PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 
 add_executable(mi_e2ee_kt_keygen
@@ -66,7 +66,13 @@ if(MSVC)
   target_compile_options(mi_e2ee_perf_baseline PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 
+set(MI_E2EE_OPS_HEALTH_EXCLUDE_FROM_ALL "")
+if(MI_E2EE_PRIVACY_MODE STREQUAL "strict")
+  set(MI_E2EE_OPS_HEALTH_EXCLUDE_FROM_ALL EXCLUDE_FROM_ALL)
+endif()
+
 add_executable(mi_e2ee_ops_health_view
+    ${MI_E2EE_OPS_HEALTH_EXCLUDE_FROM_ALL}
     ops_health_view.cpp
 )
 

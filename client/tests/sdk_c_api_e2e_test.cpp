@@ -323,7 +323,16 @@ struct MediaEventSnapshot {
 
 std::filesystem::path MakeUniqueDir(const std::string& prefix) {
   std::error_code ec;
-  auto base = std::filesystem::temp_directory_path(ec);
+  std::filesystem::path base;
+  const std::string runtime_root = GetEnv("MI_E2EE_E2E_RUNTIME_ROOT");
+  if (!runtime_root.empty()) {
+    base = runtime_root;
+    std::filesystem::create_directories(base, ec);
+  }
+  if (runtime_root.empty() || ec || base.empty()) {
+    ec.clear();
+    base = std::filesystem::temp_directory_path(ec);
+  }
   if (ec || base.empty()) {
     ec.clear();
     base = std::filesystem::current_path(ec);
@@ -1229,7 +1238,8 @@ int main() {
     SetEnv("MI_E2EE_HARDENING", prev_hardening);
     RestoreTestUsers(backup);
     std::error_code ec;
-    if (!base_dir.empty()) {
+    if (!base_dir.empty() &&
+        !IsTruthyEnv(GetEnv("MI_E2EE_E2E_KEEP_RUNTIME_DIR"))) {
       std::filesystem::remove_all(base_dir, ec);
     }
   };

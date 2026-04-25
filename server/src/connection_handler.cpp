@@ -19,7 +19,9 @@ namespace mi::server {
 
 ConnectionHandler::ConnectionHandler(ServerApp* app)
     : app_(app) {
+#ifndef MI_E2EE_PRIVACY_STRICT
   metrics_.started_at = std::chrono::steady_clock::now();
+#endif
 }
 
 namespace {
@@ -89,13 +91,6 @@ bool IsLoopbackIp(std::string_view ip) {
   return false;
 }
 
-void UpdateMax(std::atomic<std::uint64_t>& current, std::uint64_t value) {
-  std::uint64_t prev = current.load(std::memory_order_relaxed);
-  while (value > prev &&
-         !current.compare_exchange_weak(prev, value, std::memory_order_relaxed)) {
-  }
-}
-
 bool LooksLikeSessionToken(std::string_view token) {
   if (token.size() != 64) {
     return false;
@@ -106,6 +101,14 @@ bool LooksLikeSessionToken(std::string_view token) {
     }
   }
   return true;
+}
+
+#ifndef MI_E2EE_PRIVACY_STRICT
+void UpdateMax(std::atomic<std::uint64_t>& current, std::uint64_t value) {
+  std::uint64_t prev = current.load(std::memory_order_relaxed);
+  while (value > prev &&
+         !current.compare_exchange_weak(prev, value, std::memory_order_relaxed)) {
+  }
 }
 
 constexpr std::uint64_t kPerfSampleIntervalNs = 1000000000ull;
@@ -200,6 +203,7 @@ void ComputeLatencyPercentiles(const ConnectionHandler::OpsMetrics& metrics,
   p95 = pick(0.95);
   p99 = pick(0.99);
 }
+#endif
 }  // namespace
 
 bool ConnectionHandler::AllowUnauthByIp(const std::string& remote_ip) {
@@ -382,14 +386,21 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   if (!app_) {
     return false;
   }
+#ifndef MI_E2EE_PRIVACY_STRICT
   const auto start = std::chrono::steady_clock::now();
+#endif
   FrameView in;
   if (!DecodeFrameView(data, len, in)) {
+#ifndef MI_E2EE_PRIVACY_STRICT
     metrics_.decode_fail.fetch_add(1, std::memory_order_relaxed);
+#endif
     return false;
   }
+#ifndef MI_E2EE_PRIVACY_STRICT
   metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
+#endif
   const auto finish = [&](bool success) {
+#ifndef MI_E2EE_PRIVACY_STRICT
     const auto now = std::chrono::steady_clock::now();
     const auto latency_us = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -404,6 +415,9 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
     } else {
       metrics_.requests_fail.fetch_add(1, std::memory_order_relaxed);
     }
+#else
+    (void)success;
+#endif
   };
   Frame out;
   std::string error;
@@ -440,7 +454,9 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
       out.payload.push_back(0);
       proto::WriteString("rate limited", out.payload);
       EncodeFrame(out, out_bytes);
+#ifndef MI_E2EE_PRIVACY_STRICT
       metrics_.rate_limited.fetch_add(1, std::memory_order_relaxed);
+#endif
       finish(false);
       return true;
     }
@@ -461,6 +477,10 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
         return true;
       }
 
+#ifdef MI_E2EE_PRIVACY_STRICT
+      out.payload.push_back(0);
+      proto::WriteString("unsupported", out.payload);
+#else
       const auto& cfg = app_->config().server;
       const bool enabled = cfg.ops_enable;
       const bool allowed_ip = cfg.ops_allow_remote || IsLoopbackIp(remote_ip);
@@ -608,6 +628,7 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
           }
         }
       }
+#endif
 
       const bool success = !out.payload.empty() && out.payload[0] != 0;
       EncodeFrame(out, out_bytes);
@@ -648,7 +669,9 @@ bool ConnectionHandler::OnData(const std::uint8_t* data, std::size_t len,
   }
 
   if (IsAuthTokenBanned(token)) {
+#ifndef MI_E2EE_PRIVACY_STRICT
     metrics_.rate_limited.fetch_add(1, std::memory_order_relaxed);
+#endif
     finish(false);
     return false;
   }

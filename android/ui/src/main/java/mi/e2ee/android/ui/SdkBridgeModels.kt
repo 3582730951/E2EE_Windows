@@ -12,7 +12,7 @@ data class DeviceUi(val deviceId: String, val displayId: String, val lastSeenSec
 
 data class PairingRequestUi(val deviceId: String, val displayId: String, val requestId: String)
 
-data class MediaRelayLog(
+data class MediaRelayState(
     val timestampMs: Long,
     val isGroup: Boolean,
     val peer: String,
@@ -22,7 +22,7 @@ data class MediaRelayLog(
     val payloadPreview: String
 )
 
-data class OfflinePayloadLog(
+data class OfflinePayloadState(
     val timestampMs: Long,
     val peer: String,
     val sender: String,

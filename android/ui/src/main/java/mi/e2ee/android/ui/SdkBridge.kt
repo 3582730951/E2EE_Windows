@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import mi.e2ee.android.BuildConfig
 import mi.e2ee.android.sdk.GroupCallInfo
 import mi.e2ee.android.sdk.GroupCallSignalResult
 import mi.e2ee.android.sdk.MediaConfig
@@ -115,8 +116,8 @@ class SdkBridge(private val context: Context) {
     val conversations = mutableStateListOf<ConversationPreview>()
     val groupCallRooms = mutableStateListOf<GroupCallRoomUi>()
     val blockedUsers = mutableStateMapOf<String, Boolean>()
-    val mediaRelayEvents = mutableStateListOf<MediaRelayLog>()
-    val offlinePayloads = mutableStateListOf<OfflinePayloadLog>()
+    val mediaRelayState = mutableStateListOf<MediaRelayState>()
+    val offlinePayloadState = mutableStateListOf<OfflinePayloadState>()
 
     private val chatItems = mutableStateMapOf<String, SnapshotStateList<ChatItem>>()
     private val groupItems = mutableStateMapOf<String, SnapshotStateList<GroupChatItem>>()
@@ -934,13 +935,15 @@ class SdkBridge(private val context: Context) {
     }
 
     @Keep
-    fun onMediaRelayEventsUpdated(items: Array<MediaRelayLog>) {
-        runOnMain { mediaRelayEvents.replaceWith(items) }
+    fun onMediaRelayEventsUpdated(items: Array<MediaRelayState>) {
+        if (!BuildConfig.DEBUG) return
+        runOnMain { mediaRelayState.replaceWith(items) }
     }
 
     @Keep
-    fun onOfflinePayloadsUpdated(items: Array<OfflinePayloadLog>) {
-        runOnMain { offlinePayloads.replaceWith(items) }
+    fun onOfflinePayloadsUpdated(items: Array<OfflinePayloadState>) {
+        if (!BuildConfig.DEBUG) return
+        runOnMain { offlinePayloadState.replaceWith(items) }
     }
 
     fun rootAuthPubkey(): String? {

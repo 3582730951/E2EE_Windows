@@ -97,15 +97,24 @@ int main() {
 
   Frame resp;
   ok = app.HandleFrame(login, resp, mi::server::TransportKind::kLocal, err);
+#ifdef MI_E2EE_SECURE_RELEASE
+  if (!ok || resp.payload.empty() || resp.payload[0] != 0) {
+    std::cerr << "HandleFrame legacy login should be rejected in secure release, ok="
+              << ok << " payload_size=" << resp.payload.size()
+              << " err=" << err << '\n';
+    return 1;
+  }
+#else
   if (!ok || resp.payload.empty() || resp.payload[0] != 1) {
     std::cerr << "HandleFrame login failed, ok=" << ok
               << " payload_size=" << resp.payload.size()
               << " err=" << err << '\n';
     return 1;
   }
+#endif
 
   std::filesystem::create_directories("offline_server_app_test_corrupt", ec);
-  WriteFile("offline_server_app_test_corrupt/kt_log.bin", "BADMAGIC");
+  WriteFile("offline_server_app_test_corrupt/kt_directory.bin", "BADMAGIC");
   WriteConfig("config_bad.ini", "offline_server_app_test_corrupt");
 
   ServerApp bad_app;
@@ -115,7 +124,7 @@ int main() {
     std::cerr << "Init(config_bad.ini) unexpectedly succeeded\n";
     return 1;
   }
-  if (err.find("kt log load failed") == std::string::npos) {
+  if (err.find("kt directory load failed") == std::string::npos) {
     std::cerr << "Init(config_bad.ini) failed with unexpected error: " << err
               << '\n';
     return 1;

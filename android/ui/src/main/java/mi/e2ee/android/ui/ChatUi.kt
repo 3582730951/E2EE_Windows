@@ -329,16 +329,16 @@ object SampleChat {
         ChatMessage(
             id = "m5",
             sender = "Me",
-            body = "Can you audit the telemetry payload for sensitive fields?",
+            body = "Can you review the shared note for sensitive fields?",
             time = "21:18",
             isMine = true,
             status = MessageStatus.Read,
             isEdited = true,
             readBy = listOf("AS"),
             linkPreview = LinkPreview(
-                title = "Telemetry schema review",
+                title = "Privacy checklist",
                 domain = "docs.mi.internal",
-                snippet = "Checklist for PII fields and redaction paths."
+                snippet = "Checklist for local-only fields and redaction paths."
             )
         ),
         ChatMessage(

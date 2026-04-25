@@ -30,7 +30,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("Windows QML literal copy audit passed.")
+    print("Windows QML literal copy policy check passed.")
     return 0
 
 

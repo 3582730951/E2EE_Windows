@@ -823,7 +823,7 @@ class ApiService {
   StateStore* state_store_{nullptr};
   std::filesystem::path root_auth_dir_;
 
-  std::unique_ptr<KeyTransparencyLog> kt_log_;
+  std::unique_ptr<KeyTransparencyDirectory> kt_directory_;
   std::array<std::uint8_t, kKtSthSigSecretKeyBytes> kt_signing_sk_{};
   bool kt_signing_ready_{false};
   std::string kt_signing_error_;

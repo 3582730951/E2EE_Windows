@@ -49,10 +49,9 @@ Sha256Hash HashSha256(const std::uint8_t* data, std::size_t len) {
 }
 
 Sha256Hash HashLeaf(const std::vector<std::uint8_t>& leaf_data) {
-  std::vector<std::uint8_t> buf;
-  buf.reserve(1 + leaf_data.size());
-  buf.push_back(kLeafPrefix);
-  buf.insert(buf.end(), leaf_data.begin(), leaf_data.end());
+  std::vector<std::uint8_t> buf(1 + leaf_data.size());
+  buf[0] = kLeafPrefix;
+  std::copy(leaf_data.begin(), leaf_data.end(), buf.begin() + 1);
   return HashSha256(buf.data(), buf.size());
 }
 
@@ -146,12 +145,16 @@ std::vector<std::uint8_t> BuildLeafData(
     const std::array<std::uint8_t, kKtIdentitySigPublicKeyBytes>& id_sig_pk,
     const std::array<std::uint8_t, kKtIdentityDhPublicKeyBytes>& id_dh_pk) {
   std::vector<std::uint8_t> out;
-  constexpr char kPrefix[] = "mi_e2ee_kt_leaf_v1";
-  out.reserve(sizeof(kPrefix) - 1 + 1 + username.size() + 1 + id_sig_pk.size() +
+  constexpr std::string_view kPrefix = "mi_e2ee_kt_leaf_v1";
+  out.reserve(kPrefix.size() + 1 + username.size() + 1 + id_sig_pk.size() +
               id_dh_pk.size());
-  out.insert(out.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (const char ch : kPrefix) {
+    out.push_back(static_cast<std::uint8_t>(ch));
+  }
   out.push_back(0);
-  out.insert(out.end(), username.begin(), username.end());
+  for (const char ch : username) {
+    out.push_back(static_cast<std::uint8_t>(ch));
+  }
   out.push_back(0);
   out.insert(out.end(), id_sig_pk.begin(), id_sig_pk.end());
   out.insert(out.end(), id_dh_pk.begin(), id_dh_pk.end());
@@ -185,10 +188,10 @@ bool ReadUint16(std::ifstream& in, std::uint16_t& v) {
 
 }  // namespace
 
-KeyTransparencyLog::KeyTransparencyLog(std::filesystem::path log_path)
-    : log_path_(std::move(log_path)) {}
+KeyTransparencyDirectory::KeyTransparencyDirectory(std::filesystem::path state_path)
+    : state_path_(std::move(state_path)) {}
 
-bool KeyTransparencyLog::Load(std::string& error) {
+bool KeyTransparencyDirectory::Load(std::string& error) {
   error.clear();
   std::lock_guard<std::mutex> lock(mutex_);
   leaves_.clear();
@@ -196,20 +199,20 @@ bool KeyTransparencyLog::Load(std::string& error) {
   latest_by_user_.clear();
   root_ = Sha256Hash{};
 
-  if (log_path_.empty()) {
-    error = "kt log path empty";
+  if (state_path_.empty()) {
+    error = "kt directory path empty";
     return false;
   }
 
   std::error_code ec;
-  if (!std::filesystem::exists(log_path_, ec)) {
+  if (!std::filesystem::exists(state_path_, ec)) {
     RecomputeRootLocked();
     return true;
   }
 
-  std::ifstream in(log_path_, std::ios::binary);
+  std::ifstream in(state_path_, std::ios::binary);
   if (!in.is_open()) {
-    error = "open kt log failed";
+    error = "open kt directory failed";
     return false;
   }
 
@@ -218,8 +221,9 @@ bool KeyTransparencyLog::Load(std::string& error) {
     RecomputeRootLocked();
     return true;
   }
-  if (std::string_view(magic, sizeof(magic)) != "MIKTLOG1") {
-    error = "kt log magic mismatch";
+  const std::string_view magic_view(magic, sizeof(magic));
+  if (magic_view != "MIKTSTA1" && magic_view != "MIKTLOG1") {
+    error = "kt directory magic mismatch";
     return false;
   }
 
@@ -229,7 +233,7 @@ bool KeyTransparencyLog::Load(std::string& error) {
       break;
     }
     if (user_len == 0 || user_len > 4096) {
-      error = "kt log username length invalid";
+      error = "kt directory username length invalid";
       return false;
     }
     std::string username;
@@ -257,7 +261,7 @@ bool KeyTransparencyLog::Load(std::string& error) {
   return true;
 }
 
-bool KeyTransparencyLog::UpdateIdentityKeys(
+bool KeyTransparencyDirectory::UpdateIdentityKeys(
     const std::string& username,
     const std::array<std::uint8_t, kKtIdentitySigPublicKeyBytes>& id_sig_pk,
     const std::array<std::uint8_t, kKtIdentityDhPublicKeyBytes>& id_dh_pk,
@@ -267,8 +271,8 @@ bool KeyTransparencyLog::UpdateIdentityKeys(
     error = "username empty";
     return false;
   }
-  if (log_path_.empty()) {
-    error = "kt log path empty";
+  if (state_path_.empty()) {
+    error = "kt directory path empty";
     return false;
   }
 
@@ -289,7 +293,7 @@ bool KeyTransparencyLog::UpdateIdentityKeys(
   return true;
 }
 
-void KeyTransparencyLog::RebuildPow2LevelsLocked() {
+void KeyTransparencyDirectory::RebuildPow2LevelsLocked() {
   pow2_levels_.clear();
   const std::vector<Sha256Hash>* prev = &leaves_;
   while (prev->size() >= 2) {
@@ -303,7 +307,7 @@ void KeyTransparencyLog::RebuildPow2LevelsLocked() {
   }
 }
 
-void KeyTransparencyLog::AppendLeafHashLocked(const Sha256Hash& leaf_hash) {
+void KeyTransparencyDirectory::AppendLeafHashLocked(const Sha256Hash& leaf_hash) {
   leaves_.push_back(leaf_hash);
   const std::size_t n = leaves_.size();
   if (n < 2) {
@@ -333,7 +337,7 @@ void KeyTransparencyLog::AppendLeafHashLocked(const Sha256Hash& leaf_hash) {
   }
 }
 
-KeyTransparencySth KeyTransparencyLog::Head() const {
+KeyTransparencySth KeyTransparencyDirectory::Head() const {
   std::lock_guard<std::mutex> lock(mutex_);
   KeyTransparencySth sth;
   sth.tree_size = static_cast<std::uint64_t>(leaves_.size());
@@ -341,7 +345,7 @@ KeyTransparencySth KeyTransparencyLog::Head() const {
   return sth;
 }
 
-bool KeyTransparencyLog::BuildProofForLatestKey(
+bool KeyTransparencyDirectory::BuildProofForLatestKey(
     const std::string& username, std::uint64_t client_tree_size,
     KeyTransparencyProof& out_proof, std::string& error) const {
   error.clear();
@@ -378,7 +382,7 @@ bool KeyTransparencyLog::BuildProofForLatestKey(
   return true;
 }
 
-bool KeyTransparencyLog::BuildConsistencyProof(
+bool KeyTransparencyDirectory::BuildConsistencyProof(
     std::uint64_t old_size, std::uint64_t new_size,
     std::vector<Sha256Hash>& out_proof, std::string& error) const {
   error.clear();
@@ -402,27 +406,27 @@ bool KeyTransparencyLog::BuildConsistencyProof(
   return true;
 }
 
-bool KeyTransparencyLog::AppendEntryLocked(
+bool KeyTransparencyDirectory::AppendEntryLocked(
     const std::string& username,
     const std::array<std::uint8_t, kKtIdentitySigPublicKeyBytes>& id_sig_pk,
     const std::array<std::uint8_t, kKtIdentityDhPublicKeyBytes>& id_dh_pk,
     const Sha256Hash& leaf_hash, std::string& error) {
   error.clear();
   std::error_code ec;
-  const auto dir = log_path_.has_parent_path() ? log_path_.parent_path()
+  const auto dir = state_path_.has_parent_path() ? state_path_.parent_path()
                                                : std::filesystem::path{};
   if (!dir.empty()) {
     std::filesystem::create_directories(dir, ec);
   }
 
-  const bool exists = std::filesystem::exists(log_path_, ec);
-  std::ofstream out(log_path_, std::ios::binary | std::ios::app);
+  const bool exists = std::filesystem::exists(state_path_, ec);
+  std::ofstream out(state_path_, std::ios::binary | std::ios::app);
   if (!out) {
-    error = "open kt log for append failed";
+    error = "open kt directory for append failed";
     return false;
   }
   if (!exists) {
-    out.write("MIKTLOG1", 8);
+    out.write("MIKTSTA1", 8);
   }
 
   const std::uint16_t user_len = static_cast<std::uint16_t>(
@@ -439,7 +443,7 @@ bool KeyTransparencyLog::AppendEntryLocked(
             static_cast<std::streamsize>(id_dh_pk.size()));
   out.flush();
   if (!out.good()) {
-    error = "write kt log failed";
+    error = "write kt directory failed";
     return false;
   }
 
@@ -447,7 +451,7 @@ bool KeyTransparencyLog::AppendEntryLocked(
   return true;
 }
 
-void KeyTransparencyLog::RecomputeRootLocked() {
+void KeyTransparencyDirectory::RecomputeRootLocked() {
   root_ = MerkleTreeHash(leaves_, pow2_levels_, 0, leaves_.size());
 }
 

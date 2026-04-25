@@ -1,5 +1,6 @@
 #include "key_transparency.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -59,12 +60,16 @@ std::vector<std::uint8_t> BuildLeafData(
     const std::array<std::uint8_t, mi::server::kKtIdentityDhPublicKeyBytes>&
         id_dh_pk) {
   std::vector<std::uint8_t> out;
-  constexpr char kPrefix[] = "mi_e2ee_kt_leaf_v1";
-  out.reserve(sizeof(kPrefix) - 1 + 1 + username.size() + 1 + id_sig_pk.size() +
+  constexpr std::string_view kPrefix = "mi_e2ee_kt_leaf_v1";
+  out.reserve(kPrefix.size() + 1 + username.size() + 1 + id_sig_pk.size() +
               id_dh_pk.size());
-  out.insert(out.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (const char ch : kPrefix) {
+    out.push_back(static_cast<std::uint8_t>(ch));
+  }
   out.push_back(0);
-  out.insert(out.end(), username.begin(), username.end());
+  for (const char ch : username) {
+    out.push_back(static_cast<std::uint8_t>(ch));
+  }
   out.push_back(0);
   out.insert(out.end(), id_sig_pk.begin(), id_sig_pk.end());
   out.insert(out.end(), id_dh_pk.begin(), id_dh_pk.end());
@@ -72,10 +77,9 @@ std::vector<std::uint8_t> BuildLeafData(
 }
 
 mi::server::Sha256Hash HashLeaf(const std::vector<std::uint8_t>& leaf_data) {
-  std::vector<std::uint8_t> buf;
-  buf.reserve(1 + leaf_data.size());
-  buf.push_back(kLeafPrefix);
-  buf.insert(buf.end(), leaf_data.begin(), leaf_data.end());
+  std::vector<std::uint8_t> buf(1 + leaf_data.size());
+  buf[0] = kLeafPrefix;
+  std::copy(leaf_data.begin(), leaf_data.end(), buf.begin() + 1);
   return HashSha256(buf.data(), buf.size());
 }
 
@@ -148,14 +152,14 @@ bool EqualHash(const mi::server::Sha256Hash& a, const mi::server::Sha256Hash& b)
 
 int main() {
   const auto dir = TempDir("mi_e2ee_kt_incremental");
-  const auto log_path = dir / "kt_log.bin";
+  const auto state_path = dir / "kt_directory.bin";
 
-  mi::server::KeyTransparencyLog log(log_path);
+  mi::server::KeyTransparencyDirectory directory(state_path);
   std::string err;
-  if (!Check(log.Load(err))) {
+  if (!Check(directory.Load(err))) {
     return 1;
   }
-  if (!Check(log.Head().tree_size == 0)) {
+  if (!Check(directory.Head().tree_size == 0)) {
     return 1;
   }
 
@@ -171,13 +175,13 @@ int main() {
       id_dh_pk[j] = static_cast<std::uint8_t>((i + j) & 0xFF);
     }
 
-    if (!log.UpdateIdentityKeys(username, id_sig_pk, id_dh_pk, err)) {
+    if (!directory.UpdateIdentityKeys(username, id_sig_pk, id_dh_pk, err)) {
       return 1;
     }
     const auto leaf_hash = HashLeaf(BuildLeafData(username, id_sig_pk, id_dh_pk));
     leaves.push_back(leaf_hash);
 
-    const auto sth = log.Head();
+    const auto sth = directory.Head();
     if (!Check(sth.tree_size == leaves.size())) {
       return 1;
     }
@@ -191,7 +195,7 @@ int main() {
     mi::server::KeyTransparencyProof proof;
     const std::string username = "user255";
     const std::uint64_t client_size = 255;
-    if (!log.BuildProofForLatestKey(username, client_size, proof, err)) {
+    if (!directory.BuildProofForLatestKey(username, client_size, proof, err)) {
       return 1;
     }
     if (!Check(proof.sth.tree_size == 256)) {
@@ -214,7 +218,7 @@ int main() {
 
   {
     std::vector<mi::server::Sha256Hash> proof;
-    if (!log.BuildConsistencyProof(128, 256, proof, err)) {
+    if (!directory.BuildConsistencyProof(128, 256, proof, err)) {
       return 1;
     }
     const auto expected =
@@ -225,7 +229,7 @@ int main() {
   }
 
   {
-    mi::server::KeyTransparencyLog reloaded(log_path);
+    mi::server::KeyTransparencyDirectory reloaded(state_path);
     if (!reloaded.Load(err)) {
       return 1;
     }

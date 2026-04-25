@@ -52,6 +52,10 @@ bool EnvFlagEnabled(const char *name) {
     return value == "1" || value == "true" || value == "yes" || value == "on";
 }
 
+bool RuntimeSmokeEnabled() {
+    return EnvFlagEnabled("MI_E2EE_UI_SMOKE");
+}
+
 struct WindowsUiRuntimeContract {
     int shellMinWidth;
     int compactTwoColumnMinWidth;
@@ -212,6 +216,11 @@ QSize SmokeViewportForScene(const QString& scene) {
 }
 
 void AppendSmokeLog(const QString& captureDir, const QString& message) {
+#if defined(MI_E2EE_PRIVACY_STRICT) && !defined(MI_E2EE_UI_TESTING)
+    (void)captureDir;
+    (void)message;
+    return;
+#else
     qCritical().noquote() << message;
     if (captureDir.isEmpty()) {
         return;
@@ -226,6 +235,7 @@ void AppendSmokeLog(const QString& captureDir, const QString& message) {
     }
     QTextStream stream(&file);
     stream << message << Qt::endl;
+#endif
 }
 
 bool SaveSmokeCapture(QQuickWindow* window, const QString& captureDir, const QString& name) {
@@ -796,7 +806,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationDomain(QStringLiteral("mi-e2ee.local"));
     QCoreApplication::setApplicationName(QStringLiteral("MI E2EE Client"));
 
-    const bool smokeMode = EnvFlagEnabled("MI_E2EE_UI_SMOKE");
+    const bool smokeMode = RuntimeSmokeEnabled();
     const QString smokeUser = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_USER"));
     const QString smokePass = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_PASS"));
     const QString smokeConfig = QString::fromUtf8(qgetenv("MI_E2EE_UI_SMOKE_CONFIG"));

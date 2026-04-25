@@ -229,5 +229,44 @@ int main() {
     assert(!ok);
   }
 
+#ifdef MI_E2EE_PRIVACY_STRICT
+  {
+    const std::string path = "tmp_config_privacy_debug_log.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\ndebug_log=1\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_privacy_ops.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nops_enable=1\n"
+              "ops_token=abcdefghijklmnop\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+
+  {
+    const std::string path = "tmp_config_privacy_ops_remote.ini";
+    WriteFile(path,
+              "[mode]\nmode=1\n"
+              "[server]\nlist_port=8000\nops_allow_remote=1\n"
+              "kt_signing_key=kt_signing_key.bin\n");
+    ServerConfig cfg;
+    std::string err;
+    bool ok = LoadConfig(path, cfg, err);
+    assert(!ok);
+  }
+#endif
+
   return 0;
 }

@@ -366,18 +366,29 @@ ApiService::ApiService(SessionManager* sessions, GroupManager* groups,
     std::filesystem::create_directories(root_auth_dir_, ec);
   }
   if (!storage_dir.empty()) {
-    const std::filesystem::path path = storage_dir / "kt_log.bin";
-    kt_log_ = std::make_unique<KeyTransparencyLog>(path);
+    const std::filesystem::path path = storage_dir / "kt_directory.bin";
+    const std::filesystem::path legacy_path = storage_dir / "kt_log.bin";
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) &&
+        std::filesystem::exists(legacy_path, ec)) {
+      std::filesystem::rename(legacy_path, path, ec);
+      if (ec) {
+        init_failed_ = true;
+        init_error_ = "kt directory migration failed";
+        return;
+      }
+    }
+    kt_directory_ = std::make_unique<KeyTransparencyDirectory>(path);
     std::string err;
-    if (!kt_log_->Load(err)) {
+    if (!kt_directory_->Load(err)) {
       init_failed_ = true;
-      init_error_ = err.empty() ? "kt log load failed"
-                                : "kt log load failed: " + err;
-      kt_log_.reset();
+      init_error_ = err.empty() ? "kt directory load failed"
+                                : "kt directory load failed: " + err;
+      kt_directory_.reset();
       return;
     }
   }
-  if (kt_log_) {
+  if (kt_directory_) {
     if (!kt_signing_key.empty()) {
       std::vector<std::uint8_t> bytes;
       std::string err;
@@ -3723,7 +3734,7 @@ PreKeyPublishResponse ApiService::PublishPreKeyBundle(
     return resp;
   }
 
-  if (kt_log_) {
+  if (kt_directory_) {
     if (bundle.size() < 1 + kKtIdentitySigPublicKeyBytes + kKtIdentityDhPublicKeyBytes) {
       resp.error = "bundle invalid";
       return resp;
@@ -3734,7 +3745,7 @@ PreKeyPublishResponse ApiService::PublishPreKeyBundle(
     std::memcpy(id_dh_pk.data(), bundle.data() + 1 + id_sig_pk.size(),
                 id_dh_pk.size());
     std::string kt_err;
-    if (!kt_log_->UpdateIdentityKeys(sess->username, id_sig_pk, id_dh_pk,
+    if (!kt_directory_->UpdateIdentityKeys(sess->username, id_sig_pk, id_dh_pk,
                                     kt_err)) {
       resp.error = kt_err.empty() ? "kt update failed" : kt_err;
       return resp;
@@ -3812,10 +3823,10 @@ PreKeyFetchResponse ApiService::FetchPreKeyBundle(
     resp.bundle = it->second;
   }
 
-  if (kt_log_) {
+  if (kt_directory_) {
     KeyTransparencyProof proof;
     std::string kt_err;
-    if (!kt_log_->BuildProofForLatestKey(friend_username, client_kt_tree_size,
+    if (!kt_directory_->BuildProofForLatestKey(friend_username, client_kt_tree_size,
                                          proof, kt_err)) {
       resp.error = kt_err.empty() ? "kt proof failed" : kt_err;
       return resp;
@@ -3852,11 +3863,11 @@ KeyTransparencyHeadResponse ApiService::GetKeyTransparencyHead(
     resp.error = rl_error;
     return resp;
   }
-  if (!kt_log_) {
+  if (!kt_directory_) {
     resp.error = "kt disabled";
     return resp;
   }
-  resp.sth = kt_log_->Head();
+  resp.sth = kt_directory_->Head();
   std::string sign_err;
   if (!SignKtSth(resp.sth, sign_err)) {
     resp.error = sign_err.empty() ? "kt sign failed" : sign_err;
@@ -3881,12 +3892,12 @@ KeyTransparencyConsistencyResponse ApiService::GetKeyTransparencyConsistency(
     resp.error = rl_error;
     return resp;
   }
-  if (!kt_log_) {
+  if (!kt_directory_) {
     resp.error = "kt disabled";
     return resp;
   }
   std::string err;
-  if (!kt_log_->BuildConsistencyProof(old_size, new_size, resp.proof, err)) {
+  if (!kt_directory_->BuildConsistencyProof(old_size, new_size, resp.proof, err)) {
     resp.error = err.empty() ? "kt consistency failed" : err;
     return resp;
   }

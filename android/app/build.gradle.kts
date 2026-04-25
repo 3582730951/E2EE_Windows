@@ -169,7 +169,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.google.mlkit:barcode-scanning:17.2.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

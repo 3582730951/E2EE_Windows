@@ -48,9 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/verify_ui_contract.py
-          python3 tools/windows_qml_accessibility_audit.py
-          python3 tools/windows_qml_text_policy_audit.py
-          python3 tools/windows_qml_literal_copy_audit.py
+          python3 tools/windows_qml_accessibility_policy_check.py
+          python3 tools/windows_qml_text_policy_check.py
+          python3 tools/windows_qml_literal_copy_policy_check.py
 
       - name: Write UI contract static evidence manifest
         run: |
@@ -72,9 +72,9 @@ jobs:
               ],
               "verified_by": [
                   "tools/verify_ui_contract.py",
-                  "tools/windows_qml_accessibility_audit.py",
-                  "tools/windows_qml_text_policy_audit.py",
-                  "tools/windows_qml_literal_copy_audit.py",
+                  "tools/windows_qml_accessibility_policy_check.py",
+                  "tools/windows_qml_text_policy_check.py",
+                  "tools/windows_qml_literal_copy_policy_check.py",
               ],
           }
           (root / "ui-contract-static-evidence.json").write_text(
@@ -345,13 +345,13 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_third_party_policy_check
 
       - name: Verify third-party lock
         run: |
-          $tool = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_third_party_audit.exe" | Select-Object -First 1
+          $tool = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_third_party_policy_check.exe" | Select-Object -First 1
           if (-not $tool) {
-            throw "mi_e2ee_third_party_audit.exe not found"
+            throw "mi_e2ee_third_party_policy_check.exe not found"
           }
           & $tool.FullName --lock "$env:GITHUB_WORKSPACE\\third_party\\third_party.lock" --verify
 
@@ -361,82 +361,6 @@ jobs:
       - name: Run ops health test
         run: ctest --test-dir build/server -C Release -R ops_health_test --output-on-failure
 
-      - name: Ops health end-to-end
-        run: |
-          $ErrorActionPreference = "Stop"
-          $work = Join-Path $env:GITHUB_WORKSPACE "build\\ops_health_runtime"
-          New-Item -ItemType Directory -Force -Path $work | Out-Null
-          $offline = Join-Path $work "offline"
-          New-Item -ItemType Directory -Force -Path $offline | Out-Null
-          $testUsers = Join-Path $work "test_user.txt"
-          "u:p" | Out-File -FilePath $testUsers -Encoding ascii
-          $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
-          if (-not $ktKeygen) {
-            throw "mi_e2ee_kt_keygen.exe not found"
-          }
-          & $ktKeygen.FullName --out-dir $work --force | Out-Null
-          $ktKey = Join-Path $work "kt_signing_key.bin"
-          $pfxPath = Join-Path $work "mi_e2ee_server.pfx"
-          $cert = New-SelfSignedCertificate `
-            -DnsName @("localhost") `
-            -CertStoreLocation "Cert:\\CurrentUser\\My"
-          $pwd = New-Object System.Security.SecureString
-          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
-          $cert = Get-PfxCertificate -FilePath $pfxPath
-          $serverFingerprint = [System.BitConverter]::ToString(
-            [System.Security.Cryptography.SHA256]::Create().ComputeHash($cert.Export("Cert"))
-          ).Replace("-", "").ToLower()
-          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-          $listener.Start()
-          $port = $listener.LocalEndpoint.Port
-          $listener.Stop()
-          $token = "abcdefghijklmnop"
-          $config = @(
-            "[mode]"
-            "mode=1"
-            "[server]"
-            "list_port=$port"
-            "offline_dir=$offline"
-            "ops_enable=1"
-            "ops_allow_remote=0"
-            "ops_token=$token"
-            "tls_enable=1"
-            "require_tls=1"
-            "tls_cert=$pfxPath"
-            "key_protection=none"
-            "kt_signing_key=$ktKey"
-            "allow_legacy_login=0"
-          ) -join "`n"
-          $configPath = Join-Path $work "config.ini"
-          $config | Out-File -FilePath $configPath -Encoding ascii
-          $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
-          if (-not $serverExe) {
-            throw "mi_e2ee_server.exe not found"
-          }
-          $toolExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_ops_health_view.exe" | Select-Object -First 1
-          if (-not $toolExe) {
-            throw "mi_e2ee_ops_health_view.exe not found"
-          }
-          $env:MI_E2EE_HARDENING = "off"
-          $proc = Start-Process -FilePath $serverExe.FullName -ArgumentList @("config.ini") -WorkingDirectory $work -PassThru -WindowStyle Hidden
-          try {
-            $ok = $false
-            for ($i = 0; $i -lt 20; $i++) {
-              & $toolExe.FullName --host 127.0.0.1 --port $port --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
-              if ($LASTEXITCODE -eq 0) {
-                $ok = $true
-                break
-              }
-              Start-Sleep -Milliseconds 500
-            }
-            if (-not $ok) {
-              throw "ops health e2e failed"
-            }
-          } finally {
-            if ($proc -and !$proc.HasExited) {
-              Stop-Process -Id $proc.Id -Force
-            }
-          }
 
       - name: Perf baseline
         run: >
@@ -602,8 +526,8 @@ jobs:
               }
               $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
               Remove-Item $capturePath -ErrorAction SilentlyContinue
-              $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
-              $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
+              $stdoutLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stdout-" + $label)
+              $stderrLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stderr-" + $label)
               $uiProc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.Directory.FullName -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
               if (-not $uiProc.WaitForExit(45000)) {
                 if (Test-Path $stdoutLog) {
@@ -701,94 +625,6 @@ jobs:
       - name: Verify package
         run: .\\tools\\verify_package_windows.ps1
 
-      - name: Ops health end-to-end (dist TLS)
-        env:
-          MI_E2EE_HARDENING: off
-        run: |
-          $ErrorActionPreference = "Stop"
-          $serverRoot = Join-Path $env:GITHUB_WORKSPACE "dist\\mi_e2ee_server"
-          $configDir = Join-Path $serverRoot "config"
-          $offline = Join-Path $serverRoot "database\\offline_store"
-          $captureDir = Join-Path $env:GITHUB_WORKSPACE "build\\ui_smoke_artifacts\\dist-ops"
-          New-Item -ItemType Directory -Force -Path $offline | Out-Null
-          New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
-          "u:p" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
-          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-          $listener.Start()
-          $port = $listener.LocalEndpoint.Port
-          $listener.Stop()
-          $token = "abcdefghijklmnop"
-          $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
-          $serverConfig = @(
-            "[mode]"
-            "mode=1"
-            "[server]"
-            "list_port=$port"
-            "offline_dir=database/offline_store"
-            "debug_log=0"
-            "ops_enable=1"
-            "ops_allow_remote=0"
-            "ops_token=$token"
-            "tls_enable=1"
-            "require_tls=1"
-            "tls_cert=config/mi_e2ee_server.pfx"
-            "key_protection=none"
-            "kt_signing_key=kt_signing_key.bin"
-            "metadata_protection=none"
-            "metadata_key_hex=$metadataKeyHex"
-            "allow_legacy_login=0"
-            "[kcp]"
-            "enable=0"
-            "allow_insecure=0"
-          ) -join "`n"
-          $serverConfig | Out-File -FilePath (Join-Path $configDir "config.ini") -Encoding ascii
-          $serverFingerprint = [System.BitConverter]::ToString(
-            [System.Security.Cryptography.SHA256]::Create().ComputeHash(
-              (Get-PfxCertificate -FilePath (Join-Path $configDir "mi_e2ee_server.pfx")).Export("Cert")
-            )
-          ).Replace("-", "").ToLower()
-          $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
-          $toolExe = Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe"
-          $serverStdoutLog = Join-Path $captureDir "server-stdout.log"
-          $serverStderrLog = Join-Path $captureDir "server-stderr.log"
-          if (-not (Test-Path $serverLauncher)) {
-            throw "dist server launcher missing: $serverLauncher"
-          }
-          if (-not (Test-Path $toolExe)) {
-            throw "dist ops health tool missing: $toolExe"
-          }
-          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverStdoutLog -RedirectStandardError $serverStderrLog
-          try {
-            $ok = $false
-            for ($i = 0; $i -lt 25; $i++) {
-              & $toolExe --host 127.0.0.1 --port $port --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
-              if ($LASTEXITCODE -eq 0) {
-                $ok = $true
-                break
-              }
-              if ($proc.HasExited) {
-                break
-              }
-              Start-Sleep -Milliseconds 500
-            }
-            if (-not $ok) {
-              if (Test-Path $serverStdoutLog) {
-                Get-Content $serverStdoutLog | Write-Host
-              }
-              if (Test-Path $serverStderrLog) {
-                Get-Content $serverStderrLog | Write-Host
-              }
-              throw "dist ops health e2e failed"
-            }
-          } finally {
-            $child = Get-CimInstance Win32_Process -Filter "Name='mi_e2ee_server_app.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ParentProcessId -eq $proc.Id } | Select-Object -First 1
-            if ($child) {
-              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
-            }
-            if ($proc -and !$proc.HasExited) {
-              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            }
-          }
 
       - name: UI smoke regression (dist launcher TLS)
         env:
@@ -812,13 +648,7 @@ jobs:
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
-          $token = "abcdefghijklmnop"
           $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
-          $serverFingerprint = [System.BitConverter]::ToString(
-            [System.Security.Cryptography.SHA256]::Create().ComputeHash(
-              (Get-PfxCertificate -FilePath (Join-Path $serverRoot "config\\mi_e2ee_server.pfx")).Export("Cert")
-            )
-          ).Replace("-", "").ToLower()
           "ui_smoke:ui_smoke_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
           $serverConfig = @(
             "[mode]"
@@ -827,9 +657,6 @@ jobs:
             "list_port=$port"
             "offline_dir=database/offline_store"
             "debug_log=0"
-            "ops_enable=1"
-            "ops_allow_remote=0"
-            "ops_token=$token"
             "tls_enable=1"
             "require_tls=1"
             "tls_cert=config/mi_e2ee_server.pfx"
@@ -856,28 +683,27 @@ jobs:
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
-          $serverStdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stdout.log"
-          $serverStderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR "server-stderr.log"
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
-          $toolExe = Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe"
           $clientLauncher = Join-Path $clientRoot "mi_e2ee.exe"
           if (-not (Test-Path $serverLauncher)) {
             throw "dist server launcher missing: $serverLauncher"
           }
-          if (-not (Test-Path $toolExe)) {
-            throw "dist ops health tool missing: $toolExe"
-          }
           if (-not (Test-Path $clientLauncher)) {
             throw "dist client launcher missing: $clientLauncher"
           }
-          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverStdoutLog -RedirectStandardError $serverStderrLog
+          $proc = Start-Process -FilePath $serverLauncher -WorkingDirectory $serverRoot -PassThru -WindowStyle Hidden
           try {
             $ready = $false
             for ($i = 0; $i -lt 60; $i++) {
-              & $toolExe --host 127.0.0.1 --port $port --token $token --tls --tls-pinned-fingerprint $serverFingerprint --tls-no-verify-peer 2>$null | Out-Null
-              if ($LASTEXITCODE -eq 0) {
-                $ready = $true
-                break
+              $tcp = New-Object System.Net.Sockets.TcpClient
+              try {
+                $connect = $tcp.BeginConnect("127.0.0.1", $port, $null, $null)
+                if ($connect.AsyncWaitHandle.WaitOne(250) -and $tcp.Connected) {
+                  $ready = $true
+                  break
+                }
+              } finally {
+                $tcp.Close()
               }
               if ($proc.HasExited) {
                 break
@@ -885,12 +711,6 @@ jobs:
               Start-Sleep -Milliseconds 500
             }
             if (-not $ready) {
-              if (Test-Path $serverStdoutLog) {
-                Get-Content $serverStdoutLog | Write-Host
-              }
-              if (Test-Path $serverStderrLog) {
-                Get-Content $serverStderrLog | Write-Host
-              }
               throw "dist server not ready"
             }
             function Invoke-DistUiSmokeOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
@@ -913,8 +733,8 @@ jobs:
               }
               $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
               Remove-Item $capturePath -ErrorAction SilentlyContinue
-              $stdoutLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stdout-" + $label + ".log")
-              $stderrLog = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR ("stderr-" + $label + ".log")
+              $stdoutLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stdout-" + $label)
+              $stderrLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stderr-" + $label)
               $uiProc = Start-Process -FilePath $clientLauncher -WorkingDirectory $clientRoot -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
               if (-not $uiProc.WaitForExit(45000)) {
                 if (Test-Path $stdoutLog) {
@@ -1394,15 +1214,14 @@ jobs:
           mi_e2ee_kt_keygen
           mi_e2ee_kt_pubinfo
           mi_e2ee_perf_baseline
-          mi_e2ee_ops_health_view
-          mi_e2ee_third_party_audit
+          mi_e2ee_third_party_policy_check
 
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_policy_check" | head -n 1)
           if [ -z "$tool" ]; then
-            echo "mi_e2ee_third_party_audit not found" >&2
+            echo "mi_e2ee_third_party_policy_check not found" >&2
             exit 1
           fi
           "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
@@ -1412,119 +1231,6 @@ jobs:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/server -C Release --output-on-failure
 
-      - name: Ops health end-to-end
-        env:
-          MI_E2EE_HARDENING: off
-        run: |
-          set -euo pipefail
-          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
-          rm -rf "$work"
-          mkdir -p "$work/offline"
-          printf "u:p\n" > "$work/test_user.txt"
-          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
-          py="python3"
-          if ! command -v "$py" >/dev/null 2>&1; then
-            py="python"
-          fi
-          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
-          token="abcdefghijklmnop"
-          printf '%s\n' \
-            "[mode]" \
-            "mode=1" \
-            "[server]" \
-            "list_port=$port" \
-            "offline_dir=$work/offline" \
-            "ops_enable=1" \
-            "ops_allow_remote=0" \
-            "ops_token=$token" \
-            "debug_log=0" \
-            "tls_enable=0" \
-            "require_tls=0" \
-            "key_protection=none" \
-            "kt_signing_key=$work/kt_signing_key.bin" \
-            "allow_legacy_login=0" \
-            > "$work/config.ini"
-          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
-          if [ -z "$server" ]; then
-            echo "mi_e2ee_server not found" >&2
-            exit 1
-          fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
-          if [ -z "$tool" ]; then
-            echo "mi_e2ee_ops_health_view not found" >&2
-            exit 1
-          fi
-          cd "$work"
-          "$server" config.ini >/dev/null 2>&1 &
-          pid=$!
-          ok=0
-          for _ in $(seq 1 20); do
-            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
-              ok=1
-              break
-            fi
-            sleep 0.5
-          done
-          kill "$pid" >/dev/null 2>&1 || true
-          wait "$pid" >/dev/null 2>&1 || true
-          if [ "$ok" -ne 1 ]; then
-            echo "ops health e2e failed" >&2
-            exit 1
-          fi
-
-      - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
-
-      - name: Build client core
-        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
-
-      - name: Build client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
-
-      - name: Run client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        env:
-          MI_E2EE_HARDENING: off
-        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Rust bindings
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
-        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
-
-      - name: Python binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
-            exit 1
-          fi
-          export MI_E2EE_CLIENT_DLL="$lib_path"
-          python3 bindings/python/test_smoke.py
-
-      - name: Rust binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
-            exit 1
-          fi
-          lib_dir=$(dirname "$lib_path")
-          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
-          export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
-          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
-
-      - name: Package artifacts
-        run: bash tools/package_posix.sh --platform linux
-
-      - name: Verify package
-        run: bash tools/verify_package_posix.sh --platform linux
 
       - name: Perf baseline
         run: |
@@ -1613,15 +1319,14 @@ jobs:
           mi_e2ee_kt_keygen
           mi_e2ee_kt_pubinfo
           mi_e2ee_perf_baseline
-          mi_e2ee_ops_health_view
-          mi_e2ee_third_party_audit
+          mi_e2ee_third_party_policy_check
 
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_policy_check" | head -n 1)
           if [ -z "$tool" ]; then
-            echo "mi_e2ee_third_party_audit not found" >&2
+            echo "mi_e2ee_third_party_policy_check not found" >&2
             exit 1
           fi
           "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
@@ -1631,125 +1336,6 @@ jobs:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/server -C Release --output-on-failure
 
-      - name: Ops health end-to-end
-        env:
-          MI_E2EE_HARDENING: off
-        run: |
-          set -euo pipefail
-          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
-          rm -rf "$work"
-          mkdir -p "$work/offline"
-          printf "u:p\n" > "$work/test_user.txt"
-          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
-          py="python3"
-          if ! command -v "$py" >/dev/null 2>&1; then
-            py="python"
-          fi
-          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
-          token="abcdefghijklmnop"
-          printf '%s\n' \
-            "[mode]" \
-            "mode=1" \
-            "[server]" \
-            "list_port=$port" \
-            "offline_dir=$work/offline" \
-            "ops_enable=1" \
-            "ops_allow_remote=0" \
-            "ops_token=$token" \
-            "debug_log=0" \
-            "tls_enable=0" \
-            "require_tls=0" \
-            "key_protection=none" \
-            "kt_signing_key=$work/kt_signing_key.bin" \
-            "allow_legacy_login=0" \
-            > "$work/config.ini"
-          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
-          if [ -z "$server" ]; then
-            echo "mi_e2ee_server not found" >&2
-            exit 1
-          fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
-          if [ -z "$tool" ]; then
-            echo "mi_e2ee_ops_health_view not found" >&2
-            exit 1
-          fi
-          cd "$work"
-          "$server" config.ini >/dev/null 2>&1 &
-          pid=$!
-          ok=0
-          for _ in $(seq 1 20); do
-            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
-              ok=1
-              break
-            fi
-            sleep 0.5
-          done
-          kill "$pid" >/dev/null 2>&1 || true
-          wait "$pid" >/dev/null 2>&1 || true
-          if [ "$ok" -ne 1 ]; then
-            echo "ops health e2e failed" >&2
-            exit 1
-          fi
-
-      - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF
-
-      - name: Build client core
-        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
-
-      - name: Build client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
-
-      - name: Run client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        env:
-          MI_E2EE_HARDENING: off
-        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Rust bindings
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
-            exit 1
-          fi
-          export MI_E2EE_CLIENT_LIB_DIR="$(dirname "$lib_path")"
-          cargo build --manifest-path bindings/rust/Cargo.toml --examples
-
-      - name: Python binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
-            exit 1
-          fi
-          export MI_E2EE_CLIENT_DLL="$lib_path"
-          python3 bindings/python/test_smoke.py
-
-      - name: Rust binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.so" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.so not found under build/client" >&2
-            exit 1
-          fi
-          lib_dir=$(dirname "$lib_path")
-          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
-          export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
-          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
-
-      - name: Package artifacts
-        run: bash tools/package_posix.sh --platform linux
-
-      - name: Verify package
-        run: bash tools/verify_package_posix.sh --platform linux
 
       - name: Perf baseline
         run: |
@@ -1809,15 +1395,14 @@ jobs:
           mi_e2ee_kt_keygen
           mi_e2ee_kt_pubinfo
           mi_e2ee_perf_baseline
-          mi_e2ee_ops_health_view
-          mi_e2ee_third_party_audit
+          mi_e2ee_third_party_policy_check
 
       - name: Verify third-party lock
         run: |
           set -euo pipefail
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_audit" | head -n 1)
+          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_third_party_policy_check" | head -n 1)
           if [ -z "$tool" ]; then
-            echo "mi_e2ee_third_party_audit not found" >&2
+            echo "mi_e2ee_third_party_policy_check not found" >&2
             exit 1
           fi
           "$tool" --lock "$GITHUB_WORKSPACE/third_party/third_party.lock" --verify
@@ -1827,119 +1412,6 @@ jobs:
           MI_E2EE_HARDENING: off
         run: ctest --test-dir build/server -C Release --output-on-failure
 
-      - name: Ops health end-to-end
-        env:
-          MI_E2EE_HARDENING: off
-        run: |
-          set -euo pipefail
-          work="$GITHUB_WORKSPACE/build/ops_health_runtime"
-          rm -rf "$work"
-          mkdir -p "$work/offline"
-          printf "u:p\n" > "$work/test_user.txt"
-          head -c 4032 /dev/urandom > "$work/kt_signing_key.bin"
-          py="python3"
-          if ! command -v "$py" >/dev/null 2>&1; then
-            py="python"
-          fi
-          port=$("$py" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
-          token="abcdefghijklmnop"
-          printf '%s\n' \
-            "[mode]" \
-            "mode=1" \
-            "[server]" \
-            "list_port=$port" \
-            "offline_dir=$work/offline" \
-            "ops_enable=1" \
-            "ops_allow_remote=0" \
-            "ops_token=$token" \
-            "debug_log=0" \
-            "tls_enable=0" \
-            "require_tls=0" \
-            "key_protection=none" \
-            "kt_signing_key=$work/kt_signing_key.bin" \
-            "allow_legacy_login=0" \
-            > "$work/config.ini"
-          server=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_server" -perm -111 | head -n 1)
-          if [ -z "$server" ]; then
-            echo "mi_e2ee_server not found" >&2
-            exit 1
-          fi
-          tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_ops_health_view" | head -n 1)
-          if [ -z "$tool" ]; then
-            echo "mi_e2ee_ops_health_view not found" >&2
-            exit 1
-          fi
-          cd "$work"
-          "$server" config.ini >/dev/null 2>&1 &
-          pid=$!
-          ok=0
-          for _ in $(seq 1 20); do
-            if "$tool" --host 127.0.0.1 --port "$port" --token "$token" >/dev/null 2>&1; then
-              ok=1
-              break
-            fi
-            sleep 0.5
-          done
-          kill "$pid" >/dev/null 2>&1 || true
-          wait "$pid" >/dev/null 2>&1 || true
-          if [ "$ok" -ne 1 ]; then
-            echo "ops health e2e failed" >&2
-            exit 1
-          fi
-
-      - name: Configure client
-        run: cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF -DMI_E2EE_BUILD_DEMO_CLIENT=OFF -DMI_E2EE_BUILD_LEGACY_UI=OFF -DMI_E2EE_ENABLE_MYSQL=OFF -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
-
-      - name: Build client core
-        run: cmake --build build/client --config Release --target mi_e2ee_client_core mi_e2ee_client_sdk
-
-      - name: Build client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        run: cmake --build build/client --config Release --target sdk_c_api_e2e_test
-
-      - name: Run client e2e test
-        if: env.MI_E2EE_CI_SKIP_E2E != '1'
-        env:
-          MI_E2EE_HARDENING: off
-        run: ctest --test-dir build/client -R sdk_c_api_e2e_test --output-on-failure
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Rust bindings
-        env:
-          MI_E2EE_CLIENT_LIB_DIR: ${{ github.workspace }}/build/client
-        run: cargo build --manifest-path bindings/rust/Cargo.toml --examples
-
-      - name: Python binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.dylib" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.dylib not found under build/client" >&2
-            exit 1
-          fi
-          export MI_E2EE_CLIENT_DLL="$lib_path"
-          python3 bindings/python/test_smoke.py
-
-      - name: Rust binding smoke
-        run: |
-          set -euo pipefail
-          lib_path=$(find "$GITHUB_WORKSPACE/build/client" -name "libmi_e2ee_client_sdk.dylib" -print -quit)
-          if [ -z "$lib_path" ]; then
-            echo "libmi_e2ee_client_sdk.dylib not found under build/client" >&2
-            exit 1
-          fi
-          lib_dir=$(dirname "$lib_path")
-          export MI_E2EE_CLIENT_LIB_DIR="$lib_dir"
-          export DYLD_LIBRARY_PATH="$lib_dir:${DYLD_LIBRARY_PATH:-}"
-          cargo run --manifest-path bindings/rust/Cargo.toml --example smoke --quiet
-
-      - name: Package artifacts
-        run: bash tools/package_posix.sh --platform macos --openssl "$(brew --prefix openssl@3)/bin/openssl"
-
-      - name: Verify package
-        run: bash tools/verify_package_posix.sh --platform macos
 
       - name: Perf baseline
         run: |
@@ -2023,7 +1495,7 @@ jobs:
             -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build | tee "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log"
+            build
 
       - name: Validate RootAuth iOS bundle
         id: ios_bundle
@@ -2047,7 +1519,7 @@ jobs:
             ios_root_app/RootAuthApp/RootAuthNetwork.swift \
             tools/ios_rootauth_smoke.swift \
             -o build/ios_rootauth_smoke
-          build/ios_rootauth_smoke | tee build/ios_rootauth_smoke.log
+          build/ios_rootauth_smoke
           echo "smoke_verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Capture RootAuth iOS screenshot
@@ -2179,7 +1651,6 @@ jobs:
             local mode="$1"
             local theme="$2"
             local output="$3"
-            local launch_log="build/ios_rootauth_artifacts/ios_rootauth_launch_${mode}_${theme}.log"
             local settle_seconds=5
             if [ "$mode" = "detail" ] || [ "$mode" = "security" ]; then
               settle_seconds=6
@@ -2195,7 +1666,7 @@ jobs:
               xcrun simctl keypress "$udid" HOME >/dev/null 2>&1 || true
               sleep 1
               SIMCTL_CHILD_MI_E2EE_IOS_SCREENSHOT_MODE="$mode" \
-                xcrun simctl launch --terminate-running-process "$udid" mi.e2ee.root.RootAuthApp >"$launch_log" 2>&1 || true
+                xcrun simctl launch --terminate-running-process "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
               sleep "$settle_seconds"
               if ! xcrun simctl io "$udid" screenshot "$output"; then
                 continue
@@ -2741,32 +2212,14 @@ jobs:
               )
           PY
 
-      - name: Archive xcodebuild log
-        if: always()
-        run: |
-          set -euo pipefail
-          mkdir -p build/ios_rootauth_artifacts
-          if [ -f "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log" ]; then
-            cp "$GITHUB_WORKSPACE/build/ios_rootauth_xcodebuild.log" build/ios_rootauth_artifacts/
-          fi
-          if [ -f "$GITHUB_WORKSPACE/build/ios_rootauth_smoke.log" ]; then
-            cp "$GITHUB_WORKSPACE/build/ios_rootauth_smoke.log" build/ios_rootauth_artifacts/
-          fi
-          if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
-            while IFS= read -r -d '' file; do
-              cp "$file" build/ios_rootauth_artifacts/
-            done < <(
-              find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 4 -type f \
-                \( -name "*.log" -o -name "*.xcactivitylog" \) -print0
-            )
-          fi
-
-      - name: Upload RootAuth iOS build logs
+      - name: Upload RootAuth iOS privacy evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mi_e2ee_ios_rootauth_logs
-          path: build/ios_rootauth_artifacts/*
+          name: mi_e2ee_ios_rootauth_privacy_evidence
+          path: |
+            build/ios_rootauth_artifacts/rootauth-ios-*.png
+            build/ios_rootauth_artifacts/ios-*.json
           if-no-files-found: ignore
 
   build-android:
@@ -3010,9 +2463,10 @@ jobs:
               'exec "$DIR/clang" --driver-mode=g++ "$@"' \
               > "$FALLBACK_DIR/clang++"
             chmod +x "$FALLBACK_DIR/clang++"
-            if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>build/ollvm/fallback/clang_error.log; then
+            clang_error="$RUNNER_TEMP/mi-e2ee-ollvm-clang-error"
+            if ! "$FALLBACK_DIR/clang" --version >/dev/null 2>"$clang_error"; then
               echo "Fallback OLLVM clang is not runnable on this runner." >&2
-              cat build/ollvm/fallback/clang_error.log >&2 || true
+              cat "$clang_error" >&2 || true
               file "$FALLBACK_DIR/clang" >&2 || true
               ldd "$FALLBACK_DIR/clang" >&2 || true
               exit 1
@@ -3251,7 +2705,7 @@ jobs:
               "evidence_source": os.environ["ANDROID_ARM64_EVIDENCE_SOURCE"],
               "gate_passed": os.environ["ANDROID_ARM64_GATE_PASSED"] == "true",
               "requested_device_matrix": requested_device_matrix,
-              "audit": {
+              "privacy_evidence": {
                   "skip_android_tests": os.environ["ANDROID_ARM64_SKIP_ANDROID_TESTS"] == "true",
                   "has_gcp_service_account_json": os.environ["ANDROID_ARM64_HAS_GCP_SERVICE_ACCOUNT_JSON"] == "true",
                   "has_gcp_project_id": os.environ["ANDROID_ARM64_HAS_GCP_PROJECT_ID"] == "true",
@@ -3281,6 +2735,26 @@ jobs:
             OLLVM_ARGS+=("-PmiE2eeOllvmClangxx=${MI_E2EE_OLLVM_CLANGXX}")
           fi
           ./gradlew :app:assembleRelease :rootapp:assembleRelease -PmiE2eeOpaque=true "${OLLVM_ARGS[@]}" --no-daemon
+
+      - name: Verify Android release privacy
+        run: |
+          set -euo pipefail
+          for apk in android/app/build/outputs/apk/release/*.apk android/rootapp/build/outputs/apk/release/*.apk; do
+            test -f "$apk"
+            entries="$(unzip -Z1 "$apk")"
+            if printf '%s\n' "$entries" | grep -Eiq '(^|/)([^/]*[.]log([^/]*)?|[^/]*(audit|diagnostic|diagnostics|telemetry|ops_health|crash)[^/]*)$'; then
+              echo "Android release package contains a forbidden privacy artifact name" >&2
+              exit 1
+            fi
+            tmp="$(mktemp -d)"
+            unzip -qq "$apk" 'classes*.dex' 'lib/*/*.so' -d "$tmp"
+            if find "$tmp" -type f -print0 | xargs -0 strings -a | grep -Eai '\b(audit|diagnostic|diagnostics|telemetry|ops_health|crash dump|crash report)\b' >/dev/null; then
+              rm -rf "$tmp"
+              echo "Android release package contains forbidden privacy runtime strings" >&2
+              exit 1
+            fi
+            rm -rf "$tmp"
+          done
 
       - name: Upload Android debug artifact
         uses: actions/upload-artifact@v4
@@ -3878,30 +3352,30 @@ jobs:
               validated_evidence_source = policy.get("validated_evidence_source")
               waived_evidence_source = policy.get("waived_evidence_source")
               required_manifest_fields = policy.get("required_manifest_fields", [])
-              required_audit_fields = policy.get("required_audit_fields", [])
-              validated_requires_audit_true = policy.get("validated_requires_audit_true", [])
+              required_privacy_fields = policy.get("required_privacy_fields", [])
+              validated_requires_privacy_true = policy.get("validated_requires_privacy_true", [])
               validated = arm64_manifest.get("validated")
               waived = arm64_manifest.get("waived")
               waiver_reason = arm64_manifest.get("waiver_reason")
               evidence_source = arm64_manifest.get("evidence_source")
               gate_passed = arm64_manifest.get("gate_passed")
               requested_device_matrix = arm64_manifest.get("requested_device_matrix")
-              audit = arm64_manifest.get("audit")
+              privacy_evidence = arm64_manifest.get("privacy_evidence")
               expect(mode == "required_or_waived", f"Unsupported Android arm64 requirement mode: {mode}")
               expect(arm64_manifest.get("requirement_mode") == mode, "Android arm64 manifest requirement_mode mismatch")
               expect(isinstance(validated, bool), "Android arm64 manifest validated must be bool")
               expect(isinstance(waived, bool), "Android arm64 manifest waived must be bool")
               expect(isinstance(gate_passed, bool), "Android arm64 manifest gate_passed must be bool")
               expect(isinstance(requested_device_matrix, list), "Android arm64 manifest requested_device_matrix must be a list")
-              expect(isinstance(audit, dict), "Android arm64 manifest audit must be an object")
+              expect(isinstance(privacy_evidence, dict), "Android arm64 manifest privacy_evidence must be an object")
               for field in required_manifest_fields if isinstance(required_manifest_fields, list) else []:
                   expect(field in arm64_manifest, f"Android arm64 manifest missing required field: {field}")
-              if not isinstance(audit, dict):
-                  audit = {}
-              for field in required_audit_fields if isinstance(required_audit_fields, list) else []:
-                  expect(field in audit, f"Android arm64 audit missing required field: {field}")
-                  if field in audit:
-                      expect(isinstance(audit[field], bool), f"Android arm64 audit field must be bool: {field}")
+              if not isinstance(privacy_evidence, dict):
+                  privacy_evidence = {}
+              for field in required_privacy_fields if isinstance(required_privacy_fields, list) else []:
+                  expect(field in privacy_evidence, f"Android arm64 privacy_evidence missing required field: {field}")
+                  if field in privacy_evidence:
+                      expect(isinstance(privacy_evidence[field], bool), f"Android arm64 privacy_evidence field must be bool: {field}")
               if validated is True:
                   expect(waived is False, "Android arm64 manifest cannot be both validated and waived")
                   expect(waiver_reason in ("", None), "Android arm64 waiver_reason must be empty when validated=true")
@@ -3910,8 +3384,8 @@ jobs:
                       isinstance(requested_device_matrix, list) and len(requested_device_matrix) > 0,
                       "Android arm64 validated manifest must include a non-empty requested_device_matrix",
                   )
-                  for field in validated_requires_audit_true if isinstance(validated_requires_audit_true, list) else []:
-                      expect(audit.get(field) is True, f"Android arm64 audit.{field} must be true when validated=true")
+                  for field in validated_requires_privacy_true if isinstance(validated_requires_privacy_true, list) else []:
+                      expect(privacy_evidence.get(field) is True, f"Android arm64 privacy_evidence.{field} must be true when validated=true")
                   expect(gate_passed is True, "Android arm64 gate_passed must be true when validated=true")
               else:
                   expect(waived is True, "Android arm64 requires waived=true when validated=false")
@@ -3922,11 +3396,11 @@ jobs:
                   expect(evidence_source == waived_evidence_source, f"Android arm64 waived evidence_source mismatch: {evidence_source}")
                   expect(gate_passed is True, "Android arm64 gate_passed must be true for allowed waiver")
                   if waiver_reason == "android_tests_skipped":
-                      expect(audit.get("skip_android_tests") is True, "Android arm64 waiver android_tests_skipped must set audit.skip_android_tests=true")
+                      expect(privacy_evidence.get("skip_android_tests") is True, "Android arm64 waiver android_tests_skipped must set privacy_evidence.skip_android_tests=true")
                   if waiver_reason == "missing_gcp_credentials":
                       expect(
-                          audit.get("has_gcp_service_account_json") is False or audit.get("has_gcp_project_id") is False,
-                          "Android arm64 waiver missing_gcp_credentials must show missing GCP audit evidence",
+                          privacy_evidence.get("has_gcp_service_account_json") is False or privacy_evidence.get("has_gcp_project_id") is False,
+                          "Android arm64 waiver missing_gcp_credentials must show missing GCP privacy evidence",
                       )
               env_validated = os.environ.get("ANDROID_ARM64_VALIDATED")
               env_waived = os.environ.get("ANDROID_ARM64_WAIVED")

@@ -16,6 +16,40 @@ FORBIDDEN_PATH_PREFIXES = (
     "client/ui_example/",
 )
 
+PRIVACY_ARTIFACT_TERMS = (
+    "audit",
+    "diagnostic",
+    "diagnostics",
+    "telemetry",
+    "crash",
+    "ops_health",
+)
+
+PRIVACY_ARTIFACT_ROOTS = {
+    "artifact",
+    "artifacts",
+    "build",
+    "captures",
+    "dist",
+    "out",
+    "release",
+}
+
+PRIVACY_ARTIFACT_SUFFIXES = {
+    ".7z",
+    ".apk",
+    ".dmp",
+    ".dump",
+    ".exe",
+    ".gz",
+    ".html",
+    ".ipa",
+    ".json",
+    ".tar",
+    ".tgz",
+    ".zip",
+}
+
 PATTERN_MAP = {
     "github_pat": re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     "github_classic_pat": re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
@@ -175,9 +209,25 @@ def is_allowed_push_path(path: str) -> bool:
         return file_name == "CMakeLists.txt"
     if suffix == ".log" or any(part.startswith(".log") for part in suffixes):
         return False
+    if is_forbidden_privacy_artifact(normalized):
+        return False
     if "__pycache__" in Path(normalized).parts or suffix == ".pyc":
         return False
     return True
+
+
+def is_forbidden_privacy_artifact(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    parts = tuple(part.lower() for part in Path(normalized).parts)
+    file_name = Path(normalized).name.lower()
+    suffix = Path(normalized).suffix.lower()
+    if suffix in {".dmp", ".dump"}:
+        return True
+    if not any(term in file_name for term in PRIVACY_ARTIFACT_TERMS):
+        return False
+    if suffix in PRIVACY_ARTIFACT_SUFFIXES:
+        return True
+    return any(part in PRIVACY_ARTIFACT_ROOTS for part in parts[:-1])
 
 
 def is_placeholder_value(value: str) -> bool:

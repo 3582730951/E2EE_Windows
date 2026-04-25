@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -53,8 +54,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -475,6 +480,38 @@ private fun buildQrContext(qrId: String, secretHex: String): String {
     return "qr:$qrId:$clean"
 }
 
+private fun decodeQrFromImageProxy(imageProxy: ImageProxy): String? {
+    val plane = imageProxy.planes.firstOrNull() ?: return null
+    val width = imageProxy.width
+    val height = imageProxy.height
+    if (width <= 0 || height <= 0) return null
+    val buffer = plane.buffer.duplicate()
+    val rowStride = plane.rowStride
+    val pixelStride = plane.pixelStride
+    val luma = ByteArray(width * height)
+    var out = 0
+    for (row in 0 until height) {
+        val rowOffset = row * rowStride
+        for (col in 0 until width) {
+            val index = rowOffset + col * pixelStride
+            if (index >= buffer.limit()) return null
+            luma[out++] = buffer.get(index)
+        }
+    }
+    val source = PlanarYUVLuminanceSource(luma, width, height, 0, 0, width, height, false)
+    val bitmap = BinaryBitmap(HybridBinarizer(source))
+    val reader = MultiFormatReader().apply {
+        setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
+    }
+    return try {
+        reader.decodeWithState(bitmap).text
+    } catch (_: Exception) {
+        null
+    } finally {
+        reader.reset()
+    }
+}
+
 @Composable
 private fun QrScannerView(
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
@@ -487,14 +524,12 @@ private fun QrScannerView(
         }
     }
     val executor = remember { Executors.newSingleThreadExecutor() }
-    val scanner = remember { BarcodeScanning.getClient() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var active by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
         onDispose {
             active = false
-            scanner.close()
             executor.shutdown()
         }
     }
@@ -514,25 +549,13 @@ private fun QrScannerView(
                     imageProxy.close()
                     return@setAnalyzer
                 }
-                val mediaImage = imageProxy.image
-                if (mediaImage == null) {
-                    imageProxy.close()
-                    return@setAnalyzer
+                val raw = decodeQrFromImageProxy(imageProxy)
+                imageProxy.close()
+                if (!active) return@setAnalyzer
+                if (!raw.isNullOrBlank()) {
+                    active = false
+                    mainHandler.post { onQrFound(raw) }
                 }
-                val image = InputImage.fromMediaImage(
-                    mediaImage,
-                    imageProxy.imageInfo.rotationDegrees
-                )
-                scanner.process(image)
-                    .addOnSuccessListener { barcodes ->
-                        if (!active) return@addOnSuccessListener
-                        val raw = barcodes.firstOrNull()?.rawValue
-                        if (!raw.isNullOrBlank()) {
-                            active = false
-                            mainHandler.post { onQrFound(raw) }
-                        }
-                    }
-                    .addOnCompleteListener { imageProxy.close() }
             }
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(

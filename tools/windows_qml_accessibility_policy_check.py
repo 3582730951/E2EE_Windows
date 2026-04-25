@@ -43,7 +43,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("Windows QML accessibility audit passed.")
+    print("Windows QML accessibility policy check passed.")
     return 0
 
 

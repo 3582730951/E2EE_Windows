@@ -245,18 +245,9 @@ if ($demoUsers) {
 }
 
 $ktPubinfo = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_kt_pubinfo.exe" $BuildConfig "kt_pubinfo"
-$perfBaseline = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_perf_baseline.exe" $BuildConfig "perf_baseline"
-$opsHealth = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_ops_health_view.exe" $BuildConfig "ops_health_view"
-$thirdPartyAudit = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_third_party_audit.exe" $BuildConfig "third_party_audit"
 $packageSources["kt_pubinfo"] = $ktPubinfo
-$packageSources["perf_baseline"] = $perfBaseline
-$packageSources["ops_health_view"] = $opsHealth
-$packageSources["third_party_audit"] = $thirdPartyAudit
 Copy-Item $ktKeygen $serverTools -Force
 Copy-Item $ktPubinfo $serverTools -Force
-Copy-Item $perfBaseline $serverTools -Force
-Copy-Item $opsHealth $serverTools -Force
-Copy-Item $thirdPartyAudit $serverTools -Force
 
 Copy-Item (Join-Path $keysDir "kt_signing_key.bin") $serverConfig -Force
 Copy-Item (Join-Path $keysDir "kt_root_pub.bin") $serverConfig -Force

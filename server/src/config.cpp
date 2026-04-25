@@ -518,6 +518,20 @@ bool LoadConfig(const std::string& path, ServerConfig& out_config,
     error = "secure_delete_plugin_sha256 missing";
     return false;
   }
+#ifdef MI_E2EE_PRIVACY_STRICT
+  if (out_config.server.debug_log) {
+    error = "debug_log forbidden in strict privacy release";
+    return false;
+  }
+  if (out_config.server.ops_enable) {
+    error = "ops_enable forbidden in strict privacy release";
+    return false;
+  }
+  if (out_config.server.ops_allow_remote) {
+    error = "ops_allow_remote forbidden in strict privacy release";
+    return false;
+  }
+#endif
   if (out_config.server.ops_enable && out_config.server.ops_token.size() < 16) {
     error = "ops_token missing or too short (>=16 chars)";
     return false;

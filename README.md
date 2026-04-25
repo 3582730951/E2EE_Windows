@@ -35,7 +35,7 @@ server/          服务端（TCP/KCP 网关、转发、离线/文件）
 client/          客户端核心库与 UI
 shard/           共享安全类型与加扰逻辑（含 C 接口）
 third_party/     第三方依赖（hash lock + SBOM）
-tools/           工具（third_party_audit 等）
+tools/           工具（third_party_policy_check 等）
 ```
 
 ## 安全模型与威胁边界

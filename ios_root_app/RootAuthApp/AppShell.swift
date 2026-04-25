@@ -578,7 +578,7 @@ final class ClientWorkspaceStore: ObservableObject {
             ClientConversation(
                 id: "c-mira",
                 title: "Mira Chen",
-                subtitle: "[Photo] Uploaded the audit package",
+                subtitle: "[Photo] Uploaded the encrypted album",
                 isGroup: false
             ),
             ClientConversation(
@@ -713,7 +713,7 @@ final class ClientWorkspaceStore: ObservableObject {
                     id: "m4",
                     conversationID: "c-mira",
                     sender: "Mira Chen",
-                    text: "[Photo] Uploaded the audit package and linked device report.",
+                    text: "[Photo] Uploaded the encrypted album and device summary.",
                     outgoing: false,
                     timestampMS: now - 900_000
                 )

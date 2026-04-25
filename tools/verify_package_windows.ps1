@@ -247,6 +247,9 @@ Require-FileAbsent (Join-Path $clientRoot "e2ee_login.exe")
 Require-FileAbsent (Join-Path $clientRoot "e2ee_main_list.exe")
 Require-FileAbsent (Join-Path $clientRoot "e2ee_group_chat.exe")
 Require-FileAbsent (Join-Path $clientRoot "e2ee_chat_empty.exe")
+Require-FileAbsent (Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe")
+Require-FileAbsent (Join-Path $serverRoot "tools\\mi_e2ee_third_party_audit.exe")
+Require-FileAbsent (Join-Path $serverRoot "tools\\mi_e2ee_third_party_policy_check.exe")
 
 $clientDb = Join-Path $clientRoot "database"
 $rimePrebuilt = Join-Path $clientDb "rime\\prebuilt"
@@ -287,9 +290,6 @@ Require-File (Join-Path $serverRoot "config\\kt_signing_key.bin")
 Require-File (Join-Path $serverRoot "config\\kt_root_pub.bin")
 Require-File (Join-Path $serverRoot "tools\\mi_e2ee_kt_keygen.exe")
 Require-File (Join-Path $serverRoot "tools\\mi_e2ee_kt_pubinfo.exe")
-Require-File (Join-Path $serverRoot "tools\\mi_e2ee_perf_baseline.exe")
-Require-File (Join-Path $serverRoot "tools\\mi_e2ee_ops_health_view.exe")
-Require-File (Join-Path $serverRoot "tools\\mi_e2ee_third_party_audit.exe")
 Require-File (Join-Path $serverRoot "test_user.txt")
 
 Assert-KcpDisabled (Join-Path $serverRoot "config\\config.ini")
@@ -301,6 +301,28 @@ Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "u
 Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "require_tls" "1"
 Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "require_pinned_fingerprint" "1"
 Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "tls_verify_mode" "pin"
+
+function Assert-PrivacyPackageNames([string]$root, [string]$label) {
+  $hit = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object {
+      $name = $_.Name.ToLowerInvariant()
+      $name -match '\.log($|\.)' -or
+      $name -match '\.(dmp|dump)$' -or
+      $name.Contains("crash") -or
+      $name.Contains("telemetry") -or
+      $name.Contains("diagnostic") -or
+      $name.Contains("diagnostics") -or
+      $name.Contains("ops_health") -or
+      $name.Contains("audit")
+    } |
+    Select-Object -First 1
+  if ($hit) {
+    throw "$label package contains forbidden privacy artifact: $($hit.FullName)"
+  }
+}
+
+Assert-PrivacyPackageNames $clientRoot "client"
+Assert-PrivacyPackageNames $serverRoot "server"
 
 $fingerprint = ""
 Get-Content (Join-Path $clientRoot "config\\client_config.ini") | ForEach-Object {

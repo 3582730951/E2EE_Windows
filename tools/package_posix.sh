@@ -250,7 +250,7 @@ else
   printf "u:p\n" > "$server_root/test_user.txt"
 fi
 
-for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_ops_health_view mi_e2ee_third_party_audit; do
+for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo; do
   tool_path="$(find "$server_build" -type f -name "$tool" -perm -111 | head -n 1 || true)"
   if [[ -n "$tool_path" ]]; then
     cp "$tool_path" "$server_root/tools/"

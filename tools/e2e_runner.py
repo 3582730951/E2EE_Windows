@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Unattended MI E2EE backend + Flutter integration runner.
 
-The runner intentionally writes only under core/build/e2e/<run-id>. It creates
-throwaway server/client configs, test payloads, optional MariaDB runtime state,
-and machine-readable evidence for CI or local debugging.
+The runner uses throwaway state under core/build/e2e/<run-id> by default and
+removes it before exit. Retained CI evidence is sanitized and excludes secrets,
+paths, stdout/stderr, and ops material.
 """
 
 from __future__ import annotations
@@ -98,12 +98,7 @@ def run_command(
 
 def require_ok(result: CommandResult) -> None:
     if result.returncode != 0:
-        raise RunnerError(
-            f"{result.name} failed with exit {result.returncode}\n"
-            f"command: {' '.join(result.command)}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
+        raise RunnerError(f"E2E_COMMAND_FAILED:{result.name}:{result.returncode}")
 
 
 def require_cargo_opaque_metadata(repo: Path, env: dict[str, str]) -> CommandResult | None:
@@ -155,6 +150,18 @@ def write_text(path: Path, text: str) -> None:
 
 def write_json(path: Path, value: object) -> None:
     write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def cleanup_run_dir(run_dir: Path) -> None:
+    try:
+        if run_dir.is_symlink():
+            target = run_dir.resolve()
+            run_dir.unlink()
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            shutil.rmtree(run_dir, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def wait_tcp(host: str, port: int, timeout_sec: int) -> None:
@@ -387,7 +394,6 @@ def start_mysql(mode: str, run_dir: Path) -> MysqlRuntime | None:
 
 
 def create_configs(run_dir: Path, mysql: MysqlRuntime | None, server_port: int) -> dict[str, object]:
-    ops_token = secrets.token_urlsafe(24)
     server_dir = run_dir / "server"
     offline_dir = server_dir / "offline_store"
     offline_dir.mkdir(parents=True, exist_ok=True)
@@ -416,9 +422,6 @@ tls_cert={server_dir / 'mi_e2ee_server.pfx'}
 key_protection=none
 metadata_key_hex={secrets.token_hex(32)}
 kt_signing_key={kt_signing_key}
-ops_enable=1
-ops_allow_remote=0
-ops_token={ops_token}
 """
     write_text(server_dir / "config.ini", server_config)
 
@@ -471,7 +474,6 @@ require_signature=0
     return {
         "server_config": str(server_dir / "config.ini"),
         "server_port": server_port,
-        "ops_token": ops_token,
         "clients": clients,
         "payload_dir": str(payload_dir),
     }
@@ -483,6 +485,10 @@ def configure_and_build(repo: Path, run_dir: Path, env: dict[str, str]) -> list[
     cargo_home.mkdir(parents=True, exist_ok=True)
     env = dict(env)
     env.setdefault("CARGO_HOME", str(cargo_home))
+    sdk_runtime_root = run_dir / "runtime" / "sdk_c_api"
+    sdk_runtime_root.mkdir(parents=True, exist_ok=True)
+    env["MI_E2EE_E2E_RUNTIME_ROOT"] = str(sdk_runtime_root)
+    env["MI_E2EE_E2E_KEEP_RUNTIME_DIR"] = "1"
     cargo_result = require_cargo_opaque_metadata(repo, env)
     if cargo_result is not None:
         results.append(cargo_result)
@@ -593,11 +599,8 @@ def start_server(run_dir: Path, config_path: str, port: int) -> subprocess.Popen
     last_error: OSError | None = None
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            stdout, stderr = proc.communicate()
-            raise RunnerError(
-                f"server exited before TCP ready with exit {proc.returncode}\n"
-                f"stdout:\n{stdout}\nstderr:\n{stderr}"
-            )
+            proc.communicate()
+            raise RunnerError(f"E2E_SERVER_EXITED:{proc.returncode}")
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=1):
                 return proc
@@ -605,11 +608,8 @@ def start_server(run_dir: Path, config_path: str, port: int) -> subprocess.Popen
             last_error = exc
             time.sleep(0.25)
     terminate_process(proc)
-    stdout, stderr = proc.communicate()
-    raise RunnerError(
-        f"TCP endpoint 127.0.0.1:{port} not ready: {last_error}\n"
-        f"stdout:\n{stdout}\nstderr:\n{stderr}"
-    )
+    proc.communicate()
+    raise RunnerError("E2E_SERVER_NOT_READY")
     return proc
 
 
@@ -669,7 +669,36 @@ def run_ios_gate(repo: Path, env: dict[str, str]) -> list[CommandResult]:
 
 
 def command_to_json(result: CommandResult) -> dict[str, object]:
-    return dataclasses.asdict(result)
+    return {
+        "name": result.name,
+        "returncode": result.returncode,
+        "duration_sec": round(result.duration_sec, 3),
+    }
+
+
+def config_to_json(config: dict[str, object]) -> dict[str, object]:
+    clients = config.get("clients", {})
+    client_count = len(clients) if isinstance(clients, dict) else 0
+    return {
+        "server": "configured",
+        "client_count": client_count,
+        "payloads": "generated",
+    }
+
+
+def privacy_scan_run_dir(run_dir: Path) -> None:
+    forbidden_terms = ("audit", "diagnostic", "diagnostics", "telemetry", "crash", "ops_health")
+    for path in run_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(run_dir).parts
+        if rel_parts and rel_parts[0] in {"build", "cargo_home"}:
+            continue
+        name = path.name.lower()
+        if name.endswith(".log") or ".log." in name or name.endswith((".dmp", ".dump")):
+            raise RunnerError("E2E_PRIVACY_ARTIFACT")
+        if any(term in name for term in forbidden_terms):
+            raise RunnerError("E2E_PRIVACY_ARTIFACT")
 
 
 def main(argv: list[str]) -> int:
@@ -680,6 +709,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--ios-simulator", action="store_true")
     parser.add_argument("--update-goldens", action="store_true")
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--keep-artifacts", action="store_true")
     parser.add_argument("--run-id", default=run_id())
     args = parser.parse_args(argv)
 
@@ -688,17 +718,25 @@ def main(argv: list[str]) -> int:
 
     evidence: dict[str, object] = {
         "run_id": args.run_id,
-        "run_dir": str(run_dir),
         "commands": [],
         "status": "running",
     }
     mysql: MysqlRuntime | None = None
     server: subprocess.Popen[str] | None = None
+    def stop_runtime() -> None:
+        nonlocal mysql, server
+        if server is not None:
+            terminate_process(server)
+            server = None
+        if mysql is not None:
+            mysql.stop()
+            mysql = None
+
     try:
         mysql = start_mysql(args.mysql, run_dir)
         evidence["mysql"] = mysql.label if mysql else "skip"
         config = create_configs(run_dir, mysql, free_port())
-        evidence["config"] = config
+        evidence["config"] = config_to_json(config)
         env = os.environ.copy()
         configure_android_sdk_env(env)
         env["MI_E2EE_CLIENT_CONFIG"] = config["clients"]["alice"]["config"]  # type: ignore[index]
@@ -712,7 +750,7 @@ def main(argv: list[str]) -> int:
             sdk_library = find_sdk_library(run_dir)
             env["MI_E2EE_SDK_LIBRARY"] = str(sdk_library)
             add_library_search_path(env, sdk_library.parent)
-            evidence["sdk_library"] = str(sdk_library)
+            evidence["sdk_library"] = "produced"
 
         server = start_server(run_dir, config["server_config"], int(config["server_port"]))
 
@@ -727,20 +765,25 @@ def main(argv: list[str]) -> int:
             evidence["commands"].extend(command_to_json(item) for item in ios_results)  # type: ignore[union-attr]
 
         evidence["status"] = "passed"
-        write_json(run_dir / "e2e_evidence.json", evidence)
+        if args.keep_artifacts:
+            stop_runtime()
+            privacy_scan_run_dir(run_dir)
+            write_json(run_dir / "e2e_evidence.json", evidence)
         print(json.dumps(evidence, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:
         evidence["status"] = "failed"
         evidence["error"] = str(exc)
-        write_json(run_dir / "e2e_evidence.json", evidence)
+        if args.keep_artifacts:
+            stop_runtime()
+            privacy_scan_run_dir(run_dir)
+            write_json(run_dir / "e2e_evidence.json", evidence)
         print(json.dumps(evidence, ensure_ascii=False, indent=2), file=sys.stderr)
         return 1
     finally:
-        if server is not None:
-            terminate_process(server)
-        if mysql is not None:
-            mysql.stop()
+        stop_runtime()
+        if not args.keep_artifacts:
+            cleanup_run_dir(run_dir)
 
 
 if __name__ == "__main__":

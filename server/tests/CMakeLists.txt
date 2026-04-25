@@ -174,6 +174,17 @@ if(MSVC)
 endif()
 add_test(NAME ops_health_test COMMAND ops_health_test)
 
+add_executable(platform_log_privacy_test
+    platform_log_privacy_test.cpp
+)
+target_link_libraries(platform_log_privacy_test PRIVATE mi_e2ee_core)
+target_include_directories(platform_log_privacy_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(platform_log_privacy_test)
+if(MSVC)
+  target_compile_options(platform_log_privacy_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME platform_log_privacy_test COMMAND platform_log_privacy_test)
+
 add_executable(connection_handler_test
     connection_handler_test.cpp
 )
@@ -284,10 +295,10 @@ if(MSVC)
 endif()
 add_test(NAME group_notice_test COMMAND group_notice_test)
 
-if(TARGET mi_e2ee_third_party_audit)
+if(TARGET mi_e2ee_third_party_policy_check)
   set(THIRD_PARTY_LOCK "${CMAKE_CURRENT_LIST_DIR}/../../third_party/third_party.lock")
   add_test(NAME third_party_lock_test
-           COMMAND mi_e2ee_third_party_audit --verify --lock "${THIRD_PARTY_LOCK}")
+           COMMAND mi_e2ee_third_party_policy_check --verify --lock "${THIRD_PARTY_LOCK}")
 endif()
 
 if(TARGET mi_e2ee_perf_baseline)

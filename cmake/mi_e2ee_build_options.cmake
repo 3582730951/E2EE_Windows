@@ -11,6 +11,17 @@ option(MI_E2EE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (clang/gcc)" OFF)
 option(MI_E2EE_BUILD_FUZZERS "Build fuzz harness targets" OFF)
 option(MI_E2EE_FUZZ_USE_LIBFUZZER "Use libFuzzer engine (clang only)" OFF)
 option(MI_E2EE_FUZZ_SMOKE "Run fuzz smoke tests via CTest" OFF)
+set(MI_E2EE_PRIVACY_MODE "strict" CACHE STRING "Release privacy posture: strict or test")
+set_property(CACHE MI_E2EE_PRIVACY_MODE PROPERTY STRINGS strict test)
+
+if(NOT MI_E2EE_PRIVACY_MODE MATCHES "^(strict|test)$")
+  message(FATAL_ERROR "MI_E2EE_PRIVACY_MODE must be strict or test")
+endif()
+
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+      "Build type for single-configuration generators" FORCE)
+endif()
 
 if(MI_E2EE_PGO_INSTRUMENT AND MI_E2EE_PGO_USE)
   message(FATAL_ERROR "MI_E2EE_PGO_INSTRUMENT and MI_E2EE_PGO_USE are mutually exclusive")
@@ -33,6 +44,14 @@ target_compile_definitions(mi_e2ee_build_flags INTERFACE
   $<$<CONFIG:RelWithDebInfo>:MI_E2EE_SECURE_RELEASE=1>
   $<$<CONFIG:MinSizeRel>:MI_E2EE_SECURE_RELEASE=1>
 )
+
+if(MI_E2EE_PRIVACY_MODE STREQUAL "strict")
+  target_compile_definitions(mi_e2ee_build_flags INTERFACE
+    $<$<CONFIG:Release>:MI_E2EE_PRIVACY_STRICT=1>
+    $<$<CONFIG:RelWithDebInfo>:MI_E2EE_PRIVACY_STRICT=1>
+    $<$<CONFIG:MinSizeRel>:MI_E2EE_PRIVACY_STRICT=1>
+  )
+endif()
 
 if(MI_E2EE_ENABLE_SYMBOL_HIDE AND NOT MSVC)
   target_compile_options(mi_e2ee_build_flags INTERFACE
