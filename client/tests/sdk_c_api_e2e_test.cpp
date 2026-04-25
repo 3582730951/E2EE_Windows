@@ -1,6 +1,9 @@
 #include "c_api_client.h"
 
 #include <chrono>
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -206,15 +209,107 @@ void LogClientError(const char* label, mi_client_handle* handle) {
   std::cerr.flush();
 }
 
+bool WriteBytesToFile(const std::filesystem::path& path,
+                      const std::vector<std::uint8_t>& bytes) {
+  std::error_code ec;
+  const auto parent = path.parent_path();
+  if (!parent.empty()) {
+    std::filesystem::create_directories(parent, ec);
+    if (ec) {
+      return false;
+    }
+  }
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    return false;
+  }
+  if (!bytes.empty()) {
+    out.write(reinterpret_cast<const char*>(bytes.data()),
+              static_cast<std::streamsize>(bytes.size()));
+  }
+  out.flush();
+  return static_cast<bool>(out);
+}
+
+void WriteLe16(std::uint16_t value, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(value & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+}
+
+void WriteLe32(std::uint32_t value, std::vector<std::uint8_t>& out) {
+  out.push_back(static_cast<std::uint8_t>(value & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
+  out.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
+}
+
+bool WriteProtoString(const std::string& value, std::vector<std::uint8_t>& out) {
+  if (value.size() > 0xFFFFu) {
+    return false;
+  }
+  WriteLe16(static_cast<std::uint16_t>(value.size()), out);
+  out.insert(out.end(), value.begin(), value.end());
+  return true;
+}
+
+std::vector<std::uint8_t> BuildGroupCallSubscriptionPayload(
+    const std::string& sender,
+    std::uint8_t flags) {
+  std::vector<std::uint8_t> out;
+  WriteLe32(1, out);
+  (void)WriteProtoString(sender, out);
+  out.push_back(flags);
+  return out;
+}
+
+std::vector<std::uint8_t> BuildSyntheticAudioPacket() {
+  std::vector<std::uint8_t> packet(22, 0);
+  packet[0] = 2;  // MediaPacket v2.
+  packet[1] = 1;  // audio stream.
+  for (std::size_t i = 6; i < packet.size(); ++i) {
+    packet[i] = static_cast<std::uint8_t>(0xA0u + (i & 0x0Fu));
+  }
+  return packet;
+}
+
+std::array<std::uint8_t, 16> FixedCallId(std::uint8_t seed) {
+  std::array<std::uint8_t, 16> out{};
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    out[i] = static_cast<std::uint8_t>(seed + i);
+  }
+  return out;
+}
+
 constexpr std::uint32_t kFriendTimeoutMs = 10000;
 constexpr std::uint32_t kPairingTimeoutMs = 15000;
 constexpr std::uint32_t kChatTimeoutMs = 15000;
 constexpr std::uint32_t kGroupInviteTimeoutMs = 8000;
 constexpr std::uint32_t kGroupTextTimeoutMs = 10000;
+constexpr std::uint32_t kFileTimeoutMs = 15000;
+constexpr std::uint32_t kMediaTimeoutMs = 10000;
+constexpr std::uint32_t kDeviceTimeoutMs = 10000;
 constexpr std::uint32_t kPostLoginDelayMs = 300;
 constexpr char kTestMetadataKeyHex[] =
     "00112233445566778899aabbccddeeff"
     "fedcba98765432100123456789abcdef";
+
+struct FileEventSnapshot {
+  std::string sender;
+  std::string group_id;
+  std::string message_id;
+  std::string file_id;
+  std::string file_name;
+  std::uint64_t file_size{0};
+  std::array<std::uint8_t, 32> file_key{};
+  std::uint32_t file_key_len{0};
+};
+
+struct MediaEventSnapshot {
+  std::string sender;
+  std::string group_id;
+  std::array<std::uint8_t, 16> call_id{};
+  std::vector<std::uint8_t> payload;
+};
 
 [[noreturn]] void FailNow(const char* msg, mi_client_handle* handle) {
   if (msg) {
@@ -403,7 +498,7 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "allow_legacy_login=0\n";
   out << "max_io_threads=1\n";
   out << "[call]\n";
-  out << "enable_group_call=0\n";
+  out << "enable_group_call=1\n";
   out << "[kcp]\n";
   out << "enable=0\n";
   out.flush();
@@ -589,6 +684,194 @@ bool WaitForChatOrOffline(mi_client_handle* handle,
   return false;
 }
 
+bool WaitForPeerEvent(mi_client_handle* handle,
+                      std::uint32_t type,
+                      const std::string& match_peer,
+                      const std::string& match_message_id,
+                      std::uint32_t timeout_ms) {
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_event_t events[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_poll_event(handle, events, 8, 200);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const mi_event_t& ev = events[i];
+      if (ev.type != type) {
+        continue;
+      }
+      if (!match_peer.empty() && (!ev.peer || match_peer != ev.peer)) {
+        continue;
+      }
+      if (!match_message_id.empty() &&
+          (!ev.message_id || match_message_id != ev.message_id)) {
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+bool WaitForFileEvent(mi_client_handle* handle,
+                      std::uint32_t type,
+                      const std::string& match_sender,
+                      const std::string& match_group,
+                      std::uint32_t timeout_ms,
+                      FileEventSnapshot& out) {
+  out = {};
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_event_t events[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_poll_event(handle, events, 8, 200);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const mi_event_t& ev = events[i];
+      if (ev.type != type) {
+        continue;
+      }
+      if (!match_sender.empty() && (!ev.sender || match_sender != ev.sender)) {
+        continue;
+      }
+      if (!match_group.empty() && (!ev.group_id || match_group != ev.group_id)) {
+        continue;
+      }
+      if (!ev.file_id || !ev.file_key || ev.file_key_len != out.file_key.size()) {
+        continue;
+      }
+      out.sender = ev.sender ? ev.sender : "";
+      out.group_id = ev.group_id ? ev.group_id : "";
+      out.message_id = ev.message_id ? ev.message_id : "";
+      out.file_id = ev.file_id;
+      out.file_name = ev.file_name ? ev.file_name : "";
+      out.file_size = ev.file_size;
+      out.file_key_len = ev.file_key_len;
+      std::memcpy(out.file_key.data(), ev.file_key, out.file_key.size());
+      return true;
+    }
+  }
+  return false;
+}
+
+bool DownloadFileMatches(mi_client_handle* handle,
+                         const FileEventSnapshot& file,
+                         const std::vector<std::uint8_t>& expected) {
+  if (!handle || file.file_id.empty() || file.file_key_len != file.file_key.size()) {
+    return false;
+  }
+  std::uint8_t* bytes = nullptr;
+  std::uint64_t len = 0;
+  const int ok = mi_client_download_chat_file_to_bytes(
+      handle, file.file_id.c_str(), file.file_key.data(), file.file_key_len,
+      file.file_name.c_str(), file.file_size, 0, &bytes, &len);
+  if (ok != 1) {
+    return false;
+  }
+  const bool match =
+      len == expected.size() &&
+      (expected.empty() ||
+       std::memcmp(bytes, expected.data(), expected.size()) == 0);
+  mi_client_free(bytes);
+  return match;
+}
+
+bool WaitForMediaEvent(mi_client_handle* handle,
+                       std::uint32_t type,
+                       const std::string& match_sender,
+                       const std::string& match_group,
+                       const std::vector<std::uint8_t>& expected_payload,
+                       std::uint32_t timeout_ms,
+                       MediaEventSnapshot& out) {
+  out = {};
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_event_t events[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_poll_event(handle, events, 8, 200);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const mi_event_t& ev = events[i];
+      if (ev.type != type) {
+        continue;
+      }
+      if (!match_sender.empty() && (!ev.sender || match_sender != ev.sender)) {
+        continue;
+      }
+      if (!match_group.empty() && (!ev.group_id || match_group != ev.group_id)) {
+        continue;
+      }
+      if (!ev.payload || ev.payload_len != expected_payload.size()) {
+        continue;
+      }
+      if (!expected_payload.empty() &&
+          std::memcmp(ev.payload, expected_payload.data(),
+                      expected_payload.size()) != 0) {
+        continue;
+      }
+      out.sender = ev.sender ? ev.sender : "";
+      out.group_id = ev.group_id ? ev.group_id : "";
+      std::memcpy(out.call_id.data(), ev.call_id, out.call_id.size());
+      out.payload.assign(ev.payload, ev.payload + ev.payload_len);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool PullMediaMatches(mi_client_handle* handle,
+                      const std::array<std::uint8_t, 16>& call_id,
+                      bool group,
+                      const std::string& expected_sender,
+                      const std::vector<std::uint8_t>& expected_payload) {
+  mi_media_packet_t packets[8]{};
+  const std::uint32_t count =
+      group ? mi_client_pull_group_media(handle, call_id.data(),
+                                         static_cast<std::uint32_t>(call_id.size()),
+                                         8, 1000, packets)
+            : mi_client_pull_media(handle, call_id.data(),
+                                   static_cast<std::uint32_t>(call_id.size()),
+                                   8, 1000, packets);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const auto& p = packets[i];
+    if (!p.sender || expected_sender != p.sender || !p.payload ||
+        p.payload_len != expected_payload.size()) {
+      continue;
+    }
+    if (expected_payload.empty() ||
+        std::memcmp(p.payload, expected_payload.data(),
+                    expected_payload.size()) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool WaitForGroupCallEvent(mi_client_handle* handle,
+                           std::uint32_t op,
+                           const std::string& match_sender,
+                           const std::string& match_group,
+                           const std::array<std::uint8_t, 16>& match_call_id,
+                           std::uint32_t timeout_ms) {
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_event_t events[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_poll_event(handle, events, 8, 200);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const mi_event_t& ev = events[i];
+      if (ev.type != MI_EVENT_GROUP_CALL || ev.call_op != op) {
+        continue;
+      }
+      if (!match_sender.empty() && (!ev.sender || match_sender != ev.sender)) {
+        continue;
+      }
+      if (!match_group.empty() && (!ev.group_id || match_group != ev.group_id)) {
+        continue;
+      }
+      if (std::memcmp(ev.call_id, match_call_id.data(),
+                      match_call_id.size()) != 0) {
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 bool WaitForPairingRequest(mi_client_handle* handle,
                            mi_device_pairing_request_t* out_request,
                            std::uint32_t timeout_ms) {
@@ -661,6 +944,85 @@ bool WaitForFriend(mi_client_handle* handle,
       if (name && friend_username == name) {
         return true;
       }
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool WaitForNoFriend(mi_client_handle* handle,
+                     const std::string& friend_username,
+                     std::uint32_t timeout_ms) {
+  if (!handle || friend_username.empty()) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_friend_entry_t entries[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    int changed = 0;
+    const std::uint32_t count =
+        mi_client_sync_friends(handle, entries, 8, &changed);
+    bool found = false;
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const char* name = entries[i].username;
+      if (name && friend_username == name) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      return true;
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool WaitForGroupMemberRole(mi_client_handle* handle,
+                            const std::string& group_id,
+                            const std::string& username,
+                            std::uint32_t role,
+                            std::uint32_t timeout_ms) {
+  if (!handle || group_id.empty() || username.empty()) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_group_member_entry_t entries[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_list_group_members_info(
+        handle, group_id.c_str(), entries, 8);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const char* name = entries[i].username;
+      if (name && username == name && entries[i].role == role) {
+        return true;
+      }
+    }
+    mi::platform::SleepMs(100);
+  }
+  return false;
+}
+
+bool DeviceListContains(mi_client_handle* handle,
+                        const std::string& target_device_id,
+                        std::uint32_t min_count,
+                        std::uint32_t timeout_ms) {
+  if (!handle || target_device_id.empty()) {
+    return false;
+  }
+  const auto deadline = mi::platform::NowSteadyMs() + timeout_ms;
+  mi_device_entry_t entries[8]{};
+  while (mi::platform::NowSteadyMs() < deadline) {
+    const std::uint32_t count = mi_client_list_devices(handle, entries, 8);
+    bool found = false;
+    for (std::uint32_t i = 0; i < count; ++i) {
+      const char* id = entries[i].device_id;
+      if (id && target_device_id == id) {
+        found = true;
+        break;
+      }
+    }
+    if (found && count >= min_count) {
+      return true;
     }
     mi::platform::SleepMs(100);
   }
@@ -823,6 +1185,7 @@ int main() {
   char* msg_id = nullptr;
   char* group_id = nullptr;
   char* group_msg_id = nullptr;
+  std::string private_msg_id;
 
   auto cleanup = [&]() {
     if (pairing_code) {
@@ -1081,6 +1444,7 @@ int main() {
       LogClientError("alice", alice);
     }
     if (msg_id) {
+      private_msg_id = msg_id;
       mi_client_free(msg_id);
       msg_id = nullptr;
     }
@@ -1097,6 +1461,82 @@ int main() {
     return fail("private chat event timeout", bob);
   }
   LogStep("private msg ok");
+
+  if (!private_msg_id.empty()) {
+    if (mi_client_send_read_receipt(bob, "alice", private_msg_id.c_str()) != 1) {
+      return fail("read receipt send failed", bob);
+    }
+    if (!WaitForPeerEvent(alice, MI_EVENT_READ_RECEIPT, "bob", private_msg_id,
+                          kChatTimeoutMs)) {
+      return fail("read receipt event timeout", alice);
+    }
+  }
+  if (mi_client_send_typing(alice, "bob", 1) != 1) {
+    return fail("typing send failed", alice);
+  }
+  if (!WaitForPeerEvent(bob, MI_EVENT_TYPING, "alice", "", kChatTimeoutMs)) {
+    return fail("typing event timeout", bob);
+  }
+  if (mi_client_send_presence(alice, "bob", 1) != 1) {
+    return fail("presence send failed", alice);
+  }
+  if (!WaitForPeerEvent(bob, MI_EVENT_PRESENCE, "alice", "", kChatTimeoutMs)) {
+    return fail("presence event timeout", bob);
+  }
+  LogStep("chat receipts ok");
+
+  const std::vector<std::uint8_t> private_file_bytes = {
+      0x6d, 0x69, 0x2d, 0x65, 0x32, 0x65, 0x65, 0x2d,
+      0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2d,
+      0x66, 0x69, 0x6c, 0x65, 0x0a, 0x01, 0x02, 0x03};
+  const auto private_file_path = base_dir / "payloads" / "private.bin";
+  if (!WriteBytesToFile(private_file_path, private_file_bytes)) {
+    return fail("write private file payload failed", nullptr);
+  }
+  if (mi_client_send_private_file(alice, "bob",
+                                  private_file_path.u8string().c_str(),
+                                  &msg_id) != 1 ||
+      !msg_id) {
+    return fail("private file send failed", alice);
+  }
+  mi_client_free(msg_id);
+  msg_id = nullptr;
+  FileEventSnapshot private_file;
+  if (!WaitForFileEvent(bob, MI_EVENT_CHAT_FILE, "alice", "",
+                        kFileTimeoutMs, private_file)) {
+    return fail("private file event timeout", bob);
+  }
+  if (!DownloadFileMatches(bob, private_file, private_file_bytes)) {
+    return fail("private file download mismatch", bob);
+  }
+  LogStep("private file ok");
+
+  const auto private_media_call_id = FixedCallId(0x30);
+  const std::vector<std::uint8_t> private_media_packet = {
+      0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x05, 0x00,
+      0x00, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+      0x10, 0x20, 0x30, 0x40, 0x51, 0x52, 0x53, 0x54,
+      0x55, 0x56, 0x57, 0x58};
+  if (mi_client_add_media_subscription(
+          bob, private_media_call_id.data(),
+          static_cast<std::uint32_t>(private_media_call_id.size()), 0,
+          nullptr) != 1) {
+    return fail("private media subscription failed", bob);
+  }
+  if (mi_client_push_media(alice, "bob", private_media_call_id.data(),
+                           static_cast<std::uint32_t>(private_media_call_id.size()),
+                           private_media_packet.data(),
+                           static_cast<std::uint32_t>(private_media_packet.size())) !=
+      1) {
+    return fail("private media push failed", alice);
+  }
+  MediaEventSnapshot private_media;
+  if (!WaitForMediaEvent(bob, MI_EVENT_MEDIA_RELAY, "alice", "",
+                         private_media_packet, kMediaTimeoutMs,
+                         private_media)) {
+    return fail("private media event timeout", bob);
+  }
+  LogStep("private media ok");
 
   if (mi_client_create_group(alice, &group_id) != 1 || !group_id) {
     return fail("create group failed", alice);
@@ -1137,6 +1577,192 @@ int main() {
     return fail("group text event timeout", bob);
   }
   LogStep("group msg ok");
+
+  if (!WaitForGroupMemberRole(alice, group_id, "alice", 0, kChatTimeoutMs) ||
+      !WaitForGroupMemberRole(alice, group_id, "bob", 2, kChatTimeoutMs)) {
+    return fail("group member list failed", alice);
+  }
+  if (mi_client_set_group_member_role(alice, group_id, "bob", 1) != 1) {
+    return fail("group role set failed", alice);
+  }
+  if (!WaitForGroupMemberRole(alice, group_id, "bob", 1, kChatTimeoutMs)) {
+    return fail("group role sync timeout", alice);
+  }
+  LogStep("group members ok");
+
+  const std::vector<std::uint8_t> group_file_bytes = {
+      0x67, 0x72, 0x6f, 0x75, 0x70, 0x2d, 0x66, 0x69,
+      0x6c, 0x65, 0x2d, 0x65, 0x32, 0x65, 0x65, 0x0a,
+      0x90, 0x91, 0x92, 0x93, 0x94};
+  const auto group_file_path = base_dir / "payloads" / "group.bin";
+  if (!WriteBytesToFile(group_file_path, group_file_bytes)) {
+    return fail("write group file payload failed", nullptr);
+  }
+  if (mi_client_send_group_file(alice, group_id,
+                                group_file_path.u8string().c_str(),
+                                &msg_id) != 1 ||
+      !msg_id) {
+    return fail("group file send failed", alice);
+  }
+  mi_client_free(msg_id);
+  msg_id = nullptr;
+  FileEventSnapshot group_file;
+  if (!WaitForFileEvent(bob, MI_EVENT_GROUP_FILE, "alice", group_id,
+                        kFileTimeoutMs, group_file)) {
+    return fail("group file event timeout", bob);
+  }
+  if (!DownloadFileMatches(bob, group_file, group_file_bytes)) {
+    return fail("group file download mismatch", bob);
+  }
+  LogStep("group file ok");
+
+  std::uint8_t call_id_buf[16]{};
+  std::uint32_t call_key_id = 0;
+  if (mi_client_start_group_call(alice, group_id, 1, call_id_buf,
+                                 sizeof(call_id_buf), &call_key_id) != 1 ||
+      call_key_id == 0) {
+    return fail("group call start failed", alice);
+  }
+  std::array<std::uint8_t, 16> group_call_id{};
+  std::memcpy(group_call_id.data(), call_id_buf, group_call_id.size());
+  if (!WaitForGroupCallEvent(bob, 1, "alice", group_id, group_call_id,
+                             kMediaTimeoutMs)) {
+    return fail("group call create event timeout", bob);
+  }
+  std::uint32_t bob_call_key_id = 0;
+  if (mi_client_join_group_call(bob, group_id, group_call_id.data(),
+                                static_cast<std::uint32_t>(group_call_id.size()),
+                                1, &bob_call_key_id) != 1 ||
+      bob_call_key_id == 0) {
+    return fail("group call join failed", bob);
+  }
+  if (!WaitForGroupCallEvent(alice, 2, "bob", group_id, group_call_id,
+                             kMediaTimeoutMs)) {
+    return fail("group call join event timeout", alice);
+  }
+
+  const std::vector<std::uint8_t> subscription =
+      BuildGroupCallSubscriptionPayload("alice", 0x01);
+  std::uint32_t member_count = 0;
+  if (mi_client_send_group_call_signal(
+          bob, 5, group_id, group_call_id.data(),
+          static_cast<std::uint32_t>(group_call_id.size()), 1,
+          bob_call_key_id, 1, 0, subscription.data(),
+          static_cast<std::uint32_t>(subscription.size()), nullptr, 0,
+          nullptr, nullptr, 0, &member_count) != 1) {
+    return fail("group call subscription update failed", bob);
+  }
+  const std::vector<std::uint8_t> group_media_packet =
+      BuildSyntheticAudioPacket();
+  if (mi_client_push_group_media(
+          alice, group_id, group_call_id.data(),
+          static_cast<std::uint32_t>(group_call_id.size()),
+          group_media_packet.data(),
+          static_cast<std::uint32_t>(group_media_packet.size())) != 1) {
+    return fail("group media push failed", alice);
+  }
+  if (!PullMediaMatches(bob, group_call_id, true, "alice",
+                        group_media_packet)) {
+    return fail("group media pull mismatch", bob);
+  }
+  if (mi_client_leave_group_call(bob, group_id, group_call_id.data(),
+                                 static_cast<std::uint32_t>(
+                                     group_call_id.size())) != 1) {
+    return fail("group call leave failed", bob);
+  }
+  if (!WaitForGroupCallEvent(alice, 3, "bob", group_id, group_call_id,
+                             kMediaTimeoutMs)) {
+    return fail("group call leave event timeout", alice);
+  }
+  (void)mi_client_leave_group_call(alice, group_id, group_call_id.data(),
+                                   static_cast<std::uint32_t>(
+                                       group_call_id.size()));
+  LogStep("group call media ok");
+
+  if (mi_client_kick_group_member(alice, group_id, "bob") != 1) {
+    return fail("group member kick failed", alice);
+  }
+  if (mi_client_send_group_text(bob, group_id, "after kick", &group_msg_id) ==
+      1) {
+    if (group_msg_id) {
+      mi_client_free(group_msg_id);
+      group_msg_id = nullptr;
+    }
+    return fail("kicked member could still send group text", bob);
+  }
+  LogStep("group kick ok");
+
+  mi_history_entry_t history[16]{};
+  const std::uint32_t history_count =
+      mi_client_export_recent_history_snapshot(alice, 8, 8, history, 16);
+  bool saw_private_history = false;
+  bool saw_group_history = false;
+  for (std::uint32_t i = 0; i < history_count; ++i) {
+    const mi_history_entry_t& entry = history[i];
+    const std::string conv = entry.conv_id ? entry.conv_id : "";
+    if (!entry.is_group && conv == "bob") {
+      saw_private_history = true;
+    }
+    if (entry.is_group && conv == group_id) {
+      saw_group_history = true;
+    }
+  }
+  if (!saw_private_history || !saw_group_history) {
+    return fail("recent history snapshot missing conversations", alice);
+  }
+  LogStep("history snapshot ok");
+
+  if (mi_client_delete_friend(alice, "bob") != 1) {
+    return fail("friend delete failed", alice);
+  }
+  if (!WaitForNoFriend(alice, "bob", kFriendTimeoutMs) ||
+      !WaitForNoFriend(bob, "alice", kFriendTimeoutMs)) {
+    return fail("friend delete sync timeout", alice);
+  }
+  if (mi_client_send_private_text(alice, "bob", "after delete", &msg_id) == 1) {
+    if (msg_id) {
+      mi_client_free(msg_id);
+      msg_id = nullptr;
+    }
+    return fail("deleted friend could still receive private text", alice);
+  }
+  if (mi_client_add_friend(alice, "bob", "restored") != 1) {
+    return fail("friend direct add failed", alice);
+  }
+  if (!WaitForFriend(alice, "bob", kFriendTimeoutMs) ||
+      !WaitForFriend(bob, "alice", kFriendTimeoutMs)) {
+    return fail("friend direct add sync timeout", alice);
+  }
+  if (mi_client_set_user_blocked(alice, "bob", 1) != 1 ||
+      !WaitForNoFriend(alice, "bob", kFriendTimeoutMs) ||
+      !WaitForNoFriend(bob, "alice", kFriendTimeoutMs)) {
+    return fail("friend block failed", alice);
+  }
+  if (mi_client_set_user_blocked(alice, "bob", 0) != 1) {
+    return fail("friend unblock failed", alice);
+  }
+  LogStep("friend delete block ok");
+
+  const char* linked_device_raw = mi_client_device_id(alice_linked);
+  const std::string linked_device_id =
+      linked_device_raw ? linked_device_raw : "";
+  if (linked_device_id.empty()) {
+    return fail("linked device id missing", alice_linked);
+  }
+  mi_device_entry_t linked_entries[8]{};
+  (void)mi_client_list_devices(alice_linked, linked_entries, 8);
+  if (!DeviceListContains(alice, linked_device_id, 2, kDeviceTimeoutMs)) {
+    return fail("linked device missing from device list", alice);
+  }
+  if (mi_client_kick_device(alice, linked_device_id.c_str()) != 1) {
+    return fail("device kick failed", alice);
+  }
+  if (mi_client_heartbeat(alice_linked) == 1) {
+    return fail("kicked linked device heartbeat still succeeded",
+                alice_linked);
+  }
+  LogStep("device kick ok");
+
   mi_client_free(group_id);
   group_id = nullptr;
 
