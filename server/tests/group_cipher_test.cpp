@@ -8,6 +8,7 @@
 #include "group_directory.h"
 #include "offline_storage.h"
 #include "session_manager.h"
+#include "test_auth_helpers.h"
 
 using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
@@ -23,12 +24,7 @@ using mi::server::TransportKind;
 
 static DemoUser MakeDemoUser(const std::string& username,
                              const std::string& password) {
-  DemoUser user;
-  user.username.set(username);
-  user.password.set(password);
-  user.username_plain = username;
-  user.password_plain = password;
-  return user;
+  return mi::server::test::MakeDemoUser(username, password);
 }
 
 int main() {

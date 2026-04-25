@@ -13,6 +13,7 @@
 #include "media_relay.h"
 #include "protocol.h"
 #include "session_manager.h"
+#include "test_auth_helpers.h"
 
 using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
@@ -84,18 +85,8 @@ Frame MakeGroupCallSignal(std::uint8_t op,
 
 int main() {
   DemoUserTable table;
-  DemoUser alice;
-  alice.username.set("alice");
-  alice.password.set("pwd");
-  alice.username_plain = "alice";
-  alice.password_plain = "pwd";
-  table.emplace("alice", alice);
-  DemoUser bob;
-  bob.username.set("bob");
-  bob.password.set("pwd");
-  bob.username_plain = "bob";
-  bob.password_plain = "pwd";
-  table.emplace("bob", bob);
+  table.emplace("alice", mi::server::test::MakeDemoUser("alice", "pwd"));
+  table.emplace("bob", mi::server::test::MakeDemoUser("bob", "pwd"));
 
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager sessions(std::move(auth));

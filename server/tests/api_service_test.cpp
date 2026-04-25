@@ -9,6 +9,7 @@
 #include "group_directory.h"
 #include "offline_storage.h"
 #include "session_manager.h"
+#include "test_auth_helpers.h"
 
 using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
@@ -25,12 +26,7 @@ using mi::server::SessionManager;
 
 int main() {
   DemoUserTable table;
-  DemoUser user;
-  user.username.set("alice");
-  user.password.set("secret");
-  user.username_plain = "alice";
-  user.password_plain = "secret";
-  table.emplace("alice", user);
+  table.emplace("alice", mi::server::test::MakeDemoUser("alice", "secret"));
 
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager sessions(std::move(auth));

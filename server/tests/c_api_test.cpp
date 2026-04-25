@@ -10,6 +10,7 @@
 #include "frame.h"
 #include "key_transparency.h"
 #include "protocol.h"
+#include "test_auth_helpers.h"
 #include "test_permissions.h"
 
 static void WriteFile(const std::string& path, const std::string& content) {
@@ -44,7 +45,7 @@ int main() {
             "allow_legacy_login=1\n"
             "key_protection=none\n"
             "kt_signing_key=kt_signing_key.bin\n");
-  WriteFile("test_user.txt", "u:p\n");
+  WriteFile("test_user.txt", mi::server::test::DemoUserFileLine("u", "p"));
   {
     std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x44);
     std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);

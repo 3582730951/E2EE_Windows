@@ -96,10 +96,12 @@ if(EXISTS ${MI_OPAQUE_PAKE_MANIFEST} AND NOT TARGET mi_opaque_pake_rust)
     COMMENT "Building Rust OPAQUE PAKE (release)"
   )
 
+  set(_mi_opaque_pake_release_config
+      "$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>")
   add_custom_target(mi_opaque_pake_rust_build
     DEPENDS
-      $<$<CONFIG:Release>:${MI_OPAQUE_PAKE_RELEASE_LIB}>
-      $<$<NOT:$<CONFIG:Release>>:${MI_OPAQUE_PAKE_DEBUG_LIB}>
+      $<${_mi_opaque_pake_release_config}:${MI_OPAQUE_PAKE_RELEASE_LIB}>
+      $<$<NOT:${_mi_opaque_pake_release_config}>:${MI_OPAQUE_PAKE_DEBUG_LIB}>
   )
 
   add_library(mi_opaque_pake_rust STATIC IMPORTED GLOBAL)

@@ -11,6 +11,7 @@
 #include "protocol.h"
 #include "secure_channel.h"
 #include "server_app.h"
+#include "test_auth_helpers.h"
 #include "test_permissions.h"
 
 using mi::server::ConnectionHandler;
@@ -55,7 +56,7 @@ int main() {
             "key_protection=none\n"
             "tls_cert=mi_e2ee_server.pfx\n"
             "kt_signing_key=kt_signing_key.bin\n");
-  WriteFile("test_user.txt", "u1:p1\n");
+  WriteFile("test_user.txt", mi::server::test::DemoUserFileLine("u1", "p1"));
   {
     std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x22);
     std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);

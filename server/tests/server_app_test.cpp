@@ -7,6 +7,7 @@
 #include "frame.h"
 #include "key_transparency.h"
 #include "server_app.h"
+#include "test_auth_helpers.h"
 
 using mi::server::Frame;
 using mi::server::FrameType;
@@ -63,7 +64,8 @@ int main() {
   std::filesystem::remove_all("offline_server_app_test_corrupt", ec);
 
   WriteConfig("config.ini", "offline_server_app_test");
-  WriteFile("test_user.txt", "alice:secret\n");
+  WriteFile("test_user.txt",
+            mi::server::test::DemoUserFileLine("alice", "secret"));
   {
     std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x42);
     std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
@@ -97,21 +99,12 @@ int main() {
 
   Frame resp;
   ok = app.HandleFrame(login, resp, mi::server::TransportKind::kLocal, err);
-#ifdef MI_E2EE_SECURE_RELEASE
-  if (!ok || resp.payload.empty() || resp.payload[0] != 0) {
-    std::cerr << "HandleFrame legacy login should be rejected in secure release, ok="
-              << ok << " payload_size=" << resp.payload.size()
-              << " err=" << err << '\n';
-    return 1;
-  }
-#else
   if (!ok || resp.payload.empty() || resp.payload[0] != 1) {
     std::cerr << "HandleFrame login failed, ok=" << ok
               << " payload_size=" << resp.payload.size()
               << " err=" << err << '\n';
     return 1;
   }
-#endif
 
   std::filesystem::create_directories("offline_server_app_test_corrupt", ec);
   WriteFile("offline_server_app_test_corrupt/kt_directory.bin", "BADMAGIC");

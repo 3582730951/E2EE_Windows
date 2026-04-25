@@ -9,6 +9,7 @@
 #include "protocol.h"
 #include "group_directory.h"
 #include "session_manager.h"
+#include "test_auth_helpers.h"
 
 using mi::server::ApiService;
 using mi::server::DemoAuthProvider;
@@ -53,12 +54,7 @@ static Frame MakeGroupEventFrame(std::uint8_t action, const std::string& gid) {
 
 int main() {
   DemoUserTable table;
-  DemoUser user;
-  user.username.set("bob");
-  user.password.set("pwd");
-  user.username_plain = "bob";
-  user.password_plain = "pwd";
-  table.emplace("bob", user);
+  table.emplace("bob", mi::server::test::MakeDemoUser("bob", "pwd"));
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager sessions(std::move(auth));
   GroupManager groups;

@@ -5,6 +5,7 @@
 
 #include "auth_provider.h"
 #include "session_manager.h"
+#include "test_auth_helpers.h"
 #include "test_permissions.h"
 
 using mi::server::DemoAuthProvider;
@@ -12,6 +13,15 @@ using mi::server::DemoUser;
 using mi::server::DemoUserTable;
 using mi::server::Session;
 using mi::server::SessionManager;
+
+namespace {
+
+DemoUser MakeDemoUser(const std::string& username,
+                      const std::string& password) {
+  return mi::server::test::MakeDemoUser(username, password);
+}
+
+}  // namespace
 
 int main() {
   std::error_code ec;
@@ -28,12 +38,7 @@ int main() {
   std::string persisted_token;
   {
     DemoUserTable table;
-    DemoUser user;
-    user.username.set("bob");
-    user.password.set("pwd123");
-    user.username_plain = "bob";
-    user.password_plain = "pwd123";
-    table.emplace("bob", user);
+    table.emplace("bob", MakeDemoUser("bob", "pwd123"));
 
     auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
     SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
@@ -55,12 +60,7 @@ int main() {
 
   {
     DemoUserTable table;
-    DemoUser user;
-    user.username.set("bob");
-    user.password.set("pwd123");
-    user.username_plain = "bob";
-    user.password_plain = "pwd123";
-    table.emplace("bob", user);
+    table.emplace("bob", MakeDemoUser("bob", "pwd123"));
 
     auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
     SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
@@ -78,12 +78,7 @@ int main() {
 
   {
     DemoUserTable table;
-    DemoUser user;
-    user.username.set("bob");
-    user.password.set("pwd123");
-    user.username_plain = "bob";
-    user.password_plain = "pwd123";
-    table.emplace("bob", user);
+    table.emplace("bob", MakeDemoUser("bob", "pwd123"));
 
     auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
     SessionManager persist_mgr(std::move(auth), std::chrono::seconds(600), {},
@@ -95,12 +90,7 @@ int main() {
   }
 
   DemoUserTable table;
-  DemoUser user;
-  user.username.set("bob");
-  user.password.set("pwd123");
-  user.username_plain = "bob";
-  user.password_plain = "pwd123";
-  table.emplace("bob", user);
+  table.emplace("bob", MakeDemoUser("bob", "pwd123"));
 
   auto auth = std::make_unique<DemoAuthProvider>(std::move(table));
   SessionManager mgr(std::move(auth));
@@ -164,12 +154,7 @@ int main() {
 
   // TTL expire path: short TTL, then force cleanup
   DemoUserTable t2;
-  DemoUser u2;
-  u2.username.set("c");
-  u2.password.set("d");
-  u2.username_plain = "c";
-  u2.password_plain = "d";
-  t2.emplace("c", u2);
+  t2.emplace("c", MakeDemoUser("c", "d"));
   SessionManager short_mgr(std::make_unique<DemoAuthProvider>(std::move(t2)),
                            std::chrono::seconds(1));
   Session s2;

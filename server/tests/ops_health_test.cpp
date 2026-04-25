@@ -9,6 +9,7 @@
 #include "key_transparency.h"
 #include "protocol.h"
 #include "server_app.h"
+#include "test_auth_helpers.h"
 #include "test_permissions.h"
 
 using mi::server::ConnectionHandler;
@@ -55,7 +56,8 @@ int main() {
             "ops_token=abcdefghijklmnop\n"
             "key_protection=none\n"
             "kt_signing_key=kt_signing_key.bin\n");
-  WriteFile("test_user.txt", "alice:secret\n");
+  WriteFile("test_user.txt",
+            mi::server::test::DemoUserFileLine("alice", "secret"));
   {
     std::vector<std::uint8_t> key(mi::server::kKtSthSigSecretKeyBytes, 0x11);
     std::ofstream kf("kt_signing_key.bin", std::ios::binary | std::ios::trunc);
