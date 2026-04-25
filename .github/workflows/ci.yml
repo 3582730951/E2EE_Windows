@@ -1023,14 +1023,6 @@ jobs:
                           shutil.copyfile(source, scope / alias_name)
           '@ | python -
 
-      - name: Perf baseline (dist)
-        run: >
-          .\\dist\\mi_e2ee_server\\tools\\mi_e2ee_perf_baseline.exe --quick
-          --min-frame-encode-ops $env:MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS
-          --min-frame-decode-ops $env:MI_E2EE_PERF_MIN_FRAME_DECODE_OPS
-          --min-offline-put-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS
-          --min-offline-fetch-mbps $env:MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS
-
       - name: Write Windows runtime evidence manifest
         run: |
           $ErrorActionPreference = "Stop"
@@ -1246,20 +1238,6 @@ jobs:
             --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
             --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
-      - name: Perf baseline (dist)
-        run: |
-          set -euo pipefail
-          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
-          if [ ! -x "$tool" ]; then
-            echo "dist perf baseline missing: $tool" >&2
-            exit 1
-          fi
-          "$tool" --quick \
-            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
-            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
-            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
-            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
-
       - name: Upload client package
         uses: actions/upload-artifact@v4
         with:
@@ -1351,20 +1329,6 @@ jobs:
             --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
             --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
 
-      - name: Perf baseline (dist)
-        run: |
-          set -euo pipefail
-          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
-          if [ ! -x "$tool" ]; then
-            echo "dist perf baseline missing: $tool" >&2
-            exit 1
-          fi
-          "$tool" --quick \
-            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
-            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
-            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
-            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
-
   build-macos:
     needs:
       - verify-ui-contract
@@ -1419,20 +1383,6 @@ jobs:
           tool=$(find "$GITHUB_WORKSPACE/build/server" -type f -name "mi_e2ee_perf_baseline" | head -n 1)
           if [ -z "$tool" ]; then
             echo "mi_e2ee_perf_baseline not found under build/server" >&2
-            exit 1
-          fi
-          "$tool" --quick \
-            --min-frame-encode-ops "$MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS" \
-            --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
-            --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
-            --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
-
-      - name: Perf baseline (dist)
-        run: |
-          set -euo pipefail
-          tool="$GITHUB_WORKSPACE/dist/mi_e2ee_server/tools/mi_e2ee_perf_baseline"
-          if [ ! -x "$tool" ]; then
-            echo "dist perf baseline missing: $tool" >&2
             exit 1
           fi
           "$tool" --quick \
