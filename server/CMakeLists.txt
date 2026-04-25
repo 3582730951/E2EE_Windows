@@ -455,22 +455,21 @@ if(MI_E2EE_ENABLE_MYSQL)
   if(WIN32)
     set(MI_MYSQL_RUNTIME_DLLS "" CACHE INTERNAL "MySQL runtime DLLs")
     get_filename_component(_mysql_lib_dir "${MYSQL_CLIENT_LIB}" DIRECTORY)
-    set(_mysql_runtime_candidates
-      "${_mysql_lib_dir}/libmysql.dll"
-      "${_mysql_lib_dir}/libmariadb.dll"
-      "${_mysql_lib_dir}/../bin/libmysql.dll"
-      "${_mysql_lib_dir}/../bin/libmariadb.dll"
-    )
-    foreach(_mysql_dll IN LISTS _mysql_runtime_candidates)
-      if(EXISTS "${_mysql_dll}")
-        set(MI_MYSQL_RUNTIME_DLLS "${_mysql_dll}" CACHE INTERNAL "MySQL runtime DLLs")
-        add_custom_command(TARGET mi_e2ee_server POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                  "${_mysql_dll}"
-                  $<TARGET_FILE_DIR:mi_e2ee_server>)
-        break()
+    set(_mysql_runtime_dlls)
+    foreach(_mysql_runtime_dir IN ITEMS "${_mysql_lib_dir}" "${_mysql_lib_dir}/../bin")
+      if(EXISTS "${_mysql_runtime_dir}")
+        file(GLOB _mysql_runtime_dir_dlls "${_mysql_runtime_dir}/*.dll")
+        list(APPEND _mysql_runtime_dlls ${_mysql_runtime_dir_dlls})
       endif()
     endforeach()
+    if(_mysql_runtime_dlls)
+      list(REMOVE_DUPLICATES _mysql_runtime_dlls)
+      set(MI_MYSQL_RUNTIME_DLLS "${_mysql_runtime_dlls}" CACHE INTERNAL "MySQL runtime DLLs")
+      add_custom_command(TARGET mi_e2ee_server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${MI_MYSQL_RUNTIME_DLLS}
+                $<TARGET_FILE_DIR:mi_e2ee_server>)
+    endif()
   endif()
   message(STATUS "MySQL auth enabled (ensure include/lib paths are provided)")
 endif()
