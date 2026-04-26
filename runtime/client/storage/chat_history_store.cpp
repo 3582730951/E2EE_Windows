@@ -4088,8 +4088,10 @@ bool ReadFixed16(const std::vector<std::uint8_t>& payload,
   return true;
 }
 
-bool LooksLikeChatEnvelopeId(const std::vector<std::uint8_t>& envelope,
-                             std::array<std::uint8_t, 16>& out_msg_id) {
+bool LooksLikeChatEnvelopeIdentity(const std::vector<std::uint8_t>& envelope,
+                                   std::uint8_t& out_type,
+                                   std::array<std::uint8_t, 16>& out_msg_id) {
+  out_type = 0;
   out_msg_id.fill(0);
   if (envelope.size() < kChatHeaderSize) {
     return false;
@@ -4102,9 +4104,20 @@ bool LooksLikeChatEnvelopeId(const std::vector<std::uint8_t>& envelope,
   if (version != kChatVersion) {
     return false;
   }
-  off += 1;
+  out_type = envelope[off++];
   std::memcpy(out_msg_id.data(), envelope.data() + off, out_msg_id.size());
   return true;
+}
+
+bool LooksLikeChatEnvelopeId(const std::vector<std::uint8_t>& envelope,
+                             std::array<std::uint8_t, 16>& out_msg_id) {
+  std::uint8_t type = 0;
+  return LooksLikeChatEnvelopeIdentity(envelope, type, out_msg_id);
+}
+
+std::string MakeHistoryMessageIndexKey(std::uint8_t type,
+                                       const std::string& id_hex) {
+  return std::to_string(static_cast<unsigned>(type)) + "|" + id_hex;
 }
 
 bool DecodeChatHeaderBrief(const std::vector<std::uint8_t>& payload,
@@ -4391,6 +4404,55 @@ bool BuildEnvelopeSummary(const std::vector<std::uint8_t>& envelope,
     }
   }
   return BuildHistorySummaryUnknown(type, out);
+}
+
+bool IsSnapshotControlMessage(const ChatHistoryMessage& message) {
+  if (message.is_system) {
+    return false;
+  }
+  std::uint8_t type = 0;
+  std::size_t off = 0;
+  if (!DecodeChatHeaderBrief(message.envelope, type, off)) {
+    return false;
+  }
+  return LooksLikeKnownControlEnvelope(type, message.envelope, off);
+}
+
+std::vector<ChatHistoryMessage> SelectRecentSnapshotMessages(
+    std::vector<ChatHistoryMessage> messages,
+    std::size_t limit) {
+  if (limit == 0 || messages.size() <= limit) {
+    return messages;
+  }
+
+  std::vector<std::uint8_t> selected(messages.size(), 0);
+  std::size_t selected_count = 0;
+  for (std::size_t i = messages.size(); i > 0 && selected_count < limit; --i) {
+    const std::size_t idx = i - 1;
+    if (IsSnapshotControlMessage(messages[idx])) {
+      continue;
+    }
+    selected[idx] = 1;
+    ++selected_count;
+  }
+
+  for (std::size_t i = messages.size(); i > 0 && selected_count < limit; --i) {
+    const std::size_t idx = i - 1;
+    if (selected[idx] != 0 || !IsSnapshotControlMessage(messages[idx])) {
+      continue;
+    }
+    selected[idx] = 1;
+    ++selected_count;
+  }
+
+  std::vector<ChatHistoryMessage> out;
+  out.reserve(selected_count);
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (selected[i] != 0) {
+      out.push_back(std::move(messages[i]));
+    }
+  }
+  return out;
 }
 
 std::filesystem::path LegacyConversationPath(const std::filesystem::path& conv_dir,
@@ -7735,13 +7797,15 @@ bool ChatHistoryStore::LoadLegacyConversation(
   }
 
   std::unordered_map<std::string, ChatHistoryStatus> status_by_id;
-  std::unordered_map<std::string, std::size_t> index_by_id;
+  std::unordered_map<std::string, std::size_t> index_by_record;
+  std::unordered_map<std::string, std::vector<std::size_t>> indices_by_id;
   std::size_t reserve_hint = 512;
   if (limit > 0) {
     reserve_hint = std::min<std::size_t>(limit * 2, 8192);
   }
   status_by_id.reserve(reserve_hint);
-  index_by_id.reserve(reserve_hint);
+  index_by_record.reserve(reserve_hint);
+  indices_by_id.reserve(reserve_hint);
 
   const auto statusRank = [](ChatHistoryStatus status) -> int {
     switch (status) {
@@ -7815,10 +7879,14 @@ bool ChatHistoryStore::LoadLegacyConversation(
         st_it->second = betterStatus(st_it->second, st);
       }
 
-      const auto it = index_by_id.find(id_hex);
-      if (it != index_by_id.end() && it->second < out_messages.size()) {
-        out_messages[it->second].status =
-            betterStatus(out_messages[it->second].status, st_it->second);
+      const auto it = indices_by_id.find(id_hex);
+      if (it != indices_by_id.end()) {
+        for (const std::size_t idx : it->second) {
+          if (idx < out_messages.size()) {
+            out_messages[idx].status =
+                betterStatus(out_messages[idx].status, st_it->second);
+          }
+        }
       }
       continue;
     }
@@ -7863,15 +7931,18 @@ bool ChatHistoryStore::LoadLegacyConversation(
         }
       }
       m.is_system = false;
+      std::uint8_t message_type = 0;
       std::array<std::uint8_t, 16> msg_id{};
-      if (LooksLikeChatEnvelopeId(m.envelope, msg_id)) {
+      if (LooksLikeChatEnvelopeIdentity(m.envelope, message_type, msg_id)) {
         const std::string id_hex = BytesToHexLower(msg_id.data(), msg_id.size());
         const auto it = status_by_id.find(id_hex);
         if (it != status_by_id.end()) {
           m.status = betterStatus(m.status, it->second);
         }
-        const auto prev = index_by_id.find(id_hex);
-        if (prev != index_by_id.end() && prev->second < out_messages.size()) {
+        const std::string record_key =
+            MakeHistoryMessageIndexKey(message_type, id_hex);
+        const auto prev = index_by_record.find(record_key);
+        if (prev != index_by_record.end() && prev->second < out_messages.size()) {
           ChatHistoryMessage& existing = out_messages[prev->second];
           existing.is_group = rec_group;
           existing.outgoing = outgoing;
@@ -7882,7 +7953,8 @@ bool ChatHistoryStore::LoadLegacyConversation(
           existing.summary = std::move(m.summary);
           continue;
         }
-        index_by_id.emplace(id_hex, out_messages.size());
+        index_by_record.emplace(record_key, out_messages.size());
+        indices_by_id[id_hex].push_back(out_messages.size());
       }
       out_messages.push_back(std::move(m));
       continue;
@@ -8684,13 +8756,15 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
   }
 
   std::unordered_map<std::string, ChatHistoryStatus> status_by_id;
-  std::unordered_map<std::string, std::size_t> index_by_id;
+  std::unordered_map<std::string, std::size_t> index_by_record;
+  std::unordered_map<std::string, std::vector<std::size_t>> indices_by_id;
   std::size_t reserve_hint = 512;
   if (limit > 0) {
     reserve_hint = std::min<std::size_t>(limit * 2, 8192);
   }
   status_by_id.reserve(reserve_hint);
-  index_by_id.reserve(reserve_hint);
+  index_by_record.reserve(reserve_hint);
+  indices_by_id.reserve(reserve_hint);
 
   const auto statusRank = [](ChatHistoryStatus status) -> int {
     switch (status) {
@@ -8792,10 +8866,14 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
         st_it->second = betterStatus(st_it->second, st);
       }
 
-      const auto it = index_by_id.find(id_hex);
-      if (it != index_by_id.end() && it->second < out_messages.size()) {
-        out_messages[it->second].status =
-            betterStatus(out_messages[it->second].status, st_it->second);
+      const auto it = indices_by_id.find(id_hex);
+      if (it != indices_by_id.end()) {
+        for (const std::size_t idx : it->second) {
+          if (idx < out_messages.size()) {
+            out_messages[idx].status =
+                betterStatus(out_messages[idx].status, st_it->second);
+          }
+        }
       }
       continue;
     }
@@ -8840,15 +8918,18 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
         }
       }
       m.is_system = false;
+      std::uint8_t message_type = 0;
       std::array<std::uint8_t, 16> msg_id{};
-      if (LooksLikeChatEnvelopeId(m.envelope, msg_id)) {
+      if (LooksLikeChatEnvelopeIdentity(m.envelope, message_type, msg_id)) {
         const std::string id_hex = BytesToHexLower(msg_id.data(), msg_id.size());
         const auto it = status_by_id.find(id_hex);
         if (it != status_by_id.end()) {
           m.status = betterStatus(m.status, it->second);
         }
-        const auto prev = index_by_id.find(id_hex);
-        if (prev != index_by_id.end() && prev->second < out_messages.size()) {
+        const std::string record_key =
+            MakeHistoryMessageIndexKey(message_type, id_hex);
+        const auto prev = index_by_record.find(record_key);
+        if (prev != index_by_record.end() && prev->second < out_messages.size()) {
           ChatHistoryMessage& existing = out_messages[prev->second];
           existing.is_group = rec_is_group;
           existing.outgoing = outgoing;
@@ -8859,7 +8940,8 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
           existing.summary = std::move(m.summary);
           continue;
         }
-        index_by_id.emplace(id_hex, out_messages.size());
+        index_by_record.emplace(record_key, out_messages.size());
+        indices_by_id[id_hex].push_back(out_messages.size());
       }
       out_messages.push_back(std::move(m));
       continue;
@@ -8957,9 +9039,13 @@ bool ChatHistoryStore::ExportRecentSnapshot(
   for (const auto& cand : candidates) {
     std::vector<ChatHistoryMessage> msgs;
     std::string load_err;
-    if (!LoadConversation(cand.is_group, cand.conv_id,
-                          max_messages_per_conversation, msgs, load_err) ||
+    if (!LoadConversation(cand.is_group, cand.conv_id, 0, msgs, load_err) ||
         msgs.empty()) {
+      continue;
+    }
+    msgs = SelectRecentSnapshotMessages(std::move(msgs),
+                                        max_messages_per_conversation);
+    if (msgs.empty()) {
       continue;
     }
     ConvSnapshot s;

@@ -1797,7 +1797,13 @@ bool MessagingService::SendGroupInvite(ClientCore& core, const std::string& grou
       out_message_id_hex.clear();
       return false;
     }
-    if (!core.PushDeviceSyncCiphertext(event_cipher)) {
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_,
+                                    envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    if (!ok) {
       out_message_id_hex.clear();
       return false;
     }
@@ -1840,10 +1846,18 @@ bool MessagingService::SendGroupInvite(ClientCore& core, const std::string& grou
     return false;
   }
 
-  if (!core.SendPrivateE2ee(peer_username, envelope)) {
+  const bool ok = core.SendPrivateE2ee(peer_username, envelope);
+  core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_,
+                                  envelope,
+                                  ok ? HistoryStatus::kSent
+                                     : HistoryStatus::kFailed,
+                                  NowUnixSeconds());
+  if (!ok) {
     out_message_id_hex.clear();
     return false;
   }
+  core.BestEffortBroadcastDeviceSyncMessage(false, true, peer_username,
+                                      core.username_, envelope);
   return true;
 }
 
@@ -4799,7 +4813,12 @@ bool MessagingService::SendChatLocation(ClientCore& core, const std::string& pee
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -4938,7 +4957,12 @@ bool MessagingService::SendChatContactCard(ClientCore& core, const std::string& 
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -5078,7 +5102,12 @@ bool MessagingService::SendChatSticker(ClientCore& core, const std::string& peer
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -5197,7 +5226,12 @@ bool MessagingService::SendChatReadReceipt(ClientCore& core, const std::string& 
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -5206,7 +5240,17 @@ bool MessagingService::SendChatReadReceipt(ClientCore& core, const std::string& 
   if (!core.EnsurePreKeyPublished()) {
     return false;
   }
-  return core.SendPrivateE2ee(peer_username, envelope);
+  const bool ok = core.SendPrivateE2ee(peer_username, envelope);
+  core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                  ok ? HistoryStatus::kSent
+                                     : HistoryStatus::kFailed,
+                                  NowUnixSeconds());
+  if (!ok) {
+    return false;
+  }
+  core.BestEffortBroadcastDeviceSyncMessage(false, true, peer_username,
+                                      core.username_, envelope);
+  return true;
 }
 
 bool MessagingService::SendChatTyping(ClientCore& core, const std::string& peer_username, bool typing) const {
@@ -5243,7 +5287,12 @@ bool MessagingService::SendChatTyping(ClientCore& core, const std::string& peer_
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -5252,7 +5301,17 @@ bool MessagingService::SendChatTyping(ClientCore& core, const std::string& peer_
   if (!core.EnsurePreKeyPublished()) {
     return false;
   }
-  return core.SendPrivateE2ee(peer_username, envelope);
+  const bool ok = core.SendPrivateE2ee(peer_username, envelope);
+  core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                  ok ? HistoryStatus::kSent
+                                     : HistoryStatus::kFailed,
+                                  NowUnixSeconds());
+  if (!ok) {
+    return false;
+  }
+  core.BestEffortBroadcastDeviceSyncMessage(false, true, peer_username,
+                                      core.username_, envelope);
+  return true;
 }
 
 bool MessagingService::SendChatPresence(ClientCore& core, const std::string& peer_username, bool online) const {
@@ -5289,7 +5348,12 @@ bool MessagingService::SendChatPresence(ClientCore& core, const std::string& pee
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
 
   if (!core.EnsureE2ee()) {
@@ -5298,7 +5362,17 @@ bool MessagingService::SendChatPresence(ClientCore& core, const std::string& pee
   if (!core.EnsurePreKeyPublished()) {
     return false;
   }
-  return core.SendPrivateE2ee(peer_username, envelope);
+  const bool ok = core.SendPrivateE2ee(peer_username, envelope);
+  core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                  ok ? HistoryStatus::kSent
+                                     : HistoryStatus::kFailed,
+                                  NowUnixSeconds());
+  if (!ok) {
+    return false;
+  }
+  core.BestEffortBroadcastDeviceSyncMessage(false, true, peer_username,
+                                      core.username_, envelope);
+  return true;
 }
 
 bool MessagingService::SendChatFile(ClientCore& core, const std::string& peer_username,
@@ -5370,7 +5444,12 @@ bool MessagingService::SendChatFile(ClientCore& core, const std::string& peer_us
     if (!core.EncryptDeviceSync(event_plain, event_cipher)) {
       return false;
     }
-    return core.PushDeviceSyncCiphertext(event_cipher);
+    const bool ok = core.PushDeviceSyncCiphertext(event_cipher);
+    core.BestEffortPersistHistoryEnvelope(false, true, peer_username, core.username_, envelope,
+                                    ok ? HistoryStatus::kSent
+                                       : HistoryStatus::kFailed,
+                                    NowUnixSeconds());
+    return ok;
   }
   if (!core.EnsureE2ee()) {
     return false;
@@ -5642,6 +5721,40 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
         const std::string id_hex =
             BytesToHexLower(msg_id.data(), msg_id.size());
 
+        if (type == kChatTypeAck) {
+          if (off != ev.envelope.size()) {
+            continue;
+          }
+          if (!ev.outgoing) {
+            ChatDelivery d;
+            d.from_username = ev.sender;
+            d.message_id_hex = id_hex;
+            result.deliveries.push_back(std::move(d));
+          }
+          core.BestEffortPersistHistoryEnvelope(ev.is_group, ev.outgoing, ev.conv_id,
+                                          ev.sender, ev.envelope,
+                                          HistoryStatus::kDelivered,
+                                          NowUnixSeconds());
+          continue;
+        }
+
+        if (type == kChatTypeReadReceipt) {
+          if (off != ev.envelope.size()) {
+            continue;
+          }
+          if (!ev.outgoing) {
+            ChatReadReceipt r;
+            r.from_username = ev.sender;
+            r.message_id_hex = id_hex;
+            result.read_receipts.push_back(std::move(r));
+          }
+          core.BestEffortPersistHistoryEnvelope(ev.is_group, ev.outgoing, ev.conv_id,
+                                          ev.sender, ev.envelope,
+                                          HistoryStatus::kRead,
+                                          NowUnixSeconds());
+          continue;
+        }
+
         if (type == kChatTypeTyping) {
           if (off >= ev.envelope.size()) {
             continue;
@@ -5650,10 +5763,16 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
           if (off != ev.envelope.size()) {
             continue;
           }
-          ChatTypingEvent te;
-          te.from_username = ev.sender;
-          te.typing = state != 0;
-          result.typing_events.push_back(std::move(te));
+          if (!ev.outgoing) {
+            ChatTypingEvent te;
+            te.from_username = ev.sender;
+            te.typing = state != 0;
+            result.typing_events.push_back(std::move(te));
+          }
+          core.BestEffortPersistHistoryEnvelope(ev.is_group, ev.outgoing, ev.conv_id,
+                                          ev.sender, ev.envelope,
+                                          HistoryStatus::kSent,
+                                          NowUnixSeconds());
           continue;
         }
 
@@ -5665,10 +5784,16 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
           if (off != ev.envelope.size()) {
             continue;
           }
-          ChatPresenceEvent pe;
-          pe.from_username = ev.sender;
-          pe.online = state != 0;
-          result.presence_events.push_back(std::move(pe));
+          if (!ev.outgoing) {
+            ChatPresenceEvent pe;
+            pe.from_username = ev.sender;
+            pe.online = state != 0;
+            result.presence_events.push_back(std::move(pe));
+          }
+          core.BestEffortPersistHistoryEnvelope(ev.is_group, ev.outgoing, ev.conv_id,
+                                          ev.sender, ev.envelope,
+                                          HistoryStatus::kSent,
+                                          NowUnixSeconds());
           continue;
         }
 
@@ -5847,17 +5972,23 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
           continue;
         }
 
-        if (type == kChatTypeGroupInvite && !ev.outgoing) {
+        if (type == kChatTypeGroupInvite) {
           std::string group_id;
           if (!mi::server::proto::ReadString(ev.envelope, off, group_id) ||
               off != ev.envelope.size()) {
             continue;
           }
-          GroupInviteMessage inv;
-          inv.group_id = std::move(group_id);
-          inv.from_username = ev.sender;
-          inv.message_id_hex = id_hex;
-          result.group_invites.push_back(std::move(inv));
+          if (!ev.outgoing) {
+            GroupInviteMessage inv;
+            inv.group_id = group_id;
+            inv.from_username = ev.sender;
+            inv.message_id_hex = id_hex;
+            result.group_invites.push_back(std::move(inv));
+          }
+          core.BestEffortPersistHistoryEnvelope(ev.is_group, ev.outgoing, ev.conv_id,
+                                          ev.sender, ev.envelope,
+                                          HistoryStatus::kSent,
+                                          NowUnixSeconds());
           continue;
         }
 
@@ -6388,6 +6519,10 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
       d.from_username = msg.from_username;
       d.message_id_hex = id_hex;
       result.deliveries.push_back(std::move(d));
+      core.BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kDelivered,
+                                      NowUnixSeconds());
       bool delivery_is_group = false;
       std::string delivery_conv = msg.from_username;
       const auto g_it = core.group_delivery_map_.find(id_hex);
@@ -6397,6 +6532,8 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
       }
       core.BestEffortBroadcastDeviceSyncDelivery(delivery_is_group, delivery_conv,
                                            msg_id, false);
+      core.BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
+                                          msg.from_username, msg.plaintext);
       return;
     }
 
@@ -6408,7 +6545,12 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
       r.from_username = msg.from_username;
       r.message_id_hex = id_hex;
       result.read_receipts.push_back(std::move(r));
+      core.BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kRead, NowUnixSeconds());
       core.BestEffortBroadcastDeviceSyncDelivery(false, msg.from_username, msg_id, true);
+      core.BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
+                                          msg.from_username, msg.plaintext);
       return;
     }
 
@@ -6424,6 +6566,9 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
       te.from_username = msg.from_username;
       te.typing = state != 0;
       result.typing_events.push_back(std::move(te));
+      core.BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       core.BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -6441,6 +6586,9 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
       pe.from_username = msg.from_username;
       pe.online = state != 0;
       result.presence_events.push_back(std::move(pe));
+      core.BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
       core.BestEffortBroadcastDeviceSyncMessage(false, false, msg.from_username,
                                           msg.from_username, msg.plaintext);
       return;
@@ -6843,11 +6991,14 @@ ClientCore::ChatPollResult MessagingService::PollChat(ClientCore& core) const {
         return;
       }
       GroupInviteMessage inv;
-      inv.group_id = std::move(group_id);
+      inv.group_id = group_id;
       inv.from_username = msg.from_username;
       inv.message_id_hex = id_hex;
       result.group_invites.push_back(std::move(inv));
-      core.BestEffortBroadcastDeviceSyncMessage(true, false, inv.group_id,
+      core.BestEffortPersistHistoryEnvelope(false, false, msg.from_username,
+                                      msg.from_username, msg.plaintext,
+                                      HistoryStatus::kSent, NowUnixSeconds());
+      core.BestEffortBroadcastDeviceSyncMessage(true, false, group_id,
                                           msg.from_username, msg.plaintext);
       return;
     }

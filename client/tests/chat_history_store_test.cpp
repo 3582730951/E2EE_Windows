@@ -508,6 +508,63 @@ int main() {
     return 1;
   }
 
+  const auto same_id_text = BuildTextEnvelope(0x23, "same id text");
+  const auto same_id_read = BuildControlEnvelope(10, 0x23);
+  if (!Require(store.AppendEnvelope(false, false, "erin", "erin",
+                                    same_id_text,
+                                    mi::client::ChatHistoryStatus::kSent,
+                                    ts++, error),
+               "append same-id text failed") ||
+      !Require(store.AppendEnvelope(false, false, "erin", "erin",
+                                    same_id_read,
+                                    mi::client::ChatHistoryStatus::kRead,
+                                    ts++, error),
+               "append same-id control failed") ||
+      !Require(store.Flush(error), "same-id flush failed")) {
+    return 1;
+  }
+  std::vector<mi::client::ChatHistoryMessage> same_id_loaded;
+  if (!Require(store.LoadConversation(false, "erin", 0, same_id_loaded, error),
+               "load same-id conversation failed") ||
+      !Require(same_id_loaded.size() == 2,
+               "same-id messages with different types were collapsed") ||
+      !Require(same_id_loaded[0].envelope == same_id_text,
+               "same-id text envelope was replaced") ||
+      !Require(same_id_loaded[1].envelope == same_id_read,
+               "same-id control envelope missing")) {
+    return 1;
+  }
+
+  const auto snapshot_text = BuildTextEnvelope(0x24, "snapshot visible");
+  if (!Require(store.AppendEnvelope(false, false, "frank", "frank",
+                                    snapshot_text,
+                                    mi::client::ChatHistoryStatus::kSent,
+                                    ts++, error),
+               "append snapshot text failed")) {
+    return 1;
+  }
+  for (std::uint8_t i = 0; i < 6; ++i) {
+    if (!Require(store.AppendEnvelope(false, false, "frank", "frank",
+                                      BuildControlEnvelope(10, 0x25 + i),
+                                      mi::client::ChatHistoryStatus::kRead,
+                                      ts++, error),
+                 "append snapshot control failed")) {
+      return 1;
+    }
+  }
+  if (!Require(store.Flush(error), "snapshot priority flush failed")) {
+    return 1;
+  }
+  std::vector<mi::client::ChatHistoryMessage> snapshot_loaded;
+  if (!Require(store.ExportRecentSnapshot(1, 1, snapshot_loaded, error),
+               "export recent snapshot failed") ||
+      !Require(snapshot_loaded.size() == 1,
+               "snapshot priority returned wrong count") ||
+      !Require(snapshot_loaded[0].envelope == snapshot_text,
+               "snapshot controls starved visible history")) {
+    return 1;
+  }
+
   std::vector<mi::client::ChatHistoryMessage> system_loaded;
   if (!Require(store.LoadConversation(false, "system-conv", 0, system_loaded,
                                       error),

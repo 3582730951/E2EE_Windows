@@ -1043,6 +1043,58 @@ bool DecryptFileBlob(const std::vector<std::uint8_t>& blob,
   return false;
 }
 
+bool IsControlHistoryEntry(const ClientCore::HistoryEntry& entry) {
+  switch (entry.message_type) {
+    case kChatTypeAck:
+    case kChatTypeReadReceipt:
+    case kChatTypeTyping:
+    case kChatTypePresence:
+    case kChatTypeGroupSenderKeyDist:
+    case kChatTypeGroupSenderKeyReq:
+    case kChatTypeGroupCallKeyDist:
+    case kChatTypeGroupCallKeyReq:
+      return true;
+    default:
+      return false;
+  }
+}
+
+std::vector<ClientCore::HistoryEntry> SelectRecentHistoryEntries(
+    std::vector<ClientCore::HistoryEntry> entries,
+    std::size_t limit) {
+  if (limit == 0 || entries.size() <= limit) {
+    return entries;
+  }
+
+  std::vector<std::uint8_t> selected(entries.size(), 0);
+  std::size_t selected_count = 0;
+  for (std::size_t i = entries.size(); i > 0 && selected_count < limit; --i) {
+    const std::size_t idx = i - 1;
+    if (IsControlHistoryEntry(entries[idx])) {
+      continue;
+    }
+    selected[idx] = 1;
+    ++selected_count;
+  }
+  for (std::size_t i = entries.size(); i > 0 && selected_count < limit; --i) {
+    const std::size_t idx = i - 1;
+    if (selected[idx] != 0 || !IsControlHistoryEntry(entries[idx])) {
+      continue;
+    }
+    selected[idx] = 1;
+    ++selected_count;
+  }
+
+  std::vector<ClientCore::HistoryEntry> out;
+  out.reserve(selected_count);
+  for (std::size_t i = 0; i < entries.size(); ++i) {
+    if (selected[i] != 0) {
+      out.push_back(std::move(entries[i]));
+    }
+  }
+  return out;
+}
+
 }  // namespace
 
 bool DecryptFileBlobForTooling(const std::vector<std::uint8_t>& blob,
@@ -1494,8 +1546,9 @@ std::vector<ClientCore::HistoryEntry> StorageService::ExportRecentHistorySnapsho
   }
 
   for (const auto& conv : conversations) {
-    auto entries = LoadChatHistory(core, conv.second, conv.first,
-                                   max_messages_per_conversation);
+    auto entries = LoadChatHistory(core, conv.second, conv.first, 0);
+    entries = SelectRecentHistoryEntries(std::move(entries),
+                                         max_messages_per_conversation);
     out.insert(out.end(), std::make_move_iterator(entries.begin()),
                std::make_move_iterator(entries.end()));
   }

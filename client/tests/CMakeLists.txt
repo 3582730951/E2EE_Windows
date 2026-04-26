@@ -161,6 +161,15 @@ if(WIN32)
 endif()
 add_test(NAME history_api_canonical_test COMMAND history_api_canonical_test)
 
+add_executable(messaging_history_source_test
+    messaging_history_source_test.cpp
+)
+
+target_compile_definitions(messaging_history_source_test PRIVATE
+    MI_E2EE_MESSAGING_SERVICE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../../runtime/client/messaging/messaging_service.cpp")
+
+add_test(NAME messaging_history_source_test COMMAND messaging_history_source_test)
+
 add_executable(ui_ai_enhance_privacy_test
     ui_ai_enhance_privacy_test.cpp
 )
