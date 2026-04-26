@@ -36,7 +36,7 @@ bool WriteFile(const std::filesystem::path& path, const std::string& value) {
 bool RunPrivacyScan(const std::filesystem::path& dist_root) {
   const std::string cmd = "bash " +
       ShellQuote(MI_E2EE_PACKAGE_VERIFY_POSIX_SH) + " --privacy-only --dist " +
-      ShellQuote(dist_root.string()) + " >/dev/null 2>&1";
+      ShellQuote(dist_root.string());
   return std::system(cmd.c_str()) == 0;
 }
 
@@ -48,7 +48,7 @@ bool RunWindowsPrivacyScan(const std::filesystem::path& dist_root) {
   const std::string cmd = "pwsh -NoProfile -ExecutionPolicy Bypass -File " +
                           ShellQuote(MI_E2EE_PACKAGE_VERIFY_WINDOWS_PS1) +
                           " -PrivacyOnly -Dist " +
-                          ShellQuote(dist_root.string()) + " >/dev/null 2>&1";
+                          ShellQuote(dist_root.string());
   return std::system(cmd.c_str()) == 0;
 }
 

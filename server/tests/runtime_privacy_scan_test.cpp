@@ -35,8 +35,7 @@ bool WriteFile(const std::filesystem::path& path, const std::string& value) {
 
 bool RunRuntimePrivacyScan(const std::filesystem::path& root) {
   const std::string cmd = "bash " + ShellQuote(MI_E2EE_RUNTIME_VERIFY_SH) +
-                          " --root " + ShellQuote(root.string()) +
-                          " >/dev/null 2>&1";
+                          " --root " + ShellQuote(root.string());
   return std::system(cmd.c_str()) == 0;
 }
 
