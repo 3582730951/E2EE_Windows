@@ -513,6 +513,9 @@ TamperSignal LastTamperSignal() noexcept {
 }
 
 bool CanRevealUiPlaintext() noexcept {
+  if (gLevel.load() == HardeningLevel::kOff) {
+    return true;
+  }
   if (IsTamperDetected()) {
     return false;
   }

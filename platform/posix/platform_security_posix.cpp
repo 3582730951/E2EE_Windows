@@ -45,6 +45,7 @@ enum class HardeningLevel : std::uint8_t {
 std::atomic<bool> gTamperDetected{false};
 std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
 std::atomic<TamperHandler> gTamperHandler{nullptr};
+std::atomic<HardeningLevel> gLevel{HardeningLevel::kHigh};
 
 HardeningLevel ParseHardeningLevel() noexcept {
 #if defined(MI_E2EE_SECURE_RELEASE)
@@ -391,6 +392,7 @@ void StartEndpointHardening() noexcept {
     return;
   }
   const auto level = ParseHardeningLevel();
+  gLevel.store(level);
   ApplyBestEffortMitigations(level);
   ApplySeccompBestEffort(level);
 #if defined(__APPLE__)
@@ -426,6 +428,9 @@ TamperSignal LastTamperSignal() noexcept {
 }
 
 bool CanRevealUiPlaintext() noexcept {
+  if (gLevel.load() == HardeningLevel::kOff) {
+    return true;
+  }
   if (IsTamperDetected()) {
     return false;
   }

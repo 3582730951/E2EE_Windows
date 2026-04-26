@@ -114,6 +114,8 @@ int main() {
                         "platform_security_win.cpp");
   ok &= RequireContains(security_win, "NativeDebuggerConflict",
                         "platform_security_win.cpp");
+  ok &= RequireContains(security_win, "gLevel.load() == HardeningLevel::kOff",
+                        "platform_security_win.cpp");
   ok &= RequireContains(security_win, "CanRevealUiPlaintext()",
                         "platform_security_win.cpp");
 
