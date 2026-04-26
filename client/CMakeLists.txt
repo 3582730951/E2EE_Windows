@@ -120,6 +120,7 @@ set(MI_E2EE_CLIENT_CORE_SOURCES
     ../runtime/client/security/security_service.cpp
     ../runtime/client/security/trust_store.cpp
     ../runtime/client/security/client_trust.cpp
+    ../runtime/client/security/ui_protected_text_vm.cpp
     ../runtime/client/transport/client_transport.cpp
     ../runtime/client/transport/transport_service.cpp
     ../runtime/client/media/media_jitter_buffer.cpp

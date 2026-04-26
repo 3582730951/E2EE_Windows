@@ -190,6 +190,26 @@ target_compile_definitions(ui_ime_privacy_test PRIVATE
 
 add_test(NAME ui_ime_privacy_test COMMAND ui_ime_privacy_test)
 
+add_executable(ui_protected_text_vm_test
+    ui_protected_text_vm_test.cpp
+)
+
+target_link_libraries(ui_protected_text_vm_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(ui_protected_text_vm_test)
+endif()
+
+add_test(NAME ui_protected_text_vm_test COMMAND ui_protected_text_vm_test)
+
+add_executable(ui_protected_text_source_test
+    ui_protected_text_source_test.cpp
+)
+
+target_compile_definitions(ui_protected_text_source_test PRIVATE
+    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp")
+
+add_test(NAME ui_protected_text_source_test COMMAND ui_protected_text_source_test)
+
 add_executable(sdk_c_api_e2e_test
     sdk_c_api_e2e_test.cpp
 )

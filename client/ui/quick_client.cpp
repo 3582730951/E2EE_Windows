@@ -3,12 +3,14 @@
 #include "cpp_client_adapter.h"
 #include "display_contract.h"
 #include "media_transport_capi.h"
+#include "protected_text_vm.h"
 
 #include <QAbstractVideoBuffer>
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSink>
 #include <QAudioSource>
+#include <QByteArray>
 #include <QBuffer>
 #include <QCamera>
 #include <QCameraDevice>
@@ -46,11 +48,13 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -87,6 +91,34 @@ constexpr std::uint32_t kMaxFriendRequestEntries = 256;
 constexpr std::uint32_t kMaxGroupMemberEntries = 256;
 constexpr std::uint32_t kMaxGroupCallMembers = 256;
 constexpr std::uint32_t kMaxHistoryEntries = 200;
+constexpr auto kUiPlaintextLease = std::chrono::milliseconds(120);
+
+QString ToUiQString(std::string_view view) {
+  if (view.empty()) {
+    return QString();
+  }
+  return QString::fromUtf8(view.data(), static_cast<int>(view.size()));
+}
+
+template <typename Fn>
+bool WithProtectedUiText(const QString& text, Fn&& fn) {
+  QByteArray utf8 = text.toUtf8();
+  const auto protected_text = UiProtectedText::Protect(
+      std::string_view(utf8.constData(), static_cast<std::size_t>(utf8.size())));
+  if (!utf8.isEmpty()) {
+    std::fill_n(utf8.data(), utf8.size(), '\0');
+  }
+  return protected_text.WithPlaintext(
+      kUiPlaintextLease,
+      [&](std::string_view view) { return static_cast<bool>(fn(view)); });
+}
+
+void InsertProtectedUiText(QVariantMap& msg, const QString& text) {
+  (void)WithProtectedUiText(text, [&](std::string_view view) {
+    msg.insert(QStringLiteral("text"), ToUiQString(view));
+    return true;
+  });
+}
 
 std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
     const mi_friend_entry_t* entries,
@@ -2622,7 +2654,7 @@ bool QuickClient::sendText(const QString& convId, const QString& text, bool isGr
   msg.insert(QStringLiteral("outgoing"), true);
   msg.insert(QStringLiteral("isGroup"), isGroup);
   msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-  msg.insert(QStringLiteral("text"), message);
+  InsertProtectedUiText(msg, message);
   msg.insert(QStringLiteral("time"), NowTimeString());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
@@ -2790,7 +2822,7 @@ bool QuickClient::sendLocation(const QString& convId,
     msg.insert(QStringLiteral("locationLabel"), label);
     msg.insert(QStringLiteral("locationLat"), lat);
     msg.insert(QStringLiteral("locationLon"), lon);
-    msg.insert(QStringLiteral("text"), text);
+    InsertProtectedUiText(msg, text);
     msg.insert(QStringLiteral("time"), NowTimeString());
     msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
     EmitMessage(msg);
@@ -4764,8 +4796,9 @@ QVariantMap QuickClient::BuildHistoryMessageFromC(
   switch (static_cast<mi::sdk::HistoryKind>(entry.kind)) {
     case mi::sdk::HistoryKind::kText:
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-      msg.insert(QStringLiteral("text"),
-                 entry.text ? QString::fromUtf8(entry.text) : QString());
+      InsertProtectedUiText(
+          msg, entry.text != nullptr ? QString::fromUtf8(entry.text)
+                                     : QString());
       break;
     case mi::sdk::HistoryKind::kFile: {
       msg.insert(QStringLiteral("kind"), QStringLiteral("file"));
@@ -4810,14 +4843,15 @@ QVariantMap QuickClient::BuildHistoryMessageFromC(
     }
     case mi::sdk::HistoryKind::kSystem:
       msg.insert(QStringLiteral("kind"), QStringLiteral("system"));
-      msg.insert(QStringLiteral("text"),
-                 entry.text ? QString::fromUtf8(entry.text) : QString());
+      InsertProtectedUiText(
+          msg, entry.text != nullptr ? QString::fromUtf8(entry.text)
+                                     : QString());
       break;
     case mi::sdk::HistoryKind::kUnknown:
       msg.insert(QStringLiteral("kind"), QStringLiteral("unknown"));
-      msg.insert(QStringLiteral("text"),
-                 entry.text ? QString::fromUtf8(entry.text)
-                            : QStringLiteral("Unknown message"));
+      InsertProtectedUiText(
+          msg, entry.text != nullptr ? QString::fromUtf8(entry.text)
+                                     : QStringLiteral("Unknown message"));
       break;
     default:
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
@@ -4885,7 +4919,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
       msg.insert(QStringLiteral("video"), invite.video);
     } else {
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-      msg.insert(QStringLiteral("text"), text);
+      InsertProtectedUiText(msg, text);
     }
     EmitMessage(msg);
   }
@@ -4903,7 +4937,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), true);
     msg.insert(QStringLiteral("isGroup"), false);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), text);
+    InsertProtectedUiText(msg, text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -5025,7 +5059,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), false);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), text);
+    InsertProtectedUiText(msg, text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -5049,7 +5083,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), true);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
-    msg.insert(QStringLiteral("text"), text);
+    InsertProtectedUiText(msg, text);
     msg.insert(QStringLiteral("messageId"),
                QString::fromStdString(t.message_id_hex));
     msg.insert(QStringLiteral("time"), now);
@@ -5148,7 +5182,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
     msg.insert(QStringLiteral("outgoing"), false);
     msg.insert(QStringLiteral("isGroup"), true);
     msg.insert(QStringLiteral("kind"), QStringLiteral("notice"));
-    msg.insert(QStringLiteral("text"), text);
+    InsertProtectedUiText(msg, text);
     msg.insert(QStringLiteral("noticeKind"), static_cast<int>(n.kind));
     msg.insert(QStringLiteral("noticeActor"), actor);
     msg.insert(QStringLiteral("noticeTarget"), target);

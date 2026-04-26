@@ -238,6 +238,54 @@
       ]
     },
     {
+      "id": "ui_plaintext_vm_short_lived_decryption",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "client/include/protected_text_vm.h",
+          "contains": [
+            "UiProtectedText",
+            "UiProtectedTextLease",
+            "WithPlaintext"
+          ]
+        },
+        {
+          "path": "runtime/client/security/ui_protected_text_vm.cpp",
+          "contains": [
+            "kMagic",
+            "kOpRotXor",
+            "SecureWipe",
+            "PlaintextTag"
+          ]
+        },
+        {
+          "path": "client/tests/ui_protected_text_vm_test.cpp",
+          "contains": [
+            "unlock-capture-secret",
+            "CiphertextForTest",
+            "WipeNow",
+            "expired UI lease"
+          ]
+        },
+        {
+          "path": "client/tests/ui_protected_text_source_test.cpp",
+          "contains": [
+            "WithProtectedUiText",
+            "UiProtectedText::Protect",
+            "persistent plaintext QString"
+          ]
+        },
+        {
+          "path": "client/ui/quick_client.cpp",
+          "contains": [
+            "WithProtectedUiText(",
+            "kUiPlaintextLease",
+            "InsertProtectedUiText"
+          ]
+        }
+      ]
+    },
+    {
       "id": "ime_clipboard_local_privacy_defaults",
       "status": "automated",
       "evidence": [
