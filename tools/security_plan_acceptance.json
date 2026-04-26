@@ -334,6 +334,36 @@
           ]
         }
       ]
+    },
+    {
+      "id": "automated_red_team_attack_audit",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "tools/automated_red_team_audit.py",
+          "contains": [
+            "audit_acceptance_profile",
+            "audit_runtime_privacy",
+            "audit_android_package_privacy",
+            "audit_ios_package_privacy",
+            "expect_success=False"
+          ]
+        },
+        {
+          "path": "server/tests/automated_red_team_audit_test.cpp",
+          "contains": [
+            "MI_E2EE_RED_TEAM_AUDIT_PY",
+            "automated red-team audit failed"
+          ]
+        },
+        {
+          "path": "server/tests/CMakeLists.txt",
+          "contains": [
+            "automated_red_team_audit_test",
+            "MI_E2EE_RED_TEAM_AUDIT_PY"
+          ]
+        }
+      ]
     }
   ]
 }

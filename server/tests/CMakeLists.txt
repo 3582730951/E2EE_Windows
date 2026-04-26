@@ -248,6 +248,19 @@ if(UNIX)
   endif()
   add_test(NAME security_plan_acceptance_test COMMAND security_plan_acceptance_test)
 
+  add_executable(automated_red_team_audit_test
+      automated_red_team_audit_test.cpp
+  )
+  target_link_libraries(automated_red_team_audit_test PRIVATE mi_e2ee_core)
+  target_include_directories(automated_red_team_audit_test PRIVATE ../include ../shard)
+  target_compile_definitions(automated_red_team_audit_test PRIVATE
+      MI_E2EE_RED_TEAM_AUDIT_PY="${CMAKE_CURRENT_LIST_DIR}/../../tools/automated_red_team_audit.py"
+      MI_E2EE_REPOSITORY_ROOT="${CMAKE_CURRENT_LIST_DIR}/../..")
+  if(MSVC)
+    target_compile_options(automated_red_team_audit_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME automated_red_team_audit_test COMMAND automated_red_team_audit_test)
+
   add_executable(android_package_privacy_scan_test
       android_package_privacy_scan_test.cpp
   )
