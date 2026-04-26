@@ -839,6 +839,9 @@ class FfiSdkClient implements NativeSdkClient {
       fileName: _readString(entry.fileName),
       fileSize: entry.fileSize,
       stickerId: _readString(entry.stickerId),
+      canonicalEnvelope:
+          _readBytes(entry.canonicalEnvelope, entry.canonicalEnvelopeLen),
+      messageType: entry.messageType,
     );
   }
 

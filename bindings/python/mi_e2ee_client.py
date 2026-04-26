@@ -1,7 +1,7 @@
 import ctypes
 import os
 
-MI_E2EE_SDK_ABI_VERSION = 1
+MI_E2EE_SDK_ABI_VERSION = 2
 MI_MAX_FRIEND_ENTRIES = 512
 MI_MAX_FRIEND_REQUEST_ENTRIES = 256
 MI_MAX_DEVICE_ENTRIES = 256
@@ -130,6 +130,9 @@ class MiHistoryEntry(ctypes.Structure):
         ("file_name", ctypes.c_char_p),
         ("file_size", ctypes.c_uint64),
         ("sticker_id", ctypes.c_char_p),
+        ("canonical_envelope", ctypes.POINTER(ctypes.c_uint8)),
+        ("canonical_envelope_len", ctypes.c_uint32),
+        ("message_type", ctypes.c_uint32),
     ]
 
 MiProgressCallback = ctypes.CFUNCTYPE(None, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_void_p)
@@ -1170,6 +1173,9 @@ class Client:
                 "file_name": _decode_cstr(entry.file_name),
                 "file_size": entry.file_size,
                 "sticker_id": _decode_cstr(entry.sticker_id),
+                "canonical_envelope": _copy_bytes(entry.canonical_envelope,
+                                                  entry.canonical_envelope_len),
+                "message_type": entry.message_type,
             })
         return history
 

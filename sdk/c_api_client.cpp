@@ -650,6 +650,12 @@ std::uint32_t FillHistoryView(
     v.file_size = entry.file_size;
     v.sticker_id =
         entry.sticker_id.empty() ? nullptr : entry.sticker_id.c_str();
+    if (!entry.canonical_envelope.empty()) {
+      v.canonical_envelope = entry.canonical_envelope.data();
+      v.canonical_envelope_len =
+          static_cast<std::uint32_t>(entry.canonical_envelope.size());
+    }
+    v.message_type = entry.message_type;
     view.push_back(v);
   }
   const std::uint32_t count = std::min<std::uint32_t>(

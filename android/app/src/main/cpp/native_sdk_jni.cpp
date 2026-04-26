@@ -210,7 +210,7 @@ static bool InitCache(JNIEnv* env) {
       g_cache.clsHistoryEntry,
       "<init>",
       "(IIZZJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-      "Ljava/lang/String;[BLjava/lang/String;JLjava/lang/String;)V");
+      "Ljava/lang/String;[BLjava/lang/String;JLjava/lang/String;[BI)V");
   if (!g_cache.ctorHistoryEntry) return false;
 
   local = env->FindClass("mi/e2ee/android/sdk/GroupCallInfo");
@@ -384,6 +384,8 @@ static jobject NewHistoryEntry(JNIEnv* env, const mi_history_entry_t& entry) {
   jbyteArray file_key = ToJByteArray(env, entry.file_key, entry.file_key_len);
   jstring file_name = NewJString(env, entry.file_name);
   jstring sticker_id = NewJString(env, entry.sticker_id);
+  jbyteArray canonical_envelope = ToJByteArray(
+      env, entry.canonical_envelope, entry.canonical_envelope_len);
   jobject obj = env->NewObject(
       g_cache.clsHistoryEntry,
       g_cache.ctorHistoryEntry,
@@ -400,7 +402,9 @@ static jobject NewHistoryEntry(JNIEnv* env, const mi_history_entry_t& entry) {
       file_key,
       file_name,
       static_cast<jlong>(entry.file_size),
-      sticker_id);
+      sticker_id,
+      canonical_envelope,
+      static_cast<jint>(entry.message_type));
   env->DeleteLocalRef(conv_id);
   env->DeleteLocalRef(sender);
   env->DeleteLocalRef(message_id);
@@ -409,6 +413,7 @@ static jobject NewHistoryEntry(JNIEnv* env, const mi_history_entry_t& entry) {
   env->DeleteLocalRef(file_key);
   env->DeleteLocalRef(file_name);
   env->DeleteLocalRef(sticker_id);
+  env->DeleteLocalRef(canonical_envelope);
   return obj;
 }
 

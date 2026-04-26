@@ -123,6 +123,13 @@ final class MiHistoryEntry extends Struct {
   external int fileSize;
 
   external Pointer<Utf8> stickerId;
+  external Pointer<Uint8> canonicalEnvelope;
+
+  @Uint32()
+  external int canonicalEnvelopeLen;
+
+  @Uint32()
+  external int messageType;
 }
 
 final class MiEvent extends Struct {

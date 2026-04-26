@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define MI_IOS_CLIENT_SDK_ABI_VERSION 1u
+#define MI_IOS_CLIENT_SDK_ABI_VERSION 2u
 
 #ifdef __cplusplus
 #include "../c_api_client.h"

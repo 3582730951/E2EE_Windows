@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#define MI_E2EE_SDK_ABI_VERSION 1
+#define MI_E2EE_SDK_ABI_VERSION 2
 #define MI_E2EE_SDK_VERSION_MAJOR 1
 #define MI_E2EE_SDK_VERSION_MINOR 0
 #define MI_E2EE_SDK_VERSION_PATCH 0
@@ -175,6 +175,9 @@ typedef struct mi_history_entry_t {
   const char* file_name;
   std::uint64_t file_size;
   const char* sticker_id;
+  const std::uint8_t* canonical_envelope;
+  std::uint32_t canonical_envelope_len;
+  std::uint32_t message_type;
 } mi_history_entry_t;
 
 typedef void (*mi_progress_callback_t)(std::uint64_t done,

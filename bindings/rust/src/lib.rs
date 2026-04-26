@@ -140,9 +140,12 @@ pub struct mi_history_entry_t {
     pub file_name: *const c_char,
     pub file_size: u64,
     pub sticker_id: *const c_char,
+    pub canonical_envelope: *const u8,
+    pub canonical_envelope_len: u32,
+    pub message_type: u32,
 }
 
-const MI_E2EE_SDK_ABI_VERSION: u32 = 1;
+const MI_E2EE_SDK_ABI_VERSION: u32 = 2;
 
 type MiProgressCallback = Option<extern "C" fn(u64, u64, *mut c_void)>;
 impl Default for mi_event_t {
@@ -619,6 +622,8 @@ pub struct HistoryEntry {
     pub file_name: Option<String>,
     pub file_size: u64,
     pub sticker_id: Option<String>,
+    pub canonical_envelope: Vec<u8>,
+    pub message_type: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -734,6 +739,11 @@ fn history_from_c(entry: &mi_history_entry_t) -> HistoryEntry {
         file_name: opt_string(entry.file_name),
         file_size: entry.file_size,
         sticker_id: opt_string(entry.sticker_id),
+        canonical_envelope: copy_bytes(
+            entry.canonical_envelope,
+            entry.canonical_envelope_len,
+        ),
+        message_type: entry.message_type,
     }
 }
 

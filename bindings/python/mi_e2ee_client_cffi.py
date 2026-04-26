@@ -5,7 +5,7 @@ try:
 except ImportError as exc:
     raise ImportError("cffi is required for mi_e2ee_client_cffi") from exc
 
-MI_E2EE_SDK_ABI_VERSION = 1
+MI_E2EE_SDK_ABI_VERSION = 2
 
 _CDEF_PREFIX = """
 typedef unsigned char uint8_t;

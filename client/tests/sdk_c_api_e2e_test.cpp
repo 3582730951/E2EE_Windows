@@ -1713,10 +1713,19 @@ int main() {
   for (std::uint32_t i = 0; i < history_count; ++i) {
     const mi_history_entry_t& entry = history[i];
     const std::string conv = entry.conv_id ? entry.conv_id : "";
-    if (!entry.is_group && conv == "bob") {
+    const std::string text = entry.text ? entry.text : "";
+    if (!entry.is_group && conv == "bob" && text == "hello") {
+      if (entry.message_type != 1 || !entry.canonical_envelope ||
+          entry.canonical_envelope_len == 0) {
+        return fail("private history canonical envelope missing", alice);
+      }
       saw_private_history = true;
     }
-    if (entry.is_group && conv == group_id) {
+    if (entry.is_group && conv == group_id && text == "group hi") {
+      if (entry.message_type != 4 || !entry.canonical_envelope ||
+          entry.canonical_envelope_len == 0) {
+        return fail("group history canonical envelope missing", alice);
+      }
       saw_group_history = true;
     }
   }

@@ -596,6 +596,11 @@ MI_E2EE_SDK_API std::uint32_t mi_client_load_chat_history(mi_client_handle* hand
     entry.sender = CStringOrNull(message.sender);
     entry.message_id = CStringOrNull(message.id);
     entry.text = CStringOrNull(message.text);
+    entry.canonical_envelope =
+        reinterpret_cast<const std::uint8_t*>(message.text.data());
+    entry.canonical_envelope_len =
+        static_cast<std::uint32_t>(message.text.size());
+    entry.message_type = message.isGroup ? 4u : 1u;
     out_entries[index] = entry;
   }
   return count;

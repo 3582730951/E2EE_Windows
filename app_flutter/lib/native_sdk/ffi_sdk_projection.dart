@@ -80,6 +80,8 @@ class SdkHistorySnapshot {
     this.fileName = '',
     this.fileSize = 0,
     this.stickerId = '',
+    this.canonicalEnvelope,
+    this.messageType = 0,
   });
 
   final int kind;
@@ -96,6 +98,8 @@ class SdkHistorySnapshot {
   final String fileName;
   final int fileSize;
   final String stickerId;
+  final Uint8List? canonicalEnvelope;
+  final int messageType;
 }
 
 class SdkEventSnapshot {

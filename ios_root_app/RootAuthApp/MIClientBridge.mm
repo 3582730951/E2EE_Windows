@@ -93,6 +93,7 @@ NSDictionary<NSString*, id>* DictionaryFromHistory(const mi_history_entry_t& ent
   NSMutableDictionary<NSString*, id>* dict = [NSMutableDictionary dictionary];
   dict[@"kind"] = @(entry.kind);
   dict[@"status"] = @(entry.status);
+  dict[@"messageType"] = @(entry.message_type);
   dict[@"timestampMS"] = @(entry.timestamp_sec * 1000ULL);
   dict[@"fileSize"] = @(entry.file_size);
   dict[@"isGroup"] = @((entry.is_group != 0));
@@ -108,6 +109,10 @@ NSDictionary<NSString*, id>* DictionaryFromHistory(const mi_history_entry_t& ent
   SetIfPresent(dict, @"fileID", MIStringOrNil(entry.file_id));
   SetIfPresent(dict, @"fileName", MIStringOrNil(entry.file_name));
   SetIfPresent(dict, @"stickerID", MIStringOrNil(entry.sticker_id));
+  if (entry.canonical_envelope && entry.canonical_envelope_len > 0) {
+    dict[@"canonicalEnvelope"] = [NSData dataWithBytes:entry.canonical_envelope
+                                                length:entry.canonical_envelope_len];
+  }
   return dict;
 }
 

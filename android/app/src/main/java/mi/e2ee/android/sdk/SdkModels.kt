@@ -76,7 +76,9 @@ data class HistoryEntry(
     val fileKey: ByteArray,
     val fileName: String,
     val fileSize: Long,
-    val stickerId: String
+    val stickerId: String,
+    val canonicalEnvelope: ByteArray,
+    val messageType: Int
 )
 
 data class GroupCallInfo(
