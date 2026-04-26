@@ -152,6 +152,15 @@ endif()
 
 add_test(NAME chat_history_store_test COMMAND chat_history_store_test)
 
+add_executable(history_api_canonical_test
+    history_api_canonical_test.cpp
+)
+target_link_libraries(history_api_canonical_test PRIVATE mi_e2ee_client_core)
+if(WIN32)
+  mi_copy_msvc_runtime(history_api_canonical_test)
+endif()
+add_test(NAME history_api_canonical_test COMMAND history_api_canonical_test)
+
 add_executable(ui_ai_enhance_privacy_test
     ui_ai_enhance_privacy_test.cpp
 )

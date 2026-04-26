@@ -231,6 +231,8 @@ class ClientCore {
     std::string conv_id;
     std::string sender;
     std::string message_id_hex;
+    std::uint8_t message_type{0};
+    std::vector<std::uint8_t> canonical_envelope;
     std::string text_utf8;
 
     // File fields (when kind == kFile)

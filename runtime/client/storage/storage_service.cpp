@@ -1334,6 +1334,8 @@ std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore
       continue;
     }
 
+    e.canonical_envelope = m.envelope;
+
     const auto trySummary = [&]() -> bool {
       if (ApplyHistorySummary(m.summary, e)) {
         out.push_back(std::move(e));
@@ -1341,14 +1343,21 @@ std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore
       }
       return false;
     };
+    const auto pushUnknown = [&]() {
+      e.kind = HistoryKind::kUnknown;
+      out.push_back(std::move(e));
+    };
 
     std::uint8_t type = 0;
     std::array<std::uint8_t, 16> msg_id{};
     std::size_t off = 0;
     if (!DecodeChatHeader(m.envelope, type, msg_id, off)) {
-      (void)trySummary();
+      if (!trySummary()) {
+        pushUnknown();
+      }
       continue;
     }
+    e.message_type = type;
     e.message_id_hex = BytesToHexLower(msg_id.data(), msg_id.size());
 
     if (type == kChatTypeText) {
@@ -1445,7 +1454,9 @@ std::vector<ClientCore::HistoryEntry> StorageService::LoadChatHistory(ClientCore
       continue;
     }
 
-    (void)trySummary();
+    if (!trySummary()) {
+      pushUnknown();
+    }
   }
   return out;
 }
