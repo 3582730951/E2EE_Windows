@@ -29,6 +29,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 scan_stream() {
   local label="$1"
   local hit
@@ -59,17 +61,8 @@ scan_pat_stream() {
 
 scan_path_stream() {
   local label="$1"
-  local hit
-  hit="$(
-    grep -n -E -i \
-      -e '(^|[^[:alnum:]_])/(home|Users)/[^[:space:]/]+/' \
-      -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
-      2>/dev/null | head -n 1 || true
-  )"
-  if [[ -n "$hit" ]]; then
-    echo "CI output contains forbidden local path in $label: $hit" >&2
-    exit 1
-  fi
+  python3 "$script_dir/privacy_scan_text.py" \
+    --mode path --stdin --label "CI output $label"
 }
 
 scan_file() {

@@ -104,18 +104,8 @@ privacy_scan_names() {
 privacy_scan_content() {
   local root="$1"
   local label="$2"
-  local hit
-  hit="$(
-    grep -I -R -n -E -i \
-      -e '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))' \
-      -e '/(home|Users)/[^[:space:]/]+/' \
-      -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
-      "$root" 2>/dev/null | head -n 1 || true
-  )"
-  if [[ -n "$hit" ]]; then
-    echo "$label package contains forbidden plaintext privacy marker: $hit" >&2
-    exit 1
-  fi
+  python3 "$script_dir/privacy_scan_text.py" \
+    --mode package --root "$root" --label "$label package"
 }
 
 privacy_scan_tree() {

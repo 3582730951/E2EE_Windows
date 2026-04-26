@@ -35,6 +35,8 @@ if [[ "${#roots[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 scan_names() {
   local root="$1"
   local hit
@@ -57,18 +59,8 @@ scan_names() {
 
 scan_content() {
   local root="$1"
-  local hit
-  hit="$(
-    grep -I -R -n -E -i \
-      -e '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|mysql_password[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))' \
-      -e '/(home|Users)/[^[:space:]/]+/' \
-      -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
-      "$root" 2>/dev/null | head -n 1 || true
-  )"
-  if [[ -n "$hit" ]]; then
-    echo "runtime contains forbidden plaintext privacy marker: $hit" >&2
-    exit 1
-  fi
+  python3 "$script_dir/privacy_scan_text.py" \
+    --mode runtime --root "$root" --label runtime
 }
 
 for root in "${roots[@]}"; do

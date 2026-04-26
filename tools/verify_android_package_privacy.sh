@@ -41,6 +41,8 @@ if [[ "${#roots[@]}" -eq 0 && "${#apks[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 scan_names() {
   local root="$1"
   local label="$2"
@@ -65,30 +67,12 @@ scan_names() {
 scan_secret_content() {
   local root="$1"
   local label="$2"
-  local hit
-  hit="$(
-    find "$root" -type f \
-      ! -name '*.dex' \
-      ! -name '*.so' \
-      ! -name '*.arsc' \
-      ! -name 'isolate_snapshot_data' \
-      ! -name 'vm_snapshot_data' \
-      ! -name 'kernel_blob.bin' \
-      ! -name '*.png' \
-      ! -name '*.jpg' \
-      ! -name '*.jpeg' \
-      ! -name '*.webp' \
-      -print0 2>/dev/null |
-      xargs -0 grep -a -n -E -i \
-        -e '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))' \
-        -e '/(home|Users)/[^[:space:]/]+/' \
-        -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
-        2>/dev/null | head -n 1 || true
-  )"
-  if [[ -n "$hit" ]]; then
-    echo "$label contains forbidden Android plaintext privacy marker: $hit" >&2
-    exit 1
-  fi
+  python3 "$script_dir/privacy_scan_text.py" \
+    --mode package --root "$root" --label "$label" \
+    --skip-ext .dex --skip-ext .so --skip-ext .arsc \
+    --skip-ext .png --skip-ext .jpg --skip-ext .jpeg --skip-ext .webp \
+    --skip-name isolate_snapshot_data --skip-name vm_snapshot_data \
+    --skip-name kernel_blob.bin
 }
 
 scan_telemetry_content() {
