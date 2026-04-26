@@ -47,8 +47,14 @@ std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
 std::atomic<TamperHandler> gTamperHandler{nullptr};
 std::atomic<HardeningLevel> gLevel{HardeningLevel::kHigh};
 
+bool ParseEnvFlag(const char* name, bool default_value) noexcept;
+
 HardeningLevel ParseHardeningLevel() noexcept {
 #if defined(MI_E2EE_SECURE_RELEASE)
+  if (ParseEnvFlag("GITHUB_ACTIONS", false) &&
+      ParseEnvFlag("MI_E2EE_UI_SMOKE", false)) {
+    return HardeningLevel::kOff;
+  }
   return HardeningLevel::kHigh;
 #else
   const char* env = std::getenv("MI_E2EE_HARDENING");

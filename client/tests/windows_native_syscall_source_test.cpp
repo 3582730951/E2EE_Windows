@@ -114,6 +114,10 @@ int main() {
                         "platform_security_win.cpp");
   ok &= RequireContains(security_win, "NativeDebuggerConflict",
                         "platform_security_win.cpp");
+  ok &= RequireContains(security_win, "GITHUB_ACTIONS",
+                        "platform_security_win.cpp");
+  ok &= RequireContains(security_win, "MI_E2EE_UI_SMOKE",
+                        "platform_security_win.cpp");
   ok &= RequireContains(security_win, "gLevel.load() == HardeningLevel::kOff",
                         "platform_security_win.cpp");
   ok &= RequireContains(security_win,

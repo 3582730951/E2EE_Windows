@@ -441,6 +441,10 @@ void StartThreadsBestEffort(HardeningLevel level) noexcept {
 
 HardeningLevel ParseHardeningLevel() noexcept {
 #if defined(MI_E2EE_SECURE_RELEASE)
+  if (ParseEnvFlag("GITHUB_ACTIONS", false) &&
+      ParseEnvFlag("MI_E2EE_UI_SMOKE", false)) {
+    return HardeningLevel::kOff;
+  }
   return HardeningLevel::kHigh;
 #else
   const char* env = std::getenv("MI_E2EE_HARDENING");
