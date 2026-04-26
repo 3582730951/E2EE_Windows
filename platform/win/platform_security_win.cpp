@@ -31,6 +31,7 @@ std::atomic<bool> gTamperDetected{false};
 std::atomic<TamperSignal> gLastTamper{TamperSignal::kNone};
 std::atomic<TamperHandler> gTamperHandler{nullptr};
 
+HardeningLevel ParseHardeningLevel() noexcept;
 std::uint32_t ParseHardeningPollMs() noexcept;
 
 using SetProcessMitigationPolicyFn = BOOL(WINAPI*)(int, PVOID, SIZE_T);
@@ -95,6 +96,9 @@ bool FailCloseEnabled() noexcept {
 #if defined(MI_E2EE_SECURE_RELEASE)
   return true;
 #else
+  if (ParseHardeningLevel() == HardeningLevel::kOff) {
+    return false;
+  }
   // Fail-close is secure-by-default. Set either env to 0/off for local debug.
   const bool hardening = ParseEnvFlag("MI_E2EE_HARDENING_FAILCLOSE", true);
   const bool tamper = ParseEnvFlag("MI_E2EE_TAMPER_FAILCLOSE", true);
@@ -513,7 +517,8 @@ TamperSignal LastTamperSignal() noexcept {
 }
 
 bool CanRevealUiPlaintext() noexcept {
-  if (gLevel.load() == HardeningLevel::kOff) {
+  if (gLevel.load() == HardeningLevel::kOff ||
+      ParseHardeningLevel() == HardeningLevel::kOff) {
     return true;
   }
   if (IsTamperDetected()) {
