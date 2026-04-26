@@ -8552,8 +8552,8 @@ bool ChatHistoryStore::ClearAll(bool delete_attachments,
         continue;
       }
       const auto name = entry.path().filename().string();
-      if (name.rfind(prefix, 0) != 0 || name.size() <= prefix.size() + 4 ||
-          name.substr(name.size() - 4) != ".dll") {
+      std::uint32_t parsed_seq = 0;
+      if (!ParseHistoryFileName(name, user_tag_, parsed_seq)) {
         continue;
       }
       if (secure_wipe) {

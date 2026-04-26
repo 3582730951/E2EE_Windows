@@ -73,6 +73,26 @@ bool ContainsBytes(const std::vector<std::uint8_t>& haystack,
   return false;
 }
 
+bool TamperFirstWrappedRecord(std::vector<std::uint8_t>& bytes) {
+  const std::array<std::uint8_t, 4> magic{{'M', 'I', 'H', '2'}};
+  for (std::size_t i = 4; i + magic.size() + 8 < bytes.size(); ++i) {
+    if (!std::equal(magic.begin(), magic.end(), bytes.begin() + i)) {
+      continue;
+    }
+    const std::uint32_t record_len =
+        static_cast<std::uint32_t>(bytes[i - 4]) |
+        (static_cast<std::uint32_t>(bytes[i - 3]) << 8) |
+        (static_cast<std::uint32_t>(bytes[i - 2]) << 16) |
+        (static_cast<std::uint32_t>(bytes[i - 1]) << 24);
+    if (record_len < 16 || i + record_len > bytes.size()) {
+      continue;
+    }
+    bytes[i + record_len - 1] ^= 0x5A;
+    return true;
+  }
+  return false;
+}
+
 bool HasPlatformContainerShape(const std::vector<std::uint8_t>& bytes) {
 #if defined(_WIN32)
   return bytes.size() >= 2 && bytes[0] == 'M' && bytes[1] == 'Z';
@@ -289,6 +309,24 @@ std::uint8_t SummaryKind(const std::vector<std::uint8_t>& summary) {
   return summary[kind_offset];
 }
 
+std::size_t CountPlatformContainers(const std::filesystem::path& dir) {
+  std::error_code ec;
+  if (!std::filesystem::exists(dir, ec) || ec) {
+    return 0;
+  }
+  std::size_t count = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+    if (ec) {
+      return count;
+    }
+    if (entry.is_regular_file(ec) &&
+        HasPlatformContainerExtension(entry.path())) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 }  // namespace
 
 int main() {
@@ -365,6 +403,42 @@ int main() {
     return 1;
   }
 
+  const auto status_envelope =
+      BuildTextEnvelope(0x21, "status update target");
+  if (!Require(store.AppendEnvelope(false, true, "carol", "alice",
+                                    status_envelope,
+                                    mi::client::ChatHistoryStatus::kSent,
+                                    ts++, error),
+               "append status target envelope failed") ||
+      !Require(store.AppendStatusUpdate(
+                   false, "carol", MakeId(0x21),
+                   mi::client::ChatHistoryStatus::kRead, ts++, error),
+               "append trailing status update failed")) {
+    return 1;
+  }
+
+  const auto early_status_envelope =
+      BuildTextEnvelope(0x22, "early status target");
+  if (!Require(store.AppendStatusUpdate(
+                   false, "dave", MakeId(0x22),
+                   mi::client::ChatHistoryStatus::kDelivered, ts++, error),
+               "append leading status update failed") ||
+      !Require(store.AppendEnvelope(false, false, "dave", "dave",
+                                    early_status_envelope,
+                                    mi::client::ChatHistoryStatus::kSent,
+                                    ts++, error),
+               "append early status target envelope failed")) {
+    return 1;
+  }
+
+  const std::string system_text = "local system notice canary";
+  if (!Require(store.AppendSystem(false, "system-conv", system_text, ts++,
+                                  error),
+               "append system message failed") ||
+      !Require(store.Flush(error), "second flush failed")) {
+    return 1;
+  }
+
   std::vector<mi::client::ChatHistoryMessage> loaded;
   if (!Require(store.LoadConversation(false, "bob", 10, loaded, error),
                "load conversation failed")) {
@@ -407,8 +481,48 @@ int main() {
     }
   }
 
+  std::vector<mi::client::ChatHistoryMessage> status_loaded;
+  if (!Require(store.LoadConversation(false, "carol", 0, status_loaded, error),
+               "load status conversation failed") ||
+      !Require(status_loaded.size() == 1,
+               "status update created extra messages") ||
+      !Require(status_loaded[0].envelope == status_envelope,
+               "status target envelope did not round-trip") ||
+      !Require(status_loaded[0].status ==
+                   mi::client::ChatHistoryStatus::kRead,
+               "trailing status update was not applied")) {
+    return 1;
+  }
+
+  std::vector<mi::client::ChatHistoryMessage> early_status_loaded;
+  if (!Require(store.LoadConversation(false, "dave", 0, early_status_loaded,
+                                      error),
+               "load early status conversation failed") ||
+      !Require(early_status_loaded.size() == 1,
+               "early status update created extra messages") ||
+      !Require(early_status_loaded[0].envelope == early_status_envelope,
+               "early status target envelope did not round-trip") ||
+      !Require(early_status_loaded[0].status ==
+                   mi::client::ChatHistoryStatus::kDelivered,
+               "leading status update was not applied")) {
+    return 1;
+  }
+
+  std::vector<mi::client::ChatHistoryMessage> system_loaded;
+  if (!Require(store.LoadConversation(false, "system-conv", 0, system_loaded,
+                                      error),
+               "load system conversation failed") ||
+      !Require(system_loaded.size() == 1, "system message missing") ||
+      !Require(system_loaded[0].is_system, "system message flag missing") ||
+      !Require(system_loaded[0].system_text_utf8 == system_text,
+               "system message text did not round-trip")) {
+    return 1;
+  }
+
   bool saw_container = false;
   std::vector<std::filesystem::path> container_paths;
+  const std::vector<std::uint8_t> system_plain(system_text.begin(),
+                                               system_text.end());
   for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
     (void)entry;
   }
@@ -441,6 +555,14 @@ int main() {
         return 1;
       }
     }
+    if (!Require(!ContainsBytes(bytes, status_envelope),
+                 "history container leaked status target plaintext") ||
+        !Require(!ContainsBytes(bytes, early_status_envelope),
+                 "history container leaked early status target plaintext") ||
+        !Require(!ContainsBytes(bytes, system_plain),
+                 "history container leaked system plaintext")) {
+      return 1;
+    }
     saw_container = true;
     container_paths.push_back(entry.path());
   }
@@ -448,17 +570,20 @@ int main() {
     return 1;
   }
 
-  std::vector<std::uint8_t> tampered_bytes;
-  if (!Require(!container_paths.empty(), "history container path missing") ||
-      !Require(ReadFileBytes(container_paths.front(), tampered_bytes),
-               "history container reread failed") ||
-      !Require(tampered_bytes.size() > 64, "history container too small")) {
+  if (!Require(!container_paths.empty(), "history container path missing")) {
     return 1;
   }
-  tampered_bytes.back() ^= 0x5A;
-  if (!Require(WriteFileBytes(container_paths.front(), tampered_bytes),
-               "history container tamper write failed")) {
-    return 1;
+  for (const auto& container_path : container_paths) {
+    std::vector<std::uint8_t> tampered_bytes;
+    if (!Require(ReadFileBytes(container_path, tampered_bytes),
+                 "history container reread failed") ||
+        !Require(tampered_bytes.size() > 64, "history container too small") ||
+        !Require(TamperFirstWrappedRecord(tampered_bytes),
+                 "history wrapped record not found for tamper test") ||
+        !Require(WriteFileBytes(container_path, tampered_bytes),
+                 "history container tamper write failed")) {
+      return 1;
+    }
   }
   mi::client::ChatHistoryStore tampered_store;
   if (!Require(tampered_store.Init(root / "e2ee_state", "alice", error),
@@ -466,11 +591,38 @@ int main() {
     return 1;
   }
   std::vector<mi::client::ChatHistoryMessage> tampered_loaded;
-  if (!Require(!tampered_store.LoadConversation(false, "bob", 0,
-                                                tampered_loaded, error),
-               "tampered history container loaded successfully") ||
-      !Require(tampered_loaded.empty(),
-               "tampered history returned messages")) {
+  const bool tampered_load_ok =
+      tampered_store.LoadConversation(false, "bob", 0, tampered_loaded, error);
+  if (!Require(!tampered_load_ok || tampered_loaded.empty(),
+               "tampered history returned readable messages")) {
+    return 1;
+  }
+
+  const auto clear_root = root / "clear_all_case";
+  std::filesystem::remove_all(clear_root, ec);
+  if (!Require(mi::client::test::EnsureOwnerOnlyDirectory(clear_root),
+               "clear-all test directory setup failed")) {
+    return 1;
+  }
+  mi::client::ChatHistoryStore clear_store;
+  if (!Require(clear_store.Init(clear_root / "e2ee_state", "clear_user",
+                                error),
+               "clear-all store init failed") ||
+      !Require(clear_store.AppendEnvelope(
+                   false, false, "clear-conv", "peer",
+                   BuildTextEnvelope(0x31, "clear all target"),
+                   mi::client::ChatHistoryStatus::kSent, 1, error),
+               "clear-all append failed") ||
+      !Require(clear_store.Flush(error), "clear-all flush failed")) {
+    return 1;
+  }
+  const auto clear_database_dir = clear_root / "database";
+  if (!Require(CountPlatformContainers(clear_database_dir) > 0,
+               "clear-all setup did not create a platform container") ||
+      !Require(clear_store.ClearAll(true, true, error),
+               "clear-all failed") ||
+      !Require(CountPlatformContainers(clear_database_dir) == 0,
+               "clear-all left platform history containers behind")) {
     return 1;
   }
   return 0;
