@@ -11,10 +11,12 @@ EOF
 }
 
 inputs=()
+input_count=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --input)
       inputs+=("${2:-}")
+      input_count=$((input_count + 1))
       shift 2
       ;;
     -h|--help)
@@ -76,13 +78,15 @@ scan_file() {
   scan_path_stream "$path" < "$path"
 }
 
-if [[ "${#inputs[@]}" -eq 0 ]]; then
+if [[ "$input_count" -eq 0 ]]; then
   tmp="$(mktemp)"
   trap 'rm -f "$tmp"' EXIT
   cat > "$tmp"
   scan_file "$tmp"
 else
-  for input in "${inputs[@]}"; do
-    scan_file "$input"
-  done
+  if [[ "$input_count" -gt 0 ]]; then
+    for input in "${inputs[@]}"; do
+      scan_file "$input"
+    done
+  fi
 fi

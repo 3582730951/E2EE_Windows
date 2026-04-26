@@ -12,10 +12,12 @@ EOF
 }
 
 roots=()
+root_count=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root)
       roots+=("${2:-}")
+      root_count=$((root_count + 1))
       shift 2
       ;;
     -h|--help)
@@ -30,7 +32,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${#roots[@]}" -eq 0 ]]; then
+if [[ "$root_count" -eq 0 ]]; then
   echo "at least one --root is required" >&2
   exit 1
 fi
@@ -76,11 +78,13 @@ scan_content() {
     --mode runtime --root "$root" --label runtime
 }
 
-for root in "${roots[@]}"; do
-  if [[ -z "$root" || ! -d "$root" ]]; then
-    echo "runtime root missing: $root" >&2
-    exit 1
-  fi
-  scan_names "$root"
-  scan_content "$root"
-done
+if [[ "$root_count" -gt 0 ]]; then
+  for root in "${roots[@]}"; do
+    if [[ -z "$root" || ! -d "$root" ]]; then
+      echo "runtime root missing: $root" >&2
+      exit 1
+    fi
+    scan_names "$root"
+    scan_content "$root"
+  done
+fi

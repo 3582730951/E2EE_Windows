@@ -13,15 +13,19 @@ EOF
 
 roots=()
 ipas=()
+root_count=0
+ipa_count=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root)
       roots+=("${2:-}")
+      root_count=$((root_count + 1))
       shift 2
       ;;
     --ipa)
       ipas+=("${2:-}")
+      ipa_count=$((ipa_count + 1))
       shift 2
       ;;
     -h|--help)
@@ -36,7 +40,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "${#roots[@]}" -eq 0 && "${#ipas[@]}" -eq 0 ]]; then
+if [[ "$root_count" -eq 0 && "$ipa_count" -eq 0 ]]; then
   echo "at least one --root or --ipa is required" >&2
   exit 1
 fi
@@ -217,10 +221,14 @@ scan_ipa() {
   rm -rf "$tmp"
 }
 
-for root in "${roots[@]}"; do
-  scan_expanded_root "$root" "$root"
-done
+if [[ "$root_count" -gt 0 ]]; then
+  for root in "${roots[@]}"; do
+    scan_expanded_root "$root" "$root"
+  done
+fi
 
-for ipa in "${ipas[@]}"; do
-  scan_ipa "$ipa"
-done
+if [[ "$ipa_count" -gt 0 ]]; then
+  for ipa in "${ipas[@]}"; do
+    scan_ipa "$ipa"
+  done
+fi
