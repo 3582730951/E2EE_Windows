@@ -1,5 +1,6 @@
 param(
-  [string]$Dist
+  [string]$Dist,
+  [switch]$PrivacyOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +64,45 @@ function Assert-NoPdb([string]$root, [string]$label) {
   if ($pdb) {
     throw "$label contains forbidden pdb: $($pdb.FullName)"
   }
+}
+
+function Assert-PrivacyPackageNames([string]$root, [string]$label) {
+  $hit = Get-ChildItem -Path $root -Recurse -Force -ErrorAction SilentlyContinue |
+    Where-Object {
+      $name = $_.Name.ToLowerInvariant()
+      $name -match '\.log($|\.)' -or
+      $name -match '\.(dmp|dump)$' -or
+      $name -in @("crash", "crashes", "telemetry", "diagnostic", "diagnostics", "metrics", "metric", "audit", "audits", "ops_health") -or
+      $name.Contains("crash") -or
+      $name.Contains("telemetry") -or
+      $name.Contains("diagnostic") -or
+      $name.Contains("diagnostics") -or
+      $name.Contains("ops_health") -or
+      $name.Contains("audit")
+    } |
+    Select-Object -First 1
+  if ($hit) {
+    throw "$label package contains forbidden privacy artifact: $($hit.FullName)"
+  }
+}
+
+function Assert-PrivacyPackageContent([string]$root, [string]$label) {
+  $pattern = '(?i)(^|[^a-z0-9_])(payload_hex\s*=|file_key\s*=|message_plaintext\s*=|plaintext_payload\s*=|local_path\s*=|token\s*=|access_token\s*=|refresh_token\s*=|ops_enable\s*=\s*(1|true|on|yes)|debug_log\s*=\s*(1|true|on|yes))|/(home|Users)/[^\s/]+/|[A-Za-z]:\\Users\\[^\\\s]+\\'
+  $skipExt = @(".exe", ".dll", ".pfx", ".bin", ".lib", ".a", ".so", ".dylib", ".png", ".ttf", ".otf")
+  $files = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { -not $skipExt.Contains($_.Extension.ToLowerInvariant()) }
+  foreach ($file in $files) {
+    $hit = Select-String -Path $file.FullName -Pattern $pattern -List -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($hit) {
+      throw "$label package contains forbidden plaintext privacy marker: $($hit.Path):$($hit.LineNumber)"
+    }
+  }
+}
+
+function Assert-PrivacyPackageTree([string]$root, [string]$label) {
+  Require-Dir $root
+  Assert-PrivacyPackageNames $root $label
+  Assert-PrivacyPackageContent $root $label
 }
 
 function Read-PfxSha256([string]$path) {
@@ -208,6 +248,12 @@ $serverRoot = Join-Path $distRoot "mi_e2ee_server"
 Require-Dir $clientRoot
 Require-Dir $serverRoot
 
+if ($PrivacyOnly) {
+  Assert-PrivacyPackageTree $clientRoot "client"
+  Assert-PrivacyPackageTree $serverRoot "server"
+  exit 0
+}
+
 $metaPath = Join-Path $distRoot "package_build_meta.windows.json"
 $meta = Read-Json $metaPath
 $allowedConfigs = @("Release", "RelWithDebInfo", "MinSizeRel")
@@ -302,27 +348,8 @@ Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "r
 Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "require_pinned_fingerprint" "1"
 Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "tls_verify_mode" "pin"
 
-function Assert-PrivacyPackageNames([string]$root, [string]$label) {
-  $hit = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object {
-      $name = $_.Name.ToLowerInvariant()
-      $name -match '\.log($|\.)' -or
-      $name -match '\.(dmp|dump)$' -or
-      $name.Contains("crash") -or
-      $name.Contains("telemetry") -or
-      $name.Contains("diagnostic") -or
-      $name.Contains("diagnostics") -or
-      $name.Contains("ops_health") -or
-      $name.Contains("audit")
-    } |
-    Select-Object -First 1
-  if ($hit) {
-    throw "$label package contains forbidden privacy artifact: $($hit.FullName)"
-  }
-}
-
-Assert-PrivacyPackageNames $clientRoot "client"
-Assert-PrivacyPackageNames $serverRoot "server"
+Assert-PrivacyPackageTree $clientRoot "client"
+Assert-PrivacyPackageTree $serverRoot "server"
 
 $fingerprint = ""
 Get-Content (Join-Path $clientRoot "config\\client_config.ini") | ForEach-Object {

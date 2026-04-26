@@ -2490,6 +2490,10 @@ class _ComposerBarState extends State<ComposerBar> {
         Expanded(
           child: TextField(
             controller: _controller,
+            enableSuggestions: false,
+            autocorrect: false,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
             decoration: const InputDecoration(
               hintText: '输入消息或附件说明…',
               prefixIcon: AppIcon(AppSemanticIcon.attachment),

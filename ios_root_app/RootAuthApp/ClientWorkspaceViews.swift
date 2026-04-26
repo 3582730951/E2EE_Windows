@@ -821,7 +821,7 @@ private struct ClientConversationListCard: View {
     }
 
     private func copyConversationTitle(_ title: String) {
-        UIPasteboard.general.string = title
+        SecureClipboard.copyProtectedText(title)
     }
 
     private func archiveConversation(_ conversationID: String) {
@@ -1074,7 +1074,7 @@ struct ClientConversationDetailView: View {
                     }
 
                     Button {
-                        UIPasteboard.general.string = conversation.title
+                        SecureClipboard.copyProtectedText(conversation.title)
                     } label: {
                         Label("Copy chat name", systemImage: "doc.on.doc")
                     }
@@ -1251,13 +1251,13 @@ struct ClientMessagesCard: View {
                                 )
                                 .contextMenu {
                                     Button {
-                                        UIPasteboard.general.string = message.text
+                                        SecureClipboard.copyProtectedText(message.text)
                                     } label: {
                                         Label("Copy message", systemImage: "doc.on.doc")
                                     }
 
                                     Button {
-                                        UIPasteboard.general.string = message.sender
+                                        SecureClipboard.copyProtectedText(message.sender)
                                     } label: {
                                         Label("Copy sender", systemImage: "person.crop.circle")
                                     }

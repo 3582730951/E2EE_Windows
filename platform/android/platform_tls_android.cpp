@@ -3,7 +3,7 @@
 namespace mi::platform::tls {
 
 namespace {
-constexpr char kStubError[] = "tls stub build";
+constexpr char kStubError[] = "tls unavailable";
 }  // namespace
 
 bool IsSupported() {

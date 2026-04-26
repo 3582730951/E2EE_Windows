@@ -157,7 +157,13 @@ struct ChatPollResult {
   std::vector<ChatPresenceEvent> presence_events;
 };
 
-enum class HistoryKind : std::uint8_t { kText = 1, kFile = 2, kSticker = 3, kSystem = 4 };
+enum class HistoryKind : std::uint8_t {
+  kText = 1,
+  kFile = 2,
+  kSticker = 3,
+  kSystem = 4,
+  kUnknown = 255
+};
 enum class HistoryStatus : std::uint8_t { kSent = 0, kDelivered = 1, kRead = 2, kFailed = 3 };
 
 struct PollResult {

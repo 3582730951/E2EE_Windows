@@ -7,7 +7,7 @@ QtObject {
 
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
-    property bool historySaveEnabled: true
+    property bool historySaveEnabled: false
     property bool aiEnhanceEnabled: false
     property int aiEnhanceQualityLevel: 2
     property bool aiEnhanceX4Confirmed: false

@@ -1371,6 +1371,10 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                           maxLines: 4,
                           textInputAction: TextInputAction.send,
                           textAlignVertical: TextAlignVertical.center,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          smartDashesType: SmartDashesType.disabled,
+                          smartQuotesType: SmartQuotesType.disabled,
                           cursorColor: theme.colorScheme.primary,
                           onSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
@@ -1463,6 +1467,10 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                   maxLines: 4,
                   textInputAction: TextInputAction.send,
                   textAlignVertical: TextAlignVertical.center,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  smartDashesType: SmartDashesType.disabled,
+                  smartQuotesType: SmartQuotesType.disabled,
                   onSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
                     hintText: '发送消息',

@@ -437,6 +437,28 @@ bool DetectAiEnhanceGpuAvailable() {
   return true;
 }
 
+int RunProcessQuietly(const QString& program, const QStringList& args) {
+  QProcess process;
+  process.setProgram(program);
+  process.setArguments(args);
+  process.setProcessChannelMode(QProcess::SeparateChannels);
+  process.start();
+  if (!process.waitForStarted()) {
+    return -1;
+  }
+  while (!process.waitForFinished(250)) {
+    process.readAllStandardOutput();
+    process.readAllStandardError();
+  }
+  process.readAllStandardOutput();
+  process.readAllStandardError();
+  return process.exitStatus() == QProcess::NormalExit ? process.exitCode() : -1;
+}
+
+int RunRealEsrganQuietly(const QString& exe, const QStringList& args) {
+  return RunProcessQuietly(exe, args);
+}
+
 QString FindRealEsrganModelDir(const QString& exePath,
                                const QString& modelName) {
   const QString trimmedModel = modelName.trimmed();
@@ -527,12 +549,12 @@ void SaveAiEnhanceSettings(bool enabled, int quality, bool x4Confirmed) {
 bool LoadPrivacySettings(bool& historySaveEnabled) {
   const QString path = PrivacySettingsPath();
   if (path.isEmpty() || !QFileInfo::exists(path)) {
-    historySaveEnabled = true;
+    historySaveEnabled = false;
     return false;
   }
   QSettings settings(path, QSettings::IniFormat);
   historySaveEnabled =
-      settings.value(QStringLiteral("privacy/save_history"), true).toBool();
+      settings.value(QStringLiteral("privacy/save_history"), false).toBool();
   return true;
 }
 
@@ -1049,11 +1071,15 @@ QString SanitizeFileId(const QString& fileId) {
 }
 
 QString ResolveAiUpscaleDir() {
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
+  const QString tempRoot =
+      QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+  if (tempRoot.isEmpty()) {
     return {};
   }
-  return QDir(dataDir).filePath(QStringLiteral("ai_upscale"));
+  const QString scoped =
+      QStringLiteral("mi_e2ee_ai_upscale/%1")
+          .arg(QString::number(QCoreApplication::applicationPid()));
+  return QDir(tempRoot).filePath(scoped);
 }
 
 bool EnsureAiUpscaleDir(QDir& outDir, QString& error) {
@@ -1891,7 +1917,7 @@ CacheTaskResult BuildAttachmentCache(
                << QStringLiteral("-frames:v") << QStringLiteral("1")
                << QStringLiteral("-vf") << QStringLiteral("scale=480:-1")
                << previewPath;
-          QProcess::execute(ffmpeg, args);
+          (void)RunProcessQuietly(ffmpeg, args);
         }
       }
       if (QFileInfo::exists(previewPath)) {
@@ -3166,14 +3192,14 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
       if (gpuSupported) {
         QStringList gpuArgs = args;
         gpuArgs << QStringLiteral("-g") << QStringLiteral("0");
-        exitCode = QProcess::execute(exe, gpuArgs);
+        exitCode = RunRealEsrganQuietly(exe, gpuArgs);
         if (exitCode != 0) {
           QStringList cpuArgs = args;
           cpuArgs << QStringLiteral("-g") << QStringLiteral("-1");
-          exitCode = QProcess::execute(exe, cpuArgs);
+          exitCode = RunRealEsrganQuietly(exe, cpuArgs);
         }
       } else {
-        exitCode = QProcess::execute(exe, args);
+        exitCode = RunRealEsrganQuietly(exe, args);
       }
 
       if (exitCode == 0 && QFileInfo::exists(outPath)) {
@@ -4786,6 +4812,12 @@ QVariantMap QuickClient::BuildHistoryMessageFromC(
       msg.insert(QStringLiteral("kind"), QStringLiteral("system"));
       msg.insert(QStringLiteral("text"),
                  entry.text ? QString::fromUtf8(entry.text) : QString());
+      break;
+    case mi::sdk::HistoryKind::kUnknown:
+      msg.insert(QStringLiteral("kind"), QStringLiteral("unknown"));
+      msg.insert(QStringLiteral("text"),
+                 entry.text ? QString::fromUtf8(entry.text)
+                            : QStringLiteral("Unknown message"));
       break;
     default:
       msg.insert(QStringLiteral("kind"), QStringLiteral("text"));

@@ -143,6 +143,7 @@ fun AddFriendScreen(
                 leadingIcon = {
                     Icon(MiOwnedIcons.Search, contentDescription = tr("contacts_search", "Search"))
                 },
+                keyboardOptions = secureKeyboardOptions(),
                 shape = RoundedCornerShape(16.dp)
             )
             SurfaceSectionCard {
@@ -155,6 +156,7 @@ fun AddFriendScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_username", "Username")) },
                         leadingIcon = { Icon(MiOwnedIcons.PersonAdd, contentDescription = "Username") },
+                        keyboardOptions = secureKeyboardOptions(),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -165,6 +167,7 @@ fun AddFriendScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_remark", "Remark (optional)")) },
                         leadingIcon = { Icon(MiOwnedIcons.Person, contentDescription = "Remark") },
+                        keyboardOptions = secureKeyboardOptions(),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -213,6 +216,7 @@ fun AddFriendScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_group_id", "Group id")) },
                         leadingIcon = { Icon(MiOwnedIcons.Group, contentDescription = "Group") },
+                        keyboardOptions = secureKeyboardOptions(),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -452,6 +456,7 @@ fun ContactDetailScreen(
                         onValueChange = { remark.value = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(tr("contacts_remark_hint", "Add a remark")) },
+                        keyboardOptions = secureKeyboardOptions(),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )

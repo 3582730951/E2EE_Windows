@@ -185,6 +185,111 @@ if(MSVC)
 endif()
 add_test(NAME platform_log_privacy_test COMMAND platform_log_privacy_test)
 
+if(UNIX)
+  add_executable(package_privacy_scan_test
+      package_privacy_scan_test.cpp
+  )
+  target_link_libraries(package_privacy_scan_test PRIVATE mi_e2ee_core)
+  target_include_directories(package_privacy_scan_test PRIVATE ../include ../shard)
+  target_compile_definitions(package_privacy_scan_test PRIVATE
+      MI_E2EE_PACKAGE_VERIFY_POSIX_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_package_posix.sh"
+      MI_E2EE_PACKAGE_VERIFY_WINDOWS_PS1="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_package_windows.ps1")
+  if(MSVC)
+    target_compile_options(package_privacy_scan_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME package_privacy_scan_test COMMAND package_privacy_scan_test)
+
+  add_executable(repository_policy_test
+      repository_policy_test.cpp
+  )
+  target_link_libraries(repository_policy_test PRIVATE mi_e2ee_core)
+  target_include_directories(repository_policy_test PRIVATE ../include ../shard)
+  target_compile_definitions(repository_policy_test PRIVATE
+      MI_E2EE_GIT_POLICY_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_git_policy.sh")
+  if(MSVC)
+    target_compile_options(repository_policy_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME repository_policy_test COMMAND repository_policy_test)
+
+  add_executable(ci_output_privacy_test
+      ci_output_privacy_test.cpp
+  )
+  target_link_libraries(ci_output_privacy_test PRIVATE mi_e2ee_core)
+  target_include_directories(ci_output_privacy_test PRIVATE ../include ../shard)
+  target_compile_definitions(ci_output_privacy_test PRIVATE
+      MI_E2EE_CI_OUTPUT_VERIFY_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_ci_output.sh")
+  if(MSVC)
+    target_compile_options(ci_output_privacy_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME ci_output_privacy_test COMMAND ci_output_privacy_test)
+
+  add_executable(runtime_privacy_scan_test
+      runtime_privacy_scan_test.cpp
+  )
+  target_link_libraries(runtime_privacy_scan_test PRIVATE mi_e2ee_core)
+  target_include_directories(runtime_privacy_scan_test PRIVATE ../include ../shard)
+  target_compile_definitions(runtime_privacy_scan_test PRIVATE
+      MI_E2EE_RUNTIME_VERIFY_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_runtime_privacy.sh")
+  if(MSVC)
+    target_compile_options(runtime_privacy_scan_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME runtime_privacy_scan_test COMMAND runtime_privacy_scan_test)
+
+  add_executable(android_package_privacy_scan_test
+      android_package_privacy_scan_test.cpp
+  )
+  target_link_libraries(android_package_privacy_scan_test PRIVATE mi_e2ee_core)
+  target_include_directories(android_package_privacy_scan_test PRIVATE ../include ../shard)
+  target_compile_definitions(android_package_privacy_scan_test PRIVATE
+      MI_E2EE_ANDROID_PACKAGE_VERIFY_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_android_package_privacy.sh")
+  if(MSVC)
+    target_compile_options(android_package_privacy_scan_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME android_package_privacy_scan_test COMMAND android_package_privacy_scan_test)
+
+  add_executable(ios_package_privacy_scan_test
+      ios_package_privacy_scan_test.cpp
+  )
+  target_link_libraries(ios_package_privacy_scan_test PRIVATE mi_e2ee_core)
+  target_include_directories(ios_package_privacy_scan_test PRIVATE ../include ../shard)
+  target_compile_definitions(ios_package_privacy_scan_test PRIVATE
+      MI_E2EE_IOS_PACKAGE_VERIFY_SH="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_ios_package_privacy.sh")
+  if(MSVC)
+    target_compile_options(ios_package_privacy_scan_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME ios_package_privacy_scan_test COMMAND ios_package_privacy_scan_test)
+endif()
+
+add_executable(android_privacy_source_test
+    android_privacy_source_test.cpp
+)
+target_compile_definitions(android_privacy_source_test PRIVATE
+    MI_E2EE_ANDROID_SOURCE_ROOT="${CMAKE_CURRENT_LIST_DIR}/../../android")
+if(MSVC)
+  target_compile_options(android_privacy_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME android_privacy_source_test COMMAND android_privacy_source_test)
+
+add_executable(ios_privacy_source_test
+    ios_privacy_source_test.cpp
+)
+target_compile_definitions(ios_privacy_source_test PRIVATE
+    MI_E2EE_IOS_SOURCE_ROOT="${CMAKE_CURRENT_LIST_DIR}/../../ios_root_app")
+if(MSVC)
+  target_compile_options(ios_privacy_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME ios_privacy_source_test COMMAND ios_privacy_source_test)
+
+add_executable(flutter_platform_privacy_source_test
+    flutter_platform_privacy_source_test.cpp
+)
+target_compile_definitions(flutter_platform_privacy_source_test PRIVATE
+    MI_E2EE_FLUTTER_SOURCE_ROOT="${CMAKE_CURRENT_LIST_DIR}/../../app_flutter")
+if(MSVC)
+  target_compile_options(flutter_platform_privacy_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME flutter_platform_privacy_source_test COMMAND flutter_platform_privacy_source_test)
+
 add_executable(connection_handler_test
     connection_handler_test.cpp
 )

@@ -4,44 +4,17 @@
 -- 在 key_binder 增加快捷键：
 -- reduce_freq_cand: "Control+j"  # 匹配当前输入码后隐藏指定的候选字词 或候选词条放到第四候选位置
 -- drop_cand: "Control+d"         # 强制删词, 无视输入的编码
--- get_record_filername() 函数中仅支持了 Windows、macOS、Linux
+-- Privacy mode keeps drop/hide/reduce changes in memory only.
 
 require("cold_word_drop.string")
 require("cold_word_drop.metatable")
 local processor = {}
 
-local function get_record_filername(record_type)
-	local path_sep = "/"
-	local user_data_dir = rime_api:get_user_data_dir()
-	local user_distribute_name = rime_api:get_distribution_code_name()
-	if user_distribute_name:lower():match("weasel") then path_sep = [[\]] end
-	if user_distribute_name:lower():match("ibus") then
-		return string.format("%s/rime/lua/cold_word_drop/%s_words.lua",
-			os.getenv("HOME") .. "/.config/ibus",
-			record_type
-		)
-	else
-		local file_path = string.format("%s/lua/cold_word_drop/%s_words.lua", user_data_dir, record_type)
-		return file_path:gsub("/", path_sep)
-	end
-end
-
 local function write_word_to_file(env, record_type)
-	local filename = get_record_filername(record_type)
-	local record_header = string.format("local %s_words =\n", record_type)
-	local record_tailer = string.format("\nreturn %s_words", record_type)
-	if not filename then
-		return false
+	if env and record_type then
+		return true
 	end
-	local fd = assert(io.open(filename, "w")) --打开
-	-- fd:flush() --刷新
-	local x = string.format("%s_list", record_type)
-	local record = table.serialize(env.tbls[x]) -- lua 的 table 对象 序列化为字符串
-	fd:setvbuf("line")
-	fd:write(record_header) --写入文件头部
-	fd:write(record) --写入 序列化的字符串
-	fd:write(record_tailer) --写入文件尾部, 结束记录
-	fd:close() --关闭
+	return false
 end
 
 local function append_word_to_droplist(env, ctx, action_type)

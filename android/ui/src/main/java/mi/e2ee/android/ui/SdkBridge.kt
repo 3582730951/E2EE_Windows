@@ -24,7 +24,11 @@ import mi.e2ee.android.sdk.SdkVersion
 import java.security.MessageDigest
 import java.util.Locale
 
-class SdkBridge(private val context: Context) {
+class SdkBridge(
+    private val context: Context,
+    initialEndpointThreatReport: EndpointThreatReport =
+        EndpointThreatDetector.evaluate(context.applicationContext)
+) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var nativeHandle: Long = 0L
     private var clientHandleValue: Long = 0L
@@ -72,6 +76,12 @@ class SdkBridge(private val context: Context) {
         private set
     var capabilities by mutableStateOf(0)
         private set
+    var endpointThreatBlocked by mutableStateOf(initialEndpointThreatReport.blocked)
+        private set
+    var endpointThreatSummary by mutableStateOf(initialEndpointThreatReport.summary)
+        private set
+    var endpointThreatReasons by mutableStateOf(initialEndpointThreatReport.reasons)
+        private set
 
     var hasPendingServerTrust by mutableStateOf(false)
         private set
@@ -95,7 +105,7 @@ class SdkBridge(private val context: Context) {
     var activeGroupCall by mutableStateOf<GroupCallState?>(null)
         private set
 
-    var historyEnabled by mutableStateOf(true)
+    var historyEnabled by mutableStateOf(false)
         private set
     var readReceiptsEnabled by mutableStateOf(true)
         private set
@@ -176,12 +186,22 @@ class SdkBridge(private val context: Context) {
     }
 
     fun init(configPath: String? = null): Boolean {
+        refreshEndpointThreats()
         if (!ensureHandle()) return false
         val ok = NativeBridge.init(nativeHandle, configPath)
         if (ok) {
             resolveClientHandle()
         }
         return ok
+    }
+
+    fun refreshEndpointThreats() {
+        val report = EndpointThreatDetector.evaluate(context.applicationContext)
+        runOnMain {
+            endpointThreatBlocked = report.blocked
+            endpointThreatSummary = report.summary
+            endpointThreatReasons = report.reasons
+        }
     }
 
     fun dispose() {

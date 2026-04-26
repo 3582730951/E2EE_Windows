@@ -2217,6 +2217,10 @@ class _DesktopChatComposerState extends State<_DesktopChatComposer> {
                 textAlignVertical: TextAlignVertical.center,
                 minLines: 1,
                 maxLines: 3,
+                enableSuggestions: false,
+                autocorrect: false,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 13.6,
                   height: 1.22,

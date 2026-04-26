@@ -139,6 +139,7 @@ fun LoginScreen(
                         onValueChange = { email.value = it },
                         placeholder = tr("login_phone_email", "Phone or email"),
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
                         ),
@@ -152,6 +153,7 @@ fun LoginScreen(
                         onValueChange = { password.value = it },
                         placeholder = tr("login_password", "Password"),
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),
@@ -171,6 +173,7 @@ fun LoginScreen(
                             },
                             placeholder = tr("login_root_code_short", "Approval code"),
                             keyboardOptions = KeyboardOptions(
+                                autoCorrectEnabled = false,
                                 keyboardType = KeyboardType.Ascii,
                                 imeAction = ImeAction.Done
                             ),

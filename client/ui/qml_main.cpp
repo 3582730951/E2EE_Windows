@@ -820,7 +820,11 @@ int main(int argc, char* argv[]) {
     QTimer smokeTimer;
 
     QQmlApplicationEngine engine;
+#if defined(MI_E2EE_PRIVACY_STRICT) && !defined(MI_E2EE_UI_TESTING)
+    engine.setOutputWarningsToStandardError(false);
+#else
     engine.setOutputWarningsToStandardError(true);
+#endif
     mi::client::ui::QuickClient client;
     engine.rootContext()->setContextProperty("clientBridge", &client);
     engine.rootContext()->setContextProperty("uiSmokeMode", smokeMode);

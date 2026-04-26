@@ -223,7 +223,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     approvalStringCard(authString)
 
-                    Button(action: { UIPasteboard.general.string = authString }) {
+                    Button(action: { SecureClipboard.copyProtectedText(authString) }) {
                         Label("Copy approval string", systemImage: "doc.on.doc")
                     }
                     .buttonStyle(SecureSecondaryButtonStyle())
@@ -373,7 +373,7 @@ struct ContentView: View {
                 .buttonStyle(SecureSecondaryButtonStyle())
 
                 if !authString.isEmpty {
-                    Button(action: { UIPasteboard.general.string = authString }) {
+                    Button(action: { SecureClipboard.copyProtectedText(authString) }) {
                         Label("Copy auth string", systemImage: "doc.on.doc")
                     }
                     .buttonStyle(SecureSecondaryButtonStyle())
@@ -469,11 +469,11 @@ struct ContentView: View {
     }
 
     private func copyCode() {
-        UIPasteboard.general.string = store.currentCode
+        SecureClipboard.copyProtectedText(store.currentCode)
     }
 
     private func copyPublicKey() {
-        UIPasteboard.general.string = store.publicKeyHex
+        SecureClipboard.copyProtectedText(store.publicKeyHex)
     }
 
     private func startScan() {

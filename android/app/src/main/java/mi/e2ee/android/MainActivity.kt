@@ -1,7 +1,10 @@
 package mi.e2ee.android
 
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.DisposableEffect
@@ -20,6 +23,7 @@ import mi.e2ee.android.ui.ChatMessage
 import mi.e2ee.android.ui.ChatTheme
 import mi.e2ee.android.ui.ConversationPreview
 import mi.e2ee.android.ui.DayMarker
+import mi.e2ee.android.ui.EndpointThreatDetector
 import mi.e2ee.android.ui.GroupCallRoomUi
 import mi.e2ee.android.ui.GroupChatItem
 import mi.e2ee.android.ui.IncomingCall
@@ -37,6 +41,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val screenshotMode = intent?.getStringExtra(EXTRA_SCREENSHOT_MODE)
+        hardenWindowForPrivateUi(screenshotMode == null)
+        val endpointThreatReport = EndpointThreatDetector.evaluate(this)
+        if (endpointThreatReport.blocked) {
+            finishAndRemoveTask()
+            return
+        }
         setContent {
             val context = LocalContext.current
             var themeMode by rememberSaveable { mutableStateOf(loadThemeMode(context)) }
@@ -52,7 +62,9 @@ class MainActivity : ComponentActivity() {
                             themeMode = themeMode
                         )
                     } else {
-                        val sdk = remember(context) { SdkBridge(context) }
+                        val sdk = remember(context, endpointThreatReport) {
+                            SdkBridge(context, endpointThreatReport)
+                        }
                         LaunchedEffect(Unit) {
                             sdk.init()
                         }
@@ -86,6 +98,23 @@ class MainActivity : ComponentActivity() {
             .edit()
             .putInt(KEY_THEME_MODE, mode)
             .apply()
+    }
+
+    private fun hardenWindowForPrivateUi(blockScreenCapture: Boolean) {
+        if (blockScreenCapture) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.importantForAutofill =
+                View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.importantForContentCapture =
+                View.IMPORTANT_FOR_CONTENT_CAPTURE_NO_EXCLUDE_DESCENDANTS
+        }
     }
 
     companion object {

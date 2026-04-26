@@ -18,7 +18,7 @@ translator:
     - xform/([jqxy])v/$1u/
   enable_completion: true
   enable_sentence: true
-  enable_user_dict: true
+  enable_user_dict: false
   enable_word_completion: true
   initial_quality: 1.25
   sentence_over_completion: true

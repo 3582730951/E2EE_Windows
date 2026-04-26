@@ -870,7 +870,8 @@ bool AuthService::SaveKtState(ClientCore& core) const {
   }
   std::vector<std::uint8_t> out;
   out.reserve(8 + 8 + core.kt_root_.size());
-  out.insert(out.end(), "MIKTSTH1", "MIKTSTH1" + 8);
+  constexpr char kKtStateMagic[] = "MIKTSTH1";
+  out.insert(out.end(), kKtStateMagic, kKtStateMagic + 8);
   std::uint8_t size_buf[8];
   for (int i = 0; i < 8; ++i) {
     size_buf[i] =

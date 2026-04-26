@@ -207,6 +207,7 @@ fun QrLoginDisplayScreen(
                         },
                         placeholder = { Text(t("qr_login_root_hint", "Auth string (code:signature)")) },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),
@@ -407,6 +408,7 @@ fun QrLoginScanScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(t("qr_scan_root_hint", "Root auth string (code:signature) (optional)")) },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),

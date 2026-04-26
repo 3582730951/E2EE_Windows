@@ -213,7 +213,13 @@ class ClientCore {
     std::vector<ChatPresenceEvent> presence_events;
   };
 
-  enum class HistoryKind : std::uint8_t { kText = 1, kFile = 2, kSticker = 3, kSystem = 4 };
+  enum class HistoryKind : std::uint8_t {
+    kText = 1,
+    kFile = 2,
+    kSticker = 3,
+    kSystem = 4,
+    kUnknown = 255
+  };
   enum class HistoryStatus : std::uint8_t { kSent = 0, kDelivered = 1, kRead = 2, kFailed = 3 };
 
   struct HistoryEntry {
@@ -777,7 +783,7 @@ class ClientCore {
   bool e2ee_inited_{false};
   bool prekey_published_{false};
   std::filesystem::path e2ee_state_dir_;
-  bool history_enabled_{true};
+  bool history_enabled_{false};
   bool tamper_mode_{false};
   std::uint8_t tamper_signal_{0};
   std::unique_ptr<ChatHistoryStore> history_store_;

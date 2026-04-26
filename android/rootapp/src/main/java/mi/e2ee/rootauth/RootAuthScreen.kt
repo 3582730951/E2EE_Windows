@@ -49,7 +49,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -161,14 +160,14 @@ fun RootAuthScreen() {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = {
                 if (code != "------") {
-                    clipboard.setText(AnnotatedString(code))
+                    SecureClipboard.copyProtectedText(clipboard, code)
                 }
             }) {
                 Text(stringResource(id = R.string.copy_code))
             }
             OutlinedButton(onClick = {
                 if (publicKey.isNotBlank()) {
-                    clipboard.setText(AnnotatedString(publicKey))
+                    SecureClipboard.copyProtectedText(clipboard, publicKey)
                 }
             }) {
                 Text(stringResource(id = R.string.copy_pubkey))
@@ -195,7 +194,8 @@ fun RootAuthScreen() {
             value = manualDeviceId,
             onValueChange = { manualDeviceId = it },
             label = { Text(stringResource(id = R.string.manual_device_label)) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = secureKeyboardOptions()
         )
         if (manualAuthString.isNotBlank()) {
             Text(
@@ -212,7 +212,7 @@ fun RootAuthScreen() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 if (manualAuthString.isNotBlank()) {
-                    clipboard.setText(AnnotatedString(manualAuthString))
+                    SecureClipboard.copyProtectedText(clipboard, manualAuthString)
                 }
             }) {
                 Text(stringResource(id = R.string.copy_auth_string))
@@ -298,14 +298,14 @@ fun RootAuthScreen() {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
                             if (code != "------") {
-                                clipboard.setText(AnnotatedString(code))
+                                SecureClipboard.copyProtectedText(clipboard, code)
                             }
                         }) {
                             Text(stringResource(id = R.string.copy_code))
                         }
                         if (!authString.isNullOrBlank()) {
                             OutlinedButton(onClick = {
-                                clipboard.setText(AnnotatedString(authString))
+                                SecureClipboard.copyProtectedText(clipboard, authString)
                             }) {
                                 Text(stringResource(id = R.string.copy_auth_string))
                             }

@@ -68,12 +68,20 @@ constexpr std::uint8_t kLegacyVersion = 1;
 constexpr std::uint8_t kChatMagic[4] = {'M', 'I', 'C', 'H'};
 constexpr std::uint8_t kChatVersion = 1;
 constexpr std::uint8_t kChatTypeText = 1;
+constexpr std::uint8_t kChatTypeAck = 2;
 constexpr std::uint8_t kChatTypeFile = 3;
 constexpr std::uint8_t kChatTypeGroupText = 4;
 constexpr std::uint8_t kChatTypeGroupInvite = 5;
 constexpr std::uint8_t kChatTypeGroupFile = 6;
+constexpr std::uint8_t kChatTypeGroupSenderKeyDist = 7;
+constexpr std::uint8_t kChatTypeGroupSenderKeyReq = 8;
 constexpr std::uint8_t kChatTypeRich = 9;
+constexpr std::uint8_t kChatTypeReadReceipt = 10;
+constexpr std::uint8_t kChatTypeTyping = 11;
 constexpr std::uint8_t kChatTypeSticker = 12;
+constexpr std::uint8_t kChatTypePresence = 13;
+constexpr std::uint8_t kChatTypeGroupCallKeyDist = 14;
+constexpr std::uint8_t kChatTypeGroupCallKeyReq = 15;
 constexpr std::size_t kChatHeaderSize = sizeof(kChatMagic) + 1 + 1 + 16;
 constexpr std::uint8_t kRichKindText = 1;
 constexpr std::uint8_t kRichKindLocation = 2;
@@ -434,7 +442,9 @@ bool DeriveAttachmentPreviewKey(const std::array<std::uint8_t, 32>& master_key,
   const auto& salt = d.bytes;
   std::vector<std::uint8_t> info;
   info.reserve(sizeof(kPrefix) - 1 + 1 + file_id.size());
-  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    info.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   info.push_back(0);
   info.insert(info.end(), file_id.begin(), file_id.end());
   if (!mi::server::crypto::HkdfSha256(master_key.data(), master_key.size(),
@@ -1295,9 +1305,24 @@ std::string PadSeq(std::uint32_t seq) {
   return s;
 }
 
+std::string HistoryContainerExtension() {
+#if defined(_WIN32)
+  return ".dll";
+#elif defined(__APPLE__)
+  return ".dylib";
+#else
+  return ".so";
+#endif
+}
+
+bool IsHistoryContainerExtension(const std::string& ext) {
+  return ext == ".dll" || ext == ".so" || ext == ".dylib";
+}
+
 std::string BuildHistoryFileName(const std::string& user_tag,
                                  std::uint32_t seq) {
-  return "main_" + user_tag + "_" + PadSeq(seq) + ".dll";
+  return "main_" + user_tag + "_" + PadSeq(seq) +
+         HistoryContainerExtension();
 }
 
 bool ParseHistoryFileName(const std::string& name,
@@ -1308,11 +1333,13 @@ bool ParseHistoryFileName(const std::string& name,
     return false;
   }
   const std::string prefix = "main_" + user_tag + "_";
-  if (name.size() <= prefix.size() + 4 || name.rfind(prefix, 0) != 0 ||
-      name.substr(name.size() - 4) != ".dll") {
+  const std::size_t dot = name.rfind('.');
+  if (dot == std::string::npos || dot <= prefix.size() ||
+      name.rfind(prefix, 0) != 0 ||
+      !IsHistoryContainerExtension(name.substr(dot))) {
     return false;
   }
-  const std::size_t num_len = name.size() - prefix.size() - 4;
+  const std::size_t num_len = dot - prefix.size();
   if (num_len == 0) {
     return false;
   }
@@ -1349,6 +1376,36 @@ void WriteLe32(std::vector<std::uint8_t>& buf, std::size_t off,
   buf[off + 1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
   buf[off + 2] = static_cast<std::uint8_t>((v >> 16) & 0xFF);
   buf[off + 3] = static_cast<std::uint8_t>((v >> 24) & 0xFF);
+}
+
+void WriteLe64(std::vector<std::uint8_t>& buf, std::size_t off,
+               std::uint64_t v) {
+  if (off + 8 > buf.size()) {
+    return;
+  }
+  for (std::size_t i = 0; i < 8; ++i) {
+    buf[off + i] = static_cast<std::uint8_t>((v >> (i * 8)) & 0xFF);
+  }
+}
+
+std::uint16_t ReadLe16(const std::uint8_t* p) {
+  return static_cast<std::uint16_t>(p[0]) |
+         (static_cast<std::uint16_t>(p[1]) << 8);
+}
+
+std::uint32_t ReadLe32(const std::uint8_t* p) {
+  return static_cast<std::uint32_t>(p[0]) |
+         (static_cast<std::uint32_t>(p[1]) << 8) |
+         (static_cast<std::uint32_t>(p[2]) << 16) |
+         (static_cast<std::uint32_t>(p[3]) << 24);
+}
+
+std::uint64_t ReadLe64(const std::uint8_t* p) {
+  std::uint64_t out = 0;
+  for (std::size_t i = 0; i < 8; ++i) {
+    out |= static_cast<std::uint64_t>(p[i]) << (i * 8);
+  }
+  return out;
 }
 
 void FillRandomBytes(std::vector<std::uint8_t>& buf,
@@ -1664,6 +1721,227 @@ std::vector<std::uint8_t> BuildPeContainer(std::uint32_t& out_hist_offset) {
   return buf;
 }
 
+std::uint16_t ElfMachine() {
+#if defined(__aarch64__)
+  return 183;  // EM_AARCH64
+#elif defined(__arm__)
+  return 40;   // EM_ARM
+#elif defined(__i386__)
+  return 3;    // EM_386
+#elif defined(__riscv)
+  return 243;  // EM_RISCV
+#else
+  return 62;   // EM_X86_64
+#endif
+}
+
+void WriteElf64ProgramHeader(std::vector<std::uint8_t>& buf,
+                             std::size_t off,
+                             std::uint32_t type,
+                             std::uint32_t flags,
+                             std::uint64_t file_off,
+                             std::uint64_t vaddr,
+                             std::uint64_t file_size,
+                             std::uint64_t mem_size,
+                             std::uint64_t align) {
+  WriteLe32(buf, off + 0, type);
+  WriteLe32(buf, off + 4, flags);
+  WriteLe64(buf, off + 8, file_off);
+  WriteLe64(buf, off + 16, vaddr);
+  WriteLe64(buf, off + 24, vaddr);
+  WriteLe64(buf, off + 32, file_size);
+  WriteLe64(buf, off + 40, mem_size);
+  WriteLe64(buf, off + 48, align);
+}
+
+void WriteElf64SectionHeader(std::vector<std::uint8_t>& buf,
+                             std::size_t off,
+                             std::uint32_t name,
+                             std::uint32_t type,
+                             std::uint64_t flags,
+                             std::uint64_t addr,
+                             std::uint64_t file_off,
+                             std::uint64_t size,
+                             std::uint32_t link,
+                             std::uint32_t info,
+                             std::uint64_t align,
+                             std::uint64_t entsize) {
+  WriteLe32(buf, off + 0, name);
+  WriteLe32(buf, off + 4, type);
+  WriteLe64(buf, off + 8, flags);
+  WriteLe64(buf, off + 16, addr);
+  WriteLe64(buf, off + 24, file_off);
+  WriteLe64(buf, off + 32, size);
+  WriteLe32(buf, off + 40, link);
+  WriteLe32(buf, off + 44, info);
+  WriteLe64(buf, off + 48, align);
+  WriteLe64(buf, off + 56, entsize);
+}
+
+std::vector<std::uint8_t> BuildElfContainer(std::uint32_t& out_hist_offset) {
+  constexpr std::uint32_t kElfHeaderSize = 64;
+  constexpr std::uint32_t kProgramHeaderSize = 56;
+  constexpr std::uint16_t kProgramCount = 2;
+  constexpr std::uint32_t kSectionHeaderSize = 64;
+  constexpr std::uint16_t kSectionCount = 5;
+  constexpr std::uint32_t kShstrOffset = 0x200;
+  constexpr std::uint32_t kSectionTableOffset = 0x300;
+  constexpr std::uint32_t kTextOffset = 0x1000;
+  constexpr std::uint32_t kTextSize = 0x100;
+  constexpr std::uint32_t kRodataOffset = 0x1200;
+  constexpr std::uint32_t kRodataSize = 0x100;
+  constexpr std::uint32_t kHistOffset = 0x2000;
+  constexpr std::uint32_t kHistSize = 0x200;
+  constexpr std::uint64_t kBaseVaddr = 0;
+  const std::string shstr =
+      std::string("\0.text\0.rodata\0.hist\0.shstrtab\0", 31);
+
+  out_hist_offset = kHistOffset;
+  std::vector<std::uint8_t> buf(out_hist_offset, 0);
+  buf[0] = 0x7F;
+  buf[1] = 'E';
+  buf[2] = 'L';
+  buf[3] = 'F';
+  buf[4] = 2;  // ELFCLASS64
+  buf[5] = 1;  // little-endian
+  buf[6] = 1;  // EV_CURRENT
+  buf[7] = 0;  // System V ABI
+  WriteLe16(buf, 16, 3);  // ET_DYN
+  WriteLe16(buf, 18, ElfMachine());
+  WriteLe32(buf, 20, 1);
+  WriteLe64(buf, 24, 0);
+  WriteLe64(buf, 32, kElfHeaderSize);
+  WriteLe64(buf, 40, kSectionTableOffset);
+  WriteLe32(buf, 48, 0);
+  WriteLe16(buf, 52, kElfHeaderSize);
+  WriteLe16(buf, 54, kProgramHeaderSize);
+  WriteLe16(buf, 56, kProgramCount);
+  WriteLe16(buf, 58, kSectionHeaderSize);
+  WriteLe16(buf, 60, kSectionCount);
+  WriteLe16(buf, 62, 4);
+
+  WriteElf64ProgramHeader(buf, kElfHeaderSize, 1, 5, 0, kBaseVaddr,
+                          kTextOffset + kTextSize, kTextOffset + kTextSize,
+                          0x1000);
+  WriteElf64ProgramHeader(buf, kElfHeaderSize + kProgramHeaderSize, 1, 4,
+                          kRodataOffset, kBaseVaddr + kRodataOffset,
+                          kRodataSize, kRodataSize, 0x1000);
+
+  std::copy(shstr.begin(), shstr.end(),
+            buf.begin() + static_cast<std::ptrdiff_t>(kShstrOffset));
+  FillVmText(buf, kTextOffset, kTextSize);
+  FillRandomBytes(buf, kRodataOffset, kRodataSize);
+
+  const std::size_t sh = kSectionTableOffset;
+  WriteElf64SectionHeader(buf, sh + kSectionHeaderSize, 1, 1, 0x6,
+                          kBaseVaddr + kTextOffset, kTextOffset, kTextSize, 0,
+                          0, 16, 0);
+  WriteElf64SectionHeader(buf, sh + kSectionHeaderSize * 2, 7, 1, 0x2,
+                          kBaseVaddr + kRodataOffset, kRodataOffset,
+                          kRodataSize, 0, 0, 16, 0);
+  WriteElf64SectionHeader(buf, sh + kSectionHeaderSize * 3, 15, 1, 0, 0,
+                          kHistOffset, kHistSize, 0, 0, 16, 0);
+  WriteElf64SectionHeader(buf, sh + kSectionHeaderSize * 4, 21, 3, 0, 0,
+                          kShstrOffset, shstr.size(), 0, 0, 1, 0);
+  return buf;
+}
+
+std::uint32_t MachCpuType() {
+#if defined(__aarch64__) || defined(__arm64__)
+  return 0x0100000Cu;  // CPU_TYPE_ARM64
+#elif defined(__i386__)
+  return 7u;           // CPU_TYPE_X86
+#else
+  return 0x01000007u;  // CPU_TYPE_X86_64
+#endif
+}
+
+void WriteFixedAscii(std::vector<std::uint8_t>& buf,
+                     std::size_t off,
+                     std::size_t len,
+                     const char* value) {
+  if (off + len > buf.size()) {
+    return;
+  }
+  std::memset(buf.data() + off, 0, len);
+  if (!value) {
+    return;
+  }
+  const std::size_t n = std::min<std::size_t>(std::strlen(value), len);
+  std::memcpy(buf.data() + off, value, n);
+}
+
+std::vector<std::uint8_t> BuildMachOContainer(std::uint32_t& out_hist_offset) {
+  constexpr std::uint32_t kHeaderSize = 32;
+  constexpr std::uint32_t kSegmentCmdSize = 72;
+  constexpr std::uint32_t kSection64Size = 80;
+  constexpr std::uint32_t kTextOffset = 0x1000;
+  constexpr std::uint32_t kTextSize = 0x100;
+  constexpr std::uint32_t kHistOffset = 0x2000;
+  constexpr std::uint32_t kHistSize = 0x200;
+  constexpr std::uint32_t kNcmds = 2;
+  constexpr std::uint32_t kSizeOfCmds =
+      (kSegmentCmdSize + kSection64Size) * kNcmds;
+
+  out_hist_offset = kHistOffset;
+  std::vector<std::uint8_t> buf(out_hist_offset, 0);
+  WriteLe32(buf, 0, 0xFEEDFACFu);
+  WriteLe32(buf, 4, MachCpuType());
+  WriteLe32(buf, 8, 3);
+  WriteLe32(buf, 12, 6);  // MH_DYLIB
+  WriteLe32(buf, 16, kNcmds);
+  WriteLe32(buf, 20, kSizeOfCmds);
+  WriteLe32(buf, 24, 0x85);
+  WriteLe32(buf, 28, 0);
+
+  std::size_t off = kHeaderSize;
+  const auto writeSegment = [&](const char* seg_name, const char* sec_name,
+                                std::uint64_t vmaddr, std::uint64_t vmsize,
+                                std::uint64_t fileoff, std::uint64_t filesize,
+                                std::uint32_t initprot,
+                                std::uint32_t flags) {
+    WriteLe32(buf, off + 0, 0x19);  // LC_SEGMENT_64
+    WriteLe32(buf, off + 4, kSegmentCmdSize + kSection64Size);
+    WriteFixedAscii(buf, off + 8, 16, seg_name);
+    WriteLe64(buf, off + 24, vmaddr);
+    WriteLe64(buf, off + 32, vmsize);
+    WriteLe64(buf, off + 40, fileoff);
+    WriteLe64(buf, off + 48, filesize);
+    WriteLe32(buf, off + 56, 7);
+    WriteLe32(buf, off + 60, initprot);
+    WriteLe32(buf, off + 64, 1);
+    WriteLe32(buf, off + 68, flags);
+    const std::size_t sec = off + kSegmentCmdSize;
+    WriteFixedAscii(buf, sec + 0, 16, sec_name);
+    WriteFixedAscii(buf, sec + 16, 16, seg_name);
+    WriteLe64(buf, sec + 32, vmaddr);
+    WriteLe64(buf, sec + 40, vmsize);
+    WriteLe32(buf, sec + 48, static_cast<std::uint32_t>(fileoff));
+    WriteLe32(buf, sec + 52, 4);
+    WriteLe32(buf, sec + 56, 0);
+    WriteLe32(buf, sec + 60, 0);
+    WriteLe32(buf, sec + 64, flags);
+    off += kSegmentCmdSize + kSection64Size;
+  };
+
+  writeSegment("__TEXT", "__text", kTextOffset, kTextSize, kTextOffset,
+               kTextSize, 5, 0x80000400u);
+  writeSegment("__ZERX", "__hist", kHistOffset, kHistSize, kHistOffset,
+               kHistSize, 1, 0);
+  FillVmText(buf, kTextOffset, kTextSize);
+  return buf;
+}
+
+std::vector<std::uint8_t> BuildPlatformContainer(std::uint32_t& out_hist_offset) {
+#if defined(_WIN32)
+  return BuildPeContainer(out_hist_offset);
+#elif defined(__APPLE__)
+  return BuildMachOContainer(out_hist_offset);
+#else
+  return BuildElfContainer(out_hist_offset);
+#endif
+}
+
 bool WriteContainerHeader(std::ofstream& out,
                           std::uint8_t version,
                           std::string& error) {
@@ -1712,9 +1990,9 @@ bool ReadContainerHeader(std::ifstream& in,
   return true;
 }
 
-bool LocateContainerOffset(std::ifstream& in,
-                           std::uint32_t& out_offset,
-                           std::string& error) {
+bool LocatePeContainerOffset(std::ifstream& in,
+                             std::uint32_t& out_offset,
+                             std::string& error) {
   error.clear();
   out_offset = 0;
   if (!in) {
@@ -1910,6 +2188,229 @@ bool LocateContainerOffset(std::ifstream& in,
   return true;
 }
 
+bool LocateElfContainerOffset(std::ifstream& in,
+                              std::uint32_t& out_offset,
+                              std::string& error) {
+  error.clear();
+  out_offset = 0;
+  if (!in) {
+    error = "history read failed";
+    return false;
+  }
+  in.clear();
+  in.seekg(0, std::ios::end);
+  const std::streampos end_pos = in.tellg();
+  if (end_pos <= 0) {
+    error = "history elf invalid";
+    return false;
+  }
+  const std::uint64_t file_size = static_cast<std::uint64_t>(end_pos);
+  if (file_size < 64) {
+    error = "history elf invalid";
+    return false;
+  }
+
+  in.seekg(0, std::ios::beg);
+  std::array<std::uint8_t, 64> hdr{};
+  if (!ReadExact(in, hdr.data(), hdr.size())) {
+    error = "history read failed";
+    return false;
+  }
+  if (hdr[0] != 0x7F || hdr[1] != 'E' || hdr[2] != 'L' || hdr[3] != 'F' ||
+      hdr[4] != 2 || hdr[5] != 1) {
+    error = "history elf invalid";
+    return false;
+  }
+  const std::uint64_t shoff = ReadLe64(hdr.data() + 40);
+  const std::uint16_t shentsize = ReadLe16(hdr.data() + 58);
+  const std::uint16_t shnum = ReadLe16(hdr.data() + 60);
+  const std::uint16_t shstrndx = ReadLe16(hdr.data() + 62);
+  if (shoff == 0 || shentsize < 64 || shnum == 0 || shnum > 256 ||
+      shstrndx >= shnum ||
+      shoff + static_cast<std::uint64_t>(shentsize) * shnum > file_size) {
+    error = "history elf invalid";
+    return false;
+  }
+
+  std::vector<std::uint8_t> sections(
+      static_cast<std::size_t>(shentsize) * shnum);
+  in.seekg(static_cast<std::streamoff>(shoff), std::ios::beg);
+  if (!ReadExact(in, sections.data(), sections.size())) {
+    error = "history read failed";
+    return false;
+  }
+  const std::uint8_t* shstr =
+      sections.data() + static_cast<std::size_t>(shstrndx) * shentsize;
+  const std::uint64_t shstr_off = ReadLe64(shstr + 24);
+  const std::uint64_t shstr_size = ReadLe64(shstr + 32);
+  if (shstr_size == 0 || shstr_size > 65536 ||
+      shstr_off + shstr_size > file_size) {
+    error = "history elf invalid";
+    return false;
+  }
+  std::vector<char> names(static_cast<std::size_t>(shstr_size));
+  in.seekg(static_cast<std::streamoff>(shstr_off), std::ios::beg);
+  if (!ReadExact(in, names.data(), names.size())) {
+    error = "history read failed";
+    return false;
+  }
+  for (std::uint16_t i = 0; i < shnum; ++i) {
+    const std::uint8_t* sh =
+        sections.data() + static_cast<std::size_t>(i) * shentsize;
+    const std::uint32_t name_off = ReadLe32(sh);
+    if (name_off >= names.size()) {
+      continue;
+    }
+    const char* name = names.data() + name_off;
+    const std::size_t remain = names.size() - name_off;
+    const void* nul = std::memchr(name, 0, remain);
+    const std::size_t len =
+        nul ? static_cast<std::size_t>(static_cast<const char*>(nul) - name)
+            : remain;
+    if (len != 5 || std::memcmp(name, ".hist", 5) != 0) {
+      continue;
+    }
+    const std::uint64_t hist_off = ReadLe64(sh + 24);
+    if (hist_off == 0 || hist_off >= file_size ||
+        hist_off > (std::numeric_limits<std::uint32_t>::max)()) {
+      error = "history elf invalid";
+      return false;
+    }
+    out_offset = static_cast<std::uint32_t>(hist_off);
+    return true;
+  }
+  error = "history elf missing hist";
+  return false;
+}
+
+bool LocateMachOContainerOffset(std::ifstream& in,
+                                std::uint32_t& out_offset,
+                                std::string& error) {
+  error.clear();
+  out_offset = 0;
+  if (!in) {
+    error = "history read failed";
+    return false;
+  }
+  in.clear();
+  in.seekg(0, std::ios::end);
+  const std::streampos end_pos = in.tellg();
+  if (end_pos <= 0) {
+    error = "history macho invalid";
+    return false;
+  }
+  const std::uint64_t file_size = static_cast<std::uint64_t>(end_pos);
+  if (file_size < 32) {
+    error = "history macho invalid";
+    return false;
+  }
+
+  in.seekg(0, std::ios::beg);
+  std::array<std::uint8_t, 32> hdr{};
+  if (!ReadExact(in, hdr.data(), hdr.size())) {
+    error = "history read failed";
+    return false;
+  }
+  const std::uint32_t magic = ReadLe32(hdr.data());
+  if (magic != 0xFEEDFACF && magic != 0xFEEDFACE) {
+    error = "history macho invalid";
+    return false;
+  }
+  const bool is64 = magic == 0xFEEDFACF;
+  const std::uint32_t ncmds = ReadLe32(hdr.data() + 16);
+  const std::uint32_t sizeofcmds = ReadLe32(hdr.data() + 20);
+  if (!is64 || ncmds == 0 || ncmds > 128 ||
+      sizeofcmds > file_size - hdr.size()) {
+    error = "history macho invalid";
+    return false;
+  }
+
+  std::uint64_t cmd_off = hdr.size();
+  for (std::uint32_t i = 0; i < ncmds; ++i) {
+    if (cmd_off + 8 > file_size) {
+      error = "history macho invalid";
+      return false;
+    }
+    in.seekg(static_cast<std::streamoff>(cmd_off), std::ios::beg);
+    std::array<std::uint8_t, 8> cmd_hdr{};
+    if (!ReadExact(in, cmd_hdr.data(), cmd_hdr.size())) {
+      error = "history read failed";
+      return false;
+    }
+    const std::uint32_t cmd = ReadLe32(cmd_hdr.data());
+    const std::uint32_t cmdsize = ReadLe32(cmd_hdr.data() + 4);
+    if (cmdsize < 8 || cmd_off + cmdsize > file_size) {
+      error = "history macho invalid";
+      return false;
+    }
+    if (cmd == 0x19 && cmdsize >= 72) {
+      std::vector<std::uint8_t> full(cmdsize);
+      in.seekg(static_cast<std::streamoff>(cmd_off), std::ios::beg);
+      if (!ReadExact(in, full.data(), full.size())) {
+        error = "history read failed";
+        return false;
+      }
+      const std::uint32_t nsects = ReadLe32(full.data() + 64);
+      std::size_t sec_off = 72;
+      for (std::uint32_t s = 0; s < nsects; ++s) {
+        if (sec_off + 80 > full.size()) {
+          error = "history macho invalid";
+          return false;
+        }
+        const char* sect_name =
+            reinterpret_cast<const char*>(full.data() + sec_off);
+        if (std::strncmp(sect_name, "__hist", 16) == 0) {
+          const std::uint32_t hist_off = ReadLe32(full.data() + sec_off + 48);
+          if (hist_off == 0 || hist_off >= file_size) {
+            error = "history macho invalid";
+            return false;
+          }
+          out_offset = hist_off;
+          return true;
+        }
+        sec_off += 80;
+      }
+    }
+    cmd_off += cmdsize;
+  }
+  error = "history macho missing hist";
+  return false;
+}
+
+bool LocateContainerOffset(std::ifstream& in,
+                           std::uint32_t& out_offset,
+                           std::string& error) {
+  error.clear();
+  out_offset = 0;
+  if (!in) {
+    error = "history read failed";
+    return false;
+  }
+  in.clear();
+  in.seekg(0, std::ios::beg);
+  std::array<std::uint8_t, 4> magic{};
+  if (!ReadExact(in, magic.data(), magic.size())) {
+    error = "history read failed";
+    return false;
+  }
+  in.clear();
+  in.seekg(0, std::ios::beg);
+  if (magic[0] == 'M' && magic[1] == 'Z') {
+    return LocatePeContainerOffset(in, out_offset, error);
+  }
+  if (magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' &&
+      magic[3] == 'F') {
+    return LocateElfContainerOffset(in, out_offset, error);
+  }
+  const std::uint32_t le_magic = ReadLe32(magic.data());
+  if (le_magic == 0xFEEDFACF || le_magic == 0xFEEDFACE ||
+      le_magic == 0xCFFAEDFE || le_magic == 0xCEFAEDFE) {
+    return LocateMachOContainerOffset(in, out_offset, error);
+  }
+  error = "history container invalid";
+  return false;
+}
+
 bool ParseOuterPlain(const std::vector<std::uint8_t>& outer_plain,
                      bool& out_is_group,
                      std::string& out_conv_id,
@@ -2078,11 +2579,15 @@ bool DeriveWhiteboxAesKey(const std::array<std::uint8_t, 32>& conv_key,
   }
   std::vector<std::uint8_t> info;
   static constexpr char kPrefix[] = "MI_E2EE_HISTORY_AESGCM_WB_V1";
-  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    info.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   info.push_back(0);
   info.push_back(is_group ? 1 : 0);
   info.push_back(0);
-  info.insert(info.end(), conv_id.begin(), conv_id.end());
+  for (char ch : conv_id) {
+    info.push_back(static_cast<std::uint8_t>(ch));
+  }
 
   std::array<std::uint8_t, 32> salt{};
   static constexpr char kSalt[] = "MI_E2EE_HISTORY_AESGCM_WB_SALT_V1";
@@ -2440,7 +2945,9 @@ std::array<std::uint32_t, 4> DeriveRoundMask(
     std::uint32_t round) {
   std::vector<std::uint8_t> buf;
   static constexpr char kLabel[] = "MI_E2EE_WB_AES_OUTMASK_V1";
-  buf.insert(buf.end(), kLabel, kLabel + sizeof(kLabel) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kLabel); ++i) {
+    buf.push_back(static_cast<std::uint8_t>(kLabel[i]));
+  }
   buf.insert(buf.end(), key.begin(), key.end());
   buf.push_back(static_cast<std::uint8_t>(round & 0xFF));
   buf.push_back(static_cast<std::uint8_t>((round >> 8) & 0xFF));
@@ -3238,7 +3745,9 @@ bool DeriveWrapSlotKey(const std::array<std::uint8_t, 32>& master_key,
   }
   std::vector<std::uint8_t> info;
   static constexpr char kPrefix[] = "MI_E2EE_HISTORY_WRAP_SLOT_V1";
-  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    info.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   info.push_back(0);
   info.push_back(static_cast<std::uint8_t>(slot & 0xFF));
   info.push_back(static_cast<std::uint8_t>((slot >> 8) & 0xFF));
@@ -3396,12 +3905,42 @@ bool ReadOuterRecordV2(std::ifstream& in,
   }
 
   std::uint32_t record_len = 0;
-  if (!ReadUint32(in, record_len)) {
-    if (in.eof()) {
-      return true;
+  while (true) {
+    std::uint8_t len_or_magic[4]{};
+    if (!ReadExact(in, len_or_magic, sizeof(len_or_magic))) {
+      if (in.eof()) {
+        return true;
+      }
+      error = "history read failed";
+      return false;
     }
-    error = "history read failed";
-    return false;
+    if (std::memcmp(len_or_magic, kMih3Magic, sizeof(kMih3Magic)) == 0) {
+      const auto block_start =
+          static_cast<std::streamoff>(in.tellg()) -
+          static_cast<std::streamoff>(sizeof(kMih3Magic));
+      in.clear();
+      in.seekg(block_start, std::ios::beg);
+      Mih3Summary trailer;
+      std::uint8_t flags = 0;
+      bool valid = false;
+      if (!ReadMih3Block(in, master_key, trailer, flags, valid)) {
+        if (in.eof()) {
+          return true;
+        }
+        error = "history mih3 invalid";
+        return false;
+      }
+      if (!valid || (flags & kMih3FlagTrailer) == 0) {
+        error = "history auth failed";
+        return false;
+      }
+      continue;
+    }
+    record_len = static_cast<std::uint32_t>(len_or_magic[0]) |
+                 (static_cast<std::uint32_t>(len_or_magic[1]) << 8) |
+                 (static_cast<std::uint32_t>(len_or_magic[2]) << 16) |
+                 (static_cast<std::uint32_t>(len_or_magic[3]) << 24);
+    break;
   }
   if (record_len == 0 || record_len > kMaxWrapRecordBytes) {
     error = "history record size invalid";
@@ -3591,8 +4130,10 @@ bool DecodeChatHeaderBrief(const std::vector<std::uint8_t>& payload,
 void WriteHistorySummaryHeader(ChatHistorySummaryKind kind,
                                std::vector<std::uint8_t>& out) {
   out.clear();
-  out.insert(out.end(), kHistorySummaryMagic.begin(),
-             kHistorySummaryMagic.end());
+  out.reserve(kHistorySummaryMagic.size() + 2);
+  for (const std::uint8_t b : kHistorySummaryMagic) {
+    out.push_back(b);
+  }
   out.push_back(kHistorySummaryVersion);
   out.push_back(static_cast<std::uint8_t>(kind));
 }
@@ -3643,6 +4184,87 @@ bool BuildHistorySummaryGroupInvite(const std::string& group_id,
                                     std::vector<std::uint8_t>& out) {
   WriteHistorySummaryHeader(ChatHistorySummaryKind::kGroupInvite, out);
   return mi::server::proto::WriteString(group_id, out);
+}
+
+bool BuildHistorySummaryControl(std::uint8_t type,
+                                std::vector<std::uint8_t>& out) {
+  WriteHistorySummaryHeader(ChatHistorySummaryKind::kControl, out);
+  out.push_back(type);
+  return true;
+}
+
+bool BuildHistorySummaryUnknown(std::uint8_t type,
+                                std::vector<std::uint8_t>& out) {
+  WriteHistorySummaryHeader(ChatHistorySummaryKind::kUnknown, out);
+  out.push_back(type);
+  return true;
+}
+
+bool ReadFixedBytes(const std::vector<std::uint8_t>& payload,
+                    std::size_t& offset,
+                    std::size_t len) {
+  if (offset + len > payload.size()) {
+    return false;
+  }
+  offset += len;
+  return true;
+}
+
+bool LooksLikeKnownControlEnvelope(std::uint8_t type,
+                                   const std::vector<std::uint8_t>& envelope,
+                                   std::size_t off) {
+  if (type == kChatTypeAck || type == kChatTypeReadReceipt) {
+    return off == envelope.size();
+  }
+  if (type == kChatTypeTyping || type == kChatTypePresence) {
+    return off + 1 == envelope.size() &&
+           (envelope[off] == 0 || envelope[off] == 1);
+  }
+  if (type == kChatTypeGroupSenderKeyReq) {
+    std::string group_id;
+    std::uint32_t want_version = 0;
+    return mi::server::proto::ReadString(envelope, off, group_id) &&
+           !group_id.empty() &&
+           mi::server::proto::ReadUint32(envelope, off, want_version) &&
+           off == envelope.size();
+  }
+  if (type == kChatTypeGroupSenderKeyDist) {
+    std::string group_id;
+    std::uint32_t version = 0;
+    std::uint32_t iteration = 0;
+    std::vector<std::uint8_t> ck;
+    std::vector<std::uint8_t> sig;
+    return mi::server::proto::ReadString(envelope, off, group_id) &&
+           !group_id.empty() &&
+           mi::server::proto::ReadUint32(envelope, off, version) &&
+           mi::server::proto::ReadUint32(envelope, off, iteration) &&
+           mi::server::proto::ReadBytes(envelope, off, ck) &&
+           ck.size() == 32 &&
+           mi::server::proto::ReadBytes(envelope, off, sig) &&
+           off == envelope.size();
+  }
+  if (type == kChatTypeGroupCallKeyReq) {
+    std::string group_id;
+    std::uint32_t want_key_id = 0;
+    return mi::server::proto::ReadString(envelope, off, group_id) &&
+           !group_id.empty() && ReadFixedBytes(envelope, off, 16) &&
+           mi::server::proto::ReadUint32(envelope, off, want_key_id) &&
+           off == envelope.size();
+  }
+  if (type == kChatTypeGroupCallKeyDist) {
+    std::string group_id;
+    std::uint32_t key_id = 0;
+    std::vector<std::uint8_t> call_key;
+    std::vector<std::uint8_t> sig;
+    return mi::server::proto::ReadString(envelope, off, group_id) &&
+           !group_id.empty() && ReadFixedBytes(envelope, off, 16) &&
+           mi::server::proto::ReadUint32(envelope, off, key_id) &&
+           mi::server::proto::ReadBytes(envelope, off, call_key) &&
+           call_key.size() == 32 &&
+           mi::server::proto::ReadBytes(envelope, off, sig) &&
+           off == envelope.size();
+  }
+  return false;
 }
 
 bool BuildEnvelopeSummary(const std::vector<std::uint8_t>& envelope,
@@ -3717,6 +4339,9 @@ bool BuildEnvelopeSummary(const std::vector<std::uint8_t>& envelope,
     }
     return BuildHistorySummaryGroupInvite(group_id, out);
   }
+  if (LooksLikeKnownControlEnvelope(type, envelope, off)) {
+    return BuildHistorySummaryControl(type, out);
+  }
   if (type == kChatTypeRich) {
     if (off + 2 > envelope.size()) {
       return false;
@@ -3765,7 +4390,7 @@ bool BuildEnvelopeSummary(const std::vector<std::uint8_t>& envelope,
       return BuildHistorySummaryContact(username, display, out);
     }
   }
-  return false;
+  return BuildHistorySummaryUnknown(type, out);
 }
 
 std::filesystem::path LegacyConversationPath(const std::filesystem::path& conv_dir,
@@ -6421,11 +7046,15 @@ bool ChatHistoryStore::DeriveConversationKey(
 
   std::vector<std::uint8_t> info;
   static constexpr char kPrefix[] = "MI_E2EE_HISTORY_CONV_KEY_V1";
-  info.insert(info.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    info.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   info.push_back(0);
   info.push_back(is_group ? 1 : 0);
   info.push_back(0);
-  info.insert(info.end(), conv_id.begin(), conv_id.end());
+  for (char ch : conv_id) {
+    info.push_back(static_cast<std::uint8_t>(ch));
+  }
 
   std::array<std::uint8_t, 32> salt{};
   static constexpr char kSalt[] = "MI_E2EE_HISTORY_SALT_V1";
@@ -6834,7 +7463,7 @@ bool ChatHistoryStore::EnsureHistoryFile(
       return false;
     }
     std::uint32_t hist_offset = 0;
-    std::vector<std::uint8_t> stub = BuildPeContainer(hist_offset);
+    std::vector<std::uint8_t> stub = BuildPlatformContainer(hist_offset);
     (void)hist_offset;
     out.write(reinterpret_cast<const char*>(stub.data()),
               static_cast<std::streamsize>(stub.size()));
@@ -7567,7 +8196,7 @@ bool ChatHistoryStore::DeleteConversation(bool is_group,
       return false;
     }
     std::uint32_t hist_offset = 0;
-    std::vector<std::uint8_t> stub = BuildPeContainer(hist_offset);
+    std::vector<std::uint8_t> stub = BuildPlatformContainer(hist_offset);
     out.write(reinterpret_cast<const char*>(stub.data()),
               static_cast<std::streamsize>(stub.size()));
     if (!out.good()) {
@@ -8094,6 +8723,11 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
   std::vector<std::uint8_t> inner_cipher;
   std::array<std::uint8_t, 16> inner_mac{};
   std::vector<std::uint8_t> record_plain;
+  const auto failLoad = [&](std::string message) {
+    error = std::move(message);
+    out_messages.clear();
+    return false;
+  };
   while (true) {
     bool has_record = false;
     bool rec_group = false;
@@ -8105,8 +8739,7 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
             : ReadOuterRecord(in, master_key_, has_record, rec_group, rec_conv,
                               inner_nonce, inner_cipher, inner_mac, rec_err);
     if (!record_ok) {
-      error = rec_err.empty() ? "history read failed" : rec_err;
-      return false;
+      return failLoad(rec_err.empty() ? "history read failed" : rec_err);
     }
     if (!has_record) {
       break;
@@ -8121,8 +8754,7 @@ bool ChatHistoryStore::LoadConversation(bool is_group,
     if (!DecodeInnerRecordPlain(conv_key, is_group, conv_id, inner_nonce,
                                 inner_cipher, inner_mac, record_plain,
                                 decode_err)) {
-      error = decode_err.empty() ? "history read failed" : decode_err;
-      return false;
+      return failLoad(decode_err.empty() ? "history read failed" : decode_err);
     }
     if (record_plain.empty()) {
       continue;

@@ -444,7 +444,9 @@ std::vector<std::uint8_t> BuildGroupSenderKeyDistSigMessage(
   std::vector<std::uint8_t> msg;
   static constexpr char kPrefix[] = "MI_GSKD_V1";
   msg.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + 4 + 4 + 4 + ck.size());
-  msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    msg.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   mi::server::proto::WriteString(group_id, msg);
   mi::server::proto::WriteUint32(version, msg);
   mi::server::proto::WriteUint32(iteration, msg);

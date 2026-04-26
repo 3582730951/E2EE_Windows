@@ -37,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +50,8 @@ private data class SecurityCenterSnapshot(
     val transportTone: SecurityStateTone,
     val transportLabel: String,
     val transportDetail: String,
+    val endpointTone: SecurityStateTone,
+    val endpointDetail: String,
     val deviceDisplayId: String,
     val linkedDeviceCount: Int,
     val devices: List<DeviceUi>,
@@ -134,6 +135,12 @@ fun SecurityCenterScreen(
         transportDetail = sdk.lastError.ifBlank {
             sdk.statusMessage ?: tr("security_center_transport_idle", "Client is standing by.")
         },
+        endpointTone = when {
+            sdk.endpointThreatBlocked -> SecurityStateTone.Blocked
+            sdk.endpointThreatReasons.isEmpty() -> SecurityStateTone.Healthy
+            else -> SecurityStateTone.Review
+        },
+        endpointDetail = sdk.endpointThreatSummary,
         deviceDisplayId = sdk.deviceDisplayId.ifBlank {
             tr("security_center_device_unknown", "Unavailable")
         },
@@ -154,6 +161,7 @@ fun SecurityCenterScreen(
             if (bridgeEnabled) {
                 sdk.heartbeat()
                 sdk.refreshDevices()
+                sdk.refreshEndpointThreats()
                 rootAuthPubkey = sdk.rootAuthPubkey().orEmpty()
                 rootAuthCode = sdk.currentRootAuthCode().orEmpty()
             }
@@ -163,15 +171,17 @@ fun SecurityCenterScreen(
                 sdk.relogin()
             }
         },
-        onCopyDevice = { clipboard.setText(AnnotatedString(snapshot.deviceDisplayId)) },
+        onCopyDevice = {
+            SecureClipboard.copyProtectedText(clipboard, snapshot.deviceDisplayId)
+        },
         onCopyCode = {
             if (snapshot.rootAuthCode.isNotBlank()) {
-                clipboard.setText(AnnotatedString(snapshot.rootAuthCode))
+                SecureClipboard.copyProtectedText(clipboard, snapshot.rootAuthCode)
             }
         },
         onCopyKey = {
             if (snapshot.rootAuthPubkey.isNotBlank()) {
-                clipboard.setText(AnnotatedString(snapshot.rootAuthPubkey))
+                SecureClipboard.copyProtectedText(clipboard, snapshot.rootAuthPubkey)
             }
         },
         onOpenRootAuthSetup = { showRootAuthDialog = true },
@@ -205,6 +215,7 @@ fun SecurityCenterScreen(
                         placeholder = {
                             Text(tr("security_center_root_auth_hint", "Enter 64-hex public key"))
                         },
+                        keyboardOptions = secureKeyboardOptions(),
                         singleLine = true
                     )
                     if (!rootAuthError.isNullOrBlank()) {
@@ -471,6 +482,20 @@ private fun SecurityOverviewSection(
                 detail = "",
                 tone = if (snapshot.linkedDeviceCount > 0) SecurityStateTone.Healthy else SecurityStateTone.Checking,
                 onClick = { if (snapshot.devices.isNotEmpty()) onKickDevice(snapshot.devices.first().deviceId) }
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 56.dp)
+                    .height(1.dp)
+                    .background(phaseOneColors().outline.copy(alpha = 0.28f))
+            )
+            SecurityNavRow(
+                icon = MiOwnedIcons.ShieldCheck,
+                label = tr("security_center_endpoint", "Endpoint"),
+                detail = snapshot.endpointDetail,
+                tone = snapshot.endpointTone,
+                onClick = onReconnect
             )
             Box(
                 modifier = Modifier
@@ -793,6 +818,8 @@ private fun sampleSecurityCenterSnapshot(
         transportTone = SecurityStateTone.Healthy,
         transportLabel = transportLabel,
         transportDetail = transportDetail,
+        endpointTone = SecurityStateTone.Healthy,
+        endpointDetail = "No local endpoint threat signals",
         deviceDisplayId = "phone-current",
         linkedDeviceCount = 3,
         devices = listOf(

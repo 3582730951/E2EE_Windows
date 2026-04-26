@@ -514,7 +514,7 @@ struct ClientCore::RemoteStream {
   bool ConnectTls(std::string& out_server_fingerprint, std::string& error) {
     out_server_fingerprint.clear();
     if (mi::platform::tls::IsStubbed()) {
-      error = "tls stub build";
+      error = "tls unavailable";
       return false;
     }
     if (!mi::platform::tls::IsSupported()) {

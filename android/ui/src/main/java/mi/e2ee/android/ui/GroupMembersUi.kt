@@ -280,6 +280,7 @@ fun AddGroupMembersScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(tr("group_search_contacts", "Search contacts")) },
                 leadingIcon = { Icon(MiOwnedIcons.Search, contentDescription = "Search") },
+                keyboardOptions = secureKeyboardOptions(),
                 shape = RoundedCornerShape(16.dp)
             )
             Card(

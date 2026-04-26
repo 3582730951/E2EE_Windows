@@ -150,6 +150,7 @@ object HistoryKind {
     const val FILE = 2
     const val STICKER = 3
     const val SYSTEM = 4
+    const val UNKNOWN = 255
 }
 
 object HistoryStatus {

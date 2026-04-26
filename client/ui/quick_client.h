@@ -381,7 +381,7 @@ class QuickClient : public QObject {
   bool clipboard_isolation_enabled_{true};
   bool internal_ime_enabled_{true};
   bool ai_enhance_enabled_{false};
-  bool history_save_enabled_{true};
+  bool history_save_enabled_{false};
   int ai_enhance_quality_{2};
   bool ai_enhance_x4_confirmed_{false};
   bool ai_gpu_available_{false};

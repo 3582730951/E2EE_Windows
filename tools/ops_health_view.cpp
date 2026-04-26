@@ -269,7 +269,7 @@ bool Connect(ConnectionState& state, const Options& options,
     return true;
   }
   if (mi::platform::tls::IsStubbed()) {
-    error = "tls stub build";
+    error = "tls unavailable";
     return false;
   }
   if (!mi::platform::tls::IsSupported()) {

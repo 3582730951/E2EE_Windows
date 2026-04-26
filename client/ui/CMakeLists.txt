@@ -47,7 +47,7 @@ target_include_directories(mi_ui_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/commo
 target_include_directories(mi_ui_common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/qrcodegen
 )
-target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets Qt6::Svg)
+target_link_libraries(mi_ui_common PUBLIC Qt6::Widgets Qt6::Svg mi_e2ee_build_flags)
 target_compile_definitions(mi_ui_common PUBLIC
     UI_REF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/ref"
 )
@@ -164,7 +164,8 @@ add_executable(mi_e2ee_client_ui_app
     quick_client.cpp
 )
 target_link_libraries(mi_e2ee_client_ui_app PRIVATE mi_ui_common mi_e2ee_client_core
-    Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Multimedia Qt6::Positioning)
+    Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Multimedia Qt6::Positioning
+    mi_e2ee_build_flags)
 copy_ref_images(mi_e2ee_client_ui_app)
 copy_icon_assets(mi_e2ee_client_ui_app)
 export_ui_resources_rcc(mi_e2ee_client_ui_app)

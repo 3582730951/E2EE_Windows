@@ -22,7 +22,7 @@ Item {
     property int sendErrorTimeoutMs: 4500
     property bool clipboardIsolationEnabled: true
     property bool internalImeEnabled: true
-    property bool historySaveEnabled: true
+    property bool historySaveEnabled: false
     property bool aiEnhanceEnabled: false
     property int aiEnhanceQualityLevel: 2
     property bool aiEnhanceX4Confirmed: false
@@ -1010,7 +1010,7 @@ Item {
         currentLeftTab = 3
         clipboardIsolationEnabled = true
         internalImeEnabled = false
-        historySaveEnabled = true
+        historySaveEnabled = false
         aiEnhanceEnabled = true
         aiEnhanceQualityLevel = 4
         aiEnhanceX4Confirmed = true

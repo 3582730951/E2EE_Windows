@@ -64,7 +64,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -517,7 +516,10 @@ fun GroupChatScreen(
                                 t("chat_reply_started", "Reply started")
                             }
                             "copy" -> {
-                                clipboard.setText(AnnotatedString(groupMessageCopyText(message)))
+                                SecureClipboard.copyProtectedText(
+                                    clipboard,
+                                    groupMessageCopyText(message)
+                                )
                                 t("chat_copied", "Copied")
                             }
                             "pin" -> {
@@ -567,12 +569,14 @@ fun GroupChatScreen(
                                 value = toolsResendId,
                                 onValueChange = { toolsResendId = it },
                                 label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             OutlinedTextField(
                                 value = toolsResendText,
                                 onValueChange = { toolsResendText = it },
-                                label = { Text(tr("chat_tools_text", "Text")) }
+                                label = { Text(tr("chat_tools_text", "Text")) },
+                                keyboardOptions = secureKeyboardOptions()
                             )
                             TextButton(
                                 onClick = {
@@ -599,12 +603,14 @@ fun GroupChatScreen(
                                 value = toolsResendFileId,
                                 onValueChange = { toolsResendFileId = it },
                                 label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             OutlinedTextField(
                                 value = toolsResendFilePath,
                                 onValueChange = { toolsResendFilePath = it },
-                                label = { Text(tr("chat_tools_file_path", "File path")) }
+                                label = { Text(tr("chat_tools_file_path", "File path")) },
+                                keyboardOptions = secureKeyboardOptions()
                             )
                             TextButton(
                                 onClick = {
@@ -651,6 +657,7 @@ fun GroupChatScreen(
                                     onValueChange = { path = it },
                                     label = { Text(tr("chat_file_path", "File path")) },
                                     placeholder = { Text(tr("chat_file_path_hint", "/sdcard/Download/file.pdf")) },
+                                    keyboardOptions = secureKeyboardOptions(),
                                     singleLine = true
                                 )
                             },
@@ -691,6 +698,7 @@ fun GroupChatScreen(
                                         onValueChange = { label = it },
                                         label = { Text(tr("chat_location_label", "Label")) },
                                         placeholder = { Text(tr("chat_location_label_hint", "Office")) },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -698,6 +706,7 @@ fun GroupChatScreen(
                                         onValueChange = { lat = it },
                                         label = { Text(tr("chat_location_lat", "Latitude")) },
                                         placeholder = { Text("31.2304") },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -705,6 +714,7 @@ fun GroupChatScreen(
                                         onValueChange = { lon = it },
                                         label = { Text(tr("chat_location_lon", "Longitude")) },
                                         placeholder = { Text("121.4737") },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                 }

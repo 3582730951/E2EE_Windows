@@ -28,6 +28,7 @@ enum class ChatHistorySummaryKind : std::uint8_t {
   kLocation = 4,
   kContactCard = 5,
   kGroupInvite = 6,
+  kControl = 7,
   kUnknown = 255,
 };
 

@@ -51,12 +51,16 @@ bool EncodeProtectedFileBytes(const std::vector<std::uint8_t>& plain,
   const std::uint32_t len = static_cast<std::uint32_t>(blob.size());
   out.clear();
   out.reserve(kDpapiHeaderBytes + blob.size());
-  out.insert(out.end(), std::begin(kDpapiMagic), std::end(kDpapiMagic));
+  for (std::uint8_t b : kDpapiMagic) {
+    out.push_back(b);
+  }
   out.push_back(static_cast<std::uint8_t>(len & 0xFF));
   out.push_back(static_cast<std::uint8_t>((len >> 8) & 0xFF));
   out.push_back(static_cast<std::uint8_t>((len >> 16) & 0xFF));
   out.push_back(static_cast<std::uint8_t>((len >> 24) & 0xFF));
-  out.insert(out.end(), blob.begin(), blob.end());
+  for (std::uint8_t b : blob) {
+    out.push_back(b);
+  }
   return true;
 }
 
@@ -85,8 +89,11 @@ bool DecodeProtectedFileBytes(const std::vector<std::uint8_t>& file_bytes,
     error = "secure store blob size invalid";
     return false;
   }
-  const std::vector<std::uint8_t> blob(file_bytes.begin() + kDpapiHeaderBytes,
-                                       file_bytes.end());
+  std::vector<std::uint8_t> blob;
+  blob.reserve(len);
+  for (std::size_t i = kDpapiHeaderBytes; i < file_bytes.size(); ++i) {
+    blob.push_back(file_bytes[i]);
+  }
   return mi::platform::UnprotectSecureBlobScoped(
       blob, nullptr, 0, ScopeForKeyProtection(mode), out_plain, error);
 }

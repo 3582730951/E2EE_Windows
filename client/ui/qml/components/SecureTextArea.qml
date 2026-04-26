@@ -4,6 +4,7 @@ import "qrc:/mi/e2ee/ui/qml/components" as Components
 
 TextArea {
     id: area
+    inputMethodHints: Qt.ImhNoPredictiveText
 
     Components.InputContextMenu {
         id: contextMenu

@@ -111,6 +111,7 @@ fun RegisterScreen(
                             )
                         },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Next
                         ),
@@ -128,6 +129,7 @@ fun RegisterScreen(
                             )
                         },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
                         ),
@@ -145,6 +147,7 @@ fun RegisterScreen(
                             )
                         },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Next
                         ),
@@ -162,6 +165,7 @@ fun RegisterScreen(
                             )
                         },
                         keyboardOptions = KeyboardOptions(
+                            autoCorrectEnabled = false,
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),

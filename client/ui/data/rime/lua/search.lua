@@ -29,35 +29,7 @@ end
 
 -- 此函数用于手动写入用户词库，目前仅对双拼有效
 local function update_dict_entry( s, code, mem, proj )
-    if #s == 0 or utf8.len( s ) == #s or (#code % 2 ~= 0) then
-        log.info( '[search.lua]: Ignored' .. s )
-        return 0
-    end
-    local e = DictEntry()
-    s = s:gsub( '^%s+', '' ):gsub( '%s+$', '' )
-    e.text = s
-
-    local pos = {}
-    if s:find( '·' ) and (utf8.len( s ) > 1) then pos = get_pos( s, '·' ) end
-
-    local custom_code = {}
-    local loop = 1
-    for i = 1, #code, 2 do
-        local code_convert = code:sub( i, i + 1 )
-        local p = proj:apply( code_convert, true )
-        if p and #p > 0 then code_convert = p end
-        if code_convert == 'dian' and pos[loop] then
-            -- Ignored
-        else
-            table.insert( custom_code, code_convert )
-        end
-        loop = loop + 1
-    end
-
-    e.custom_code = table.concat( custom_code, ' ' ) .. ' '
-    if mem.start_session then mem:start_session() end -- new on librime 2024.05
-    mem:update_userdict( e, 1, '' )
-    if mem.finish_session then mem:finish_session() end -- new on librime 2024.05
+    return 0
 end
 
 -- 通过 schema 的方式查询（以辅码查字，然后对比候选，慢，但能够匹配到算法转换过的码）
@@ -189,19 +161,13 @@ function f.init( env )
     if rules and rules.size > 0 then
         env.projection = Projection()
         env.projection:load( rules )
-        env.mem = Memory( env.engine, env.engine.schema )
     end
 
-    -- 推入输入历史，并手动（如果设定了按键到编码的转换规则）写入用户词库
     env.commit_notifier = env.engine.context.commit_notifier:connect(
                               function( ctx )
             if env.have_select_commit and env.commit_code then
-                local commit_text = ctx:get_commit_text()
-                if env.mem then
-                    update_dict_entry( commit_text, env.commit_code, env.mem, env.projection )
-                end
-                ctx.commit_history:push( 'search.lua', commit_text )
                 env.have_select_commit = false
+                env.commit_code = nil
             else
                 return
             end
@@ -297,11 +263,9 @@ function f.fini( env )
     if env.if_reverse_lookup or env.if_schema_lookup then
         env.notifier:disconnect()
         env.commit_notifier:disconnect()
-        if env.mem and env.mem.disconnect then env.mem:disconnect() end
         if env.search and env.search.disconnect then env.search:disconnect() end
-        if env.mem or env.search or env.db_table then
+        if env.search or env.db_table then
             env.db_table = nil
-            env.mem = nil
             env.search = nil
             collectgarbage( 'collect' )
         end

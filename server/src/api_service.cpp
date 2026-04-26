@@ -305,8 +305,9 @@ static std::vector<std::uint8_t> BuildRootAuthProofMessage(
   std::vector<std::uint8_t> msg;
   msg.reserve(sizeof(kRootAuthProofLabelV2) + device_id.size() + context.size() +
               11);
-  msg.insert(msg.end(), kRootAuthProofLabelV2,
-             kRootAuthProofLabelV2 + sizeof(kRootAuthProofLabelV2) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kRootAuthProofLabelV2); ++i) {
+    msg.push_back(static_cast<std::uint8_t>(kRootAuthProofLabelV2[i]));
+  }
   msg.push_back(0);
   msg.insert(msg.end(), device_id.begin(), device_id.end());
   msg.push_back(0);

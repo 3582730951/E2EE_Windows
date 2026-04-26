@@ -100,7 +100,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -967,7 +966,10 @@ fun ChatScreen(
                                 t("chat_reply_started", "Reply started")
                             }
                             "copy" -> {
-                                clipboard.setText(AnnotatedString(messageCopyText(message)))
+                                SecureClipboard.copyProtectedText(
+                                    clipboard,
+                                    messageCopyText(message)
+                                )
                                 t("chat_copied", "Copied")
                             }
                             "pin" -> {
@@ -1055,6 +1057,7 @@ fun ChatScreen(
                                 value = toolsReceiptId,
                                 onValueChange = { toolsReceiptId = it },
                                 label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             TextButton(
@@ -1079,23 +1082,27 @@ fun ChatScreen(
                                 value = toolsResendId,
                                 onValueChange = { toolsResendId = it },
                                 label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             OutlinedTextField(
                                 value = toolsResendText,
                                 onValueChange = { toolsResendText = it },
-                                label = { Text(tr("chat_tools_text", "Text")) }
+                                label = { Text(tr("chat_tools_text", "Text")) },
+                                keyboardOptions = secureKeyboardOptions()
                             )
                             OutlinedTextField(
                                 value = toolsResendReplyTo,
                                 onValueChange = { toolsResendReplyTo = it },
                                 label = { Text(tr("chat_tools_reply_id", "Reply message id (optional)")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             OutlinedTextField(
                                 value = toolsResendReplyPreview,
                                 onValueChange = { toolsResendReplyPreview = it },
-                                label = { Text(tr("chat_tools_reply_preview", "Reply preview (optional)")) }
+                                label = { Text(tr("chat_tools_reply_preview", "Reply preview (optional)")) },
+                                keyboardOptions = secureKeyboardOptions()
                             )
                             TextButton(
                                 onClick = {
@@ -1139,12 +1146,14 @@ fun ChatScreen(
                                 value = toolsResendFileId,
                                 onValueChange = { toolsResendFileId = it },
                                 label = { Text(tr("chat_tools_message_id", "Message id")) },
+                                keyboardOptions = secureKeyboardOptions(),
                                 singleLine = true
                             )
                             OutlinedTextField(
                                 value = toolsResendFilePath,
                                 onValueChange = { toolsResendFilePath = it },
-                                label = { Text(tr("chat_tools_file_path", "File path")) }
+                                label = { Text(tr("chat_tools_file_path", "File path")) },
+                                keyboardOptions = secureKeyboardOptions()
                             )
                             TextButton(
                                 onClick = {
@@ -1192,6 +1201,7 @@ fun ChatScreen(
                                     onValueChange = { path = it },
                                     label = { Text(tr("chat_file_path", "File path")) },
                                     placeholder = { Text(tr("chat_file_path_hint", "/sdcard/Download/file.pdf")) },
+                                    keyboardOptions = secureKeyboardOptions(),
                                     singleLine = true
                                 )
                             },
@@ -1232,6 +1242,7 @@ fun ChatScreen(
                                         onValueChange = { label = it },
                                         label = { Text(tr("chat_location_label", "Label")) },
                                         placeholder = { Text(tr("chat_location_label_hint", "Office")) },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -1239,6 +1250,7 @@ fun ChatScreen(
                                         onValueChange = { lat = it },
                                         label = { Text(tr("chat_location_lat", "Latitude")) },
                                         placeholder = { Text("31.2304") },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -1246,6 +1258,7 @@ fun ChatScreen(
                                         onValueChange = { lon = it },
                                         label = { Text(tr("chat_location_lon", "Longitude")) },
                                         placeholder = { Text("121.4737") },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                 }
@@ -1282,6 +1295,7 @@ fun ChatScreen(
                                     onValueChange = { stickerId = it },
                                     label = { Text(tr("chat_sticker_id", "Sticker id")) },
                                     placeholder = { Text(tr("chat_sticker_id_hint", "sticker_01")) },
+                                    keyboardOptions = secureKeyboardOptions(),
                                     singleLine = true
                                 )
                             },
@@ -1318,6 +1332,7 @@ fun ChatScreen(
                                         onValueChange = { username = it },
                                         label = { Text(tr("chat_contact_username", "Username")) },
                                         placeholder = { Text(tr("chat_contact_username_hint", "mi_user")) },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                     OutlinedTextField(
@@ -1325,6 +1340,7 @@ fun ChatScreen(
                                         onValueChange = { display = it },
                                         label = { Text(tr("chat_contact_display", "Display name")) },
                                         placeholder = { Text(tr("chat_contact_display_hint", "Mina Ito")) },
+                                        keyboardOptions = secureKeyboardOptions(),
                                         singleLine = true
                                     )
                                 }
@@ -3245,6 +3261,7 @@ internal fun ComposerBar(
                 onFocusChange = onTextFieldFocusChange,
                 onEmoji = onEmoji,
                 keyboardOptions = KeyboardOptions(
+                    autoCorrectEnabled = false,
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Send
                 ),

@@ -344,6 +344,10 @@ class _ContactsSearchField extends StatelessWidget {
             child: TextField(
               controller: controller,
               onChanged: onChanged,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               decoration: InputDecoration(
                 hintText: '搜索好友、群聊和服务号',
                 border: InputBorder.none,

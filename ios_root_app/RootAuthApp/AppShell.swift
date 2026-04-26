@@ -62,6 +62,24 @@ private enum ClientBootstrapError: LocalizedError {
 }
 
 private enum ClientConfigBootstrap {
+    private static func protectPath(_ url: URL) throws {
+        try FileManager.default.setAttributes(
+            [FileAttributeKey.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private static func ensureProtectedDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url,
+                                                withIntermediateDirectories: true)
+        try protectPath(url)
+    }
+
+    private static func writeProtectedData(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        try protectPath(url)
+    }
+
     static func ensure(serverHost: String,
                        serverPort: String,
                        useTLS: Bool) throws -> String {
@@ -76,15 +94,14 @@ private enum ClientConfigBootstrap {
         let trustStore = baseDir.appendingPathComponent("server_trust.ini")
         let configPath = baseDir.appendingPathComponent("client_config.ini")
 
-        try FileManager.default.createDirectory(at: baseDir,
-                                                withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: dataDir,
-                                                withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: stateDir,
-                                                withIntermediateDirectories: true)
+        try ensureProtectedDirectory(baseDir)
+        try ensureProtectedDirectory(dataDir)
+        try ensureProtectedDirectory(stateDir)
 
         if !FileManager.default.fileExists(atPath: trustStore.path) {
-            try Data().write(to: trustStore, options: .atomic)
+            try writeProtectedData(Data(), to: trustStore)
+        } else {
+            try protectPath(trustStore)
         }
 
         let normalizedHost = serverHost.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,7 +125,8 @@ private enum ClientConfigBootstrap {
         role=primary
         key_path=\(stateDir.appendingPathComponent("device_sync_key.bin").path)
         """
-        try config.write(to: configPath, atomically: true, encoding: .utf8)
+        let configData = Data(config.utf8)
+        try writeProtectedData(configData, to: configPath)
         setenv("MI_E2EE_DATA_DIR", dataDir.path, 1)
         return configPath.path
     }

@@ -1037,7 +1037,9 @@ std::vector<std::uint8_t> BuildGroupSenderKeyDistSigMessage(
   std::vector<std::uint8_t> msg;
   static constexpr char kPrefix[] = "MI_GSKD_V1";
   msg.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + 4 + 4 + 4 + ck.size());
-  msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    msg.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   mi::server::proto::WriteString(group_id, msg);
   mi::server::proto::WriteUint32(version, msg);
   mi::server::proto::WriteUint32(iteration, msg);
@@ -1128,9 +1130,13 @@ std::vector<std::uint8_t> BuildGroupCallKeyDistSigMessage(
   static constexpr char kPrefix[] = "MI_GCKD_V1";
   msg.reserve(sizeof(kPrefix) - 1 + 2 + group_id.size() + call_id.size() + 4 +
               2 + call_key.size());
-  msg.insert(msg.end(), kPrefix, kPrefix + sizeof(kPrefix) - 1);
+  for (std::size_t i = 0; i + 1 < sizeof(kPrefix); ++i) {
+    msg.push_back(static_cast<std::uint8_t>(kPrefix[i]));
+  }
   mi::server::proto::WriteString(group_id, msg);
-  msg.insert(msg.end(), call_id.begin(), call_id.end());
+  for (std::uint8_t b : call_id) {
+    msg.push_back(b);
+  }
   mi::server::proto::WriteUint32(key_id, msg);
   mi::server::proto::WriteBytes(call_key.data(), call_key.size(), msg);
   return msg;
@@ -2491,7 +2497,7 @@ bool ClientCore::Init(const std::string& config_path) {
     }
     if (use_tls_) {
       if (mi::platform::tls::IsStubbed()) {
-        last_error_ = "tls stub build";
+        last_error_ = "tls unavailable";
         return false;
       }
       if (!mi::platform::tls::IsSupported()) {

@@ -186,7 +186,7 @@
         { "license": { "id": "LGPL-3.0" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "d2c29baac0449415f7bbc47e0fd8c5e59d1f09b3b346ad388f4cf8952260bbbd" }
+        { "alg": "SHA-256", "content": "12ffd43af0e946b30077556ed030e1907fccb744c811ca08ee466e100246c153" }
       ],
       "properties": [
         { "name": "path", "value": "third_party/../client/ui/data/rime/mi_pinyin.schema.yaml" }
@@ -606,7 +606,7 @@
         { "license": { "id": "GPL-3.0-only" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "586fca335b9c8c9f58463bbcc8097c8645c9dde297d69696594beb3020e0063a" }
+        { "alg": "SHA-256", "content": "d8bcd2e5b66910afa77cee1929e0f73fa5c22ccad51fbade648b952f93c60d3e" }
       ],
       "properties": [
         { "name": "path", "value": "third_party/../client/ui/data/rime/lua/en_spacer.lua" }
@@ -718,7 +718,7 @@
         { "license": { "id": "GPL-3.0-only" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "e35e4aa1bb051c953a5b98d9b63c40e3bae3ee98deb58dd15d296fef63da51b9" }
+        { "alg": "SHA-256", "content": "fc3e87cc7d84c7ffa8dc470ffb78ad39d5d9ec07c428defc0b6cca25063276a8" }
       ],
       "properties": [
         { "name": "path", "value": "third_party/../client/ui/data/rime/lua/search.lua" }
@@ -844,7 +844,7 @@
         { "license": { "id": "GPL-3.0-only" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "f4be75968364390d7d48bb83b789e4834f9b3f8cd577fb0caac7a00ea1eca312" }
+        { "alg": "SHA-256", "content": "7797667e2fdcc045fa63fd5b4c96cf2a5f20684459398e7dee9674ba645d39d9" }
       ],
       "properties": [
         { "name": "path", "value": "third_party/../client/ui/data/rime/lua/cold_word_drop/logger.lua" }
@@ -872,7 +872,7 @@
         { "license": { "id": "GPL-3.0-only" } }
       ],
       "hashes": [
-        { "alg": "SHA-256", "content": "3af3de687ad7feba4e9f49e7b2768e9137d1447bbeede7f81f8c10206c0747f0" }
+        { "alg": "SHA-256", "content": "d07beaae571a44a13b374f363b3b18c9685c298b516efa6f5063523103b25db6" }
       ],
       "properties": [
         { "name": "path", "value": "third_party/../client/ui/data/rime/lua/cold_word_drop/processor.lua" }

@@ -773,6 +773,7 @@ private fun TrustDialog(
                     onValueChange = { pin = it },
                     label = { Text(tr("trust_pin", "PIN")) },
                     placeholder = { Text(pinHint) },
+                    keyboardOptions = secureKeyboardOptions(),
                     singleLine = true
                 )
             }

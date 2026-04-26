@@ -684,6 +684,7 @@ private fun CompactSearchField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
+            keyboardOptions = secureKeyboardOptions(),
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = colors.onSurface,
                 lineHeight = 18.sp

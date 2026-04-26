@@ -141,6 +141,37 @@ endif()
 
 add_test(NAME platform_fs_lock_test COMMAND platform_fs_lock_test)
 
+add_executable(chat_history_store_test
+    chat_history_store_test.cpp
+)
+
+target_link_libraries(chat_history_store_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(chat_history_store_test)
+endif()
+
+add_test(NAME chat_history_store_test COMMAND chat_history_store_test)
+
+add_executable(ui_ai_enhance_privacy_test
+    ui_ai_enhance_privacy_test.cpp
+)
+
+target_compile_definitions(ui_ai_enhance_privacy_test PRIVATE
+    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp")
+
+add_test(NAME ui_ai_enhance_privacy_test COMMAND ui_ai_enhance_privacy_test)
+
+add_executable(ui_ime_privacy_test
+    ui_ime_privacy_test.cpp
+)
+
+target_compile_definitions(ui_ime_privacy_test PRIVATE
+    MI_E2EE_RIME_LUA_ROOT="${CMAKE_CURRENT_LIST_DIR}/../ui/data/rime/lua"
+    MI_E2EE_RIME_ROOT="${CMAKE_CURRENT_LIST_DIR}/../ui/data/rime"
+    MI_E2EE_QML_COMPONENT_ROOT="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/components")
+
+add_test(NAME ui_ime_privacy_test COMMAND ui_ime_privacy_test)
+
 add_executable(sdk_c_api_e2e_test
     sdk_c_api_e2e_test.cpp
 )

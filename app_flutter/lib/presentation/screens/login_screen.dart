@@ -131,14 +131,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   key: const ValueKey('login-form-surface'),
                                   cupertinoStyle: isCupertinoStyle,
                                   emphasizeDesktop: isWide,
-                                  child: AutofillGroup(
-                                    child: _LoginCredentialFields(
-                                      usernameController: _usernameController,
-                                      passwordController: _passwordController,
-                                      canSubmit: canSubmit,
-                                      cupertinoStyle: isCupertinoStyle,
-                                      onSubmit: onSubmit,
-                                    ),
+                                  child: _LoginCredentialFields(
+                                    usernameController: _usernameController,
+                                    passwordController: _passwordController,
+                                    canSubmit: canSubmit,
+                                    cupertinoStyle: isCupertinoStyle,
+                                    onSubmit: onSubmit,
                                   ),
                                 ),
                                 if (bootstrap.isLoading) ...<Widget>[
@@ -1431,7 +1429,6 @@ class _MaterialLoginCredentialGroup extends StatelessWidget {
             placeholder: '账号',
             semanticIcon: AppSemanticIcon.account,
             textInputAction: TextInputAction.next,
-            autofillHints: const <String>[AutofillHints.username],
           ),
           Container(
             height: 1,
@@ -1444,7 +1441,6 @@ class _MaterialLoginCredentialGroup extends StatelessWidget {
             semanticIcon: AppSemanticIcon.lock,
             obscureText: true,
             textInputAction: TextInputAction.done,
-            autofillHints: const <String>[AutofillHints.password],
             onSubmitted: (_) {
               if (canSubmit) {
                 onSubmit();
@@ -1463,7 +1459,6 @@ class _MaterialLoginField extends StatelessWidget {
     required this.placeholder,
     required this.semanticIcon,
     required this.textInputAction,
-    required this.autofillHints,
     this.obscureText = false,
     this.onSubmitted,
   });
@@ -1472,7 +1467,6 @@ class _MaterialLoginField extends StatelessWidget {
   final String placeholder;
   final AppSemanticIcon semanticIcon;
   final TextInputAction textInputAction;
-  final Iterable<String> autofillHints;
   final bool obscureText;
   final ValueChanged<String>? onSubmitted;
 
@@ -1502,7 +1496,10 @@ class _MaterialLoginField extends StatelessWidget {
                   ? TextInputType.visiblePassword
                   : TextInputType.name,
               textInputAction: textInputAction,
-              autofillHints: autofillHints,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               onSubmitted: onSubmitted,
               cursorColor: Colors.white,
               style: theme.textTheme.titleMedium?.copyWith(
@@ -1574,7 +1571,6 @@ class _CupertinoLoginCredentialGroup extends StatelessWidget {
             placeholder: '账号',
             semanticIcon: AppSemanticIcon.account,
             textInputAction: TextInputAction.next,
-            autofillHints: const <String>[AutofillHints.username],
           ),
           Container(
             height: 1,
@@ -1587,7 +1583,6 @@ class _CupertinoLoginCredentialGroup extends StatelessWidget {
             semanticIcon: AppSemanticIcon.lock,
             obscureText: true,
             textInputAction: TextInputAction.done,
-            autofillHints: const <String>[AutofillHints.password],
             onSubmitted: (_) {
               if (canSubmit) {
                 onSubmit();
@@ -1606,7 +1601,6 @@ class _CupertinoLoginField extends StatelessWidget {
     required this.placeholder,
     required this.semanticIcon,
     required this.textInputAction,
-    required this.autofillHints,
     this.obscureText = false,
     this.onSubmitted,
   });
@@ -1615,7 +1609,6 @@ class _CupertinoLoginField extends StatelessWidget {
   final String placeholder;
   final AppSemanticIcon semanticIcon;
   final TextInputAction textInputAction;
-  final Iterable<String> autofillHints;
   final bool obscureText;
   final ValueChanged<String>? onSubmitted;
 
@@ -1644,7 +1637,10 @@ class _CupertinoLoginField extends StatelessWidget {
                   ? TextInputType.visiblePassword
                   : TextInputType.name,
               textInputAction: textInputAction,
-              autofillHints: autofillHints,
+              enableSuggestions: false,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               onSubmitted: onSubmitted,
               padding: const EdgeInsets.only(right: 12, top: 10, bottom: 10),
               placeholder: placeholder,

@@ -36,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -171,7 +170,7 @@ fun AccountScreen(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             IconButton(onClick = {
-                                clipboard.setText(AnnotatedString(pubkey))
+                                SecureClipboard.copyProtectedText(clipboard, pubkey)
                             }) {
                                 Icon(MiOwnedIcons.Copy, contentDescription = "Copy")
                             }
@@ -186,7 +185,7 @@ fun AccountScreen(
                                     style = MaterialTheme.typography.titleLarge
                                 )
                                 IconButton(onClick = {
-                                    clipboard.setText(AnnotatedString(code))
+                                    SecureClipboard.copyProtectedText(clipboard, code)
                                 }) {
                                     Icon(MiOwnedIcons.Copy, contentDescription = "Copy")
                                 }
@@ -325,14 +324,15 @@ fun AccountScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(text = tr("account_pair_linked", "Link this device"), style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = linkedCode.value,
-                        onValueChange = { linkedCode.value = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(tr("account_pair_code_hint", "Enter pairing code")) },
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
-                    )
+                        OutlinedTextField(
+                            value = linkedCode.value,
+                            onValueChange = { linkedCode.value = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(tr("account_pair_code_hint", "Enter pairing code")) },
+                            keyboardOptions = secureKeyboardOptions(),
+                            shape = RoundedCornerShape(16.dp),
+                            singleLine = true
+                        )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(
@@ -407,6 +407,7 @@ fun AccountScreen(
                             onValueChange = { rootPubkeyInput.value = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(tr("account_root_auth_hint", "Enter 64-hex public key")) },
+                            keyboardOptions = secureKeyboardOptions(),
                             singleLine = true
                         )
                         if (!rootPubkeyError.value.isNullOrBlank()) {

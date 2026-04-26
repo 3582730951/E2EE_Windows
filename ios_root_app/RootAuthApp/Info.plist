@@ -31,5 +31,7 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>Camera access is required to scan login QR codes.</string>
+    <key>NSFileProtectionKey</key>
+    <string>NSFileProtectionComplete</string>
 </dict>
 </plist>

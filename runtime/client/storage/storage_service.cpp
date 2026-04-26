@@ -207,6 +207,8 @@ struct HistorySummaryDecoded {
   std::string card_username;
   std::string card_display;
   std::string group_id;
+  std::uint8_t control_type{0};
+  std::uint8_t unknown_type{0};
 };
 
 bool DecodeHistorySummary(const std::vector<std::uint8_t>& payload,
@@ -263,6 +265,19 @@ bool DecodeHistorySummary(const std::vector<std::uint8_t>& payload,
     return mi::server::proto::ReadString(payload, off, out.group_id) &&
            off == payload.size();
   }
+  if (out.kind == ChatHistorySummaryKind::kControl) {
+    if (off >= payload.size()) {
+      return false;
+    }
+    out.control_type = payload[off++];
+    return off == payload.size();
+  }
+  if (out.kind == ChatHistorySummaryKind::kUnknown) {
+    if (off < payload.size()) {
+      out.unknown_type = payload[off++];
+    }
+    return off == payload.size();
+  }
   return false;
 }
 
@@ -284,6 +299,31 @@ std::string FormatSummaryAsText(const HistorySummaryDecoded& summary) {
     return summary.group_id.empty()
                ? std::string("Group invite")
                : (std::string("Group invite: ") + summary.group_id);
+  }
+  if (summary.kind == ChatHistorySummaryKind::kUnknown) {
+    return "Unknown message";
+  }
+  if (summary.kind == ChatHistorySummaryKind::kControl) {
+    switch (summary.control_type) {
+      case kChatTypeAck:
+        return "Delivery ack";
+      case kChatTypeReadReceipt:
+        return "Read receipt";
+      case kChatTypeTyping:
+        return "Typing state";
+      case kChatTypePresence:
+        return "Presence state";
+      case kChatTypeGroupSenderKeyDist:
+        return "Sender key update";
+      case kChatTypeGroupSenderKeyReq:
+        return "Sender key request";
+      case kChatTypeGroupCallKeyDist:
+        return "Call key update";
+      case kChatTypeGroupCallKeyReq:
+        return "Call key request";
+      default:
+        return "Control message";
+    }
   }
   return summary.text;
 }
@@ -315,6 +355,16 @@ bool ApplyHistorySummary(const std::vector<std::uint8_t>& summary,
       decoded.kind == ChatHistorySummaryKind::kContactCard ||
       decoded.kind == ChatHistorySummaryKind::kGroupInvite) {
     entry.kind = ClientCore::HistoryKind::kText;
+    entry.text_utf8 = FormatSummaryAsText(decoded);
+    return true;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kUnknown) {
+    entry.kind = ClientCore::HistoryKind::kUnknown;
+    entry.text_utf8 = FormatSummaryAsText(decoded);
+    return true;
+  }
+  if (decoded.kind == ChatHistorySummaryKind::kControl) {
+    entry.kind = ClientCore::HistoryKind::kSystem;
     entry.text_utf8 = FormatSummaryAsText(decoded);
     return true;
   }

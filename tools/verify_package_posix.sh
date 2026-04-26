@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: verify_package_posix.sh [--platform linux|macos] [--dist PATH] [--require-signature]
+Usage: verify_package_posix.sh [--platform linux|macos] [--dist PATH] [--require-signature] [--privacy-only]
 EOF
 }
 
@@ -20,6 +20,7 @@ parse_bool() {
 platform=""
 dist_root=""
 require_signature=0
+privacy_only=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --require-signature)
       require_signature=1
+      shift
+      ;;
+    --privacy-only)
+      privacy_only=1
       shift
       ;;
     -h|--help)
@@ -74,6 +79,53 @@ esac
 
 client_root="$dist_root/mi_e2ee_client"
 server_root="$dist_root/mi_e2ee_server"
+
+privacy_scan_names() {
+  local root="$1"
+  local label="$2"
+  local hit
+  hit="$(
+    find "$root" -print 2>/dev/null | while IFS= read -r f; do
+      base="$(basename "$f" | tr '[:upper:]' '[:lower:]')"
+      case "$base" in
+        *.log|*.log.*|*.dmp|*.dump|crash|crashes|telemetry|diagnostic|diagnostics|metrics|metric|audit|audits|ops_health|*crash*|*telemetry*|*diagnostic*|*diagnostics*|*ops_health*|*audit*)
+          printf '%s\n' "$f"
+          break
+          ;;
+      esac
+    done
+  )"
+  if [[ -n "$hit" ]]; then
+    echo "$label package contains forbidden privacy artifact: $hit" >&2
+    exit 1
+  fi
+}
+
+privacy_scan_content() {
+  local root="$1"
+  local label="$2"
+  local hit
+  hit="$(
+    grep -I -R -n -E \
+      '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))|/(home|Users)/[^[:space:]/]+/|[A-Za-z]:\\Users\\[^\\[:space:]]+\\' \
+      "$root" 2>/dev/null | head -n 1 || true
+  )"
+  if [[ -n "$hit" ]]; then
+    echo "$label package contains forbidden plaintext privacy marker: $hit" >&2
+    exit 1
+  fi
+}
+
+privacy_scan_tree() {
+  local root="$1"
+  local label="$2"
+  if [[ ! -d "$root" ]]; then
+    echo "missing dir: $root" >&2
+    exit 1
+  fi
+  privacy_scan_names "$root" "$label"
+  privacy_scan_content "$root" "$label"
+}
 
 require_file() {
   local path="$1"
@@ -149,6 +201,12 @@ require_ini_value() {
     exit 1
   fi
 }
+
+if [[ "$privacy_only" -eq 1 ]]; then
+  privacy_scan_tree "$client_root" "client"
+  privacy_scan_tree "$server_root" "server"
+  exit 0
+fi
 
 require_dir "$client_root"
 require_dir "$server_root"
@@ -289,29 +347,8 @@ check_blob_budget() {
 
 check_blob_budget "$server_root/config/config.ini"
 
-privacy_scan_names() {
-  local root="$1"
-  local label="$2"
-  local hit
-  hit="$(
-    find "$root" -type f -print | while IFS= read -r f; do
-      base="$(basename "$f" | tr '[:upper:]' '[:lower:]')"
-      case "$base" in
-        *.log|*.log.*|*.dmp|*.dump|*crash*|*telemetry*|*diagnostic*|*diagnostics*|*ops_health*|*audit*)
-          printf '%s\n' "$f"
-          break
-          ;;
-      esac
-    done
-  )"
-  if [[ -n "$hit" ]]; then
-    echo "$label package contains forbidden privacy artifact: $hit" >&2
-    exit 1
-  fi
-}
-
-privacy_scan_names "$client_root" "client"
-privacy_scan_names "$server_root" "server"
+privacy_scan_tree "$client_root" "client"
+privacy_scan_tree "$server_root" "server"
 
 verify_manifest() {
   local root="$1"

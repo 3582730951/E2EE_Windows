@@ -44,7 +44,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -334,7 +333,7 @@ private fun CallLayout(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = {
-                                clipboard.setText(AnnotatedString(callIdHex))
+                                SecureClipboard.copyProtectedText(clipboard, callIdHex)
                                 toolsResult = t("call_tools_copied", "Copied")
                             }) {
                                 Text(tr("call_tools_copy", "Copy call id"))

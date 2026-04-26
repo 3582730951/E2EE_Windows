@@ -7,6 +7,11 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    let endpointThreatReport = EndpointThreatDetector.evaluate()
+    if endpointThreatReport.blocked {
+      EndpointThreatBlocker.install(report: endpointThreatReport)
+      return false
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

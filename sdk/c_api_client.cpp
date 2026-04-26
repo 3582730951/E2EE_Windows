@@ -642,8 +642,10 @@ std::uint32_t FillHistoryView(
         entry.message_id_hex.empty() ? nullptr : entry.message_id_hex.c_str();
     v.text = entry.text_utf8.empty() ? nullptr : entry.text_utf8.c_str();
     v.file_id = entry.file_id.empty() ? nullptr : entry.file_id.c_str();
-    v.file_key = entry.file_key.data();
-    v.file_key_len = static_cast<std::uint32_t>(entry.file_key.size());
+    if (entry.kind == mi::client::ClientCore::HistoryKind::kFile) {
+      v.file_key = entry.file_key.data();
+      v.file_key_len = static_cast<std::uint32_t>(entry.file_key.size());
+    }
     v.file_name = entry.file_name.empty() ? nullptr : entry.file_name.c_str();
     v.file_size = entry.file_size;
     v.sticker_id =

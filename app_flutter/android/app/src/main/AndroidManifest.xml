@@ -2,7 +2,11 @@
     <application
         android:label="mi_e2ee_im_app"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/no_backup_rules"
+        android:dataExtractionRules="@xml/no_data_extraction"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

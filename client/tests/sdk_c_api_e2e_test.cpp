@@ -1355,6 +1355,9 @@ int main() {
   if (!LoginWithRetry(alice, "alice", "alice123", "alice", 5, 500)) {
     return fail("alice login failed", alice);
   }
+  if (mi_client_set_history_enabled(alice, 1) != 1) {
+    return fail("alice history opt-in failed", alice);
+  }
   LogStep("alice login ok");
   (void)mi_client_heartbeat(alice);
   mi::platform::SleepMs(kPostLoginDelayMs);
