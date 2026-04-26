@@ -272,7 +272,9 @@
           "contains": [
             "WithProtectedUiText",
             "UiProtectedText::Protect",
-            "persistent plaintext QString"
+            "persistent plaintext QString",
+            "protectedTextId",
+            "CenterPane still binds visible message text to persisted model.text"
           ]
         },
         {
@@ -280,7 +282,23 @@
           "contains": [
             "WithProtectedUiText(",
             "kUiPlaintextLease",
-            "InsertProtectedUiText"
+            "StoreProtectedUiText",
+            "renderProtectedText"
+          ]
+        },
+        {
+          "path": "client/ui/qml/AppStore.qml",
+          "contains": [
+            "function renderProtectedText(",
+            "protectedTextId: protectedTextId",
+            "text: protectedTextId.length > 0 ? \"\" : text"
+          ]
+        },
+        {
+          "path": "client/ui/qml/shell/CenterPane.qml",
+          "contains": [
+            "property string displayText: Ui.ChatDisplayStore.messageText(model)",
+            "text: displayText"
           ]
         }
       ]

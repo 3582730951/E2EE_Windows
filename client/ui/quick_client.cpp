@@ -101,23 +101,10 @@ QString ToUiQString(std::string_view view) {
 }
 
 template <typename Fn>
-bool WithProtectedUiText(const QString& text, Fn&& fn) {
-  QByteArray utf8 = text.toUtf8();
-  const auto protected_text = UiProtectedText::Protect(
-      std::string_view(utf8.constData(), static_cast<std::size_t>(utf8.size())));
-  if (!utf8.isEmpty()) {
-    std::fill_n(utf8.data(), utf8.size(), '\0');
-  }
+bool WithProtectedUiText(const UiProtectedText& protected_text, Fn&& fn) {
   return protected_text.WithPlaintext(
       kUiPlaintextLease,
       [&](std::string_view view) { return static_cast<bool>(fn(view)); });
-}
-
-void InsertProtectedUiText(QVariantMap& msg, const QString& text) {
-  (void)WithProtectedUiText(text, [&](std::string_view view) {
-    msg.insert(QStringLiteral("text"), ToUiQString(view));
-    return true;
-  });
 }
 
 std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
@@ -4468,6 +4455,40 @@ bool QuickClient::setChatBackground(const QString& chatId,
   SaveChatBackgrounds(chat_backgrounds_);
   UpdateLastError(QString());
   return true;
+}
+
+QString QuickClient::renderProtectedText(const QString& protectedTextId) const {
+  const auto it = protected_ui_texts_.constFind(protectedTextId);
+  if (it == protected_ui_texts_.constEnd()) {
+    return {};
+  }
+  QString rendered;
+  (void)WithProtectedUiText(it.value(), [&](std::string_view view) {
+    rendered = ToUiQString(view);
+    return true;
+  });
+  return rendered;
+}
+
+QString QuickClient::StoreProtectedUiText(const QString& text) const {
+  QByteArray utf8 = text.toUtf8();
+  UiProtectedText protected_text = UiProtectedText::Protect(std::string_view(
+      utf8.constData(), static_cast<std::size_t>(utf8.size())));
+  if (!utf8.isEmpty()) {
+    std::fill_n(utf8.data(), utf8.size(), '\0');
+  }
+  const QString id =
+      QStringLiteral("pt:%1:%2")
+          .arg(++protected_ui_text_seq_)
+          .arg(QRandomGenerator::global()->generate64(), 16, 16,
+               QLatin1Char('0'));
+  protected_ui_texts_.insert(id, std::move(protected_text));
+  return id;
+}
+
+void QuickClient::InsertProtectedUiText(QVariantMap& msg,
+                                        const QString& text) const {
+  msg.insert(QStringLiteral("protectedTextId"), StoreProtectedUiText(text));
 }
 
 QString QuickClient::token() const {

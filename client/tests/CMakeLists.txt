@@ -206,7 +206,10 @@ add_executable(ui_protected_text_source_test
 )
 
 target_compile_definitions(ui_protected_text_source_test PRIVATE
-    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp")
+    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp"
+    MI_E2EE_APP_STORE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/AppStore.qml"
+    MI_E2EE_CHAT_DISPLAY_STORE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/stores/ChatDisplayStore.qml"
+    MI_E2EE_CENTER_PANE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/shell/CenterPane.qml")
 
 add_test(NAME ui_protected_text_source_test COMMAND ui_protected_text_source_test)
 

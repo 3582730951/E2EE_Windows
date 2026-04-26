@@ -4558,6 +4558,7 @@ Item {
             property bool isOutgoing: kind === "out"
             property bool showSender: isIncoming && Ui.ChatDisplayStore.currentChatType === "group"
             property string contentKind: model.contentKind || "text"
+            property string displayText: Ui.ChatDisplayStore.messageText(model)
             property bool isEmoji: contentKind === "emoji"
             property bool isSticker: contentKind === "sticker"
             property bool isImage: contentKind === "image"
@@ -4646,7 +4647,7 @@ Item {
                 Text {
                     id: dateText
                     anchors.centerIn: parent
-                    text: model.text || ""
+                    text: displayText
                     color: Ui.Style.textMuted
                     font.pixelSize: Ui.Style.microTextSize
                     font.weight: Font.Medium
@@ -4657,7 +4658,7 @@ Item {
                 visible: isSystem
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: 8
-                text: model.text || ""
+                text: displayText
                 color: Ui.Style.textMuted
                 font.pixelSize: Ui.Style.microTextSize
                 font.weight: Font.Medium
@@ -4743,7 +4744,7 @@ Item {
                         width: bubbleBlock.maxBubbleWidth - bubbleBlock.hPadding * 2
                         Text {
                             id: textBlock
-                            text: model.text || ""
+                            text: displayText
                             width: parent.width
                             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
@@ -4761,7 +4762,7 @@ Item {
                         height: implicitHeight
                         Text {
                             id: emojiText
-                            text: model.text || ""
+                            text: displayText
                             font.pixelSize: 40
                             color: isOutgoing ? Ui.Style.bubbleOutFg : Ui.Style.bubbleInFg
                             transformOrigin: Item.Center
@@ -5434,7 +5435,7 @@ Item {
                             }
 
                             Text {
-                                text: model.text || ""
+                                text: displayText
                                 font.pixelSize: 10
                                 color: Ui.Style.textSecondary
                                 wrapMode: Text.WordWrap

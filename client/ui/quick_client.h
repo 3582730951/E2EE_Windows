@@ -15,12 +15,14 @@
 #include <QUrl>
 #include <memory>
 #include <mutex>
+#include <cstdint>
 #include <unordered_map>
 
 #include "group_call_media_adapter.h"
 #include "group_call_session.h"
 #include "media_pipeline.h"
 #include "media_session.h"
+#include "protected_text_vm.h"
 #include "sdk_client_types.h"
 
 class QAudioSink;
@@ -182,6 +184,7 @@ class QuickClient : public QObject {
   Q_INVOKABLE QUrl chatBackground(const QString& chatId) const;
   Q_INVOKABLE bool setChatBackground(const QString& chatId,
                                      const QString& imageUrl);
+  Q_INVOKABLE QString renderProtectedText(const QString& protectedTextId) const;
 
   QString token() const;
   bool loggedIn() const;
@@ -347,6 +350,8 @@ class QuickClient : public QObject {
   void MaybeAutoEnhanceImage(const QString& messageId,
                              const QString& filePath,
                              const QString& fileName);
+  QString StoreProtectedUiText(const QString& text) const;
+  void InsertProtectedUiText(QVariantMap& msg, const QString& text) const;
 
   static QString BytesToHex(const std::array<std::uint8_t, 16>& bytes);
   static bool HexToBytes16(const QString& hex,
@@ -452,6 +457,8 @@ class QuickClient : public QObject {
   QHash<QString, QString> pending_download_names_;
   QHash<QString, double> download_progress_base_;
   QHash<QString, double> download_progress_span_;
+  mutable QHash<QString, mi::client::UiProtectedText> protected_ui_texts_;
+  mutable std::uint64_t protected_ui_text_seq_{0};
 };
 
 }  // namespace mi::client::ui

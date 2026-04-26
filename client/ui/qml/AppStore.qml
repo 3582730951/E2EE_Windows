@@ -1175,6 +1175,22 @@ Item {
         return value.slice(0, Math.max(0, maxLength - 3)) + "..."
     }
 
+    function renderProtectedText(protectedTextId) {
+        var id = protectedTextId || ""
+        if (id.length === 0 || !clientBridge || !clientBridge.renderProtectedText) {
+            return ""
+        }
+        return clientBridge.renderProtectedText(id)
+    }
+
+    function messageText(entry) {
+        var protectedTextId = entry ? (entry.protectedTextId || "") : ""
+        if (protectedTextId.length > 0) {
+            return renderProtectedText(protectedTextId)
+        }
+        return entry ? (entry.text || "") : ""
+    }
+
     function sharedDetailMeta(entry) {
         var parts = []
         var sender = (entry.senderName || "").trim()
@@ -1774,7 +1790,10 @@ Item {
             }
         }
 
-        var text = message.text || ""
+        var protectedTextId = message.protectedTextId || ""
+        var text = protectedTextId.length > 0
+                   ? renderProtectedText(protectedTextId)
+                   : (message.text || "")
         if (kind === "file") {
             var name = message.fileName || ""
             text = name.length > 0 ? "[文件] " + name : "[文件]"
@@ -1895,7 +1914,8 @@ Item {
             kind: entryKind,
             contentKind: contentKind,
             senderName: displaySender,
-            text: text,
+            text: protectedTextId.length > 0 ? "" : text,
+            protectedTextId: protectedTextId,
             timeText: timeText,
             timestampMs: timestampMs,
             statusTicks: outgoing ? "sent" : "none",
@@ -1925,10 +1945,11 @@ Item {
             return
         }
         appendMessage(convId, entry, convId !== currentChatId)
+        var previewText = protectedTextId.length > 0 ? "" : text
         if (isGroup && entryKind !== "system") {
-            updateDialogPreview(convId, text, timeText, displaySender)
+            updateDialogPreview(convId, previewText, timeText, displaySender)
         } else {
-            updateDialogPreview(convId, text, timeText, "")
+            updateDialogPreview(convId, previewText, timeText, "")
         }
 
         if (convId === currentChatId && !outgoing && !isGroup && entryKind === "in") {
@@ -2083,7 +2104,10 @@ Item {
                 entryKind = "out"
             }
 
-            var rawText = h.text || ""
+            var protectedTextId = h.protectedTextId || ""
+            var rawText = protectedTextId.length > 0
+                          ? renderProtectedText(protectedTextId)
+                          : (h.text || "")
             if (h.kind === "text") {
                 var recallTarget = parseRecallTarget(rawText)
                 if (recallTarget.length > 0) {
@@ -2187,7 +2211,8 @@ Item {
                 kind: entryKind,
                 contentKind: contentKind,
                 senderName: displaySender,
-                text: text,
+                text: protectedTextId.length > 0 ? "" : text,
+                protectedTextId: protectedTextId,
                 timeText: h.time || "",
                 timestampMs: timestampMs,
                 statusTicks: ticks,
@@ -2211,7 +2236,7 @@ Item {
                 animateEmoji: false
             })
             if (entryKind !== "system") {
-                lastPreviewText = text
+                lastPreviewText = protectedTextId.length > 0 ? "" : text
                 lastPreviewTime = h.time || ""
                 lastPreviewSender = displaySender
             }

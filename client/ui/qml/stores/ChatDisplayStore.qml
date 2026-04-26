@@ -30,6 +30,10 @@ QtObject {
         return Ui.AppStore.messagesModel(chatId)
     }
 
+    function messageText(entry) {
+        return Ui.AppStore.messageText(entry)
+    }
+
     function setSearchQuery(value) {
         Ui.AppStore.setSearchQuery(value)
     }
