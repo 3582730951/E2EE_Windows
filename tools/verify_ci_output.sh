@@ -61,8 +61,9 @@ scan_path_stream() {
   local label="$1"
   local hit
   hit="$(
-    grep -n -E \
-      '(^|[^[:alnum:]_])/(home|Users)/[^[:space:]/]+/|[A-Za-z]:\\Users\\[^\\[:space:]]+\\' \
+    grep -n -E -i \
+      -e '(^|[^[:alnum:]_])/(home|Users)/[^[:space:]/]+/' \
+      -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
       2>/dev/null | head -n 1 || true
   )"
   if [[ -n "$hit" ]]; then

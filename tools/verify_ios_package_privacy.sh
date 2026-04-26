@@ -77,7 +77,9 @@ scan_secret_content() {
       ! -name '*.car' \
       -print0 2>/dev/null |
       xargs -0 grep -a -n -E -i \
-        '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))|/(home|Users)/[^[:space:]/]+/|[A-Za-z]:\\Users\\[^\\[:space:]]+\\' \
+        -e '(^|[^[:alnum:]_])(payload_hex[[:space:]]*=|file_key[[:space:]]*=|message_plaintext[[:space:]]*=|plaintext_payload[[:space:]]*=|local_path[[:space:]]*=|token[[:space:]]*=|access_token[[:space:]]*=|refresh_token[[:space:]]*=|ops_enable[[:space:]]*=[[:space:]]*(1|true|on|yes)|debug_log[[:space:]]*=[[:space:]]*(1|true|on|yes))' \
+        -e '/(home|Users)/[^[:space:]/]+/' \
+        -e '[A-Za-z]:[\\/][Uu]sers[\\/][^[:space:]\\/]+[\\/]' \
         2>/dev/null | head -n 1 || true
   )"
   if [[ -n "$hit" ]]; then
