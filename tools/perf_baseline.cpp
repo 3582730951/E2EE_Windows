@@ -86,7 +86,7 @@ bool BenchFrameEncode(const BenchConfig& cfg, Metric& ops, Metric& mbps) {
 
   std::vector<std::uint8_t> out;
   std::uint64_t bytes = 0;
-  std::uint64_t checksum = 0;
+  volatile std::uint64_t checksum = 0;
 
   const auto start = std::chrono::steady_clock::now();
   for (std::uint32_t i = 0; i < cfg.frame_iters; ++i) {
@@ -123,7 +123,7 @@ bool BenchFrameDecode(const BenchConfig& cfg, Metric& ops, Metric& mbps) {
   }
 
   std::uint64_t bytes = 0;
-  std::uint64_t checksum = 0;
+  volatile std::uint64_t checksum = 0;
   mi::server::FrameView view{};
 
   const auto start = std::chrono::steady_clock::now();

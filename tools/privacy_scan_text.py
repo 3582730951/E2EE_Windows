@@ -4,7 +4,6 @@ import fnmatch
 import os
 import re
 import sys
-from pathlib import Path
 
 
 PACKAGE_MARKERS = (
@@ -44,7 +43,7 @@ PATH_MARKERS = (
 )
 
 
-def compile_patterns(mode: str) -> list[re.Pattern[str]]:
+def compile_patterns(mode):
     source = {
         "package": (PACKAGE_MARKERS, PATH_MARKERS),
         "runtime": (RUNTIME_MARKERS, PATH_MARKERS),
@@ -53,35 +52,36 @@ def compile_patterns(mode: str) -> list[re.Pattern[str]]:
     return [re.compile(pattern, re.IGNORECASE | re.MULTILINE) for pattern in source]
 
 
-def should_skip(path: Path, skip_names: list[str], skip_exts: list[str]) -> bool:
-    name = path.name
+def should_skip(path, skip_names, skip_exts):
+    name = os.path.basename(path)
     lowered = name.lower()
     if any(fnmatch.fnmatch(name, pattern) for pattern in skip_names):
         return True
     return any(lowered.endswith(ext.lower()) for ext in skip_exts)
 
 
-def iter_files(root: Path, skip_names: list[str], skip_exts: list[str]):
+def iter_files(root, skip_names, skip_exts):
     for dirpath, _, filenames in os.walk(root):
         for filename in filenames:
-            path = Path(dirpath) / filename
+            path = os.path.join(dirpath, filename)
             if should_skip(path, skip_names, skip_exts):
                 continue
             yield path
 
 
-def read_text(path: Path) -> str:
-    data = path.read_bytes()
+def read_text(path):
+    with open(path, "rb") as handle:
+        data = handle.read()
     if b"\0" in data[:4096]:
         return ""
     return data.decode("utf-8", errors="ignore")
 
 
-def find_line(text: str, offset: int) -> int:
+def find_line(text, offset):
     return text.count("\n", 0, offset) + 1
 
 
-def scan_text(text: str, label: str, origin: str, patterns: list[re.Pattern[str]]) -> bool:
+def scan_text(text, label, origin, patterns):
     for pattern in patterns:
         match = pattern.search(text)
         if match:
@@ -112,8 +112,8 @@ def main() -> int:
         return 2
 
     for root_value in args.root:
-        root = Path(root_value)
-        if not root.is_dir():
+        root = root_value
+        if not os.path.isdir(root):
             print(f"scan root missing: {root}", file=sys.stderr)
             return 1
         for path in iter_files(root, args.skip_name, args.skip_ext):
