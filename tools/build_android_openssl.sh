@@ -111,10 +111,98 @@ tarball="$build_root/openssl-${version}.tar.gz"
 src_parent="$build_root/src"
 src_dir="$src_parent/openssl-${version}"
 
+openssl_minor="${version%.*}"
+download_urls=()
+if [[ -n "${MI_E2EE_ANDROID_OPENSSL_URL:-}" ]]; then
+  download_urls+=("$MI_E2EE_ANDROID_OPENSSL_URL")
+fi
+download_urls+=(
+  "https://www.openssl.org/source/openssl-${version}.tar.gz"
+  "https://www.openssl.org/source/old/${openssl_minor}/openssl-${version}.tar.gz"
+  "https://github.com/openssl/openssl/releases/download/openssl-${version}/openssl-${version}.tar.gz"
+)
+
+curl_retry_all_errors=()
+if curl --help all 2>/dev/null | grep -q -- "--retry-all-errors"; then
+  curl_retry_all_errors+=(--retry-all-errors)
+fi
+
+archive_is_valid() {
+  local archive="$1"
+  [[ -s "$archive" ]] || return 1
+  tar -tzf "$archive" "openssl-${version}/Configure" >/dev/null 2>&1
+}
+
+verify_archive_checksum() {
+  local archive="$1"
+  local expected="${MI_E2EE_ANDROID_OPENSSL_SHA256:-}"
+  if [[ -z "$expected" ]]; then
+    return 0
+  fi
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "sha256sum not found; cannot verify MI_E2EE_ANDROID_OPENSSL_SHA256." >&2
+    return 1
+  fi
+  local actual
+  actual="$(sha256sum "$archive" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "OpenSSL archive SHA-256 mismatch for $archive" >&2
+    echo "expected: $expected" >&2
+    echo "actual:   $actual" >&2
+    return 1
+  fi
+}
+
+download_archive() {
+  local url="$1"
+  local tmp="${tarball}.tmp"
+  local attempt
+  for attempt in 1 2 3; do
+    rm -f "$tmp"
+    echo "Downloading OpenSSL $version from $url (attempt $attempt)"
+    if curl \
+      --fail \
+      --location \
+      --show-error \
+      --connect-timeout 30 \
+      --retry 5 \
+      "${curl_retry_all_errors[@]}" \
+      "$url" \
+      -o "$tmp"; then
+      if archive_is_valid "$tmp" && verify_archive_checksum "$tmp"; then
+        mv "$tmp" "$tarball"
+        return 0
+      fi
+      echo "Downloaded OpenSSL archive failed validation: $url" >&2
+    else
+      echo "OpenSSL download failed: $url" >&2
+    fi
+    rm -f "$tmp"
+    sleep "$attempt"
+  done
+  return 1
+}
+
+if [[ -f "$tarball" ]] && ! archive_is_valid "$tarball"; then
+  echo "Cached OpenSSL archive is invalid; removing $tarball" >&2
+  rm -f "$tarball"
+fi
 if [[ ! -f "$tarball" ]]; then
-  url="https://www.openssl.org/source/openssl-${version}.tar.gz"
-  echo "Downloading OpenSSL $version from $url"
-  curl -L "$url" -o "$tarball"
+  downloaded=false
+  for url in "${download_urls[@]}"; do
+    if download_archive "$url"; then
+      downloaded=true
+      break
+    fi
+  done
+  if [[ "$downloaded" != "true" ]]; then
+    echo "Failed to download a valid OpenSSL $version source archive." >&2
+    exit 1
+  fi
+fi
+if ! verify_archive_checksum "$tarball"; then
+  rm -f "$tarball"
+  exit 1
 fi
 if [[ ! -d "$src_dir" ]]; then
   rm -rf "$src_parent"
