@@ -43,18 +43,31 @@ scan_names() {
   hit="$(
     find "$root" -print 2>/dev/null | while IFS= read -r p; do
       base="$(basename "$p" | tr '[:upper:]' '[:lower:]')"
-      case "$base" in
-        *.log|*.log.*|*.dmp|*.dump|core|core.*|*crash*|*telemetry*|*diagnostic*|*diagnostics*|*metrics*|*audit*)
-          printf '%s\n' "$p"
-          break
-          ;;
-      esac
+      if privacy_name_matches "$base" \
+        '*.log' '*.log.*' '*.dmp' '*.dump' 'core' 'core.*' \
+        '*crash*' '*telemetry*' '*diagnostic*' '*diagnostics*' \
+        '*metrics*' '*audit*'; then
+        printf '%s\n' "$p"
+        break
+      fi
     done
   )"
   if [[ -n "$hit" ]]; then
     echo "runtime contains forbidden privacy artifact: $hit" >&2
     exit 1
   fi
+}
+
+privacy_name_matches() {
+  local base="$1"
+  shift
+  local pattern
+  for pattern in "$@"; do
+    if [[ "$base" == $pattern ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 scan_content() {

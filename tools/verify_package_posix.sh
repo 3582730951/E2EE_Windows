@@ -87,18 +87,33 @@ privacy_scan_names() {
   hit="$(
     find "$root" -print 2>/dev/null | while IFS= read -r f; do
       base="$(basename "$f" | tr '[:upper:]' '[:lower:]')"
-      case "$base" in
-        *.log|*.log.*|*.dmp|*.dump|crash|crashes|telemetry|diagnostic|diagnostics|metrics|metric|audit|audits|ops_health|*crash*|*telemetry*|*diagnostic*|*diagnostics*|*ops_health*|*audit*)
-          printf '%s\n' "$f"
-          break
-          ;;
-      esac
+      if privacy_name_matches "$base" \
+        '*.log' '*.log.*' '*.dmp' '*.dump' \
+        'crash' 'crashes' 'telemetry' 'diagnostic' 'diagnostics' \
+        'metrics' 'metric' 'audit' 'audits' 'ops_health' \
+        '*crash*' '*telemetry*' '*diagnostic*' '*diagnostics*' \
+        '*ops_health*' '*audit*'; then
+        printf '%s\n' "$f"
+        break
+      fi
     done
   )"
   if [[ -n "$hit" ]]; then
     echo "$label package contains forbidden privacy artifact: $hit" >&2
     exit 1
   fi
+}
+
+privacy_name_matches() {
+  local base="$1"
+  shift
+  local pattern
+  for pattern in "$@"; do
+    if [[ "$base" == $pattern ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 privacy_scan_content() {

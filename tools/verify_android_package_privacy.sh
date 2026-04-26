@@ -50,18 +50,35 @@ scan_names() {
   hit="$(
     find "$root" -print 2>/dev/null | while IFS= read -r path; do
       base="$(basename "$path" | tr '[:upper:]' '[:lower:]')"
-      case "$base" in
-        *.log|*.log.*|*.dmp|*.dump|crash|crashes|telemetry|diagnostic|diagnostics|metrics|metric|audit|audits|ops_health|*crashlytics*|*firebase*|*firebase-analytics*|*telemetry*|*diagnostic*|*diagnostics*|*metrics*|*ops_health*|*audit*|*sentry*|*bugsnag*|*datadog*|*newrelic*|*appcenter*)
-          printf '%s\n' "$path"
-          break
-          ;;
-      esac
+      if privacy_name_matches "$base" \
+        '*.log' '*.log.*' '*.dmp' '*.dump' \
+        'crash' 'crashes' 'telemetry' 'diagnostic' 'diagnostics' \
+        'metrics' 'metric' 'audit' 'audits' 'ops_health' \
+        '*crashlytics*' '*firebase*' '*firebase-analytics*' \
+        '*telemetry*' '*diagnostic*' '*diagnostics*' '*metrics*' \
+        '*ops_health*' '*audit*' '*sentry*' '*bugsnag*' '*datadog*' \
+        '*newrelic*' '*appcenter*'; then
+        printf '%s\n' "$path"
+        break
+      fi
     done
   )"
   if [[ -n "$hit" ]]; then
     echo "$label contains forbidden Android privacy artifact: $hit" >&2
     exit 1
   fi
+}
+
+privacy_name_matches() {
+  local base="$1"
+  shift
+  local pattern
+  for pattern in "$@"; do
+    if [[ "$base" == $pattern ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 scan_secret_content() {
