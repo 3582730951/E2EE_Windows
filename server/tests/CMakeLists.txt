@@ -235,6 +235,19 @@ if(UNIX)
   endif()
   add_test(NAME runtime_privacy_scan_test COMMAND runtime_privacy_scan_test)
 
+  add_executable(security_plan_acceptance_test
+      security_plan_acceptance_test.cpp
+  )
+  target_link_libraries(security_plan_acceptance_test PRIVATE mi_e2ee_core)
+  target_include_directories(security_plan_acceptance_test PRIVATE ../include ../shard)
+  target_compile_definitions(security_plan_acceptance_test PRIVATE
+      MI_E2EE_SECURITY_PLAN_VERIFY_PY="${CMAKE_CURRENT_LIST_DIR}/../../tools/verify_security_plan_acceptance.py"
+      MI_E2EE_REPOSITORY_ROOT="${CMAKE_CURRENT_LIST_DIR}/../..")
+  if(MSVC)
+    target_compile_options(security_plan_acceptance_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+  endif()
+  add_test(NAME security_plan_acceptance_test COMMAND security_plan_acceptance_test)
+
   add_executable(android_package_privacy_scan_test
       android_package_privacy_scan_test.cpp
   )

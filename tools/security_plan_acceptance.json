@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "acceptance_claim": "ci_and_simulator_complete",
+  "ci_required_jobs": [
+    "verify-ui-contract",
+    "build-package",
+    "build-linux",
+    "build-linux-debian",
+    "build-macos",
+    "build-ios-rootauth",
+    "build-android",
+    "final-acceptance"
+  ],
+  "simulator_substitutions": [
+    {
+      "name": "android_emulator",
+      "ci_contains": [
+        "reactivecircus/android-emulator-runner@v2",
+        "android/scripts/ci_ui_smoke.sh",
+        "ANDROID_EMULATOR_VALIDATED",
+        "android emulator evidence"
+      ]
+    },
+    {
+      "name": "ios_simulator",
+      "ci_contains": [
+        "xcrun simctl boot",
+        "xcrun simctl install",
+        "rootauth-ios-security.png",
+        "ios-runtime-evidence.json"
+      ]
+    },
+    {
+      "name": "windows_ci_smoke",
+      "ci_contains": [
+        "Invoke-UiSmoke",
+        "windows-runtime-evidence.json",
+        "windows_smoke_matrix_check.py"
+      ]
+    }
+  ],
+  "non_automatable_bounds": [
+    {
+      "id": "root_or_admin",
+      "status": "accepted_risk"
+    },
+    {
+      "id": "kernel_driver",
+      "status": "accepted_risk"
+    },
+    {
+      "id": "physical_memory",
+      "status": "accepted_risk"
+    },
+    {
+      "id": "unlocked_ui_capture",
+      "status": "accepted_risk"
+    }
+  ],
+  "gates": [
+    {
+      "id": "zero_logs_release_and_package_runtime_privacy",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "server/tests/platform_log_privacy_test.cpp",
+          "contains": [
+            "MI_E2EE_PRIVACY_STRICT",
+            "PrivacyStrictRuntime",
+            "token=secret password=secret"
+          ]
+        },
+        {
+          "path": "server/tests/package_privacy_scan_test.cpp",
+          "contains": [
+            "ops health tool",
+            "audit tool",
+            "message_plaintext=hello",
+            "debug_log=1"
+          ]
+        },
+        {
+          "path": "server/tests/runtime_privacy_scan_test.cpp",
+          "contains": [
+            "runtime.log.old.bak",
+            "diagnostics directory",
+            "payload_hex=00112233",
+            "local_path=/home/alice/private/photo.jpg"
+          ]
+        },
+        {
+          "path": "server/tests/ci_output_privacy_test.cpp",
+          "contains": [
+            "MI_E2EE_CI_OUTPUT_VERIFY_SH",
+            "raw-session-token"
+          ]
+        },
+        {
+          "path": "tools/verify_package_posix.sh",
+          "contains": [
+            "*.log",
+            "mi_e2ee_ops_health_view",
+            "mi_e2ee_third_party_audit"
+          ]
+        },
+        {
+          "path": "tools/privacy_scan_text.py",
+          "contains": [
+            "debug_log",
+            "ops_enable",
+            "payload_hex"
+          ]
+        },
+        {
+          "path": "tools/verify_runtime_privacy.sh",
+          "contains": [
+            "telemetry",
+            "diagnostics",
+            "privacy_scan_text.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "canonical_history_all_types_and_unknown_roundtrip",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "client/tests/chat_history_store_test.cpp",
+          "contains": [
+            "BuildUnknownEnvelope",
+            "BuildGroupTextEnvelope",
+            "BuildRichLocationEnvelope",
+            "BuildRichContactEnvelope",
+            "canonical envelope did not round-trip exactly"
+          ]
+        },
+        {
+          "path": "client/tests/history_api_canonical_test.cpp",
+          "contains": [
+            "unknown canonical envelope missing",
+            "control canonical envelope missing"
+          ]
+        },
+        {
+          "path": "client/tests/messaging_history_source_test.cpp",
+          "contains": [
+            "SendChatLocation",
+            "SendChatContactCard",
+            "SendChatSticker",
+            "SendChatReadReceipt",
+            "BestEffortPersistHistoryEnvelope("
+          ]
+        },
+        {
+          "path": "client/tests/sdk_c_api_e2e_test.cpp",
+          "contains": [
+            "private history canonical envelope missing",
+            "group history canonical envelope missing"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zerox_dynamic_library_container_and_tamper_detection",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "client/tests/chat_history_store_test.cpp",
+          "contains": [
+            "HasPlatformContainerShape",
+            "HasPlatformContainerExtension",
+            "history container missing MIH3 block",
+            "history container leaked canonical envelope plaintext",
+            "tampered history returned readable messages",
+            "clear-all left platform history containers behind"
+          ]
+        },
+        {
+          "path": "runtime/client/storage/chat_history_store.cpp",
+          "contains": [
+            "kMih3Magic",
+            "DeriveMih3Key",
+            "prev_hash",
+            "return \".dll\"",
+            "return \".dylib\"",
+            "return \".so\""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "platform_matrix_ci_simulator_release",
+      "status": "ci_substituted",
+      "evidence": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "contains": [
+            "build-package:",
+            "build-ios-rootauth:",
+            "build-android:",
+            "xcrun simctl boot",
+            "reactivecircus/android-emulator-runner@v2",
+            "final-acceptance:"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "endpoint_debugger_and_injection_hardening",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "server/tests/android_privacy_source_test.cpp",
+          "contains": [
+            "TracerPid",
+            "frida",
+            "magisk",
+            "root checks"
+          ]
+        },
+        {
+          "path": "server/tests/ios_privacy_source_test.cpp",
+          "contains": [
+            "debugger/dylib injection checks",
+            "CheckEndpointThreatDetector",
+            "CheckAppThreatGuard"
+          ]
+        },
+        {
+          "path": "server/tests/flutter_platform_privacy_source_test.cpp",
+          "contains": [
+            "Flutter Android endpoint detector",
+            "Flutter iOS endpoint detector",
+            "TracerPid"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ime_clipboard_local_privacy_defaults",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "client/tests/ui_ime_privacy_test.cpp",
+          "contains": [
+            "Qt.ImhNoPredictiveText",
+            "update_userdict",
+            "enable_user_dict: true"
+          ]
+        },
+        {
+          "path": "android/rootapp/src/main/java/mi/e2ee/rootauth/SecureClipboard.kt",
+          "contains": [
+            "TokenPrefix",
+            "copyProtectedText",
+            "entries[token]"
+          ]
+        },
+        {
+          "path": "ios_root_app/RootAuthApp/SecureClipboard.swift",
+          "contains": [
+            "tokenPrefix",
+            "copyProtectedText",
+            "entries[token]"
+          ]
+        },
+        {
+          "path": "client/ui/qml/stores/PreferenceStore.qml",
+          "contains": [
+            "clipboardIsolationEnabled: true"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local_ai_media_enhancement_privacy",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "client/tests/ui_ai_enhance_privacy_test.cpp",
+          "contains": [
+            "QStandardPaths::TempLocation",
+            "mi_e2ee_ai_upscale",
+            "readAllStandardOutput",
+            "readAllStandardError"
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "contains": [
+            "Fetch Real-ESRGAN runtime",
+            "realesrgan-ncnn-vulkan.exe",
+            "realesrgan-x4plus.param",
+            "realesrgan-x4plus.bin"
+          ]
+        },
+        {
+          "path": "tools/verify_package_windows.ps1",
+          "contains": [
+            "realesrgan executable",
+            "missing realesrgan model .param",
+            "missing realesrgan model .bin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repository_policy_and_sensitive_artifact_guard",
+      "status": "automated",
+      "evidence": [
+        {
+          "path": "server/tests/repository_policy_test.cpp",
+          "contains": [
+            "repository policy allowed non-e2ee_dev branch",
+            "repository policy allowed writes outside core",
+            "repository policy allowed forbidden asset directory"
+          ]
+        },
+        {
+          "path": "tools/verify_git_policy.sh",
+          "contains": [
+            "core/client/ui_example",
+            "core/client/assets/ref",
+            "*.log|*.log.*|*.png"
+          ]
+        },
+        {
+          "path": "tools/pre_push_guard.py",
+          "contains": [
+            "readme.md",
+            ".png",
+            "client/assets/ref/"
+          ]
+        }
+      ]
+    }
+  ]
+}
