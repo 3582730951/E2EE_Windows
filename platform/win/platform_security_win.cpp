@@ -1,4 +1,5 @@
 #include "platform_security.h"
+#include "native_syscall_probe.h"
 
 #include <array>
 #include <atomic>
@@ -121,6 +122,15 @@ void FailClose(TamperSignal signal) noexcept {
       break;
     case TamperSignal::kSandboxMissing:
       code = 0xE2EE0005u;
+      break;
+    case TamperSignal::kApiHook:
+      code = 0xE2EE0006u;
+      break;
+    case TamperSignal::kUnexpectedModule:
+      code = 0xE2EE0007u;
+      break;
+    case TamperSignal::kPrivateExecutableMemory:
+      code = 0xE2EE0008u;
       break;
     default:
       break;
@@ -275,6 +285,40 @@ bool IsDebuggerPresentNt() noexcept {
   return false;
 }
 
+TamperSignal NativeUnavailableSignal() noexcept {
+#if defined(MI_E2EE_SECURE_RELEASE)
+  return TamperSignal::kApiHook;
+#else
+  return TamperSignal::kNone;
+#endif
+}
+
+bool NativeDebuggerConflict(
+    bool win32_debugger,
+    const mi::platform::win::NativeProbeResult& native) noexcept {
+  return native.native_query_succeeded &&
+         native.debugger_present != win32_debugger;
+}
+
+TamperSignal EvaluateNativeProbe(
+    bool win32_debugger,
+    const mi::platform::win::NativeProbeResult& native) noexcept {
+  if (native.signal != TamperSignal::kNone) {
+    return native.signal;
+  }
+  if (win32_debugger) {
+    return TamperSignal::kDebugger;
+  }
+  if (NativeDebuggerConflict(win32_debugger, native)) {
+    return native.debugger_present ? TamperSignal::kDebugger
+                                   : TamperSignal::kApiHook;
+  }
+  if (!native.available || !native.ntdll_stubs_verified) {
+    return NativeUnavailableSignal();
+  }
+  return TamperSignal::kNone;
+}
+
 bool HasHardwareBreakpoints() noexcept {
   const DWORD pid = GetCurrentProcessId();
   const DWORD self_tid = GetCurrentThreadId();
@@ -340,16 +384,24 @@ void MonitorThreadMain(HardeningLevel level, std::uint32_t poll_ms) noexcept {
   }
   const bool check_hw_breakpoints = (level == HardeningLevel::kHigh);
   const bool hw_break = check_hw_breakpoints && HasHardwareBreakpoints();
-  if (IsDebuggerPresentFast() || IsDebuggerPresentNt() || hw_break) {
+  const bool win32_debugger = IsDebuggerPresentFast() || IsDebuggerPresentNt();
+  const auto native_probe = mi::platform::win::RunNativeSyscallProbe();
+  const auto native_signal = EvaluateNativeProbe(win32_debugger, native_probe);
+  if (native_signal != TamperSignal::kNone || hw_break) {
     ReportTamper(hw_break ? TamperSignal::kHardwareBreakpoint
-                          : TamperSignal::kDebugger);
+                          : native_signal);
     return;
   }
   std::uint32_t tick = 0;
   for (;;) {
     ApplyBestEffortMitigations(level);
-    if (IsDebuggerPresentFast() || IsDebuggerPresentNt()) {
-      ReportTamper(TamperSignal::kDebugger);
+    const bool loop_win32_debugger =
+        IsDebuggerPresentFast() || IsDebuggerPresentNt();
+    const auto loop_native_probe = mi::platform::win::RunNativeSyscallProbe();
+    const auto loop_native_signal =
+        EvaluateNativeProbe(loop_win32_debugger, loop_native_probe);
+    if (loop_native_signal != TamperSignal::kNone) {
+      ReportTamper(loop_native_signal);
       return;
     }
     if (check_hw_breakpoints && (++tick % 3u) == 0u) {
@@ -458,6 +510,24 @@ bool IsTamperDetected() noexcept {
 
 TamperSignal LastTamperSignal() noexcept {
   return gLastTamper.load();
+}
+
+bool CanRevealUiPlaintext() noexcept {
+  if (IsTamperDetected()) {
+    return false;
+  }
+  const bool win32_debugger = IsDebuggerPresentFast() || IsDebuggerPresentNt();
+  const auto native_probe = mi::platform::win::RunNativeSyscallProbe();
+  const auto native_signal = EvaluateNativeProbe(win32_debugger, native_probe);
+  if (native_signal != TamperSignal::kNone) {
+    ReportTamper(native_signal);
+    return false;
+  }
+  if (HasHardwareBreakpoints()) {
+    ReportTamper(TamperSignal::kHardwareBreakpoint);
+    return false;
+  }
+  return !IsTamperDetected();
 }
 
 }  // namespace mi::platform

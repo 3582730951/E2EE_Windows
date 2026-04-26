@@ -18,6 +18,13 @@
 #include <mutex>
 #include <vector>
 
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
+#ifndef LOAD_LIBRARY_SEARCH_APPLICATION_DIR
+#define LOAD_LIBRARY_SEARCH_APPLICATION_DIR 0x00000200
+#endif
+
 namespace mi::platform::media {
 
 class OpusCodecWin final : public OpusCodec {
@@ -124,7 +131,9 @@ class OpusCodecWin final : public OpusCodec {
   bool LoadLibraryHandles(std::string& error) {
     const wchar_t* names[] = {L"opus.dll", L"libopus-0.dll", L"libopus.dll"};
     for (const auto* name : names) {
-      lib_ = LoadLibraryW(name);
+      lib_ = LoadLibraryExW(name, nullptr,
+                            LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+                                LOAD_LIBRARY_SEARCH_SYSTEM32);
       if (lib_) {
         break;
       }

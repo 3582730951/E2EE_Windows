@@ -149,6 +149,15 @@ void FailClose(TamperSignal signal) noexcept {
     case TamperSignal::kSandboxMissing:
       code = 0xE2EE0005u;
       break;
+    case TamperSignal::kApiHook:
+      code = 0xE2EE0006u;
+      break;
+    case TamperSignal::kUnexpectedModule:
+      code = 0xE2EE0007u;
+      break;
+    case TamperSignal::kPrivateExecutableMemory:
+      code = 0xE2EE0008u;
+      break;
     default:
       break;
   }
@@ -414,6 +423,25 @@ bool IsTamperDetected() noexcept {
 
 TamperSignal LastTamperSignal() noexcept {
   return gLastTamper.load();
+}
+
+bool CanRevealUiPlaintext() noexcept {
+  if (IsTamperDetected()) {
+    return false;
+  }
+#if defined(__APPLE__)
+  if (IsTracedMac()) {
+    ReportTamper(TamperSignal::kDebugger);
+    return false;
+  }
+#endif
+#if defined(__linux__) && !defined(__ANDROID__)
+  if (IsTracedLinux()) {
+    ReportTamper(TamperSignal::kDebugger);
+    return false;
+  }
+#endif
+  return !IsTamperDetected();
 }
 
 }  // namespace mi::platform

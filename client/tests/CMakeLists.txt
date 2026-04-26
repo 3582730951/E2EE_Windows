@@ -213,6 +213,16 @@ target_compile_definitions(ui_protected_text_source_test PRIVATE
 
 add_test(NAME ui_protected_text_source_test COMMAND ui_protected_text_source_test)
 
+add_executable(windows_native_syscall_source_test
+    windows_native_syscall_source_test.cpp
+)
+
+target_compile_definitions(windows_native_syscall_source_test PRIVATE
+    MI_E2EE_REPOSITORY_ROOT="${CMAKE_CURRENT_LIST_DIR}/../..")
+
+add_test(NAME windows_native_syscall_source_test
+         COMMAND windows_native_syscall_source_test)
+
 add_executable(sdk_c_api_e2e_test
     sdk_c_api_e2e_test.cpp
 )

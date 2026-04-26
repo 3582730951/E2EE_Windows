@@ -140,6 +140,7 @@ if(WIN32)
       ../platform/win/platform_identity_win.cpp
       ../platform/win/platform_media_win.cpp
       ../platform/win/platform_net_win.cpp
+      ../platform/win/native_syscall_probe.cpp
       ../platform/win/platform_security_win.cpp
       ../platform/win/platform_sys_win.cpp
       ../platform/win/platform_tls_win.cpp

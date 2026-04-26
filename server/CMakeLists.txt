@@ -296,6 +296,7 @@ if(WIN32)
       ../platform/win/platform_time_win.cpp
       ../platform/win/platform_fs_win.cpp
       ../platform/win/platform_identity_win.cpp
+      ../platform/win/native_syscall_probe.cpp
       ../platform/win/platform_security_win.cpp
       ../platform/win/platform_sys_win.cpp
       ../platform/win/platform_tls_win.cpp

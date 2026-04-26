@@ -11,7 +11,10 @@ enum class TamperSignal : std::uint8_t {
   kCodeTamper = 2,
   kHardwareBreakpoint = 3,
   kSignatureInvalid = 4,
-  kSandboxMissing = 5
+  kSandboxMissing = 5,
+  kApiHook = 6,
+  kUnexpectedModule = 7,
+  kPrivateExecutableMemory = 8
 };
 
 using TamperHandler = void (*)(TamperSignal) noexcept;
@@ -21,6 +24,7 @@ bool IsTamperDetected() noexcept;
 TamperSignal LastTamperSignal() noexcept;
 
 void StartEndpointHardening() noexcept;
+bool CanRevealUiPlaintext() noexcept;
 
 }  // namespace mi::platform
 

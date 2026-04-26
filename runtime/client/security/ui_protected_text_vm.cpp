@@ -1,5 +1,6 @@
 #include "protected_text_vm.h"
 
+#include "platform_security.h"
 #include "secure_buffer.h"
 
 #include <algorithm>
@@ -254,6 +255,9 @@ bool UiProtectedText::ImportForTest(const std::vector<std::uint8_t>& bytecode,
 }
 
 UiProtectedTextLease UiProtectedText::Open(std::chrono::milliseconds ttl) const {
+  if (!mi::platform::CanRevealUiPlaintext()) {
+    return {};
+  }
   std::vector<char> plain;
   if (ttl.count() <= 0 || !Decode(plain)) {
     mi::common::SecureWipe(plain.data(), plain.size());
