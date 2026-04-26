@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import MachO
 import SwiftUI
 
 struct EndpointThreatReport {
