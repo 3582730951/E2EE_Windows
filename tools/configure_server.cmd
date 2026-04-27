@@ -12,6 +12,7 @@ if "%~1"=="--help" goto :usage
 
 :loop
 call :menu
+set "choice="
 set /p choice=Select [1-9]: 
 if "%choice%"=="" set "choice=9"
 if "%choice%"=="1" goto :first_time
@@ -239,8 +240,8 @@ goto :loop
 
 :generate_cert_no_loop
 call :ensure_dirs
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$cert=New-SelfSignedCertificate -Subject 'CN=MI_E2EE_Server' -TextExtension @('2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1') -CertStoreLocation Cert:\CurrentUser\My; $pwd=ConvertTo-SecureString -String '' -AsPlainText -Force; Export-PfxCertificate -Cert $cert -FilePath '%CONFIG_DIR%\mi_e2ee_server.pfx' -Password $pwd | Out-Null; $hash=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($cert.Export('Cert'))).Replace('-','').ToLower(); Write-Host sha256=$hash"
-exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $rsa=[System.Security.Cryptography.RSA]::Create(2048); $req=[System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=MI_E2EE_Server',$rsa,[System.Security.Cryptography.HashAlgorithmName]::SHA256,[System.Security.Cryptography.RSASignaturePadding]::Pkcs1); $cert=$req.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1),[DateTimeOffset]::UtcNow.AddYears(2)); $pfx=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,''); [IO.File]::WriteAllBytes('%CONFIG_DIR%\mi_e2ee_server.pfx',$pfx); $der=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert); $hash=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace('-','').ToLower(); Write-Host sha256=$hash"
+exit /b %ERRORLEVEL%
 
 :import_cert
 call :ensure_dirs
