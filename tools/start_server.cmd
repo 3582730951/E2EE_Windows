@@ -12,6 +12,7 @@ if "%~1"=="--help" goto :usage
 call :menu
 set "choice="
 set /p choice=Select [1-5]:
+if errorlevel 1 exit /b 0
 if "%choice%"=="" set "choice=1"
 if "%choice%"=="1" goto :start
 if "%choice%"=="2" goto :configure

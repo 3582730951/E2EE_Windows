@@ -102,6 +102,7 @@ class ServerToolingTest(unittest.TestCase):
         self.assertIn("kt_root_pub.bin", configure_cmd)
         self.assertIn("Validate configuration", start_cmd)
         self.assertIn("Stress test server", start_cmd)
+        self.assertIn("if errorlevel 1 exit /b 0", start_cmd)
 
     def test_non_interactive_demo_generation_validates_secure_defaults(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mi-e2ee-server-tools-") as temp:
