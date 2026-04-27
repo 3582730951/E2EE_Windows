@@ -1,185 +1,226 @@
-# MI E2EE (Windows)
+# MI E2EE
 
-[![Build](https://github.com/3582730951/E2EE_Windows/actions/workflows/ci.yml/badge.svg)](https://github.com/3582730951/E2EE_Windows/actions/workflows/ci.yml)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C)
-![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-445)
 
-端到端加密聊天栈（服务端+客户端），面向 Windows 环境，包含 PAKE/OPAQUE 认证、双重 Ratchet、群聊 Sender Key、Key Transparency、离线文件加密与 UI 客户端。
+MI E2EE 是一个公开源码、非商业许可的端到端加密即时通信项目，包含服务端、Windows 客户端、Linux 客户端核心、Android 客户端、iOS RootAuth 示例和 Flutter 跨端客户端壳。项目目标是在不依赖服务端明文的前提下完成认证、会话协商、消息收发、群聊密钥轮换、离线文件保护、Key Transparency 校验和客户端 UI 明文保护。
+
+> 许可提醒：本项目自有代码采用 PolyForm Noncommercial License 1.0.0，禁止商业用途。第三方开源库、词库、图标、模型和工具不被本项目重新授权，继续适用它们各自的许可证。
 
 ## 目录
-- 特性
-- 架构与目录
-- 安全模型与威胁边界
-- 快速开始（Demo）
-- 构建与测试
-- 配置要点
-- CI
-- 安全治理流程
-- 贡献与反馈
-- License
 
-## 特性
-- 认证：OPAQUE / PAKE，无明文口令存储
-- 会话：X25519 + ML-KEM（可混合）+ HKDF 派生
-- 消息：Double Ratchet + AEAD，Sender Key 群聊
-- Key Transparency：STH 签名与一致性校验、gossip 阈值告警
-- 传输：TLS（Schannel/OpenSSL）+ CA/指纹/hybrid 校验 + 降级检测
-- 元数据对抗：消息/心跳/文件分块桶化填充 + cover traffic
-- 离线文件：一次一密 + 密钥删除优先 + 可选 secure-delete 插件
-- 客户端：Qt 6 UI（默认开启），核心逻辑走 `mi_e2ee_client_core`
-- 图片：可选离线 AI 超清（手动触发，不强制使用）
+- [项目简介](#项目简介)
+- [项目结构](#项目结构)
+- [架构](#架构)
+- [如何配置](#如何配置)
+- [许可证](#许可证)
+- [第三方组件](#第三方组件)
+- [鸣谢](#鸣谢)
 
-## 架构与目录
-```
-server/          服务端（TCP/KCP 网关、转发、离线/文件）
-client/          客户端核心库与 UI
-shard/           共享安全类型与加扰逻辑（含 C 接口）
-third_party/     第三方依赖（hash lock + SBOM）
-tools/           工具（third_party_policy_check 等）
-```
+## 项目简介
 
-## 安全模型与威胁边界
-已覆盖（显著提高攻击成本）：
-- 旁路窃听、MITM、中间人证书替换（TLS + pin + 降级检测）
-- 服务器被动窥探（内容端到端加密，服务端不解密）
-- 群密钥滥用（Sender Key 轮换+分发 ACK）
-- KT 分叉/回滚（STH 签名 + gossip 告警）
+MI E2EE 面向端到端加密通信、安全研究和非商业部署验证。服务端负责账户校验、连接网关、密文转发、离线消息和离线文件存储；客户端负责密钥派生、消息加密解密、信任状态校验和本地明文展示控制。
 
-不保证完全防御：
-- 终端被入侵（恶意软件、内存注入、键盘记录）
-- 物理取证/系统级后门
-- 高级流量关联与侧信道（仅降低可识别性）
+核心能力：
 
-元数据保护威胁模型（边界说明）：
-- E2EE 攻击模型：内容端到端加密，但服务端运行态仍可见路由/在线关系；落库状态使用独立元数据密钥加密，降低离线泄露。
-- 逆向/调试：IDA/OllyDbg 等动态调试与 Hook/注入会放大攻击面；端点硬化/反调试仅提高成本，无法对抗完全控制主机。
-- Root/提取：Android root/Linux root 可读取落地密钥或内存；SecureStore/密钥保护可缓解但不保证绝对安全。
+- 认证：OPAQUE / PAKE，服务端不保存明文口令。
+- 会话：X25519 + 可选 ML-KEM + HKDF 派生。
+- 消息：Double Ratchet + AEAD，群聊 Sender Key 与成员变更/阈值轮换。
+- Key Transparency：STH 签名、一致性校验和 gossip 阈值告警。
+- 传输：TLS（Windows Schannel，POSIX/OpenSSL）+ CA/pin/hybrid 校验 + 降级检测。
+- 元数据保护：消息、心跳、文件分块桶化填充和 cover traffic。
+- 离线文件：一次一密、密钥删除优先、下载后擦除路径。
+- UI 明文门禁：调试器、硬件断点、IAT/inline hook、私有可执行页、ntdll stub、录屏/截图风险共同参与判定。
+- 客户端：Qt 6 Windows UI、Android Compose UI、iOS RootAuth Swift 示例、Flutter shell、C/Python/Rust 绑定。
 
-## 快速开始（Demo）
-> Demo 模式用于本地测试；生产环境请启用 TLS + 预置 pin + KT 签名校验。
+项目边界：
 
-### 1) 准备服务端
-1. 复制 `server/config.example.ini` 到 `config.ini`。
-2. Demo 模式：`[mode] mode=1`（MySQL 用 `mode=0`）。
-3. TLS（建议保持开启）：
-   - `tls_enable=1`
-   - `require_tls=1`
-   - `tls_cert=mi_e2ee_server.pfx`（Windows 上若不存在会自动生成自签 PFX）
-4. Key Transparency 签名密钥（必需）：
-   - `kt_signing_key=kt_signing_key.bin`
-   - 该文件为 ML-DSA65 私钥（4032 字节）。若文件不存在，服务端首次启动会自动生成，并在同目录写入 `kt_root_pub.bin`。
-5. 启动：运行 `mi_e2ee_server.exe`（保持窗口开启）。
+- 适合安全研究、非商业集成验证和端到端加密通信原型。
+- 不保证防御终端被 root/admin 完全控制、驱动级 hook、内核级恶意软件、外部摄像或虚拟机外部抓屏。
+- 生产部署应启用 TLS、证书 pin、Key Transparency 签名校验、敏感日志禁用和严格配置权限。
 
-### 2) 准备客户端
-1. 复制 `client/client_config.example.ini` 到 `client_config.ini`。
-2. 必填项：
-   - `server_ip` / `server_port`
-   - `use_tls=1` + `require_tls=1`
-   - `tls_verify_mode=pin|ca|hybrid`（pin 需 `pinned_fingerprint` 或信任库条目；hybrid 可选指纹，设置后强校验）
-   - `tls_ca_bundle_path=`（ca/hybrid 可选；为空使用系统/默认 CA）
-   - `require_pinned_fingerprint=1` + `pinned_fingerprint=...`（legacy / pin；hybrid 可选 pin）
-   - `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
-3. 运行 `mi_e2ee.exe`，用 `test_user.txt` 中的账号登录。
+## 项目结构
 
-### TLS 指纹获取（pinned_fingerprint）
-PowerShell 示例（输出 64 位 hex）：
-```powershell
-$cert = Get-PfxCertificate -FilePath .\mi_e2ee_server.pfx
-$der = $cert.Export('Cert')
-$hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace("-", "").ToLower()
-$hash
+```text
+core/
+├── server/          服务端、TCP/KCP 网关、转发、离线消息/文件、ops health
+├── client/          客户端核心库、SDK、Qt Quick UI、Windows native hardening
+├── runtime/         客户端运行时服务、消息、同步、存储、安全、媒体
+├── platform/        Windows/POSIX/Android 平台抽象
+├── shard/           共享安全类型、媒体帧、OPAQUE Rust bridge
+├── android/         Android JNI、Compose UI
+├── app_flutter/     Flutter 跨端客户端壳
+├── ios_root_app/    iOS RootAuth simulator 示例
+├── third_party/     直接 vendored 的第三方代码和 SBOM/lock
+└── tools/           打包、隐私保护、IME、辅助工具
 ```
 
-### Key Transparency 密钥生成（kt_signing_key / kt_root_pub）
-- 服务端首次启动会自动生成 `kt_signing_key.bin` 与 `kt_root_pub.bin`（同目录）。
-- 手工生成或轮换（可覆盖已有文件）：
-  - `mi_e2ee_kt_keygen --out-dir .`
-  - 或 `mi_e2ee_kt_keygen --sk <path> --pk <path> --force`
-- 客户端 `root_pubkey_path` 指向公钥文件（强制校验）。
+## 架构
 
-## 构建与测试
-### 服务端
-```powershell
-cmake -S server -B build/server
-cmake --build build/server --config Release
-ctest --output-on-failure --test-dir build/server
+```text
+┌─────────────┐      密文/控制面      ┌─────────────┐
+│  Client UI  │ ───────────────────▶ │   Server    │
+│ Qt/Android/ │                      │ TCP/KCP/TLS │
+│ iOS/Flutter │ ◀─────────────────── │ Gateway     │
+└──────┬──────┘      密文/离线数据    └──────┬──────┘
+       │                                      │
+       ▼                                      ▼
+┌─────────────┐                      ┌─────────────┐
+│ Client Core │                      │ Auth/KT/    │
+│ SDK/Runtime │                      │ Offline/File│
+└──────┬──────┘                      └─────────────┘
+       │
+       ▼
+┌─────────────┐
+│ shard/      │
+│ platform/   │
+└─────────────┘
 ```
 
-### 客户端（UI 默认开启）
-```powershell
-cmake -S client -B build/client
-cmake --build build/client --config Release
-ctest --output-on-failure --test-dir build/client
+主要数据流：
+
+1. 客户端通过 PAKE 完成认证，服务端不接触明文口令。
+2. 客户端协商会话密钥，消息层使用 ratchet 派生并用 AEAD 加密。
+3. 群聊通过 Sender Key 管理群消息密钥，成员变更或阈值触发轮换。
+4. 服务端只负责密文转发、离线密文存储、文件密文存储和透明日志发布。
+5. 客户端展示明文前执行本地环境门禁，风险状态下不释放 UI 明文。
+
+## 如何配置
+
+Demo 模式可用于本地验证。生产环境必须启用 TLS、证书 pin、Key Transparency 签名校验，禁用敏感日志，并限制配置文件权限。
+
+### 服务端配置
+
+```ini
+[mode]
+mode=1
+
+[server]
+list_port=7000
+tls_enable=1
+require_tls=1
+tls_cert=mi_e2ee_server.pfx
+offline_dir=offline_store
+debug_log=0
+
+[kt]
+require_signature=1
+kt_signing_key=kt_signing_key.bin
 ```
-回归不稳定定位可用：`tools/run_client_secure_flaky_repro.ps1`（默认循环执行 `device_sync_ratchet_test` 与 `sdk_c_api_e2e_test`）。
-Linux 可选依赖：安装 `libavcodec` / `libavutil` / `libswscale` 可启用 H264 编解码，否则回退 RAW。
-macOS 使用 VideoToolbox/AVFoundation H264 编解码（系统自带，无需额外依赖）。
 
-### 关闭 UI（仅核心库）
-```powershell
-cmake -S client -B build/client -DMI_E2EE_BUILD_UI=OFF
+首次启动时，如果 `kt_signing_key.bin` 不存在，服务端会生成 KT 签名私钥和 `kt_root_pub.bin`。
+
+### 客户端配置
+
+```ini
+[client]
+server_ip=127.0.0.1
+server_port=7000
+use_tls=1
+require_tls=1
+tls_verify_mode=pin
+require_pinned_fingerprint=1
+pinned_fingerprint=<sha256-cert-fingerprint>
+
+[kt]
+require_signature=1
+root_pubkey_path=kt_root_pub.bin
 ```
 
-### Android（JNI/Compose）
-1. 构建 OpenSSL（建议）：
-   - `tools/build_android_openssl.sh --ndk <NDK路径> --out <输出目录>`
-   - 默认输出可用 `build/openssl/android`（会被自动识别）
-2. 传入 OpenSSL 根目录：
-   - 环境变量：`MI_E2EE_ANDROID_OPENSSL_ROOT`
-   - 或 Gradle 属性：`-PmiE2eeAndroidOpenSslRoot=<路径>`
-3. 运行 JNI 冒烟测试（需设备/模拟器）：
-   - `cd android; .\gradlew.bat :app:connectedAndroidTest`
-4. 如需临时允许 TLS stub（仅调试/测试）：
-   - `MI_E2EE_ANDROID_ALLOW_TLS_STUB=1`
+服务端关键项：
 
-## 性能评估基准环境
-- PC：Intel i3 8 代 CPU，8GB 内存环境
-- Android：骁龙 888，4GB 内存环境
+- `mode=0|1`：MySQL 或 demo file。
+- `mysql_ip/mysql_port/mysql_database/mysql_username/mysql_password`：MySQL 模式必填。
+- `tls_enable=1` 与 `require_tls=1`：生产建议强制。
+- `ops_enable=0`：运维接口默认关闭；开启时必须设置高熵 `ops_token`。
+- `offline_dir`：应只允许服务账号读写。
+- `debug_log=0`：生产禁用。
 
-## 配置要点（摘要）
-服务端 `config.ini`：
-- `mode=0/1`（mysql/demo）
-- `tls_enable=1` + `require_tls=1`
-- `tls_cert=mi_e2ee_server.pfx`
-- `kt_signing_key=kt_signing_key.bin`
-- `offline_dir=offline_store`
-- `state_backend=file|mysql|sql`（MySQL 兼容库，如 MariaDB/TiDB；状态表为单表 blob，便于迁移至兼容 SQL/半结构化 SQL 数据库）
-- `metadata_protection` / `metadata_key_path`（元数据密钥保护与落地路径）
+客户端关键项：
 
-客户端 `client_config.ini`：
-- `use_tls=1` + `require_tls=1`
-- `tls_verify_mode=pin|ca|hybrid`（pin 需 `pinned_fingerprint` 或信任库条目；hybrid 可选指纹）
-- `tls_ca_bundle_path=`（ca/hybrid 可选；为空使用系统/默认 CA）
-- `require_pinned_fingerprint=1` + `pinned_fingerprint=...`（legacy / pin；hybrid 可选 pin）
-- `[kt] require_signature=1` + `root_pubkey_path=kt_root_pub.bin`
-- `[traffic] cover_traffic_enabled=1`
-- `[device_sync] ratchet_enable=1` + `ratchet_max_skip=2048`
+- `tls_verify_mode=pin|ca|hybrid`。
+- `trust_store=server_trust.ini`。
+- `[device_sync] enabled=0|1`，linked 设备应使用独立同步密钥。
+- `MI_E2EE_HARDENING=off|low|medium|high`，Release 默认 high。
+- `MI_E2EE_SENSITIVE_MODE=1` 或 `MI_E2EE_NO_HISTORY=1` 可禁用历史落盘。
 
-运行时环境变量：
-- `MI_E2EE_HARDENING=off|low|medium|high`（或 `MI_E2EE_HARDENING_LEVEL`，默认 high）
-- 硬化等级行为：low=仅基础进程缓解；medium=增加调试器检测；high=调试器+硬件断点检测+`.text`完整性扫描
-- `MI_E2EE_HARDENING_POLL_MS`（或 `MI_E2EE_HARDENING_INTERVAL_MS`，默认 5000ms）：低频检测周期
-- `MI_E2EE_SENSITIVE_MODE=1`（或 `MI_E2EE_NO_HISTORY=1`：禁止历史落盘并清理本地缓存）
-- `MI_E2EE_SECCOMP=1`（Linux + libseccomp 可选；启用基础 seccomp denylist）
-- `MI_E2EE_MAC_REQUIRE_SIGNATURE=1`（macOS：强制代码签名有效）
-- `MI_E2EE_MAC_REQUIRE_SANDBOX=1`（macOS：强制 app sandbox entitlement）
+### Linux 可选依赖
 
-## CI
-GitHub Actions：`.github/workflows/ci.yml`
-- Windows 构建默认生成自签 TLS 证书并执行 Debug/Release 测试。
-- Android 构建在进入 Gradle 前会执行 OPAQUE 依赖预检（`MI_E2EE_OPAQUE_LIB` 必填且文件必须存在）。
+本地 Linux 环境缺少以下可选依赖时，相关能力会降级或关闭：
 
-## 安全治理流程
-- 首次 Pin 信任与审计闭环：`docs/security/first_pin_trust_audit.md`
-- 季度对抗演练（IDA/动态调试/抓包）：`docs/security/quarterly_adversarial_drill.md`
+- `libsecret-1-dev`：系统安全存储集成。
+- `libseccomp-dev`：基础 seccomp denylist。
+- FFmpeg development packages：H264/媒体编解码；缺失时回退 RAW 或禁用对应路径。
 
-## 贡献与反馈
-- 提交遵循 Conventional Commits
-- PR 需包含变更摘要与测试结果
+## 许可证
 
-## 致谢
-- 离线图片超清基于 Real-ESRGAN（ncnn 预训练模型），感谢 xinntao 与社区贡献。
+### 项目自有代码
 
-## License
-本项目使用 PolyForm Noncommercial License 1.0.0（见 `LICENSE`）。
-允许个人非商业使用、拉取、修改、创建分支；商业使用需作者书面许可。
+除下方第三方组件和文件内另有声明外，本仓库自有代码使用 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)，许可证全文见 `LICENSE`。
+
+适用范围包括：
+
+- `server/`、`client/`、`runtime/`、`platform/`、`shard/` 中的项目自研 C/C++/Rust bridge 代码。
+- `android/` 中的项目自研 JNI、Kotlin、Compose UI 和测试代码，第三方资源除外。
+- `app_flutter/` 中的项目自研 Dart/Flutter 代码，第三方字体/包除外。
+- `ios_root_app/` 中的项目自研 Swift 示例代码。
+- `tools/`、`.github/`、配置模板、打包脚本和测试脚本。
+
+禁止商业用途，包括但不限于：
+
+- 作为商业产品、SaaS、企业内部商业系统或付费交付项目的一部分使用。
+- 将项目自有代码集成到闭源或商业发行包。
+- 为客户部署、托管、改造、二次销售或提供收费支持。
+
+商业使用需要作者或权利人单独书面授权。
+
+### 第三方代码和资源
+
+第三方组件不被本项目的 PolyForm Noncommercial 许可证重新授权。它们继续适用各自上游许可证。使用、分发或修改这些组件时，需要同时满足上游许可证和本项目自有代码许可证。
+
+## 第三方组件
+
+| 组件 | 用途/路径 | 上游许可证 | 已验证地址 |
+| --- | --- | --- | --- |
+| Monocypher | `third_party/monocypher`，基础密码学实现 | BSD-2-Clause OR CC0-1.0 | <https://monocypher.org/> |
+| miniz | `third_party/miniz`，ZIP/deflate | public domain / Unlicense style notice | <https://github.com/richgel999/miniz> |
+| KCP | `third_party/kcp`，KCP ARQ 协议 | MIT | <https://github.com/skywind3000/kcp> |
+| QR Code generator | `third_party/qrcodegen`，KT/登录二维码工具 | MIT | <https://www.nayuki.io/page/qr-code-generator-library> |
+| ed25519 | `third_party/ed25519`，Ed25519 C 实现 | Zlib | <https://github.com/orlp/ed25519> |
+| PQClean | `third_party/pqclean_*`，ML-KEM/ML-DSA clean 实现 | CC0-1.0 AND MIT | <https://github.com/PQClean/PQClean> |
+| OpenSSL | POSIX TLS、Android TLS 构建 | OpenSSL/Apache-2.0 family,按所用版本 | <https://www.openssl.org/> |
+| Qt 6 | Windows Qt Quick UI | Qt distribution license,通常 LGPL/GPL/商业授权之一 | <https://www.qt.io/> |
+| Flutter / Dart | `app_flutter/` 客户端壳 | Flutter/Dart SDK licenses | <https://flutter.dev/> |
+| AndroidX / Jetpack Compose | `android/` UI 与测试依赖 | AndroidX/Google Maven artifact licenses | <https://developer.android.com/jetpack/androidx> |
+| Kotlin | Android Gradle/Kotlin 代码 | Kotlin project licenses | <https://kotlinlang.org/> |
+| ZXing | Android QR code support | Apache-2.0 | <https://github.com/zxing/zxing> |
+| opaque-ke | `shard/opaque_pake` Rust OPAQUE crate | Apache-2.0 OR MIT | <https://github.com/facebook/opaque-ke>, <https://docs.rs/opaque-ke/4.1.0-pre.1/opaque_ke/> |
+| Rust crates | `argon2`、`bincode`、`rand`、`serde`、`sha2` 等 | 见 `shard/opaque_pake/Cargo.lock` 和 crate metadata | <https://docs.rs/argon2>, <https://docs.rs/bincode>, <https://docs.rs/rand>, <https://docs.rs/serde>, <https://docs.rs/sha2> |
+| librime | Windows IME bridge API | BSD-3-Clause | <https://github.com/rime/librime> |
+| rime-luna-pinyin | Rime 拼音词库/配置 | LGPL-3.0 | <https://github.com/rime/rime-luna-pinyin> |
+| rime-ice | 雾凇拼音词库/配置 | GPL-3.0-only | <https://github.com/iDvel/rime-ice> |
+| English word lists | 英文输入词库生成源 | MIT/各源许可证 | <https://github.com/en-wl/wordlist>, <https://github.com/shewer/rime-english> |
+| 3dicons | Android UI 图标资源 | CC0-1.0 | <https://3dicons.co/> |
+| FFmpeg | 可选媒体运行时/Windows 打包下载 | 取决于所用构建，LGPL/GPL 组合 | <https://ffmpeg.org/>, <https://github.com/BtbN/FFmpeg-Builds> |
+| Real-ESRGAN | 可选离线图片超清运行时 | BSD-3-Clause | <https://github.com/xinntao/Real-ESRGAN> |
+| ncnn | Real-ESRGAN ncnn Vulkan 推理后端 | BSD-3-Clause | <https://github.com/Tencent/ncnn> |
+| CMake | 构建系统 | BSD-3-Clause | <https://cmake.org/> |
+| Rust | OPAQUE bridge 构建工具链 | MIT OR Apache-2.0 | <https://www.rust-lang.org/> |
+
+更细的 vendored 文件清单见 `third_party/third_party.lock` 和 `third_party/third_party.sbom.json`。移动端、Flutter、Rust 的传递依赖以对应 lockfile 为准。
+
+## 鸣谢
+
+本项目的协议设计和工程实现参考或受益于以下公开工作：
+
+- [RFC 9807 OPAQUE](https://www.rfc-editor.org/rfc/rfc9807)：OPAQUE aPAKE 协议。
+- [Signal Double Ratchet specification](https://signal.org/docs/specifications/doubleratchet/)：异步消息前向/后向安全设计参考。
+- [Signal private group messaging](https://signal.org/blog/private-groups/)：群组与 sender-key 类设计思路参考。
+- [Google Key Transparency](https://github.com/google/keytransparency)：公开可审计密钥目录与 Merkle 透明日志思路参考。
+- [PQClean](https://github.com/PQClean/PQClean)、[Monocypher](https://monocypher.org/)、[OpenSSL](https://www.openssl.org/) 和 Rust Crypto 生态为密码学实现提供基础。
+- [Rime](https://github.com/rime/librime)、[rime-luna-pinyin](https://github.com/rime/rime-luna-pinyin)、[rime-ice](https://github.com/iDvel/rime-ice) 为中文输入体验提供词库和 IME 生态。
+- [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)、[ncnn](https://github.com/Tencent/ncnn)、[FFmpeg](https://ffmpeg.org/) 为可选媒体能力提供工程基础。
+- [Qt](https://www.qt.io/)、[Android Developers](https://developer.android.com/)、[Apple iOS Developer](https://developer.apple.com/ios/) 和 [Flutter](https://flutter.dev/) 的平台文档与工具链支撑跨端 UI。
+
+上述链接已在 2026-04-27 UTC 写入 README 前重新验证。

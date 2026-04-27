@@ -1,7 +1,7 @@
 #include "platform_tls.h"
 
-#include <openssl/bn.h>
 #include <openssl/err.h>
+#include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 #include <openssl/rsa.h>
@@ -296,34 +296,19 @@ bool GenerateSelfSigned(const std::filesystem::path& out_path,
     std::filesystem::create_directories(dir, ec);
   }
 
-  EVP_PKEY* pkey = EVP_PKEY_new();
-  if (!pkey) {
-    error = "EVP_PKEY_new failed";
-    return false;
-  }
-
-  RSA* rsa = RSA_new();
-  BIGNUM* e = BN_new();
-  if (!rsa || !e || BN_set_word(e, RSA_F4) != 1 ||
-      RSA_generate_key_ex(rsa, 2048, e, nullptr) != 1) {
-    if (e) {
-      BN_free(e);
+  EVP_PKEY* pkey = nullptr;
+  EVP_PKEY_CTX* keygen = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
+  if (!keygen || EVP_PKEY_keygen_init(keygen) != 1 ||
+      EVP_PKEY_CTX_set_rsa_keygen_bits(keygen, 2048) != 1 ||
+      EVP_PKEY_keygen(keygen, &pkey) != 1 || !pkey) {
+    EVP_PKEY_CTX_free(keygen);
+    if (pkey) {
+      EVP_PKEY_free(pkey);
     }
-    if (rsa) {
-      RSA_free(rsa);
-    }
-    EVP_PKEY_free(pkey);
     error = GetOpenSslError();
     return false;
   }
-  BN_free(e);
-
-  if (EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
-    RSA_free(rsa);
-    EVP_PKEY_free(pkey);
-    error = "EVP_PKEY_assign_RSA failed";
-    return false;
-  }
+  EVP_PKEY_CTX_free(keygen);
 
   X509* cert = X509_new();
   if (!cert) {
