@@ -14,6 +14,7 @@ MI E2EE 是一个公开源码、非商业许可的端到端加密即时通信项
 - [项目结构](#项目结构)
 - [架构](#架构)
 - [如何配置](#如何配置)
+- [CI Release 编译](#ci-release-编译)
 - [许可证](#许可证)
 - [第三方组件](#第三方组件)
 - [鸣谢](#鸣谢)
@@ -144,6 +145,71 @@ root_pubkey_path=kt_root_pub.bin
 - `[device_sync] enabled=0|1`，linked 设备应使用独立同步密钥。
 - `MI_E2EE_HARDENING=off|low|medium|high`，Release 默认 high。
 - `MI_E2EE_SENSITIVE_MODE=1` 或 `MI_E2EE_NO_HISTORY=1` 可禁用历史落盘。
+
+## CI Release 编译
+
+GitHub Actions 的 `ci` workflow 会用 Release 配置构建 Windows 客户端/服务端包、Linux/macOS 包、Android APK，并运行 Windows `.cmd` 脚本 smoke、Android emulator、包隐私检查和 final acceptance。用于正式发包时，建议手动触发一次 workflow，而不是只依赖默认 push 构建。
+
+触发方式：
+
+1. 打开 GitHub 仓库的 `Actions` 页面。
+2. 选择 `ci` workflow。
+3. 点击 `Run workflow`，选择要构建的分支，例如 `e2ee_dev`。
+4. 填写下面的输入项后启动。
+
+推荐填写：
+
+```text
+server_host=<用于 CI 测试的服务器域名或 IP，通常可填 127.0.0.1>
+server_port=0
+client_server_host=<用户客户端实际连接的服务器域名或公网 IP>
+client_server_port=<用户客户端实际连接的服务器端口，例如 9000>
+skip_e2e=0
+skip_android_tests=0
+```
+
+如果希望用户下载客户端后开箱即用，必须填写 `client_server_host` 和 `client_server_port`。这两个值会写入发布包内的 `config/client_config.ini`，该文件会以 `MI_E2EE_CLIENT_CONFIG_V1` 格式加密，不是明文 ini。不要只依赖默认值；默认会指向 `127.0.0.1:9000`，只适合本机验证。
+
+产物名称：
+
+- Windows 客户端：`mi_e2ee_client`
+- Windows 服务端：`mi_e2ee_server`
+- Linux 客户端：`mi_e2ee_client_linux`
+- Linux 服务端：`mi_e2ee_server_linux`
+- Android Release APK：`mi_e2ee_android_release`
+- Android RootAuth Release APK：`mi_e2ee_android_rootauth_release`
+
+### CI 证书与客户端 pin
+
+当前 workflow 不通过输入项接收外部证书文件，也不要把私钥、PFX 密码或证书内容粘到 `workflow_dispatch` 输入框。打包脚本会在 CI 内为发布包生成服务端证书：
+
+- Windows 服务端包：`config/mi_e2ee_server.pfx`
+- POSIX 服务端包：`config/mi_e2ee_server.pem`
+
+CI 会计算该证书的 SHA-256 指纹，并用 `mi_e2ee_client_config_tool` 写入客户端加密配置：
+
+```ini
+tls_verify_mode=pin
+require_pinned_fingerprint=1
+pinned_fingerprint=<CI 生成的服务端证书指纹>
+```
+
+因此，开箱即用的正确发布方式是：同一次 CI run 下载并部署匹配的服务端包和客户端包。不要在部署后重新生成或替换服务端证书；否则客户端内置 pin 会与服务器证书不一致，连接会失败。
+
+如果服务器已经用 `configure_server.sh` / `configure_server.cmd` 导入了自己的正式证书，需要在最终证书确定后重新生成客户端配置：
+
+```bash
+./configure_server.sh
+# 选择 8 查看当前证书 fingerprint，或选择 5 旋转客户端 pin
+```
+
+Windows 使用：
+
+```cmd
+configure_server.cmd
+```
+
+也可以用客户端包中的 `mi_e2ee_client_config_tool` 重新写入加密配置，填入服务器地址、端口和最终证书指纹。重新配置后再分发客户端包。
 
 ### Linux 可选依赖
 
