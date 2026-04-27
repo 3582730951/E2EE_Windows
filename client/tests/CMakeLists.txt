@@ -108,6 +108,17 @@ endif()
 
 add_test(NAME client_config_tls_test COMMAND client_config_tls_test)
 
+add_executable(client_config_encryption_test
+    client_config_encryption_test.cpp
+)
+
+target_link_libraries(client_config_encryption_test PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(client_config_encryption_test)
+endif()
+
+add_test(NAME client_config_encryption_test COMMAND client_config_encryption_test)
+
 add_executable(client_trust_store_test
     client_trust_store_test.cpp
 )

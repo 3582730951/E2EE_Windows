@@ -76,6 +76,7 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
                           std::vector<std::uint8_t>& enc_buf,
                           std::vector<std::uint8_t>& plain_buf,
                           std::size_t& plain_off,
+                          std::vector<std::uint8_t>& plain_chunk,
                           std::vector<std::uint8_t>& out_frame) {
   out_frame.clear();
   if (plain_off > plain_buf.size()) {
@@ -83,7 +84,6 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
     plain_off = 0;
   }
 
-  std::vector<std::uint8_t> plain_chunk;
   while (true) {
     const std::size_t avail =
         plain_buf.size() >= plain_off ? (plain_buf.size() - plain_off) : 0;
@@ -97,9 +97,8 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
       (void)type;
       const std::size_t total = kFrameHeaderSize + payload_len;
       if (avail >= total) {
-        out_frame.assign(plain_buf.begin() + static_cast<std::ptrdiff_t>(plain_off),
-                         plain_buf.begin() +
-                             static_cast<std::ptrdiff_t>(plain_off + total));
+        out_frame.resize(total);
+        std::memcpy(out_frame.data(), plain_buf.data() + plain_off, total);
         plain_off += total;
         if (plain_off >= plain_buf.size()) {
           plain_buf.clear();
@@ -115,7 +114,9 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
       }
     }
 
-    if (!mi::platform::tls::ServerDecryptToPlain(sock, ctx, enc_buf, plain_chunk)) {
+    plain_chunk.clear();
+    if (!mi::platform::tls::ServerDecryptToPlain(sock, ctx, enc_buf,
+                                                 plain_chunk)) {
       return false;
     }
     if (!plain_chunk.empty()) {
@@ -184,11 +185,14 @@ struct NetworkServer::Connection {
   std::vector<std::uint8_t> send_buf;
   std::size_t send_off{0};
   std::vector<std::uint8_t> response_buf;
+  std::vector<std::uint8_t> read_tmp;
+  std::vector<std::uint8_t> plain_tmp;
+  std::vector<std::uint8_t> frame_tmp;
+  std::vector<std::uint8_t> tls_tmp;
   struct TlsState {
     bool handshake_done{false};
     mi::platform::tls::ServerContext ctx;
     std::vector<std::uint8_t> enc_in;
-    std::vector<std::uint8_t> enc_tmp;
 
     ~TlsState() { mi::platform::tls::Close(ctx); }
   };
@@ -350,13 +354,13 @@ class NetworkServer::Reactor {
     std::string tls_err;
     bool done = false;
     if (!mi::platform::tls::ServerHandshakeStep(
-            server_->tls_->cred, tls.ctx, tls.enc_in, tls.enc_tmp, done,
+            server_->tls_->cred, tls.ctx, tls.enc_in, conn->tls_tmp, done,
             tls_err)) {
       return false;
     }
-    if (!tls.enc_tmp.empty()) {
-      conn->send_buf.insert(conn->send_buf.end(), tls.enc_tmp.begin(),
-                            tls.enc_tmp.end());
+    if (!conn->tls_tmp.empty()) {
+      conn->send_buf.insert(conn->send_buf.end(), conn->tls_tmp.begin(),
+                            conn->tls_tmp.end());
     }
     if (done) {
       tls.handshake_done = true;
@@ -372,7 +376,8 @@ class NetworkServer::Reactor {
     if (tls.enc_in.empty()) {
       return true;
     }
-    std::vector<std::uint8_t> plain;
+    auto& plain = conn->plain_tmp;
+    plain.clear();
     bool need_more = false;
     if (!mi::platform::tls::ServerDecryptBuffer(tls.ctx, tls.enc_in, plain,
                                                 need_more)) {
@@ -389,7 +394,8 @@ class NetworkServer::Reactor {
     if (!conn || !conn->tls || !conn->tls->handshake_done) {
       return false;
     }
-    auto& tmp = conn->tls->enc_tmp;
+    auto& tmp = conn->tls_tmp;
+    tmp.clear();
     if (!mi::platform::tls::ServerEncryptBuffer(conn->tls->ctx, plain, tmp)) {
       return false;
     }
@@ -404,11 +410,16 @@ class NetworkServer::Reactor {
       return;
     }
     if (conn->tls) {
-      std::uint8_t tmp[4096];
+      auto& tmp = conn->read_tmp;
+      if (tmp.empty()) {
+        tmp.resize(4096);
+      }
       for (;;) {
-        const int n = RecvRaw(conn->sock, tmp, sizeof(tmp));
+        const int n = RecvRaw(conn->sock, tmp.data(), tmp.size());
         if (n > 0) {
-          conn->tls->enc_in.insert(conn->tls->enc_in.end(), tmp, tmp + n);
+          conn->tls->enc_in.insert(conn->tls->enc_in.end(), tmp.begin(),
+                                   tmp.begin() +
+                                       static_cast<std::ptrdiff_t>(n));
           continue;
         }
         if (n == 0) {
@@ -433,11 +444,16 @@ class NetworkServer::Reactor {
         return;
       }
     } else {
-      std::uint8_t tmp[4096];
+      auto& tmp = conn->read_tmp;
+      if (tmp.empty()) {
+        tmp.resize(4096);
+      }
       for (;;) {
-        const int n = RecvRaw(conn->sock, tmp, sizeof(tmp));
+        const int n = RecvRaw(conn->sock, tmp.data(), tmp.size());
         if (n > 0) {
-          conn->recv_buf.insert(conn->recv_buf.end(), tmp, tmp + n);
+          conn->recv_buf.insert(conn->recv_buf.end(), tmp.begin(),
+                                tmp.begin() +
+                                    static_cast<std::ptrdiff_t>(n));
           continue;
         }
         if (n == 0) {
@@ -630,11 +646,14 @@ class NetworkServer::IocpEngine {
       return;
     }
     conn->recv_buf.reserve(8192);
+    conn->read_tmp.resize(4096);
+    conn->plain_tmp.reserve(8192);
+    conn->frame_tmp.reserve(8192);
+    conn->tls_tmp.reserve(8192);
     conn->iocp_recv_tmp.resize(4096);
     if (server_ && server_->tls_enable_ && server_->tls_) {
       conn->tls = std::make_unique<Connection::TlsState>();
       conn->tls->enc_in.reserve(8192);
-      conn->tls->enc_tmp.reserve(8192);
       conn->send_buf.reserve(8192);
     }
     {
@@ -831,13 +850,13 @@ class NetworkServer::IocpEngine {
     std::string tls_err;
     bool done = false;
     if (!mi::platform::tls::ServerHandshakeStep(
-            server_->tls_->cred, tls.ctx, tls.enc_in, tls.enc_tmp, done,
+            server_->tls_->cred, tls.ctx, tls.enc_in, conn->tls_tmp, done,
             tls_err)) {
       return false;
     }
-    if (!tls.enc_tmp.empty()) {
-      conn->send_buf.insert(conn->send_buf.end(), tls.enc_tmp.begin(),
-                            tls.enc_tmp.end());
+    if (!conn->tls_tmp.empty()) {
+      conn->send_buf.insert(conn->send_buf.end(), conn->tls_tmp.begin(),
+                            conn->tls_tmp.end());
     }
     if (done) {
       tls.handshake_done = true;
@@ -853,7 +872,8 @@ class NetworkServer::IocpEngine {
     if (tls.enc_in.empty()) {
       return true;
     }
-    std::vector<std::uint8_t> plain;
+    auto& plain = conn->plain_tmp;
+    plain.clear();
     bool need_more = false;
     if (!mi::platform::tls::ServerDecryptBuffer(tls.ctx, tls.enc_in, plain,
                                                 need_more)) {
@@ -870,7 +890,8 @@ class NetworkServer::IocpEngine {
     if (!conn || !conn->tls || !conn->tls->handshake_done) {
       return false;
     }
-    auto& tmp = conn->tls->enc_tmp;
+    auto& tmp = conn->tls_tmp;
+    tmp.clear();
     if (!mi::platform::tls::ServerEncryptBuffer(conn->tls->ctx, plain, tmp)) {
       return false;
     }
@@ -1466,12 +1487,13 @@ void NetworkServer::Run() {
               return;
             }
             std::vector<std::uint8_t> plain_buf;
+            std::vector<std::uint8_t> plain_tmp;
             std::size_t plain_off = 0;
             std::vector<std::uint8_t> request;
             std::vector<std::uint8_t> response;
             while (running_.load()) {
               if (!TlsReadFrameBuffered(client, ctx, enc_buf, plain_buf,
-                                        plain_off, request)) {
+                                        plain_off, plain_tmp, request)) {
                 break;
               }
               bytes_total += request.size();

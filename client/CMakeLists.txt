@@ -8,6 +8,8 @@ option(MI_E2EE_BUILD_UI "Build Qt Quick UI demo" ON)
 option(MI_E2EE_BUILD_DEMO_CLIENT "Build demo client CLI" OFF)
 option(MI_E2EE_BUILD_LEGACY_UI "Build legacy Qt widget/demo UIs" OFF)
 option(MI_E2EE_BUILD_SDK_SHARED "Build shared C SDK library for bindings" ON)
+set(MI_E2EE_CLIENT_CONFIG_KEY_HEX "" CACHE STRING
+    "Optional 64-hex package key used to encrypt bundled client_config.ini")
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
@@ -108,6 +110,8 @@ set(MI_E2EE_CLIENT_CORE_SOURCES
     ../runtime/client/auth/auth_service.cpp
     ../runtime/client/auth/e2ee_engine.cpp
     ../runtime/client/config/client_config.cpp
+    ../runtime/client/config/client_config_crypto.cpp
+    ../runtime/client/config/client_config_tool.cpp
     ../runtime/client/config/config_service.cpp
     ../runtime/client/messaging/client_messaging.cpp
     ../runtime/client/messaging/messaging_service.cpp
@@ -185,6 +189,10 @@ foreach(target IN LISTS MI_E2EE_CLIENT_CORE_TARGETS)
   target_link_libraries(${target} PUBLIC mi_e2ee_core)
   target_link_libraries(${target} PUBLIC mi_e2ee_build_flags)
   target_link_libraries(${target} PRIVATE monocypher miniz pqclean_mlkem768_clean pqclean_mldsa65_clean kcp)
+  if(NOT "${MI_E2EE_CLIENT_CONFIG_KEY_HEX}" STREQUAL "")
+    target_compile_definitions(${target} PRIVATE
+        MI_E2EE_CLIENT_CONFIG_KEY_HEX="${MI_E2EE_CLIENT_CONFIG_KEY_HEX}")
+  endif()
   if(WIN32)
     target_link_libraries(${target} PUBLIC ws2_32 secur32 crypt32 bcrypt advapi32 ncrypt
         mfplat mf mfreadwrite mfuuid ole32 psapi)
@@ -220,6 +228,14 @@ foreach(target IN LISTS MI_E2EE_CLIENT_CORE_TARGETS)
     endif()
   endif()
 endforeach()
+
+add_executable(mi_e2ee_client_config_tool
+    ../runtime/client/config/client_config_tool_main.cpp
+)
+target_link_libraries(mi_e2ee_client_config_tool PRIVATE mi_e2ee_client_core)
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_client_config_tool)
+endif()
 
 if(MI_E2EE_BUILD_DEMO_CLIENT)
   add_executable(mi_e2ee_client

@@ -29,6 +29,10 @@ std::uint32_t NowMs() {
   return static_cast<std::uint32_t>(mi::platform::NowSteadyMs());
 }
 
+bool TimeReached(std::uint32_t now, std::uint32_t target) {
+  return static_cast<std::int32_t>(now - target) >= 0;
+}
+
 std::string IpToString(const sockaddr_storage& addr, socklen_t addr_len) {
   std::string out;
   if (mi::platform::net::SockaddrToIp(
@@ -147,6 +151,7 @@ struct KcpSession {
   std::string remote_endpoint;
   std::uint64_t last_active_ms{0};
   std::uint64_t bytes_total{0};
+  std::uint32_t next_update_ms{0};
 };
 
 int KcpOutput(const char* buf, int len, ikcpcb* /*kcp*/, void* user) {
@@ -287,8 +292,33 @@ void KcpServer::Run() {
   recv_buf.resize(std::max<std::uint32_t>(options_.mtu, 1200u) + 256u);
 
   while (running_.load()) {
+    std::uint32_t wait_ms = tick_ms;
+    if (!sessions.empty()) {
+      const std::uint32_t wait_now = NowMs();
+      std::uint32_t nearest = 0;
+      bool have_nearest = false;
+      for (const auto& entry : sessions) {
+        const auto* sess = entry.second.get();
+        if (!sess) {
+          continue;
+        }
+        if (!have_nearest ||
+            TimeReached(nearest, sess->next_update_ms)) {
+          nearest = sess->next_update_ms;
+          have_nearest = true;
+        }
+      }
+      if (have_nearest) {
+        if (TimeReached(wait_now, nearest)) {
+          wait_ms = 0;
+        } else {
+          const std::uint32_t due_in = nearest - wait_now;
+          wait_ms = std::min(wait_ms, due_in);
+        }
+      }
+    }
     mi::platform::net::WaitForReadable(
-        static_cast<mi::platform::net::Socket>(sock_), tick_ms);
+        static_cast<mi::platform::net::Socket>(sock_), wait_ms);
 
     const std::uint32_t now = NowMs();
 
@@ -380,6 +410,7 @@ void KcpServer::Run() {
         if (options_.min_rto > 0) {
           sess->kcp->rx_minrto = static_cast<int>(options_.min_rto);
         }
+        sess->next_update_ms = ikcp_check(sess->kcp, now);
         it = sessions.emplace(conv, std::move(sess)).first;
         continue;
       } else {
@@ -402,13 +433,17 @@ void KcpServer::Run() {
       }
       ikcp_input(sess->kcp, reinterpret_cast<const char*>(recv_buf.data()),
                  n);
+      sess->next_update_ms = ikcp_check(sess->kcp, now);
     }
 
     for (auto it = sessions.begin(); it != sessions.end();) {
       std::vector<std::uint8_t> request;
       std::vector<std::uint8_t> response;
       auto* sess = it->second.get();
-      ikcp_update(sess->kcp, now);
+      if (TimeReached(now, sess->next_update_ms)) {
+        ikcp_update(sess->kcp, now);
+        sess->next_update_ms = ikcp_check(sess->kcp, now);
+      }
 
       bool drop = false;
       for (;;) {
@@ -448,6 +483,7 @@ void KcpServer::Run() {
                     reinterpret_cast<const char*>(response.data()),
                     static_cast<int>(response.size()));
           ikcp_flush(sess->kcp);
+          sess->next_update_ms = ikcp_check(sess->kcp, now);
         }
       }
 

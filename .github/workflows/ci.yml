@@ -15,6 +15,14 @@ on:
         description: "E2EE server port for CI tests (optional, default 0=auto)"
         required: false
         default: "0"
+      client_server_host:
+        description: "Optional packaged client server host/IP for out-of-box config"
+        required: false
+        default: ""
+      client_server_port:
+        description: "Optional packaged client server port (default 9000 when empty/0)"
+        required: false
+        default: ""
       skip_e2e:
         description: "Skip client e2e tests (default 0)"
         required: false
@@ -27,6 +35,8 @@ on:
 env:
   MI_E2EE_CI_SERVER_HOST: ${{ github.event.inputs.server_host || '127.0.0.1' }}
   MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_HOST: ${{ github.event.inputs.client_server_host || github.event.inputs.server_host || '127.0.0.1' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_PORT: ${{ github.event.inputs.client_server_port || github.event.inputs.server_port || '9000' }}
   MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '0' }}
   MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '0' }}
   MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS: "10000"
@@ -256,10 +266,19 @@ jobs:
           $overlayRoot = Join-Path $env:GITHUB_WORKSPACE "build\\rime_overlay"
           python .\\tools\\rime_dict_prepare.py --out $overlayRoot
 
+      - name: Prepare encrypted client config key
+        run: |
+          $key = New-Object byte[] 32
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($key)
+          $hex = [System.BitConverter]::ToString($key).Replace("-", "").ToLower()
+          Write-Output "::add-mask::$hex"
+          "MI_E2EE_CLIENT_CONFIG_KEY_HEX=$hex" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Configure client
         run: >
           cmake -S client -B build/client
           -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DMI_E2EE_CLIENT_CONFIG_KEY_HEX="$env:MI_E2EE_CLIENT_CONFIG_KEY_HEX"
           -DMI_E2EE_BUILD_UI=ON
           -DMI_E2EE_BUILD_DEMO_CLIENT=OFF
           -DMI_E2EE_BUILD_LEGACY_UI=OFF
@@ -305,7 +324,7 @@ jobs:
           }
 
       - name: Build client
-        run: cmake --build build/client --config Release --target mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk
+        run: cmake --build build/client --config Release --target mi_e2ee_client_ui_app mi_e2ee_client_ui mi_e2ee_launcher mi_ime_rime mi_e2ee_client_sdk mi_e2ee_client_config_tool
 
       - name: Build client e2e test
         if: env.MI_E2EE_CI_SKIP_E2E != '1'
@@ -345,7 +364,37 @@ jobs:
           -DMI_E2EE_ENABLE_LTO=OFF
 
       - name: Build server
-        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_third_party_policy_check
+        run: cmake --build build/server --config Release --target mi_e2ee_server mi_e2ee_server_launcher mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_perf_baseline mi_e2ee_business_stress mi_e2ee_third_party_policy_check
+
+      - name: Verify interactive server scripts
+        run: |
+          $ErrorActionPreference = "Stop"
+          cmd /c tools\configure_server.cmd --print-menu
+          cmd /c tools\start_server.cmd --print-menu
+
+          $work = Join-Path $env:RUNNER_TEMP "mi-e2ee-cmd-script-smoke"
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path (Join-Path $work "tools") | Out-Null
+          Copy-Item tools\configure_server.cmd (Join-Path $work "tools\configure_server.cmd") -Force
+          Copy-Item tools\start_server.cmd (Join-Path $work "tools\start_server.cmd") -Force
+          Copy-Item tools\verify_server_config.py (Join-Path $work "tools\verify_server_config.py") -Force
+          Copy-Item tools\stress_server.py (Join-Path $work "tools\stress_server.py") -Force
+          $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
+          if (-not $ktKeygen) {
+            throw "mi_e2ee_kt_keygen.exe not found"
+          }
+          Copy-Item $ktKeygen.FullName (Join-Path $work "tools\mi_e2ee_kt_keygen.exe") -Force
+
+          $configureInput = @("1", "", "1", "", "", "9") -join "`r`n"
+          $configureInput | cmd /c "$work\tools\configure_server.cmd"
+          $configPath = Join-Path $work "config\config.ini"
+          if (-not (Test-Path $configPath)) {
+            throw "configure_server.cmd did not create config.ini"
+          }
+          python "$work\tools\verify_server_config.py" --config $configPath --privacy-strict
+
+          $startInput = @("3", "", "5") -join "`r`n"
+          $startInput | cmd /c "$work\tools\start_server.cmd"
 
       - name: Verify third-party lock
         run: |
@@ -616,7 +665,15 @@ jobs:
           Write-Output "::add-mask::$($env:MI_E2EE_MYSQL_USERNAME)"
           Write-Output "::add-mask::$($env:MI_E2EE_MYSQL_PASSWORD)"
           try {
-            .\\tools\\package_windows.ps1 -BuildConfig Release
+            $pkgHost = $env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST
+            $pkgPort = $env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT
+            if ([string]::IsNullOrWhiteSpace($pkgHost)) {
+              $pkgHost = "127.0.0.1"
+            }
+            if ([string]::IsNullOrWhiteSpace($pkgPort) -or $pkgPort -eq "0") {
+              $pkgPort = "9000"
+            }
+            .\\tools\\package_windows.ps1 -BuildConfig Release -ClientServerHost $pkgHost -ClientServerPort $pkgPort
           } finally {
             Remove-Item Env:MI_E2EE_MYSQL_USERNAME -ErrorAction SilentlyContinue
             Remove-Item Env:MI_E2EE_MYSQL_PASSWORD -ErrorAction SilentlyContinue
@@ -670,17 +727,23 @@ jobs:
             "allow_insecure=0"
           ) -join "`n"
           $serverConfig | Out-File -FilePath $serverConfigPath -Encoding ascii
-          $clientConfig = Get-Content $clientConfigPath
-          $clientConfig = $clientConfig | ForEach-Object {
-            if ($_ -match '^server_ip=') {
-              "server_ip=127.0.0.1"
-            } elseif ($_ -match '^server_port=') {
-              "server_port=$port"
-            } else {
-              $_
-            }
+          $clientConfigTool = Join-Path $clientRoot "mi_e2ee_client_config_tool.exe"
+          if (-not (Test-Path $clientConfigTool)) {
+            throw "dist client config tool missing: $clientConfigTool"
           }
-          $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
+          $cert = Get-PfxCertificate -FilePath (Join-Path $serverRoot "config\\mi_e2ee_server.pfx")
+          $serverFingerprint = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash($cert.Export("Cert"))
+          ).Replace("-", "").ToLower()
+          & $clientConfigTool `
+            --config $clientConfigPath `
+            --server 127.0.0.1 `
+            --port $port `
+            --tls-mode pin `
+            --pinned-fingerprint $serverFingerprint `
+            --trust-store server_trust.ini `
+            --kt-root-pub kt_root_pub.bin `
+            --non-interactive | Out-Null
           $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
           New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"

@@ -72,6 +72,8 @@ def iter_files(root, skip_names, skip_exts):
 def read_text(path):
     with open(path, "rb") as handle:
         data = handle.read()
+    if data.startswith(b"MI_E2EE_CLIENT_CONFIG_V1\n"):
+        return ""
     if b"\0" in data[:4096]:
         return ""
     return data.decode("utf-8", errors="ignore")

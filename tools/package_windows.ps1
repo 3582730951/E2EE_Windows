@@ -3,7 +3,9 @@ param(
   [string]$Dist,
   [string]$BuildConfig = "Release",
   [string]$MysqlUsername,
-  [string]$MysqlPassword
+  [string]$MysqlPassword,
+  [string]$ClientServerHost,
+  [string]$ClientServerPort
 )
 
 $ErrorActionPreference = "Stop"
@@ -138,12 +140,34 @@ if (($mysqlUsernameValue -ieq "root") -and
   throw "weak mysql credentials are forbidden in package config"
 }
 
+$clientServerHostValue = if ($ClientServerHost) {
+  $ClientServerHost
+} elseif ($env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST) {
+  $env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST
+} else {
+  "127.0.0.1"
+}
+$clientServerPortValue = if ($ClientServerPort) {
+  $ClientServerPort
+} elseif ($env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT) {
+  $env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT
+} else {
+  "9000"
+}
+if ([string]::IsNullOrWhiteSpace($clientServerHostValue)) {
+  $clientServerHostValue = "127.0.0.1"
+}
+if ([string]::IsNullOrWhiteSpace($clientServerPortValue) -or $clientServerPortValue -eq "0") {
+  $clientServerPortValue = "9000"
+}
+
 $clientRoot = Join-Path $distRoot "mi_e2ee_client"
 $serverRoot = Join-Path $distRoot "mi_e2ee_server"
 $clientDll = Join-Path $clientRoot "dll"
 $clientConfig = Join-Path $clientRoot "config"
 $clientDb = Join-Path $clientRoot "database"
 $clientSdk = Join-Path $clientRoot "sdk"
+$clientTools = Join-Path $clientRoot "tools"
 $clientBindings = Join-Path $clientRoot "bindings"
 $clientBindingsPy = Join-Path $clientBindings "python"
 $clientBindingsRust = Join-Path $clientBindings "rust"
@@ -160,6 +184,7 @@ Ensure-Dir $clientDll
 Ensure-Dir $clientConfig
 Ensure-Dir $clientDb
 Ensure-Dir $clientSdk
+Ensure-Dir $clientTools
 Ensure-Dir $clientBindingsPy
 Ensure-Dir $clientBindingsRust
 Ensure-Dir $serverDll
@@ -210,10 +235,15 @@ $hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::C
 
 $serverExe = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_server.exe" $BuildConfig "server app"
 $serverLauncher = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_server_launcher.exe" $BuildConfig "server launcher"
+$businessStress = Find-File (Join-Path $workspace "build\\server") "mi_e2ee_business_stress.exe"
 $packageSources["server_exe"] = $serverExe
 $packageSources["server_launcher"] = $serverLauncher
 Copy-Item $serverExe (Join-Path $serverRoot "mi_e2ee_server_app.exe") -Force
 Copy-Item $serverLauncher (Join-Path $serverRoot "mi_e2ee_server.exe") -Force
+if ($businessStress) {
+  Copy-Item $businessStress (Join-Path $serverRoot "mi_e2ee_business_stress.exe") -Force
+  Copy-Item $businessStress $serverTools -Force
+}
 Copy-Item (Join-Path (Split-Path $serverExe -Parent) "*.dll") $serverDll -Force
 
 $crtNames = @(
@@ -235,6 +265,21 @@ foreach ($name in $crtNames) {
   }
 }
 Copy-Item (Join-Path $workspace "tools\\mi_e2ee_harden_acl.cmd") (Join-Path $serverRoot "mi_e2ee_harden_acl.cmd") -Force
+foreach ($helper in @(
+  "configure_server.cmd",
+  "start_server.cmd",
+  "configure_server.sh",
+  "start_server.sh",
+  "stress_server.sh",
+  "stress_server.py",
+  "verify_server_config.py"
+)) {
+  $src = Join-Path $workspace "tools\\$helper"
+  if (Test-Path $src) {
+    Copy-Item $src (Join-Path $serverRoot $helper) -Force
+    Copy-Item $src $serverTools -Force
+  }
+}
 $demoUsers = Find-File (Join-Path $workspace "build\\server") "test_user.txt"
 if ($demoUsers) {
   Assert-NotDebugPath $demoUsers "test_user"
@@ -248,6 +293,11 @@ $ktPubinfo = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_kt_
 $packageSources["kt_pubinfo"] = $ktPubinfo
 Copy-Item $ktKeygen $serverTools -Force
 Copy-Item $ktPubinfo $serverTools -Force
+
+$clientConfigTool = Find-ConfigFile (Join-Path $workspace "build\\client") "mi_e2ee_client_config_tool.exe" $BuildConfig "client config tool"
+$packageSources["client_config_tool"] = $clientConfigTool
+Copy-Item $clientConfigTool $clientRoot -Force
+Copy-Item $clientConfigTool $clientTools -Force
 
 Copy-Item (Join-Path $keysDir "kt_signing_key.bin") $serverConfig -Force
 Copy-Item (Join-Path $keysDir "kt_root_pub.bin") $serverConfig -Force
@@ -284,37 +334,15 @@ $serverConfigLines = @(
 )
 $serverConfigLines | Set-Content -Path (Join-Path $serverConfig "config.ini") -Encoding ASCII
 
-$clientConfigLines = @(
-  "[client]",
-  "server_ip=127.0.0.1",
-  "server_port=9000",
-  "use_tls=1",
-  "require_tls=1",
-  "trust_store=server_trust.ini",
-  "require_pinned_fingerprint=1",
-  "pinned_fingerprint=$hash",
-  "tls_verify_mode=pin",
-  "tls_ca_bundle_path=",
-  "tls_verify_hostname=1",
-  "auth_mode=opaque",
-  "",
-  "[proxy]",
-  "type=none",
-  "host=",
-  "port=0",
-  "username=",
-  "password=",
-  "",
-  "[device_sync]",
-  "enabled=1",
-  "role=primary",
-  "key_path=e2ee_state/device_sync_key.bin",
-  "",
-  "[kt]",
-  "require_signature=1",
-  "root_pubkey_path=kt_root_pub.bin"
-)
-$clientConfigLines | Set-Content -Path (Join-Path $clientConfig "client_config.ini") -Encoding ASCII
+& $clientConfigTool `
+  --config (Join-Path $clientConfig "client_config.ini") `
+  --server $clientServerHostValue `
+  --port $clientServerPortValue `
+  --tls-mode pin `
+  --pinned-fingerprint $hash `
+  --trust-store server_trust.ini `
+  --kt-root-pub kt_root_pub.bin `
+  --non-interactive | Out-Null
 "" | Set-Content -Path (Join-Path $clientDb "server_trust.ini") -Encoding ASCII
 
 $uiRoot = Join-Path $workspace "build\\client\\ui\\$BuildConfig"

@@ -1,9 +1,9 @@
 #include "crypto.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstring>
-#include <vector>
 
 
 #include "platform_random.h"
@@ -101,55 +101,92 @@ void ProcessChunk(const std::uint8_t chunk[64], std::uint32_t state[8]) {
   state[7] += h;
 }
 
-}  // namespace
+struct Sha256Ctx {
+  std::uint32_t state[8]{};
+  std::array<std::uint8_t, 64> buffer{};
+  std::uint64_t total_len{0};
+  std::size_t buffer_len{0};
+};
 
-void Sha256(const std::uint8_t* data, std::size_t len, Sha256Digest& out) {
-  std::uint32_t state[8];
-  std::memcpy(state, kInitState, sizeof(state));
+void Sha256Init(Sha256Ctx& ctx) {
+  std::memcpy(ctx.state, kInitState, sizeof(ctx.state));
+  ctx.buffer.fill(0);
+  ctx.total_len = 0;
+  ctx.buffer_len = 0;
+}
 
-  std::size_t full_chunks = len / 64;
-  for (std::size_t i = 0; i < full_chunks; ++i) {
-    ProcessChunk(data + i * 64, state);
+void Sha256Update(Sha256Ctx& ctx, const std::uint8_t* data, std::size_t len) {
+  if (!data || len == 0) {
+    return;
+  }
+  ctx.total_len += static_cast<std::uint64_t>(len);
+  if (ctx.buffer_len != 0) {
+    const std::size_t to_copy =
+        std::min<std::size_t>(len, ctx.buffer.size() - ctx.buffer_len);
+    std::memcpy(ctx.buffer.data() + ctx.buffer_len, data, to_copy);
+    ctx.buffer_len += to_copy;
+    data += to_copy;
+    len -= to_copy;
+    if (ctx.buffer_len == ctx.buffer.size()) {
+      ProcessChunk(ctx.buffer.data(), ctx.state);
+      ctx.buffer_len = 0;
+    }
   }
 
-  std::uint8_t buffer[128];
-  const std::size_t rem = len % 64;
-  std::memcpy(buffer, data + full_chunks * 64, rem);
-  buffer[rem] = 0x80;
-  std::size_t total = rem + 1;
+  while (len >= ctx.buffer.size()) {
+    ProcessChunk(data, ctx.state);
+    data += ctx.buffer.size();
+    len -= ctx.buffer.size();
+  }
 
-  const std::uint64_t bit_len = static_cast<std::uint64_t>(len) * 8ULL;
+  if (len != 0) {
+    std::memcpy(ctx.buffer.data(), data, len);
+    ctx.buffer_len = len;
+  }
+}
+
+void Sha256Final(Sha256Ctx& ctx, Sha256Digest& out) {
+  std::array<std::uint8_t, 128> final_block{};
+  std::memcpy(final_block.data(), ctx.buffer.data(), ctx.buffer_len);
+  final_block[ctx.buffer_len] = 0x80;
+  std::size_t total = ctx.buffer_len + 1;
+
+  const std::uint64_t bit_len = ctx.total_len * 8ULL;
   const bool need_extra_block = total > 56;
   const std::size_t pad_len = need_extra_block ? (120 - total) : (56 - total);
-  std::memset(buffer + total, 0, pad_len);
   total += pad_len;
 
-  buffer[total + 0] = static_cast<std::uint8_t>((bit_len >> 56) & 0xFF);
-  buffer[total + 1] = static_cast<std::uint8_t>((bit_len >> 48) & 0xFF);
-  buffer[total + 2] = static_cast<std::uint8_t>((bit_len >> 40) & 0xFF);
-  buffer[total + 3] = static_cast<std::uint8_t>((bit_len >> 32) & 0xFF);
-  buffer[total + 4] = static_cast<std::uint8_t>((bit_len >> 24) & 0xFF);
-  buffer[total + 5] = static_cast<std::uint8_t>((bit_len >> 16) & 0xFF);
-  buffer[total + 6] = static_cast<std::uint8_t>((bit_len >> 8) & 0xFF);
-  buffer[total + 7] = static_cast<std::uint8_t>((bit_len)&0xFF);
+  final_block[total + 0] = static_cast<std::uint8_t>((bit_len >> 56) & 0xFF);
+  final_block[total + 1] = static_cast<std::uint8_t>((bit_len >> 48) & 0xFF);
+  final_block[total + 2] = static_cast<std::uint8_t>((bit_len >> 40) & 0xFF);
+  final_block[total + 3] = static_cast<std::uint8_t>((bit_len >> 32) & 0xFF);
+  final_block[total + 4] = static_cast<std::uint8_t>((bit_len >> 24) & 0xFF);
+  final_block[total + 5] = static_cast<std::uint8_t>((bit_len >> 16) & 0xFF);
+  final_block[total + 6] = static_cast<std::uint8_t>((bit_len >> 8) & 0xFF);
+  final_block[total + 7] = static_cast<std::uint8_t>(bit_len & 0xFF);
   total += 8;
 
   const std::size_t chunk_count = total / 64;
   for (std::size_t i = 0; i < chunk_count; ++i) {
-    ProcessChunk(buffer + i * 64, state);
+    ProcessChunk(final_block.data() + i * 64, ctx.state);
   }
 
   for (int i = 0; i < 8; ++i) {
-    out.bytes[i * 4 + 0] = static_cast<std::uint8_t>((state[i] >> 24) & 0xFF);
-    out.bytes[i * 4 + 1] = static_cast<std::uint8_t>((state[i] >> 16) & 0xFF);
-    out.bytes[i * 4 + 2] = static_cast<std::uint8_t>((state[i] >> 8) & 0xFF);
-    out.bytes[i * 4 + 3] = static_cast<std::uint8_t>((state[i]) & 0xFF);
+    out.bytes[i * 4 + 0] =
+        static_cast<std::uint8_t>((ctx.state[i] >> 24) & 0xFF);
+    out.bytes[i * 4 + 1] =
+        static_cast<std::uint8_t>((ctx.state[i] >> 16) & 0xFF);
+    out.bytes[i * 4 + 2] =
+        static_cast<std::uint8_t>((ctx.state[i] >> 8) & 0xFF);
+    out.bytes[i * 4 + 3] = static_cast<std::uint8_t>(ctx.state[i] & 0xFF);
   }
 }
 
-void HmacSha256(const std::uint8_t* key, std::size_t key_len,
-                const std::uint8_t* data, std::size_t data_len,
-                Sha256Digest& out) {
+void HmacSha256TwoPart(const std::uint8_t* key, std::size_t key_len,
+                       const std::uint8_t* data1, std::size_t data1_len,
+                       const std::uint8_t* data2, std::size_t data2_len,
+                       const std::uint8_t* data3, std::size_t data3_len,
+                       Sha256Digest& out) {
   constexpr std::size_t block_size = 64;
   std::uint8_t k_ipad[block_size];
   std::uint8_t k_opad[block_size];
@@ -160,7 +197,7 @@ void HmacSha256(const std::uint8_t* key, std::size_t key_len,
     Sha256Digest hashed_key;
     Sha256(key, key_len, hashed_key);
     std::memcpy(key_block, hashed_key.bytes.data(), hashed_key.bytes.size());
-  } else {
+  } else if (key && key_len != 0) {
     std::memcpy(key_block, key, key_len);
   }
 
@@ -169,22 +206,35 @@ void HmacSha256(const std::uint8_t* key, std::size_t key_len,
     k_opad[i] = static_cast<std::uint8_t>(key_block[i] ^ 0x5c);
   }
 
-  // inner = SHA256(k_ipad || data)
-  std::vector<std::uint8_t> inner_buf;
-  inner_buf.resize(block_size + data_len);
-  std::memcpy(inner_buf.data(), k_ipad, block_size);
-  if (data_len > 0) {
-    std::memcpy(inner_buf.data() + block_size, data, data_len);
-  }
+  Sha256Ctx inner_ctx;
+  Sha256Init(inner_ctx);
+  Sha256Update(inner_ctx, k_ipad, block_size);
+  Sha256Update(inner_ctx, data1, data1_len);
+  Sha256Update(inner_ctx, data2, data2_len);
+  Sha256Update(inner_ctx, data3, data3_len);
   Sha256Digest inner_hash;
-  Sha256(inner_buf.data(), inner_buf.size(), inner_hash);
+  Sha256Final(inner_ctx, inner_hash);
 
-  // outer = SHA256(k_opad || inner_hash)
-  std::array<std::uint8_t, block_size + 32> outer_buf{};
-  std::memcpy(outer_buf.data(), k_opad, block_size);
-  std::memcpy(outer_buf.data() + block_size, inner_hash.bytes.data(),
-              inner_hash.bytes.size());
-  Sha256(outer_buf.data(), block_size + inner_hash.bytes.size(), out);
+  Sha256Ctx outer_ctx;
+  Sha256Init(outer_ctx);
+  Sha256Update(outer_ctx, k_opad, block_size);
+  Sha256Update(outer_ctx, inner_hash.bytes.data(), inner_hash.bytes.size());
+  Sha256Final(outer_ctx, out);
+}
+
+}  // namespace
+
+void Sha256(const std::uint8_t* data, std::size_t len, Sha256Digest& out) {
+  Sha256Ctx ctx;
+  Sha256Init(ctx);
+  Sha256Update(ctx, data, len);
+  Sha256Final(ctx, out);
+}
+
+void HmacSha256(const std::uint8_t* key, std::size_t key_len,
+                const std::uint8_t* data, std::size_t data_len,
+                Sha256Digest& out) {
+  HmacSha256TwoPart(key, key_len, data, data_len, nullptr, 0, nullptr, 0, out);
 }
 
 bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
@@ -214,18 +264,13 @@ bool HkdfSha256(const std::uint8_t* ikm, std::size_t ikm_len,
   std::array<std::uint8_t, 32> t{};
   std::size_t generated = 0;
   for (std::size_t i = 1; i <= n_blocks; ++i) {
-    // T = HMAC(PRK, T_prev || info || i)
-    std::vector<std::uint8_t> buf;
-    buf.reserve(hash_len + info_len + 1);
-    if (generated > 0) {
-      buf.insert(buf.end(), t.begin(), t.end());
-    }
-    if (info && info_len > 0) {
-      buf.insert(buf.end(), info, info + info_len);
-    }
-    buf.push_back(static_cast<std::uint8_t>(i));
+    const std::uint8_t counter = static_cast<std::uint8_t>(i);
     Sha256Digest h;
-    HmacSha256(prk.bytes.data(), prk.bytes.size(), buf.data(), buf.size(), h);
+    HmacSha256TwoPart(prk.bytes.data(), prk.bytes.size(),
+                      generated > 0 ? t.data() : nullptr,
+                      generated > 0 ? t.size() : 0,
+                      info, info_len,
+                      &counter, sizeof(counter), h);
     std::memcpy(t.data(), h.bytes.data(), hash_len);
 
     const std::size_t to_copy =

@@ -1566,58 +1566,55 @@ PutBlobResult OfflineStorage::PutBlob(const std::string& owner,
     result.error = "empty payload";
     return result;
   }
-
-  const std::string id = GenerateId();
-  const auto path = ResolvePath(id);
-  std::string write_err;
-  if (!AtomicWriteOwnerOnly(path, blob.data(), blob.size(), write_err)) {
-    result.error = write_err.empty() ? "write file failed" : write_err;
+  if (blob.size() > static_cast<std::size_t>(kMaxBlobBytes)) {
+    result.error = "payload too large";
     return result;
   }
 
-  StoredFileMeta meta;
-  meta.id = id;
-  meta.owner = owner;
-  meta.size = static_cast<std::uint64_t>(blob.size());
-  meta.created_at = std::chrono::steady_clock::now();
+  auto started = BeginBlobUpload(owner, static_cast<std::uint64_t>(blob.size()));
+  if (!started.success) {
+    result.error = started.error;
+    return result;
+  }
 
-  std::string meta_err;
-  if (state_store_) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::string lock_err;
-    StateStoreLock store_lock(state_store_, "offline_storage_meta",
-                              std::chrono::milliseconds(5000), lock_err);
-    if (!store_lock.locked()) {
-      meta_err = "metadata store lock failed";
-    } else if (!LoadMetadataFromStoreLocked()) {
-      meta_err = "metadata store load failed";
-    } else {
-      metadata_[id] = meta;
-      if (!SaveMetadataToStoreLockedUnlocked()) {
-        metadata_.erase(id);
-        meta_err = "metadata store save failed";
-      }
-    }
-  } else {
-    if (!PersistMetadata(meta, meta_err)) {
-      result.error = meta_err.empty() ? "metadata write failed" : meta_err;
-      WipeFile(path);
+  std::uint64_t offset = 0;
+  std::vector<std::uint8_t> chunk;
+  chunk.reserve(kOfflineFileStreamChunkBytes);
+  while (offset < static_cast<std::uint64_t>(blob.size())) {
+    const std::size_t remaining =
+        static_cast<std::size_t>(blob.size() - offset);
+    const std::size_t chunk_len =
+        std::min<std::size_t>(remaining, kOfflineFileStreamChunkBytes);
+    chunk.assign(blob.data() + offset, blob.data() + offset + chunk_len);
+    auto appended = AppendBlobUploadChunk(owner, started.file_id,
+                                          started.upload_id, offset, chunk);
+    if (!appended.success) {
+      const auto temp_path = ResolveUploadTempPath(started.file_id);
+      WipeFile(temp_path);
+      RemoveUploadSidecars(temp_path);
+      result.error = appended.error;
       return result;
     }
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      metadata_[id] = meta;
+    if (appended.bytes_received != offset + chunk_len) {
+      const auto temp_path = ResolveUploadTempPath(started.file_id);
+      WipeFile(temp_path);
+      RemoveUploadSidecars(temp_path);
+      result.error = "upload chunk response invalid";
+      return result;
     }
+    offset = appended.bytes_received;
   }
-  if (!meta_err.empty()) {
-    result.error = meta_err;
-    WipeFile(path);
+
+  auto finished = FinishBlobUpload(owner, started.file_id, started.upload_id,
+                                   static_cast<std::uint64_t>(blob.size()));
+  if (!finished.success) {
+    result.error = finished.error;
     return result;
   }
 
   result.success = true;
-  result.file_id = id;
-  result.meta = meta;
+  result.file_id = started.file_id;
+  result.meta = finished.meta;
   return result;
 }
 
@@ -2518,59 +2515,45 @@ std::optional<std::vector<std::uint8_t>> OfflineStorage::FetchBlob(
     error = "invalid file id";
     return std::nullopt;
   }
-  if (state_store_) {
-    if (!LoadMetadataFromStore()) {
-      error = "metadata store load failed";
-      return std::nullopt;
-    }
-  }
-  const auto path = ResolvePath(file_id);
-  std::ifstream ifs(path, std::ios::binary);
-  if (!ifs) {
-    error = "file not found";
+  auto meta = Meta(file_id);
+  const std::string owner =
+      (meta.has_value() && !meta->owner.empty()) ? meta->owner : "legacy";
+
+  auto started = BeginBlobDownload(owner, file_id, wipe_after_read);
+  if (!started.success) {
+    error = started.error;
     return std::nullopt;
   }
-  std::error_code ec;
-  const std::uint64_t size = std::filesystem::file_size(path, ec);
-  if (ec) {
-    error = "file read failed";
-    return std::nullopt;
-  }
-  if (size == 0) {
-    error = "empty file";
-    return std::nullopt;
-  }
+  const std::uint64_t size = started.meta.size;
   if (size > static_cast<std::uint64_t>(
                  (std::numeric_limits<std::size_t>::max)())) {
     error = "file too large";
     return std::nullopt;
   }
   std::vector<std::uint8_t> content;
-  content.resize(static_cast<std::size_t>(size));
-  ifs.read(reinterpret_cast<char*>(content.data()),
-           static_cast<std::streamsize>(content.size()));
-  if (!ifs || ifs.gcount() != static_cast<std::streamsize>(content.size())) {
+  content.reserve(static_cast<std::size_t>(size));
+
+  std::uint64_t offset = 0;
+  while (offset < size) {
+    auto chunk = ReadBlobDownloadChunk(owner, file_id, started.download_id,
+                                       offset, kOfflineFileStreamChunkBytes);
+    if (!chunk.success) {
+      error = chunk.error;
+      return std::nullopt;
+    }
+    if (chunk.offset != offset || chunk.chunk.empty()) {
+      error = "file read failed";
+      return std::nullopt;
+    }
+    offset += static_cast<std::uint64_t>(chunk.chunk.size());
+    content.insert(content.end(), chunk.chunk.begin(), chunk.chunk.end());
+    if (chunk.eof) {
+      break;
+    }
+  }
+  if (offset != size || content.size() != static_cast<std::size_t>(size)) {
     error = "file read failed";
     return std::nullopt;
-  }
-  ifs.close();
-
-  if (wipe_after_read) {
-    WipeFile(path);
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (state_store_) {
-      std::string lock_err;
-      StateStoreLock store_lock(state_store_, "offline_storage_meta",
-                                std::chrono::milliseconds(5000), lock_err);
-      if (store_lock.locked()) {
-        if (LoadMetadataFromStoreLocked()) {
-          metadata_.erase(file_id);
-          (void)SaveMetadataToStoreLockedUnlocked();
-        }
-      }
-    } else {
-      metadata_.erase(file_id);
-    }
   }
 
   error.clear();

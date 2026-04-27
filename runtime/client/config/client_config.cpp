@@ -5,10 +5,15 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <sstream>
 #include <string>
 #include <system_error>
+#include <vector>
 
+#include "client_config_crypto.h"
 #include "platform_fs.h"
+#include "secure_buffer.h"
 
 namespace mi::client {
 
@@ -196,11 +201,24 @@ std::filesystem::path ResolveDataDir(const std::filesystem::path& config_dir) {
 bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
                       std::string& error) {
   out_cfg = ClientConfig{};
-  std::ifstream f(path);
-  if (!f.is_open()) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
     error = "client_config not found: " + path;
     return false;
   }
+  std::vector<std::uint8_t> raw((std::istreambuf_iterator<char>(input)),
+                                std::istreambuf_iterator<char>());
+  std::string config_text;
+  if (IsEncryptedClientConfig(raw)) {
+    if (!DecryptClientConfigBlob(raw, config_text, error)) {
+      return false;
+    }
+  } else {
+    config_text.assign(reinterpret_cast<const char*>(raw.data()), raw.size());
+  }
+  mi::common::ScopedWipe config_text_wipe(config_text);
+
+  std::istringstream f(config_text);
   std::string section;
   bool saw_client_section = false;
   std::string line;

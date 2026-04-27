@@ -66,6 +66,32 @@ if(MSVC)
   target_compile_options(mi_e2ee_perf_baseline PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 
+add_executable(mi_e2ee_business_stress
+    business_stress.cpp
+)
+
+target_include_directories(mi_e2ee_business_stress PRIVATE
+    ../server/include
+    ../server/tests
+    ../third_party/monocypher
+)
+target_link_libraries(mi_e2ee_business_stress PRIVATE
+    mi_e2ee_core
+    mi_e2ee_build_flags
+)
+
+if (WIN32)
+  target_link_libraries(mi_e2ee_business_stress PRIVATE psapi)
+endif()
+
+if (COMMAND mi_copy_msvc_runtime)
+  mi_copy_msvc_runtime(mi_e2ee_business_stress)
+endif()
+
+if(MSVC)
+  target_compile_options(mi_e2ee_business_stress PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+
 set(MI_E2EE_OPS_HEALTH_EXCLUDE_FROM_ALL "")
 if(MI_E2EE_PRIVACY_MODE STREQUAL "strict")
   set(MI_E2EE_OPS_HEALTH_EXCLUDE_FROM_ALL EXCLUDE_FROM_ALL)
@@ -90,3 +116,20 @@ endif()
 if(MSVC)
   target_compile_options(mi_e2ee_ops_health_view PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
+
+install(PROGRAMS
+    configure_server.sh
+    start_server.sh
+    stress_server.sh
+    stress_server.py
+    verify_server_config.py
+    DESTINATION tools
+)
+
+install(FILES
+    configure_server.cmd
+    start_server.cmd
+    DESTINATION tools
+)
+
+install(TARGETS mi_e2ee_business_stress DESTINATION tools)

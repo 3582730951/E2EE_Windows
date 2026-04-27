@@ -20,6 +20,33 @@ if(MSVC)
 endif()
 add_test(NAME crypto_test COMMAND crypto_test)
 
+add_executable(kcp_scheduler_source_test
+    kcp_scheduler_source_test.cpp
+)
+target_link_libraries(kcp_scheduler_source_test PRIVATE mi_e2ee_core)
+target_compile_definitions(kcp_scheduler_source_test PRIVATE
+    MI_E2EE_KCP_SERVER_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../src/kcp_server.cpp")
+target_include_directories(kcp_scheduler_source_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(kcp_scheduler_source_test)
+if(MSVC)
+  target_compile_options(kcp_scheduler_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME kcp_scheduler_source_test COMMAND kcp_scheduler_source_test)
+
+add_executable(network_buffer_source_test
+    network_buffer_source_test.cpp
+)
+target_link_libraries(network_buffer_source_test PRIVATE mi_e2ee_core)
+target_compile_definitions(network_buffer_source_test PRIVATE
+    MI_E2EE_NETWORK_SERVER_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../src/network_server.cpp"
+    MI_E2EE_CLIENT_TRANSPORT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../../runtime/client/transport/transport_service.cpp")
+target_include_directories(network_buffer_source_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(network_buffer_source_test)
+if(MSVC)
+  target_compile_options(network_buffer_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME network_buffer_source_test COMMAND network_buffer_source_test)
+
 add_executable(friend_test
     friend_test.cpp
 )
@@ -381,6 +408,19 @@ if(MSVC)
   target_compile_options(offline_storage_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
 endif()
 add_test(NAME offline_storage_test COMMAND offline_storage_test)
+
+add_executable(offline_storage_streaming_source_test
+    offline_storage_streaming_source_test.cpp
+)
+target_link_libraries(offline_storage_streaming_source_test PRIVATE mi_e2ee_core)
+target_compile_definitions(offline_storage_streaming_source_test PRIVATE
+    MI_E2EE_OFFLINE_STORAGE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../src/offline_storage.cpp")
+target_include_directories(offline_storage_streaming_source_test PRIVATE ../include ../shard)
+mi_copy_msvc_runtime(offline_storage_streaming_source_test)
+if(MSVC)
+  target_compile_options(offline_storage_streaming_source_test PRIVATE $<$<CONFIG:Debug>:/RTC1>)
+endif()
+add_test(NAME offline_storage_streaming_source_test COMMAND offline_storage_streaming_source_test)
 
 add_executable(offline_queue_test
     offline_queue_test.cpp

@@ -223,6 +223,7 @@ require_dir "$server_root/tools"
 
 require_file "$client_root/lib/libmi_e2ee_client_sdk.${sdk_ext}"
 require_file "$client_root/config/client_config.ini"
+require_file "$client_root/mi_e2ee_client_config_tool"
 require_file "$client_root/sdk/c_api_client.h"
 require_file "$client_root/bindings/python/mi_e2ee_client.py"
 require_file "$client_root/bindings/rust/Cargo.toml"
@@ -246,9 +247,9 @@ require_file "$server_root/tools/mi_e2ee_kt_pubinfo"
 require_file "$server_root/test_user.txt"
 require_file "$server_root/run_server.sh"
 
-fingerprint="$(grep -E '^pinned_fingerprint=' "$client_root/config/client_config.ini" | head -n 1 | cut -d= -f2 | tr -d '[:space:]')"
-if [[ ! "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "pinned_fingerprint invalid: $fingerprint" >&2
+if grep -aEq '(^|[^A-Za-z0-9_])(server_ip|server_port|pinned_fingerprint)=' \
+  "$client_root/config/client_config.ini"; then
+  echo "client_config.ini contains plaintext config keys" >&2
   exit 1
 fi
 
@@ -259,10 +260,21 @@ fi
 require_ini_value "$server_root/config/config.ini" "server" "tls_enable" "1"
 require_ini_value "$server_root/config/config.ini" "server" "require_tls" "1"
 require_ini_value "$server_root/config/config.ini" "server" "tls_cert" "config/mi_e2ee_server.pem"
-require_ini_value "$client_root/config/client_config.ini" "client" "use_tls" "1"
-require_ini_value "$client_root/config/client_config.ini" "client" "require_tls" "1"
-require_ini_value "$client_root/config/client_config.ini" "client" "require_pinned_fingerprint" "1"
-require_ini_value "$client_root/config/client_config.ini" "client" "tls_verify_mode" "pin"
+
+if ! command -v openssl >/dev/null 2>&1; then
+  echo "openssl not found; cannot verify encrypted client pin" >&2
+  exit 1
+fi
+fingerprint="$(openssl x509 -in "$server_root/config/mi_e2ee_server.pem" -noout -fingerprint -sha256 |
+  cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')"
+if [[ ! "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "server certificate fingerprint invalid: $fingerprint" >&2
+  exit 1
+fi
+"$client_root/mi_e2ee_client_config_tool" \
+  --check \
+  --config "$client_root/config/client_config.ini" \
+  --expect-pin "$fingerprint" >/dev/null
 
 check_kcp_disabled() {
   local cfg="$1"

@@ -92,6 +92,13 @@ function Assert-PrivacyPackageContent([string]$root, [string]$label) {
   $files = Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { -not $skipExt.Contains($_.Extension.ToLowerInvariant()) }
   foreach ($file in $files) {
+    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+    if ($bytes.Length -ge 24) {
+      $prefix = [System.Text.Encoding]::ASCII.GetString($bytes, 0, 24)
+      if ($prefix -eq "MI_E2EE_CLIENT_CONFIG_V1") {
+        continue
+      }
+    }
     $hit = Select-String -Path $file.FullName -Pattern $pattern -List -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($hit) {
       throw "$label package contains forbidden plaintext privacy marker: $($hit.Path):$($hit.LineNumber)"
@@ -282,6 +289,7 @@ Require-File (Join-Path $clientRoot "mi_e2ee_client_sdk.dll")
 Require-File (Join-Path $clientRoot "mi_e2ee_client_ui_app.exe")
 Require-File (Join-Path $clientRoot "mi_e2ee_client_ui.exe")
 Require-File (Join-Path $clientRoot "mi_e2ee.exe")
+Require-File (Join-Path $clientRoot "mi_e2ee_client_config_tool.exe")
 Require-File (Join-Path $clientRoot "config\\client_config.ini")
 Require-File (Join-Path $clientRoot "sdk\\c_api_client.h")
 Require-File (Join-Path $clientRoot "bindings\\python\\mi_e2ee_client.py")
@@ -343,27 +351,21 @@ Assert-BlobBudget (Join-Path $serverRoot "config\\config.ini")
 Require-IniValue (Join-Path $serverRoot "config\\config.ini") "server" "tls_enable" "1"
 Require-IniValue (Join-Path $serverRoot "config\\config.ini") "server" "require_tls" "1"
 Require-IniValue (Join-Path $serverRoot "config\\config.ini") "server" "tls_cert" "config/mi_e2ee_server.pfx"
-Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "use_tls" "1"
-Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "require_tls" "1"
-Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "require_pinned_fingerprint" "1"
-Require-IniValue (Join-Path $clientRoot "config\\client_config.ini") "client" "tls_verify_mode" "pin"
 
 Assert-PrivacyPackageTree $clientRoot "client"
 Assert-PrivacyPackageTree $serverRoot "server"
 
-$fingerprint = ""
-Get-Content (Join-Path $clientRoot "config\\client_config.ini") | ForEach-Object {
-  if ($_ -match "^pinned_fingerprint=(.+)$") {
-    $fingerprint = $Matches[1].Trim()
-  }
-}
-if ($fingerprint -notmatch "^[0-9a-f]{64}$") {
-  throw "pinned_fingerprint invalid: $fingerprint"
+$clientConfigPath = Join-Path $clientRoot "config\\client_config.ini"
+$clientConfigBytes = [System.IO.File]::ReadAllBytes($clientConfigPath)
+$clientConfigPreview = [System.Text.Encoding]::ASCII.GetString($clientConfigBytes)
+if ($clientConfigPreview -match "(?m)^(server_ip|server_port|pinned_fingerprint)=") {
+  throw "client_config.ini contains plaintext config keys"
 }
 $serverFingerprint = Read-PfxSha256 (Join-Path $serverRoot "config\\mi_e2ee_server.pfx")
-if ($serverFingerprint -ne $fingerprint) {
-  throw "pinned_fingerprint does not match server certificate"
-}
+& (Join-Path $clientRoot "mi_e2ee_client_config_tool.exe") `
+  --check `
+  --config $clientConfigPath `
+  --expect-pin $serverFingerprint | Out-Null
 
 Verify-Manifest $clientRoot
 Verify-Manifest $serverRoot

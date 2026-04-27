@@ -68,6 +68,7 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
                           std::vector<std::uint8_t>& enc_buf,
                           std::vector<std::uint8_t>& plain_buf,
                           std::size_t& plain_off,
+                          std::vector<std::uint8_t>& plain_tmp,
                           std::vector<std::uint8_t>& out_frame) {
   out_frame.clear();
   if (plain_off > plain_buf.size()) {
@@ -89,9 +90,8 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
       const std::size_t total =
           mi::server::kFrameHeaderSize + static_cast<std::size_t>(payload_len);
       if (avail >= total) {
-        out_frame.assign(
-            plain_buf.begin() + static_cast<std::ptrdiff_t>(plain_off),
-            plain_buf.begin() + static_cast<std::ptrdiff_t>(plain_off + total));
+        out_frame.resize(total);
+        std::memcpy(out_frame.data(), plain_buf.data() + plain_off, total);
         plain_off += total;
         if (plain_off >= plain_buf.size()) {
           plain_buf.clear();
@@ -107,12 +107,12 @@ bool TlsReadFrameBuffered(mi::platform::net::Socket sock,
       }
     }
 
-    std::vector<std::uint8_t> plain_chunk;
-    if (!mi::platform::tls::DecryptToPlain(sock, ctx, enc_buf, plain_chunk)) {
+    plain_tmp.clear();
+    if (!mi::platform::tls::DecryptToPlain(sock, ctx, enc_buf, plain_tmp)) {
       return false;
     }
-    if (!plain_chunk.empty()) {
-      plain_buf.insert(plain_buf.end(), plain_chunk.begin(), plain_chunk.end());
+    if (!plain_tmp.empty()) {
+      plain_buf.insert(plain_buf.end(), plain_tmp.begin(), plain_tmp.end());
     }
   }
 }
@@ -139,6 +139,7 @@ struct ClientCore::RemoteStream {
   mi::platform::tls::ClientContext tls_ctx;
   std::vector<std::uint8_t> enc_buf;
   std::vector<std::uint8_t> plain_buf;
+  std::vector<std::uint8_t> plain_tmp;
   std::size_t plain_off{0};
 
   RemoteStream(std::string host_in, std::uint16_t port_in, bool use_tls_in,
@@ -211,6 +212,7 @@ struct ClientCore::RemoteStream {
     mi::platform::net::CloseSocket(sock);
     enc_buf.clear();
     plain_buf.clear();
+    plain_tmp.clear();
     plain_off = 0;
   }
 
@@ -669,7 +671,7 @@ struct ClientCore::RemoteStream {
         return false;
       }
       if (!TlsReadFrameBuffered(sock, tls_ctx, enc_buf, plain_buf, plain_off,
-                                out_bytes)) {
+                                plain_tmp, out_bytes)) {
         error = "tls recv failed";
         return false;
       }

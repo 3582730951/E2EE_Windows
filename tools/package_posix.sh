@@ -6,6 +6,7 @@ usage() {
 Usage: package_posix.sh [--platform linux|macos] [--workspace PATH] [--dist PATH] [--openssl PATH]
                         [--client-build PATH] [--server-build PATH]
                         [--server-mode demo|mysql] [--mysql-username USER] [--mysql-password PASS]
+                        [--client-server-host HOST_OR_IP] [--client-server-port PORT]
                         [--codesign-id ID] [--codesign-entitlements PATH]
                         [--notary-profile PROFILE] [--notary-bundle-id ID] [--notary-wait]
 
@@ -38,6 +39,8 @@ server_build=""
 server_mode="demo"
 mysql_username=""
 mysql_password=""
+client_server_host="${MI_E2EE_PACKAGE_CLIENT_SERVER_HOST:-127.0.0.1}"
+client_server_port="${MI_E2EE_PACKAGE_CLIENT_SERVER_PORT:-9000}"
 codesign_id=""
 codesign_entitlements=""
 notary_profile=""
@@ -82,6 +85,14 @@ while [[ $# -gt 0 ]]; do
       mysql_password="${2:-}"
       shift 2
       ;;
+    --client-server-host)
+      client_server_host="${2:-}"
+      shift 2
+      ;;
+    --client-server-port)
+      client_server_port="${2:-}"
+      shift 2
+      ;;
     --codesign-id)
       codesign_id="${2:-}"
       shift 2
@@ -117,6 +128,12 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -z "$workspace" ]]; then
   workspace="$(cd "$script_dir/.." && pwd)"
+fi
+if [[ -z "$client_server_host" ]]; then
+  client_server_host="127.0.0.1"
+fi
+if [[ -z "$client_server_port" || "$client_server_port" == "0" ]]; then
+  client_server_port="9000"
 fi
 if [[ -z "$platform" ]]; then
   uname_s="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -213,6 +230,7 @@ keys_dir="$dist_root/keys"
 rm -rf "$client_root" "$server_root" "$keys_dir"
 mkdir -p "$client_lib" "$client_root/config" "$client_root/database" \
          "$client_root/bindings/python" "$client_root/bindings/rust" "$client_root/sdk" \
+         "$client_root/tools" \
          "$server_lib" "$server_root/config" "$server_root/database/offline_store" "$server_root/tools"
 
 for forbidden in \
@@ -229,6 +247,14 @@ if [[ -z "$sdk_lib" ]]; then
   echo "libmi_e2ee_client_sdk.${sdk_ext} not found under $client_build" >&2
   exit 1
 fi
+
+client_config_tool="$(find "$client_build" -type f -name "mi_e2ee_client_config_tool" -perm -111 | head -n 1 || true)"
+if [[ -z "$client_config_tool" ]]; then
+  echo "mi_e2ee_client_config_tool not found under $client_build" >&2
+  exit 1
+fi
+cp "$client_config_tool" "$client_root/"
+cp "$client_config_tool" "$client_root/tools/"
 cp "$sdk_lib" "$client_lib/"
 
 core_lib="$(find "$client_build" -type f -name "libmi_e2ee_client_core.a" | head -n 1 || true)"
@@ -250,12 +276,25 @@ else
   printf "u:p\n" > "$server_root/test_user.txt"
 fi
 
-for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo; do
+for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_business_stress; do
   tool_path="$(find "$server_build" -type f -name "$tool" -perm -111 | head -n 1 || true)"
   if [[ -n "$tool_path" ]]; then
     cp "$tool_path" "$server_root/tools/"
+    if [[ "$tool" == "mi_e2ee_business_stress" ]]; then
+      cp "$tool_path" "$server_root/"
+    fi
   fi
 done
+
+for helper in configure_server.sh start_server.sh stress_server.sh stress_server.py verify_server_config.py; do
+  if [[ -f "$workspace/tools/$helper" ]]; then
+    cp "$workspace/tools/$helper" "$server_root/"
+    cp "$workspace/tools/$helper" "$server_root/tools/"
+  fi
+done
+chmod +x "$server_root/configure_server.sh" "$server_root/start_server.sh" \
+  "$server_root/stress_server.sh" "$server_root/stress_server.py" \
+  "$server_root/verify_server_config.py" 2>/dev/null || true
 
 kt_keygen="$(find "$server_build" -type f -name "mi_e2ee_kt_keygen" -perm -111 | head -n 1 || true)"
 if [[ -z "$kt_keygen" ]]; then
@@ -332,36 +371,15 @@ allow_insecure=0
 EOF
 fi
 
-cat > "$client_root/config/client_config.ini" <<EOF
-[client]
-server_ip=127.0.0.1
-server_port=9000
-use_tls=1
-require_tls=1
-trust_store=server_trust.ini
-require_pinned_fingerprint=1
-pinned_fingerprint=$fingerprint
-tls_verify_mode=pin
-tls_ca_bundle_path=
-tls_verify_hostname=1
-auth_mode=opaque
-
-[proxy]
-type=none
-host=
-port=0
-username=
-password=
-
-[device_sync]
-enabled=1
-role=primary
-key_path=e2ee_state/device_sync_key.bin
-
-[kt]
-require_signature=1
-root_pubkey_path=kt_root_pub.bin
-EOF
+"$client_config_tool" \
+  --config "$client_root/config/client_config.ini" \
+  --server "$client_server_host" \
+  --port "$client_server_port" \
+  --tls-mode pin \
+  --pinned-fingerprint "$fingerprint" \
+  --trust-store server_trust.ini \
+  --kt-root-pub kt_root_pub.bin \
+  --non-interactive >/dev/null
 
 cp "$workspace/sdk/c_api_client.h" "$client_root/sdk/"
 cp "$workspace/bindings/python/mi_e2ee_client.py" "$workspace/bindings/python/example_basic.py" "$client_root/bindings/python/"
@@ -419,6 +437,15 @@ copy_deps() {
   local bin="$1"
   local dest="$2"
   if [[ -z "$bin" ]]; then
+    return
+  fi
+  local magic
+  magic="$(LC_ALL=C head -c 4 "$bin" 2>/dev/null || true)"
+  if [[ "$platform" == "linux" && "$magic" != $'\177ELF' ]]; then
+    return
+  fi
+  if command -v file >/dev/null 2>&1 &&
+     ! (file -b "$bin" | grep -Eq 'ELF|Mach-O'); then
     return
   fi
   case "$platform" in
