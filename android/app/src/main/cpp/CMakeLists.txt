@@ -244,6 +244,7 @@ set(MI_E2EE_RUNTIME_SOURCES
   "${MI_E2EE_ROOT}/runtime/client/auth/auth_service.cpp"
   "${MI_E2EE_ROOT}/runtime/client/auth/e2ee_engine.cpp"
   "${MI_E2EE_ROOT}/runtime/client/config/client_config.cpp"
+  "${MI_E2EE_ROOT}/runtime/client/config/client_config_crypto.cpp"
   "${MI_E2EE_ROOT}/runtime/client/config/config_service.cpp"
   "${MI_E2EE_ROOT}/runtime/client/messaging/client_messaging.cpp"
   "${MI_E2EE_ROOT}/runtime/client/messaging/messaging_service.cpp"
