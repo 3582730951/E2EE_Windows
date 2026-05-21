@@ -2509,6 +2509,7 @@ class _ComposerBarState extends State<ComposerBar> {
           child: TextField(
             controller: _controller,
             enableSuggestions: false,
+            enableIMEPersonalizedLearning: false,
             autocorrect: false,
             smartDashesType: SmartDashesType.disabled,
             smartQuotesType: SmartQuotesType.disabled,
