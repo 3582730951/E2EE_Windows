@@ -35,8 +35,8 @@ on:
 env:
   MI_E2EE_CI_SERVER_HOST: ${{ github.event.inputs.server_host || '127.0.0.1' }}
   MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
-  MI_E2EE_PACKAGE_CLIENT_SERVER_HOST: ${{ github.event.inputs.client_server_host || '' }}
-  MI_E2EE_PACKAGE_CLIENT_SERVER_PORT: ${{ github.event.inputs.client_server_port || '' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_HOST: ${{ github.event.inputs.client_server_host || '127.0.0.1' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_PORT: ${{ github.event.inputs.client_server_port || '1' }}
   MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '0' }}
   MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '0' }}
   MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS: "10000"
