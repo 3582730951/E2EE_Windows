@@ -93,8 +93,8 @@ struct MediaConfig {
 };
 
 struct ClientConfig {
-  std::string server_ip{"127.0.0.1"};
-  std::uint16_t server_port{9000};
+  std::string server_ip;
+  std::uint16_t server_port{0};
   bool use_tls{true};
   bool require_tls{true};
   std::string trust_store{"server_trust.ini"};

@@ -192,7 +192,7 @@
   "settings.securityCenter.detail": "Transport health, trust, and linked devices in one surface.",
   "settings.securityCenter.open": "Open",
   "settings.about.appName": "MI E2EE Client",
-  "settings.about.build": "Build demo UI",
+  "settings.about.build": "Qt Quick desktop client",
 
   "dialog.newChat.title": "New chat",
   "dialog.newChat.search": "Search contacts",
@@ -263,8 +263,6 @@
   "dialog.deviceManager.unlink": "Unlink",
   "dialog.deviceManager.kickTitle": "Kick device",
   "dialog.deviceManager.kickConfirm": "Kick device %1? This will sign it out.",
-  "dialog.deviceManager.sampleDevice": "Mobile",
-  "dialog.deviceManager.sampleTime": "2h",
 
   "right.noChatSelected": "No chat selected",
   "right.profile": "Profile",
@@ -279,38 +277,16 @@
   "right.members": "Members",
   "right.media": "Media",
   "right.files": "Files",
-  "right.mediaPlaceholder": "Media placeholder",
-  "right.filesPlaceholder": "Files placeholder",
+  "right.emptySharedTitle": "No shared items yet",
+  "right.emptySharedDetail": "Images, files, and links appear here after real messages arrive.",
+  "right.emptyMediaTitle": "No shared media yet",
+  "right.emptyMediaDetail": "Images, videos, and voice messages appear here after use.",
+  "right.emptyFilesTitle": "No shared files yet",
+  "right.emptyFilesDetail": "Conversation files appear here after download or send.",
+  "right.emptyLinksTitle": "No shared links yet",
+  "right.emptyLinksDetail": "Links from messages are collected here automatically.",
   "window.minimize": "Minimize",
   "window.maximize": "Maximize",
   "window.restore": "Restore",
-  "window.close": "Close",
-
-  "sample.replyOk": "Got it.",
-  "sample.dialogPreviews": [
-    "Just got downstairs, coming up now.",
-    "Dinner later?",
-    "Text me when you get home.",
-    "I am already on the way."
-  ],
-  "sample.lines": [
-    "Just got off the train, grabbing coffee now.",
-    "Let me check the location.",
-    "I already sent the photo.",
-    "Still going to that place tonight?",
-    "I will be there in five.",
-    "Looks good to me.",
-    "Are you free right now?",
-    "Ping me when you arrive."
-  ],
-  "sample.groupLines": [
-    "Meet at the usual place at seven?",
-    "I shared the route in the chat.",
-    "Call me when you get there.",
-    "Bring the camera tonight.",
-    "Reminder: do not forget the tickets.",
-    "Let us walk after dinner.",
-    "Weather looks great.",
-    "I already left home."
-  ]
+  "window.close": "Close"
 }

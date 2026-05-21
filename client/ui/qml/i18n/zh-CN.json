@@ -192,7 +192,7 @@
   "settings.securityCenter.detail": "把传输状态、信任与设备管理收拢到一个界面。",
   "settings.securityCenter.open": "打开",
   "settings.about.appName": "MI E2EE 客户端",
-  "settings.about.build": "演示界面",
+  "settings.about.build": "Qt Quick 桌面客户端",
 
   "dialog.newChat.title": "新建聊天",
   "dialog.newChat.search": "搜索联系人",
@@ -263,8 +263,6 @@
   "dialog.deviceManager.unlink": "解除绑定",
   "dialog.deviceManager.kickTitle": "踢下线",
   "dialog.deviceManager.kickConfirm": "确认踢下线该设备？\n%1",
-  "dialog.deviceManager.sampleDevice": "移动设备",
-  "dialog.deviceManager.sampleTime": "2小时",
 
   "right.noChatSelected": "未选择聊天",
   "right.profile": "资料",
@@ -279,38 +277,16 @@
   "right.members": "成员",
   "right.media": "媒体",
   "right.files": "文件",
-  "right.mediaPlaceholder": "媒体占位",
-  "right.filesPlaceholder": "文件占位",
+  "right.emptySharedTitle": "暂无共享内容",
+  "right.emptySharedDetail": "图片、文件和链接会在真实消息出现后自动归档。",
+  "right.emptyMediaTitle": "暂无共享媒体",
+  "right.emptyMediaDetail": "收到或发送图片、视频、语音后会显示在这里。",
+  "right.emptyFilesTitle": "暂无共享文件",
+  "right.emptyFilesDetail": "会话文件会在下载或发送后集中在这里。",
+  "right.emptyLinksTitle": "暂无共享链接",
+  "right.emptyLinksDetail": "消息中的链接会自动整理到这里。",
   "window.minimize": "最小化",
   "window.maximize": "最大化",
   "window.restore": "还原",
-  "window.close": "关闭",
-
-  "sample.replyOk": "收到。",
-  "sample.dialogPreviews": [
-    "刚到楼下，马上上来。",
-    "晚点一起吃饭吗？",
-    "到家给我发消息。",
-    "我已经在路上了。"
-  ],
-  "sample.lines": [
-    "刚下车，准备去买咖啡。",
-    "我看下定位。",
-    "照片已经发你了。",
-    "今晚还去那家店吗？",
-    "我五分钟后到。",
-    "看起来不错。",
-    "你现在方便吗？",
-    "到了告诉我。"
-  ],
-  "sample.groupLines": [
-    "七点在老地方见，可以吗？",
-    "我已经把路线发群里了。",
-    "到的时候给我打电话。",
-    "今晚把相机带上吧。",
-    "提醒一下，别忘了带票。",
-    "吃完饭再去散步。",
-    "天气看起来不错。",
-    "我已经出发了。"
-  ]
+  "window.close": "关闭"
 }

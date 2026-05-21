@@ -42,9 +42,10 @@
         <file alias="qml/Main.qml">../qml/Main.qml</file>
         <file alias="qml/Style.qml">../qml/Style.qml</file>
         <file alias="qml/I18n.qml">../qml/I18n.qml</file>
+        <file alias="qml/UiUtil.qml">../qml/UiUtil.qml</file>
+        <file alias="qml/ClipboardUtil.qml">../qml/ClipboardUtil.qml</file>
         <file alias="qml/TrustFlowCoordinator.qml">../qml/TrustFlowCoordinator.qml</file>
         <file alias="qml/SecurityDialogCoordinator.qml">../qml/SecurityDialogCoordinator.qml</file>
-        <file alias="qml/SmokeAdapter.qml">../qml/SmokeAdapter.qml</file>
         <file alias="qml/qmldir">../qml/qmldir</file>
         <file alias="qml/AppStore.qml">../qml/AppStore.qml</file>
         <file alias="qml/stores/qmldir">../qml/stores/qmldir</file>
@@ -57,7 +58,6 @@
         <file alias="qml/stores/SecurityDisplayStore.qml">../qml/stores/SecurityDisplayStore.qml</file>
         <file alias="qml/stores/ChatDisplayStore.qml">../qml/stores/ChatDisplayStore.qml</file>
         <file alias="qml/stores/CallDisplayStore.qml">../qml/stores/CallDisplayStore.qml</file>
-        <file alias="qml/stores/SmokeSceneStore.qml">../qml/stores/SmokeSceneStore.qml</file>
         <file alias="qml/auth/AuthFlow.qml">../qml/auth/AuthFlow.qml</file>
         <file alias="qml/i18n/zh-CN.json">../qml/i18n/zh-CN.json</file>
         <file alias="qml/i18n/en-US.json">../qml/i18n/en-US.json</file>
@@ -65,6 +65,7 @@
         <file alias="qml/shell/AppShell.qml">../qml/shell/AppShell.qml</file>
         <file alias="qml/shell/LeftPane.qml">../qml/shell/LeftPane.qml</file>
         <file alias="qml/shell/CenterPane.qml">../qml/shell/CenterPane.qml</file>
+        <file alias="qml/shell/UtilitySurface.qml">../qml/shell/UtilitySurface.qml</file>
         <file alias="qml/shell/RightPane.qml">../qml/shell/RightPane.qml</file>
         <file alias="qml/dialogs/NewChatDialog.qml">../qml/dialogs/NewChatDialog.qml</file>
         <file alias="qml/dialogs/AddContactDialog.qml">../qml/dialogs/AddContactDialog.qml</file>

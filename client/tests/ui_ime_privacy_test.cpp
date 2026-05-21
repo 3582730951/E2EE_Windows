@@ -6,7 +6,7 @@
 
 namespace {
 
-bool ReadFile(const std::filesystem::path& path, std::string& out) {
+bool read_file(const std::filesystem::path& path, std::string& out) {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
     return false;
@@ -16,11 +16,11 @@ bool ReadFile(const std::filesystem::path& path, std::string& out) {
   return true;
 }
 
-bool Contains(const std::string& haystack, const std::string& needle) {
+bool contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
-std::string StripLuaLineComments(const std::string& input) {
+std::string strip_lua_line_comments(const std::string& input) {
   std::string out;
   out.reserve(input.size());
   std::size_t line_start = 0;
@@ -41,16 +41,16 @@ std::string StripLuaLineComments(const std::string& input) {
   return out;
 }
 
-bool IsLuaFile(const std::filesystem::path& path) {
+bool is_lua_file(const std::filesystem::path& path) {
   return path.extension() == ".lua";
 }
 
-bool IsYamlFile(const std::filesystem::path& path) {
+bool is_yaml_file(const std::filesystem::path& path) {
   const auto ext = path.extension().string();
   return ext == ".yaml" || ext == ".yml";
 }
 
-std::string StripHashLineComments(const std::string& input) {
+std::string strip_hash_line_comments(const std::string& input) {
   std::string out;
   out.reserve(input.size());
   std::size_t line_start = 0;
@@ -104,18 +104,18 @@ int main() {
                 << "\n";
       return 1;
     }
-    if (!it->is_regular_file(ec) || !IsLuaFile(it->path())) {
+    if (!it->is_regular_file(ec) || !is_lua_file(it->path())) {
       continue;
     }
     std::string body;
-    if (!ReadFile(it->path(), body)) {
+    if (!read_file(it->path(), body)) {
       std::cerr << "failed to read Rime Lua source: "
                 << it->path().generic_string() << "\n";
       return 1;
     }
-    body = StripLuaLineComments(body);
+    body = strip_lua_line_comments(body);
     for (const auto& needle : forbidden) {
-      if (Contains(body, needle)) {
+      if (contains(body, needle)) {
         std::cerr << "Rime Lua privacy marker " << needle << " in "
                   << it->path().generic_string() << "\n";
         return 1;
@@ -138,18 +138,18 @@ int main() {
       std::cerr << "failed to iterate Rime root: " << ec.message() << "\n";
       return 1;
     }
-    if (!it->is_regular_file(ec) || !IsYamlFile(it->path())) {
+    if (!it->is_regular_file(ec) || !is_yaml_file(it->path())) {
       continue;
     }
     std::string body;
-    if (!ReadFile(it->path(), body)) {
+    if (!read_file(it->path(), body)) {
       std::cerr << "failed to read Rime source: "
                 << it->path().generic_string() << "\n";
       return 1;
     }
-    body = StripHashLineComments(body);
+    body = strip_hash_line_comments(body);
     for (const auto& needle : forbidden_yaml) {
-      if (Contains(body, needle)) {
+      if (contains(body, needle)) {
         std::cerr << "Rime schema privacy marker " << needle << " in "
                   << it->path().generic_string() << "\n";
         return 1;
@@ -161,12 +161,12 @@ int main() {
   for (const auto& name : {"SecureTextField.qml", "SecureTextArea.qml"}) {
     const auto path = qml_components / name;
     std::string body;
-    if (!ReadFile(path, body)) {
+    if (!read_file(path, body)) {
       std::cerr << "failed to read QML secure input component: "
                 << path.generic_string() << "\n";
       return 1;
     }
-    if (!Contains(body, "inputMethodHints: Qt.ImhNoPredictiveText")) {
+    if (!contains(body, "inputMethodHints: Qt.ImhNoPredictiveText")) {
       std::cerr << "QML secure input component missing no-predictive hint: "
                 << path.generic_string() << "\n";
       return 1;

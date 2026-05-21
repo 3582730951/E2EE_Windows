@@ -17,8 +17,8 @@ namespace {
 
 struct ConfigToolOptions {
   std::filesystem::path config_path{"config/client_config.ini"};
-  std::string server{"127.0.0.1"};
-  std::string port{"9000"};
+  std::string server;
+  std::string port;
   std::string tls_mode{"pin"};
   std::string pinned_fingerprint;
   std::string ca_bundle;
@@ -72,7 +72,9 @@ void PrintUsage(std::ostream& out) {
       << "  --trust-store PATH\n"
       << "  --kt-root-pub PATH\n"
       << "  --non-interactive\n"
-      << "  --check --expect-server HOST --expect-port PORT [--expect-pin SHA256]\n";
+      << "  --check --expect-server HOST --expect-port PORT [--expect-pin SHA256]\n"
+      << "\n"
+      << "Non-interactive writes require --server and --port.\n";
 }
 
 bool TakeValue(int& i, int argc, char** argv, std::string& out,
@@ -211,6 +213,14 @@ bool BuildPlainConfig(const EncryptedConfigField& server,
                       const EncryptedConfigField& kt_root_pub,
                       std::string& out,
                       std::string& error) {
+  std::string server_text;
+  if (!server.Reveal(server_text, error)) return false;
+  mi::common::ScopedWipe server_wipe(server_text);
+  if (server_text.empty()) {
+    error = "server host is required";
+    return false;
+  }
+
   std::string mode;
   if (!tls_mode.Reveal(mode, error)) return false;
   mi::common::ScopedWipe mode_wipe(mode);
@@ -245,7 +255,7 @@ bool BuildPlainConfig(const EncryptedConfigField& server,
   std::string cfg;
   mi::common::ScopedWipe cfg_wipe(cfg);
   AppendLine(cfg, "[client]");
-  if (!AppendFieldLine(cfg, "server_ip", server, error)) return false;
+  AppendLine(cfg, "server_ip=" + server_text);
   AppendLine(cfg, "server_port=" + std::to_string(parsed_port));
   AppendLine(cfg, "use_tls=1");
   AppendLine(cfg, "require_tls=1");

@@ -1001,7 +1001,7 @@ class H264CodecFfmpeg final : public H264Codec {
     return true;
   }
 
-  void Shutdown() override {
+  void Shutdown() {
     if (enc_ctx_) {
       avcodec_free_context(&enc_ctx_);
     }

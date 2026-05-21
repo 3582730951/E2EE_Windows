@@ -31,7 +31,7 @@ def main() -> int:
     capture_dir = Path(args.capture_dir)
     png_path = capture_dir / args.file
     if not png_path.exists():
-        print(f"ERROR: missing smoke capture: {png_path}")
+        print(f"ERROR: missing runtime capture: {png_path}")
         return 1
 
     viewport = WINDOWS.get("fixture_viewports", {}).get(args.scene)
@@ -44,7 +44,7 @@ def main() -> int:
     width, height = png_size(png_path)
     if (width, height) != (expected_width, expected_height):
         print(
-            "ERROR: smoke matrix mismatch for "
+            "ERROR: runtime matrix mismatch for "
             f"{png_path}: expected {expected_width}x{expected_height}, got {width}x{height}"
         )
         return 1
@@ -62,7 +62,7 @@ def main() -> int:
         print(f"ERROR: {args.scene} capture must be a real {expected_stem} scene: {png_path}")
         return 1
 
-    print(f"Windows smoke matrix check passed for {png_path.name}.")
+    print(f"Windows runtime matrix check passed for {png_path.name}.")
     return 0
 
 

@@ -36,11 +36,9 @@ struct mi_history_entry_t;
 
 namespace mi::client::ui {
 
-// 轻量桥接：Qt Quick 与 SDK/C API 的同步调用
 class QuickClient : public QObject {
   Q_OBJECT
-  Q_PROPERTY(QString token READ token NOTIFY tokenChanged)
-  Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY tokenChanged)
+  Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY authStateChanged)
   Q_PROPERTY(QString username READ username NOTIFY userChanged)
   Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
   Q_PROPERTY(QVariantList friends READ friends NOTIFY friendsChanged)
@@ -94,13 +92,16 @@ class QuickClient : public QObject {
   Q_INVOKABLE bool sendFile(const QString& convId, const QString& path, bool isGroup);
   Q_INVOKABLE bool sendSticker(const QString& convId, const QString& stickerId, bool isGroup);
   Q_INVOKABLE bool sendLocation(const QString& convId,
-                                double lat,
-                                double lon,
-                                const QString& label,
-                                bool isGroup);
+                                 double lat,
+                                 double lon,
+                                 const QString& label,
+                                 bool isGroup);
+  Q_INVOKABLE bool sendContactCard(const QString& convId,
+                                   const QString& cardUsername,
+                                   const QString& cardDisplay);
   Q_INVOKABLE bool recallMessage(const QString& convId,
-                                const QString& messageId,
-                                bool isGroup);
+                                 const QString& messageId,
+                                 bool isGroup);
   Q_INVOKABLE QVariantMap ensureAttachmentCached(const QString& fileId,
                                                  const QString& fileKeyHex,
                                                  const QString& fileName,
@@ -123,6 +124,8 @@ class QuickClient : public QObject {
                                      const QString& remark);
   Q_INVOKABLE bool respondFriendRequest(const QString& requesterUsername,
                                         bool accept);
+  Q_INVOKABLE bool setUserBlocked(const QString& blockedUsername,
+                                  bool blocked);
   Q_INVOKABLE QVariantList listDevices();
   Q_INVOKABLE QVariantList listDevicesDisplay();
   Q_INVOKABLE bool kickDevice(const QString& deviceId);
@@ -186,7 +189,6 @@ class QuickClient : public QObject {
                                      const QString& imageUrl);
   Q_INVOKABLE QString renderProtectedText(const QString& protectedTextId) const;
 
-  QString token() const;
   bool loggedIn() const;
   QString username() const;
   QString lastError() const;
@@ -219,7 +221,7 @@ class QuickClient : public QObject {
   QVideoSink* localVideoSink() const { return local_video_sink_; }
 
  signals:
-  void tokenChanged();
+  void authStateChanged();
   void userChanged();
   void friendsChanged();
   void groupsChanged();
@@ -362,7 +364,7 @@ class QuickClient : public QObject {
 
   QString config_path_{QStringLiteral("config/client_config.ini")};
   mi_client_handle* c_api_{nullptr};
-  QString token_;
+  bool logged_in_{false};
   QString username_;
   QString last_error_;
   QVariantList friends_;

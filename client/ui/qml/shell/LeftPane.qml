@@ -16,10 +16,6 @@ Item {
     readonly property bool showCallsList: shellSurface === "calls" && !showUtilityCompactRail
     readonly property bool showUtilityCompactRail: showUtilityList
     readonly property bool condensedConversationRows: width <= 300
-    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
-    readonly property string smokeRailBadgeText: {
-        return Ui.I18n.usesCjkLocale ? "最近与常用" : "Recent and pinned"
-    }
     readonly property string chatsLabel: Ui.I18n.usesCjkLocale ? "聊天" : "Chats"
     readonly property string contactsLabel: Ui.I18n.t("left.contacts")
     readonly property string callsLabel: Ui.I18n.t("chat.call")
@@ -125,6 +121,19 @@ Item {
             return true
         }
         return false
+    }
+
+    function focus_list_neighbor(list, currentIndex, delta) {
+        if (!list || list.count <= 0) {
+            return
+        }
+        var nextIndex = Math.max(0, Math.min(list.count - 1, currentIndex + delta))
+        list.currentIndex = nextIndex
+        list.positionViewAtIndex(nextIndex, ListView.Contain)
+        var nextItem = list.itemAtIndex(nextIndex)
+        if (nextItem) {
+            nextItem.forceActiveFocus()
+        }
     }
 
     function utilityItemVisible(entry) {
@@ -233,42 +242,10 @@ Item {
             return "voice"
         }
         if (value.indexOf("http://") !== -1 ||
-                value.indexOf("https://") !== -1 ||
-                value.indexOf("maps.") !== -1 ||
-                value.indexOf("example.") !== -1) {
+                value.indexOf("https://") !== -1) {
             return "link"
         }
         return ""
-    }
-
-    function previewIconFor(kind) {
-        switch (kind) {
-        case "photo":
-            return "qrc:/mi/e2ee/ui/icons/image.svg"
-        case "file":
-            return "qrc:/mi/e2ee/ui/icons/file.svg"
-        case "voice":
-            return "qrc:/mi/e2ee/ui/icons/mic.svg"
-        case "link":
-            return "qrc:/mi/e2ee/ui/icons/info.svg"
-        default:
-            return ""
-        }
-    }
-
-    function previewTintFor(kind) {
-        switch (kind) {
-        case "photo":
-            return Qt.rgba(37 / 255, 99 / 255, 235 / 255, Ui.Style.isDark ? 0.18 : 0.10)
-        case "file":
-            return Qt.rgba(100 / 255, 116 / 255, 139 / 255, Ui.Style.isDark ? 0.20 : 0.10)
-        case "voice":
-            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.20 : 0.10)
-        case "link":
-            return Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.20 : 0.10)
-        default:
-            return "transparent"
-        }
     }
 
     function presenceStateFor(chatType, unreadCount, mutedState, previewText, explicitState) {
@@ -518,6 +495,7 @@ Item {
                             ]
 
                             delegate: Rectangle {
+                                id: primaryNavItem
                                 readonly property bool active: root.shellSurface === modelData.surface ||
                                                                (modelData.surface === "settings" &&
                                                                 root.shellSurface === "security")
@@ -526,11 +504,23 @@ Item {
                                 radius: Ui.Style.radiusPill
                                 color: active
                                        ? Ui.Style.sidebarNavActiveBg
-                                       : (navMouse.containsMouse ? Ui.Style.sidebarNavBg : "transparent")
-                                border.width: active || navMouse.containsMouse ? 1 : 0
+                                       : (activeFocus || navMouse.containsMouse
+                                          ? Ui.Style.sidebarNavBg
+                                          : "transparent")
+                                border.width: active || activeFocus || navMouse.containsMouse ? 1 : 0
                                 border.color: active
                                               ? Ui.Style.sidebarNavActiveBorder
-                                              : Ui.Style.sidebarNavBorder
+                                              : (activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarNavBorder)
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: modelData.label
+                                Keys.onReturnPressed: activate()
+                                Keys.onEnterPressed: activate()
+                                Keys.onSpacePressed: activate()
+
+                                function activate() {
+                                    Ui.AppStore.setShellSurface(modelData.surface)
+                                }
 
                                 RowLayout {
                                     anchors.fill: parent
@@ -579,7 +569,10 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Ui.AppStore.setShellSurface(modelData.surface)
+                                    onClicked: {
+                                        primaryNavItem.forceActiveFocus()
+                                        primaryNavItem.activate()
+                                    }
                                 }
                             }
                         }
@@ -946,14 +939,31 @@ Item {
             model: root.compactRailModel
 
             delegate: Rectangle {
+                id: compactRailItem
                 readonly property bool active: root.shellSurface === modelData.surface
                 Layout.alignment: Qt.AlignHCenter
                 width: Ui.Style.sidebarCompactRailItemSize
                 height: Ui.Style.sidebarCompactRailItemSize
                 radius: Ui.Style.radiusContinuous
-                color: active ? Ui.Style.sidebarNavActiveBg : Ui.Style.sidebarHeaderSurface
+                color: active
+                       ? Ui.Style.sidebarNavActiveBg
+                       : (activeFocus || compactRailMouse.containsMouse
+                          ? Ui.Style.sidebarListHoverBg
+                          : Ui.Style.sidebarHeaderSurface)
                 border.width: 1
-                border.color: active ? Ui.Style.sidebarNavActiveBorder : Ui.Style.sidebarHeaderBorder
+                border.color: active
+                              ? Ui.Style.sidebarNavActiveBorder
+                              : (activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarHeaderBorder)
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.label
+                Keys.onReturnPressed: activate()
+                Keys.onEnterPressed: activate()
+                Keys.onSpacePressed: activate()
+
+                function activate() {
+                    Ui.AppStore.setShellSurface(modelData.surface)
+                }
 
                 Rectangle {
                     anchors.centerIn: parent
@@ -983,7 +993,10 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: Ui.AppStore.setShellSurface(modelData.surface)
+                    onClicked: {
+                        compactRailItem.forceActiveFocus()
+                        compactRailItem.activate()
+                    }
                 }
             }
         }
@@ -998,8 +1011,22 @@ Item {
         id: contactDelegate
 
         Item {
+            id: contactDelegateRow
             width: ListView.view.width
             height: 64
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: displayName
+            Accessible.description: usernameOrPhone
+            Keys.onReturnPressed: activate()
+            Keys.onEnterPressed: activate()
+            Keys.onSpacePressed: activate()
+            Keys.onUpPressed: root.focus_list_neighbor(ListView.view, index, -1)
+            Keys.onDownPressed: root.focus_list_neighbor(ListView.view, index, 1)
+
+            function activate() {
+                Ui.ChatDisplayStore.openChatFromContact(contactId)
+            }
 
             Rectangle {
                 id: contactCard
@@ -1008,9 +1035,11 @@ Item {
                 width: parent.width - root.listInset * 2
                 height: parent.height
                 radius: Ui.Style.radiusListRow
-                color: contactMouse.containsMouse ? Ui.Style.sidebarListHoverBg : "transparent"
-                border.width: contactMouse.containsMouse ? 1 : 0
-                border.color: Ui.Style.sidebarNavBorder
+                color: contactDelegateRow.activeFocus || contactMouse.containsMouse
+                       ? Ui.Style.sidebarListHoverBg
+                       : "transparent"
+                border.width: contactDelegateRow.activeFocus || contactMouse.containsMouse ? 1 : 0
+                border.color: contactDelegateRow.activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarNavBorder
             }
 
             RowLayout {
@@ -1059,7 +1088,7 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     text: Ui.I18n.t("contacts.startChat")
                     Layout.preferredHeight: 30
-                    onClicked: Ui.ChatDisplayStore.openChatFromContact(contactId)
+                    onClicked: contactDelegateRow.activate()
                 }
             }
 
@@ -1068,7 +1097,10 @@ Item {
                 anchors.fill: contactCard
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: Ui.ChatDisplayStore.openChatFromContact(contactId)
+                onClicked: {
+                    contactDelegateRow.forceActiveFocus()
+                    contactDelegateRow.activate()
+                }
             }
         }
     }
@@ -1077,9 +1109,27 @@ Item {
         id: utilityDelegate
 
         Item {
+            id: utilityDelegateRow
             width: ListView.view.width
             height: root.utilityItemVisible(modelData) ? 60 : 0
             visible: root.utilityItemVisible(modelData)
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: modelData.title
+            Accessible.description: modelData.detail
+            Keys.onReturnPressed: activate()
+            Keys.onEnterPressed: activate()
+            Keys.onSpacePressed: activate()
+            Keys.onUpPressed: root.focus_list_neighbor(ListView.view, index, -1)
+            Keys.onDownPressed: root.focus_list_neighbor(ListView.view, index, 1)
+
+            function activate() {
+                if (modelData.title === Ui.I18n.t("left.deviceManager")) {
+                    root.requestDeviceManager()
+                    return
+                }
+                Ui.AppStore.setShellSurface(modelData.surface)
+            }
 
             Rectangle {
                 id: utilityCard
@@ -1090,11 +1140,13 @@ Item {
                 radius: Ui.Style.radiusListRow
                 color: root.utilityItemActive(modelData)
                        ? Ui.Style.sidebarListSelectedBg
-                       : (utilityMouse.containsMouse ? Ui.Style.sidebarListHoverBg : "transparent")
-                border.width: root.utilityItemActive(modelData) || utilityMouse.containsMouse ? 1 : 0
+                       : (utilityDelegateRow.activeFocus || utilityMouse.containsMouse
+                          ? Ui.Style.sidebarListHoverBg
+                          : "transparent")
+                border.width: root.utilityItemActive(modelData) || utilityDelegateRow.activeFocus || utilityMouse.containsMouse ? 1 : 0
                 border.color: root.utilityItemActive(modelData)
                               ? Ui.Style.sidebarListSelectedBorder
-                              : Ui.Style.sidebarNavBorder
+                              : (utilityDelegateRow.activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarNavBorder)
             }
 
             RowLayout {
@@ -1182,11 +1234,8 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    if (modelData.title === Ui.I18n.t("left.deviceManager")) {
-                        root.requestDeviceManager()
-                        return
-                    }
-                    Ui.AppStore.setShellSurface(modelData.surface)
+                    utilityDelegateRow.forceActiveFocus()
+                    utilityDelegateRow.activate()
                 }
             }
         }
@@ -1196,8 +1245,18 @@ Item {
         id: callDelegate
 
         Item {
+            id: callDelegateRow
             width: ListView.view.width
             height: Ui.Style.dialogRowHeight
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: title
+            Accessible.description: callStateText
+            Keys.onReturnPressed: activate()
+            Keys.onEnterPressed: activate()
+            Keys.onSpacePressed: activate()
+            Keys.onUpPressed: root.focus_list_neighbor(ListView.view, index, -1)
+            Keys.onDownPressed: root.focus_list_neighbor(ListView.view, index, 1)
 
             readonly property bool selected: chatId === Ui.ChatDisplayStore.currentChatId
             readonly property bool activeCall: Ui.CallDisplayStore.activeCallPeer === chatId ||
@@ -1224,6 +1283,11 @@ Item {
                 return preview
             }
 
+            function activate() {
+                Ui.AppStore.setShellSurface("chat")
+                Ui.ChatDisplayStore.setCurrentChat(chatId)
+            }
+
             Rectangle {
                 id: callCard
                 x: root.listInset
@@ -1233,9 +1297,13 @@ Item {
                 radius: Ui.Style.radiusListRow
                 color: selected
                        ? Ui.Style.sidebarListSelectedBg
-                       : (callMouse.containsMouse ? Ui.Style.sidebarListHoverBg : "transparent")
-                border.width: selected || callMouse.containsMouse ? 1 : 0
-                border.color: selected ? Ui.Style.sidebarListSelectedBorder : Ui.Style.sidebarNavBorder
+                       : (callDelegateRow.activeFocus || callMouse.containsMouse
+                          ? Ui.Style.sidebarListHoverBg
+                          : "transparent")
+                border.width: selected || callDelegateRow.activeFocus || callMouse.containsMouse ? 1 : 0
+                border.color: selected
+                              ? Ui.Style.sidebarListSelectedBorder
+                              : (callDelegateRow.activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarNavBorder)
             }
 
             RowLayout {
@@ -1303,8 +1371,8 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    Ui.AppStore.setShellSurface("chat")
-                    Ui.ChatDisplayStore.setCurrentChat(chatId)
+                    callDelegateRow.forceActiveFocus()
+                    callDelegateRow.activate()
                 }
             }
         }
@@ -1314,8 +1382,18 @@ Item {
         id: dialogDelegate
 
         Item {
+            id: dialogDelegateRow
             width: ListView.view.width
             height: Ui.Style.dialogRowHeight + (sectionVisible ? 28 : 0)
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: title
+            Accessible.description: previewDisplayText
+            Keys.onReturnPressed: activate()
+            Keys.onEnterPressed: activate()
+            Keys.onSpacePressed: activate()
+            Keys.onUpPressed: root.focus_list_neighbor(ListView.view, index, -1)
+            Keys.onDownPressed: root.focus_list_neighbor(ListView.view, index, 1)
 
             property bool selected: chatId === Ui.ChatDisplayStore.currentChatId
             readonly property string resolvedAvatarMode: root.avatarModeFor(type, title, avatarMode || "")
@@ -1351,6 +1429,10 @@ Item {
                 if (mouse.button === Qt.RightButton) {
                     contextMenu.popup()
                 }
+            }
+
+            function activate() {
+                Ui.ChatDisplayStore.setCurrentChat(chatId)
             }
 
             Item {
@@ -1397,9 +1479,13 @@ Item {
                 radius: Ui.Style.radiusListRow
                 color: selected
                        ? Ui.Style.sidebarListSelectedBg
-                       : (mouseArea.containsMouse ? Ui.Style.sidebarListHoverBg : "transparent")
-                border.width: selected || mouseArea.containsMouse ? 1 : 0
-                border.color: selected ? Ui.Style.sidebarListSelectedBorder : Ui.Style.sidebarNavBorder
+                       : (dialogDelegateRow.activeFocus || mouseArea.containsMouse
+                          ? Ui.Style.sidebarListHoverBg
+                          : "transparent")
+                border.width: selected || dialogDelegateRow.activeFocus || mouseArea.containsMouse ? 1 : 0
+                border.color: selected
+                              ? Ui.Style.sidebarListSelectedBorder
+                              : (dialogDelegateRow.activeFocus ? Ui.Style.inputFocus : Ui.Style.sidebarNavBorder)
 
                 Rectangle {
                     anchors.fill: parent
@@ -1471,7 +1557,7 @@ Item {
                                 width: 16
                                 height: 16
                                 radius: 8
-                                color: root.previewTintFor(resolvedPreviewKind)
+                                color: Ui.UiUtil.preview_tint_for(resolvedPreviewKind)
                                 border.width: 1
                                 border.color: Qt.rgba(1, 1, 1, Ui.Style.isDark ? 0.10 : 0.06)
 
@@ -1479,7 +1565,7 @@ Item {
                                     anchors.centerIn: parent
                                     width: 10
                                     height: 10
-                                    source: root.previewIconFor(resolvedPreviewKind)
+                                    source: Ui.UiUtil.preview_icon_for(resolvedPreviewKind)
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true
                                     antialiasing: true
@@ -1580,8 +1666,13 @@ Item {
                 anchors.fill: rowCard
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: Ui.ChatDisplayStore.setCurrentChat(chatId)
-                onPressed: handlePressed
+                onClicked: {
+                    dialogDelegateRow.forceActiveFocus()
+                    dialogDelegateRow.activate()
+                }
+                onPressed: function(mouse) {
+                    dialogDelegateRow.handlePressed(mouse)
+                }
             }
 
             Menu {

@@ -19,7 +19,7 @@ bool contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
-}  // namespace
+}
 
 int main() {
   const std::filesystem::path source = MI_E2EE_QUICK_CLIENT_SOURCE;
@@ -36,26 +36,22 @@ int main() {
               << "\n";
     return 1;
   }
-  body += helpers;
-  if (!contains(body, "QStandardPaths::TempLocation") ||
-      !contains(body, "mi_e2ee_ai_upscale") ||
-      !contains(body, "applicationPid")) {
-    std::cerr << "AI enhance output is not scoped to an ephemeral process temp dir\n";
+  if (!contains(helpers, "sanitize_download_file_name(") ||
+      !contains(helpers, "QFileInfo(fileName.trimmed()).fileName()") ||
+      !contains(helpers, "ch == QLatin1Char('/')") ||
+      !contains(helpers, "ch == QLatin1Char('\\\\')")) {
+    std::cerr << "download filename sanitizer does not collapse path input\n";
     return 1;
   }
-  if (contains(body, "QDir(dataDir).filePath(QStringLiteral(\"ai_upscale\"))")) {
-    std::cerr << "AI enhance output still uses persistent UI data dir\n";
+  if (!contains(body, "sanitize_download_file_name(\n        fileName") ||
+      !contains(body, "sanitize_download_file_name(\n      fileName") ||
+      !contains(body, "sanitize_download_file_name(\n          fileName")) {
+    std::cerr << "download path flow does not use sanitized filenames\n";
     return 1;
   }
-  if (contains(body, "QProcess::execute(")) {
-    std::cerr << "AI enhance still forwards model subprocess output\n";
-    return 1;
-  }
-  if (!contains(body, "run_real_esrgan_quietly(") ||
-      !contains(body, "setProcessChannelMode(QProcess::SeparateChannels)") ||
-      !contains(body, "readAllStandardOutput") ||
-      !contains(body, "readAllStandardError")) {
-    std::cerr << "AI enhance subprocess output is not explicitly discarded\n";
+  if (contains(body, "QDir(base).filePath(fileName.trimmed())") ||
+      contains(body, ": fileName.trimmed();")) {
+    std::cerr << "download path flow still joins unsanitized remote filename\n";
     return 1;
   }
   return 0;

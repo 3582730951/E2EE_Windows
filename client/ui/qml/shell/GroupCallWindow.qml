@@ -30,14 +30,6 @@ Window {
         y = Screen.virtualY + (Screen.height - height) / 2
     }
 
-    function formatCallDuration(totalSec) {
-        var minutes = Math.floor(totalSec / 60)
-        var seconds = totalSec % 60
-        var mm = minutes < 10 ? "0" + minutes : "" + minutes
-        var ss = seconds < 10 ? "0" + seconds : "" + seconds
-        return mm + ":" + ss
-    }
-
     function columnsFor(count) {
         if (count <= 1) return 1
         if (count <= 2) return 2
@@ -122,7 +114,7 @@ Window {
             }
             Text {
                 text: Ui.I18n.t("chat.callDuration")
-                      .arg(formatCallDuration(root.durationSec))
+                      .arg(Ui.UiUtil.format_call_duration(root.durationSec))
                 color: Ui.Style.textMuted
                 font.pixelSize: 10
             }

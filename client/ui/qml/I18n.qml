@@ -11,9 +11,6 @@ Item {
         property string localeMode: "system"
     }
 
-    readonly property string smokeLocale: typeof uiSmokeLocale !== "undefined"
-                                          ? (uiSmokeLocale || "")
-                                          : ""
     property string localeMode: {
         var mode = localeSettings.localeMode
         if (mode === "system" || mode === "zh-CN" || mode === "en-US") {
@@ -94,9 +91,6 @@ Item {
     }
 
     function resolvedLocale(mode) {
-        if (smokeLocale === "zh-CN" || smokeLocale === "en-US") {
-            return smokeLocale
-        }
         if (mode === "zh-CN" || mode === "en-US") {
             return mode
         }

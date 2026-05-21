@@ -51,70 +51,6 @@ Item {
     readonly property var runtimeMediaModel: Ui.ChatDisplayStore.sharedMediaModel
     readonly property var runtimeFilesModel: Ui.ChatDisplayStore.sharedFilesModel
     readonly property var runtimeLinksModel: Ui.ChatDisplayStore.sharedLinksModel
-    readonly property var quickMediaModel: groupChat
-                                           ? [
-                                                 {
-                                                     entryKind: "photo",
-                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享视觉板" : "Shared visual lane",
-                                                     entryDetail: Ui.I18n.usesCjkLocale
-                                                                  ? "截图、样机与设计图会在这里聚合。"
-                                                                  : "Screenshots, mocks, and design exports land here."
-                                                 },
-                                                 {
-                                                     entryKind: "voice",
-                                                     entryTitle: Ui.I18n.usesCjkLocale ? "语音回顾" : "Voice reviews",
-                                                     entryDetail: Ui.I18n.usesCjkLocale
-                                                                  ? "快速异步反馈保持在线。"
-                                                                  : "Quick async feedback stays easy to scan."
-                                                 },
-                                                 {
-                                                     entryKind: "link",
-                                                     entryTitle: Ui.I18n.usesCjkLocale ? "审批与链接" : "Approvals & links",
-                                                     entryDetail: Ui.I18n.usesCjkLocale
-                                                                  ? "网关 pin 与关键审批会在这里出现。"
-                                                                  : "Pinned gateway notes and review links surface here."
-                                                 }
-                                             ]
-                                           : [
-                                                 {
-                                                     entryKind: "photo",
-                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享照片" : "Shared photos",
-                                                     entryDetail: Ui.I18n.usesCjkLocale
-                                                                  ? "最近发来的照片和截图会显示在这里。"
-                                                                  : "Recent photos and snapshots show up here."
-                                                 },
-                                                 {
-                                                     entryKind: "link",
-                                                     entryTitle: Ui.I18n.usesCjkLocale ? "共享位置" : "Pinned places",
-                                                     entryDetail: Ui.I18n.usesCjkLocale
-                                                                  ? "常用地点和最近分享的链接会保留在这里。"
-                                                                  : "Frequent places and recent links stay here."
-                                                 }
-                                             ]
-    readonly property var quickFileModel: [
-        {
-            entryKind: "file",
-            entryTitle: Ui.I18n.usesCjkLocale ? "周末行程.pdf" : "weekend-plan.pdf",
-            entryDetail: Ui.I18n.usesCjkLocale ? "最近共享文件" : "Latest shared file"
-        },
-        {
-            entryKind: "file",
-            entryTitle: Ui.I18n.usesCjkLocale ? "照片清单.zip" : "photo-picks.zip",
-            entryDetail: Ui.I18n.usesCjkLocale ? "收藏文件" : "Pinned file"
-        }
-    ]
-    readonly property var quickLinkModel: [
-        {
-            entryKind: "link",
-            entryTitle: Ui.I18n.usesCjkLocale ? "集合地点" : "Meet-up pin",
-            entryDetail: Ui.I18n.usesCjkLocale ? "最近分享的位置" : "Recently shared location"
-        },
-        {
-            entryKind: "link",
-            entryTitle: Ui.I18n.usesCjkLocale ? "晚餐地图" : "Dinner map",
-            entryDetail: Ui.I18n.usesCjkLocale ? "固定会话链接" : "Pinned conversation link"
-        }
-    ]
     readonly property var overviewCardsModel: {
         if (root.runtimeMediaModel.count > 0) {
             return root.runtimeMediaModel
@@ -125,11 +61,11 @@ Item {
         if (root.runtimeFilesModel.count > 0) {
             return root.runtimeFilesModel
         }
-        return root.quickMediaModel
+        return root.runtimeMediaModel
     }
-    readonly property var mediaCardsModel: root.runtimeMediaModel.count > 0 ? root.runtimeMediaModel : root.quickMediaModel
-    readonly property var fileCardsModel: root.runtimeFilesModel.count > 0 ? root.runtimeFilesModel : root.quickFileModel
-    readonly property var linkCardsModel: root.runtimeLinksModel.count > 0 ? root.runtimeLinksModel : root.quickLinkModel
+    readonly property var mediaCardsModel: root.runtimeMediaModel
+    readonly property var fileCardsModel: root.runtimeFilesModel
+    readonly property var linkCardsModel: root.runtimeLinksModel
     readonly property string overviewTabLabel: Ui.I18n.usesCjkLocale ? "概览" : "Overview"
     readonly property string linksTabLabel: Ui.I18n.usesCjkLocale ? "链接" : "Links"
     readonly property var detailTabModel: root.groupChat
@@ -217,6 +153,41 @@ Item {
             return Qt.rgba(245 / 255, 158 / 255, 11 / 255, Ui.Style.isDark ? 0.26 : 0.16)
         default:
             return Qt.rgba(51 / 255, 144 / 255, 236 / 255, Ui.Style.isDark ? 0.26 : 0.16)
+        }
+    }
+
+    component SharedEmptyPanel: ColumnLayout {
+        property string iconKind: "chat"
+        property string titleText: ""
+        property string detailText: ""
+        Layout.fillWidth: true
+        spacing: 8
+
+        Components.EmptyStateIllustration {
+            Layout.alignment: Qt.AlignHCenter
+            kind: iconKind
+            size: 58
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: titleText
+            color: Ui.Style.textPrimary
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            maximumLineCount: 1
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: detailText
+            color: Ui.Style.textMuted
+            font.pixelSize: 11
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
         }
     }
 
@@ -631,6 +602,13 @@ Item {
                             }
                         }
                     }
+
+                    SharedEmptyPanel {
+                        visible: !root.groupChat && root.modelCount(root.overviewCardsModel) === 0
+                        iconKind: "chat"
+                        titleText: Ui.I18n.t("right.emptySharedTitle")
+                        detailText: Ui.I18n.t("right.emptySharedDetail")
+                    }
                 }
             }
 
@@ -653,9 +631,14 @@ Item {
                     delegate: TabButton {
                         property string tabTooltip: modelData.label
                         hoverEnabled: true
+                        focusPolicy: Qt.TabFocus
                         implicitHeight: 34
                         implicitWidth: 38
                         Accessible.name: tabTooltip
+                        Keys.onLeftPressed: detailTabsBar.currentIndex = Math.max(0, detailTabsBar.currentIndex - 1)
+                        Keys.onRightPressed: detailTabsBar.currentIndex = Math.min(root.detailTabModel.length - 1, detailTabsBar.currentIndex + 1)
+                        Keys.onReturnPressed: detailTabsBar.currentIndex = index
+                        Keys.onEnterPressed: detailTabsBar.currentIndex = index
                         ToolTip.visible: hovered
                         ToolTip.text: tabTooltip
                         background: Rectangle {
@@ -785,6 +768,13 @@ Item {
                             }
                         }
 
+                        SharedEmptyPanel {
+                            visible: !root.groupChat && root.modelCount(root.overviewCardsModel) === 0
+                            iconKind: "chat"
+                            titleText: Ui.I18n.t("right.emptySharedTitle")
+                            detailText: Ui.I18n.t("right.emptySharedDetail")
+                        }
+
                         ListView {
                             visible: root.groupChat
                             clip: true
@@ -909,6 +899,13 @@ Item {
                                 detailText: cardEntry.entryDetail || ""
                             }
                         }
+
+                        SharedEmptyPanel {
+                            visible: root.modelCount(root.mediaCardsModel) === 0
+                            iconKind: "chat"
+                            titleText: Ui.I18n.t("right.emptyMediaTitle")
+                            detailText: Ui.I18n.t("right.emptyMediaDetail")
+                        }
                     }
                 }
 
@@ -975,6 +972,13 @@ Item {
                                 detailText: cardEntry.entryDetail || ""
                             }
                         }
+
+                        SharedEmptyPanel {
+                            visible: root.modelCount(root.fileCardsModel) === 0
+                            iconKind: "settings"
+                            titleText: Ui.I18n.t("right.emptyFilesTitle")
+                            detailText: Ui.I18n.t("right.emptyFilesDetail")
+                        }
                     }
                 }
 
@@ -1040,6 +1044,13 @@ Item {
                                 titleText: cardEntry.entryTitle || ""
                                 detailText: cardEntry.entryDetail || ""
                             }
+                        }
+
+                        SharedEmptyPanel {
+                            visible: root.modelCount(root.linkCardsModel) === 0
+                            iconKind: "security"
+                            titleText: Ui.I18n.t("right.emptyLinksTitle")
+                            detailText: Ui.I18n.t("right.emptyLinksDetail")
                         }
                     }
                 }

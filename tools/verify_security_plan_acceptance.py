@@ -115,7 +115,7 @@ def validate_ci(root, profile):
             if needle not in body:
                 return fail(f"{name}: CI workflow does not contain {needle!r}")
 
-    required_subs = {"android_emulator", "ios_simulator", "windows_ci_smoke"}
+    required_subs = {"android_emulator", "ios_simulator", "windows_ci_runtime"}
     missing = sorted(required_subs - names)
     if missing:
         return fail(f"missing simulator substitutions: {', '.join(missing)}")

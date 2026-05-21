@@ -5,19 +5,11 @@ import QtQuick.Window 2.15
 import "qrc:/mi/e2ee/ui/qml" as Ui
 import "qrc:/mi/e2ee/ui/qml/auth" as Auth
 import "qrc:/mi/e2ee/ui/qml/components" as Components
+import "qrc:/mi/e2ee/ui/qml/shell" as Shell
 
 ApplicationWindow {
     id: root
     property bool authMode: Ui.SessionStore.currentPage === 0
-    property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
-    property string smokeScene: typeof uiSmokeScene !== "undefined" ? (uiSmokeScene || "") : ""
-    readonly property bool smokeLoginScene: smokeMode && Ui.SmokeSceneStore.loginScene
-    readonly property int smokeViewportWidth: smokeMode
-                                            ? Ui.SmokeSceneStore.viewportWidth(smokeLoginScene)
-                                            : 0
-    readonly property int smokeViewportHeight: smokeMode
-                                             ? Ui.SmokeSceneStore.viewportHeight()
-                                             : 0
     property bool authReady: !!(authLoader
                                 && authLoader.active
                                 && authLoader.status === Loader.Ready)
@@ -29,22 +21,16 @@ ApplicationWindow {
     property int authWidth: 840
     property int authHeight: 620
 
-    width: smokeMode
-           ? smokeViewportWidth
-           : (authMode ? authWidth : 1200)
-    height: smokeMode
-            ? smokeViewportHeight
-            : (authMode ? authHeight : 760)
-    minimumWidth: smokeMode ? width : (authMode ? authWidth : Ui.Style.shellMinWidth)
-    minimumHeight: smokeMode ? height : (authMode ? authHeight : height)
-    maximumWidth: smokeMode ? width : (authMode ? authWidth : 16384)
-    maximumHeight: smokeMode ? height : (authMode ? authHeight : 16384)
+    width: authMode ? authWidth : 1200
+    height: authMode ? authHeight : 760
+    minimumWidth: authMode ? authWidth : Ui.Style.shellMinWidth
+    minimumHeight: authMode ? authHeight : Ui.Style.shellMinHeight
+    maximumWidth: authMode ? authWidth : 16384
+    maximumHeight: authMode ? authHeight : 16384
     flags: Qt.FramelessWindowHint | Qt.Window
     visible: true
     title: Ui.I18n.t("app.title")
-    color: smokeMode
-           ? (smokeLoginScene ? Ui.Style.authBackdropBottom : Ui.Style.windowBg)
-           : "transparent"
+    color: "transparent"
     font.family: Ui.Style.fontFamily
     palette.window: Ui.Style.windowBg
     palette.base: Ui.Style.panelBgAlt
@@ -54,94 +40,20 @@ ApplicationWindow {
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
 
-    function activeTextItem() {
-        var item = root.activeFocusItem
-        if (!item) {
-            return null
-        }
-        if (item.readOnly !== undefined && item.readOnly) {
-            return null
-        }
-        if (item.selectedText === undefined && item.insert === undefined) {
-            return null
-        }
-        return item
-    }
-
-    function selectionRange(item) {
-        if (!item) {
-            return null
-        }
-        if (item.selectionStart === undefined || item.selectionEnd === undefined) {
-            return null
-        }
-        var start = item.selectionStart
-        var end = item.selectionEnd
-        if (start === end) {
-            return null
-        }
-        if (start > end) {
-            var tmp = start
-            start = end
-            end = tmp
-        }
-        return { start: start, end: end }
-    }
-
-    function handleSecureCopy(cut) {
-        var item = activeTextItem()
-        if (!item || item.selectedText === undefined) {
-            return
-        }
-        var text = item.selectedText || ""
-        if (text.length === 0) {
-            return
-        }
-        Ui.ChatDisplayStore.setInternalClipboard(text)
-        if (cut && item.remove !== undefined) {
-            var range = selectionRange(item)
-            if (range) {
-                item.remove(range.start, range.end)
-                if (item.cursorPosition !== undefined) {
-                    item.cursorPosition = range.start
-                }
-            }
-        }
-    }
-
-    function handleSecurePaste() {
-        var item = activeTextItem()
-        if (!item) {
-            return
-        }
-        var internalText = Ui.ChatDisplayStore.internalClipboardText || ""
-        var internalMs = Ui.ChatDisplayStore.internalClipboardMs || 0
-        var systemText = clientBridge ? clientBridge.systemClipboardText() : ""
-        var systemMs = clientBridge ? clientBridge.systemClipboardTimestamp() : 0
-        var text = internalText
-        if (systemText.length > 0 && systemMs > internalMs) {
-            text = systemText
-        }
-        if (text.length === 0) {
-            return
-        }
-        if (item.insert !== undefined && item.cursorPosition !== undefined) {
-            item.insert(item.cursorPosition, text)
-        }
-    }
-
-    function handleSecureSelectAll() {
-        var item = activeTextItem()
-        if (item && item.selectAll !== undefined) {
-            item.selectAll()
-        }
-    }
-
     function toggleMaximize() {
         if (root.visibility === Window.Maximized) {
             root.showNormal()
         } else {
             root.showMaximized()
+        }
+    }
+
+    function begin_resize(edges) {
+        if (root.visibility === Window.Maximized) {
+            return
+        }
+        if (root.startSystemResize) {
+            root.startSystemResize(edges)
         }
     }
 
@@ -184,6 +96,19 @@ ApplicationWindow {
         }
     }
 
+    component ResizeHandle: MouseArea {
+        property int edges: 0
+        property int resizeCursor: Qt.ArrowCursor
+        enabled: true
+        visible: true
+        z: 1000
+        acceptedButtons: Qt.LeftButton
+        hoverEnabled: true
+        cursorShape: resizeCursor
+        preventStealing: true
+        onPressed: root.begin_resize(edges)
+    }
+
     Component {
         id: authFlowComponent
 
@@ -198,26 +123,31 @@ ApplicationWindow {
         Item {
             id: shellRoot
             anchors.fill: parent
-            readonly property bool shellReady: smokeAdapter.shellReady
+            readonly property bool shellReady: appShell.shellReady
 
             function focusSearch() {
-                smokeAdapter.focusSearch()
+                appShell.focusSearch()
             }
 
             function showChatSearch() {
-                smokeAdapter.showChatSearch()
+                appShell.showChatSearch()
             }
 
             function openNewChat() {
-                smokeAdapter.openNewChat()
+                appShell.openNewChat()
             }
 
             function handleEscape() {
-                smokeAdapter.handleEscape()
+                appShell.handleEscape()
             }
 
             function openSecurityCenter() {
-                smokeAdapter.openSecurityCenter()
+                appShell.openSecurityCenter()
+            }
+
+            Ui.SecurityDialogCoordinator {
+                id: securityCoordinator
+                ownerWindow: root
             }
 
             ColumnLayout {
@@ -389,11 +319,12 @@ ApplicationWindow {
                     }
                 }
 
-                Ui.SmokeAdapter {
-                    id: smokeAdapter
+                Shell.AppShell {
+                    id: appShell
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     windowWidth: root.width
+                    securityCoordinator: securityCoordinator
                 }
             }
         }
@@ -403,14 +334,14 @@ ApplicationWindow {
         id: windowFrame
         anchors.fill: parent
         color: authMode
-               ? (smokeMode ? Ui.Style.authBackdropBottom : "transparent")
+               ? "transparent"
                : Ui.Style.windowBg
         radius: authMode ? 18 : 20
         border.color: Ui.Style.borderSubtle
         border.width: 1
-        antialiasing: !(smokeMode && authMode)
+        antialiasing: true
         clip: true
-        layer.enabled: !(smokeMode && authMode)
+        layer.enabled: true
         layer.smooth: true
 
         Rectangle {
@@ -549,7 +480,7 @@ ApplicationWindow {
                 id: authLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage === 0
-                asynchronous: !root.smokeMode
+                asynchronous: true
                 visible: status === Loader.Ready
                 sourceComponent: authFlowComponent
             }
@@ -558,11 +489,83 @@ ApplicationWindow {
                 id: shellLoader
                 anchors.fill: parent
                 active: Ui.SessionStore.currentPage !== 0
-                asynchronous: !root.smokeMode
+                asynchronous: true
                 visible: status === Loader.Ready
                 sourceComponent: shellComponent
             }
         }
+    }
+
+    ResizeHandle {
+        edges: Qt.LeftEdge
+        resizeCursor: Qt.SizeHorCursor
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 6
+    }
+
+    ResizeHandle {
+        edges: Qt.RightEdge
+        resizeCursor: Qt.SizeHorCursor
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 6
+    }
+
+    ResizeHandle {
+        edges: Qt.TopEdge
+        resizeCursor: Qt.SizeVerCursor
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 6
+    }
+
+    ResizeHandle {
+        edges: Qt.BottomEdge
+        resizeCursor: Qt.SizeVerCursor
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 6
+    }
+
+    ResizeHandle {
+        edges: Qt.LeftEdge | Qt.TopEdge
+        resizeCursor: Qt.SizeFDiagCursor
+        anchors.left: parent.left
+        anchors.top: parent.top
+        width: 12
+        height: 12
+    }
+
+    ResizeHandle {
+        edges: Qt.RightEdge | Qt.BottomEdge
+        resizeCursor: Qt.SizeFDiagCursor
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: 12
+        height: 12
+    }
+
+    ResizeHandle {
+        edges: Qt.RightEdge | Qt.TopEdge
+        resizeCursor: Qt.SizeBDiagCursor
+        anchors.right: parent.right
+        anchors.top: parent.top
+        width: 12
+        height: 12
+    }
+
+    ResizeHandle {
+        edges: Qt.LeftEdge | Qt.BottomEdge
+        resizeCursor: Qt.SizeBDiagCursor
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        width: 12
+        height: 12
     }
 
     Shortcut {
@@ -585,25 +588,25 @@ ApplicationWindow {
         sequences: [StandardKey.Copy]
         context: Qt.ApplicationShortcut
         enabled: Ui.PreferenceStore.clipboardIsolationEnabled
-        onActivated: handleSecureCopy(false)
+        onActivated: Ui.ClipboardUtil.copy_active(root.activeFocusItem, false, true)
     }
     Shortcut {
         sequences: [StandardKey.Cut]
         context: Qt.ApplicationShortcut
         enabled: Ui.PreferenceStore.clipboardIsolationEnabled
-        onActivated: handleSecureCopy(true)
+        onActivated: Ui.ClipboardUtil.copy_active(root.activeFocusItem, true, true)
     }
     Shortcut {
         sequences: [StandardKey.Paste]
         context: Qt.ApplicationShortcut
         enabled: Ui.PreferenceStore.clipboardIsolationEnabled
-        onActivated: handleSecurePaste()
+        onActivated: Ui.ClipboardUtil.paste_active(root.activeFocusItem, clientBridge, true)
     }
     Shortcut {
         sequences: [StandardKey.SelectAll]
         context: Qt.ApplicationShortcut
         enabled: Ui.PreferenceStore.clipboardIsolationEnabled
-        onActivated: handleSecureSelectAll()
+        onActivated: Ui.ClipboardUtil.select_all(Ui.ClipboardUtil.active_text_item(root.activeFocusItem))
     }
 
     Ui.TrustFlowCoordinator {

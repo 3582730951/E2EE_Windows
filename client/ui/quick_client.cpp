@@ -5,7 +5,6 @@
 #include "media_transport_capi.h"
 #include "protected_text_vm.h"
 
-#include <QAbstractVideoBuffer>
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QAudioSink>
@@ -68,2109 +67,7 @@
 
 namespace mi::client::ui {
 
-namespace {
-constexpr char kCallVoicePrefix[] = "[call]voice:";
-constexpr char kCallVideoPrefix[] = "[call]video:";
-constexpr char kCallEndPrefix[] = "[call]end:";
-constexpr char kRecallPrefix[] = "[recall]:";
-constexpr std::uint8_t kGroupCallOpCreate = 1;
-constexpr std::uint8_t kGroupCallOpJoin = 2;
-constexpr std::uint8_t kGroupCallOpLeave = 3;
-constexpr std::uint8_t kGroupCallOpEnd = 4;
-constexpr std::uint8_t kGroupCallOpUpdate = 5;
-constexpr std::uint8_t kGroupCallOpPing = 6;
-constexpr std::uint8_t kGroupCallMediaAudio = 0x01;
-constexpr std::uint8_t kGroupCallMediaVideo = 0x02;
-constexpr int kMaxPinyinCandidatesPerKey = 5;
-constexpr int kMaxAbbrInputLength = 10;
-constexpr const char kPinyinDictResourcePath[] = ":/mi/e2ee/ui/ime/pinyin.dat";
-constexpr const char kPinyinAbbrDictResourcePath[] =
-    ":/mi/e2ee/ui/ime/pinyin_short.dat";
-constexpr std::uint32_t kMaxFriendEntries = 512;
-constexpr std::uint32_t kMaxFriendRequestEntries = 256;
-constexpr std::uint32_t kMaxGroupMemberEntries = 256;
-constexpr std::uint32_t kMaxGroupCallMembers = 256;
-constexpr std::uint32_t kMaxHistoryEntries = 200;
-constexpr auto kUiPlaintextLease = std::chrono::milliseconds(120);
-
-QString ToUiQString(std::string_view view) {
-  if (view.empty()) {
-    return QString();
-  }
-  return QString::fromUtf8(view.data(), static_cast<int>(view.size()));
-}
-
-template <typename Fn>
-bool WithProtectedUiText(const UiProtectedText& protected_text, Fn&& fn) {
-  return protected_text.WithPlaintext(
-      kUiPlaintextLease,
-      [&](std::string_view view) { return static_cast<bool>(fn(view)); });
-}
-
-std::vector<mi::sdk::FriendEntry> ReadFriendEntries(
-    const mi_friend_entry_t* entries,
-    std::uint32_t count) {
-  std::vector<mi::sdk::FriendEntry> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    mi::sdk::FriendEntry e;
-    if (entries[i].username) {
-      e.username = entries[i].username;
-    }
-    if (entries[i].remark) {
-      e.remark = entries[i].remark;
-    }
-    out.push_back(std::move(e));
-  }
-  return out;
-}
-
-std::vector<mi::sdk::FriendRequestEntry> ReadFriendRequestEntries(
-    const mi_friend_request_entry_t* entries,
-    std::uint32_t count) {
-  std::vector<mi::sdk::FriendRequestEntry> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    mi::sdk::FriendRequestEntry e;
-    if (entries[i].requester_username) {
-      e.requester_username = entries[i].requester_username;
-    }
-    if (entries[i].requester_remark) {
-      e.requester_remark = entries[i].requester_remark;
-    }
-    out.push_back(std::move(e));
-  }
-  return out;
-}
-
-std::vector<std::string> ReadGroupCallMembers(
-    const mi_group_call_member_t* entries,
-    std::uint32_t count) {
-  std::vector<std::string> out;
-  if (!entries || count == 0) {
-    return out;
-  }
-  out.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    if (entries[i].username) {
-      out.emplace_back(entries[i].username);
-    }
-  }
-  return out;
-}
-
-QString ResolveLocalFilePath(const QString& urlOrPath) {
-  const QString trimmed = urlOrPath.trimmed();
-  if (trimmed.startsWith(QStringLiteral("file:"))) {
-    return QUrl(trimmed).toLocalFile();
-  }
-  return trimmed;
-}
-
-QString ResolveUiDataDir() {
-  const QByteArray env = qgetenv("MI_E2EE_DATA_DIR");
-  if (!env.isEmpty()) {
-    return QString::fromLocal8Bit(env);
-  }
-  QString baseDir = UiRuntimePaths::AppRootDir();
-  if (baseDir.isEmpty()) {
-    baseDir = QCoreApplication::applicationDirPath();
-  }
-  return QDir(baseDir).filePath(QStringLiteral("database"));
-}
-
-QString SanitizeFileStem(QString name) {
-  if (name.trimmed().isEmpty()) {
-    return QStringLiteral("image");
-  }
-  const QString base = QFileInfo(name).completeBaseName();
-  QString out;
-  out.reserve(base.size());
-  for (const QChar ch : base) {
-    if (ch == QLatin1Char('<') || ch == QLatin1Char('>') ||
-        ch == QLatin1Char(':') || ch == QLatin1Char('"') ||
-        ch == QLatin1Char('/') || ch == QLatin1Char('\\') ||
-        ch == QLatin1Char('|') || ch == QLatin1Char('?') ||
-        ch == QLatin1Char('*')) {
-      out.append(QLatin1Char('_'));
-    } else {
-      out.append(ch);
-    }
-  }
-  if (out.trimmed().isEmpty()) {
-    return QStringLiteral("image");
-  }
-  return out;
-}
-
-constexpr int kAiEnhanceScaleX2 = 2;
-constexpr int kAiEnhanceScaleX4 = 4;
-
-int ClampEnhanceScale(int scale) {
-  return scale == kAiEnhanceScaleX4 ? kAiEnhanceScaleX4 : kAiEnhanceScaleX2;
-}
-
-int ResolveEnhanceScale(int requestedScale, bool x4Confirmed) {
-  const int clamped = ClampEnhanceScale(requestedScale);
-  if (clamped == kAiEnhanceScaleX4 && !x4Confirmed) {
-    return kAiEnhanceScaleX2;
-  }
-  return clamped;
-}
-
-QString AiSettingsPath() {
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
-    return {};
-  }
-  return QDir(dataDir).filePath(QStringLiteral("ai_settings.ini"));
-}
-
-QString PrivacySettingsPath() {
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
-    return {};
-  }
-  return QDir(dataDir).filePath(QStringLiteral("privacy_settings.ini"));
-}
-
-QString ChatBackgroundsPath() {
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
-    return {};
-  }
-  return QDir(dataDir).filePath(QStringLiteral("chat_backgrounds.ini"));
-}
-
-QString ChatBackgroundsDir() {
-  const QString dataDir = ResolveUiDataDir();
-  if (dataDir.isEmpty()) {
-    return {};
-  }
-  return QDir(dataDir).filePath(QStringLiteral("chat_backgrounds"));
-}
-
-struct AiEnhanceRecommendation {
-  int perf_scale{kAiEnhanceScaleX2};
-  int quality_scale{kAiEnhanceScaleX2};
-};
-
-AiEnhanceRecommendation BuildAiEnhanceRecommendation(int gpuSeries,
-                                                     bool gpuAvailable) {
-  AiEnhanceRecommendation rec;
-  if (!gpuAvailable) {
-    return rec;
-  }
-  if (gpuSeries >= 40) {
-    rec.quality_scale = kAiEnhanceScaleX4;
-  } else if (gpuSeries >= 30) {
-    rec.quality_scale = kAiEnhanceScaleX4;
-  } else if (gpuSeries >= 20) {
-    rec.quality_scale = kAiEnhanceScaleX2;
-  } else if (gpuSeries >= 10) {
-    rec.quality_scale = kAiEnhanceScaleX2;
-  }
-  return rec;
-}
-
-QString RunCommandOutput(const QString& program,
-                         const QStringList& args,
-                         int timeoutMs) {
-  QProcess proc;
-  proc.start(program, args);
-  if (!proc.waitForFinished(timeoutMs)) {
-    proc.kill();
-    proc.waitForFinished(250);
-    return {};
-  }
-  QByteArray output = proc.readAllStandardOutput();
-  if (output.trimmed().isEmpty()) {
-    output = proc.readAllStandardError();
-  }
-  return QString::fromLocal8Bit(output).trimmed();
-}
-
-std::uint64_t NowMonotonicMs() {
-  return mi::platform::NowSteadyMs();
-}
-
-QStringList ParseGpuNames(const QString& output) {
-  QStringList lines =
-      output.split(QRegularExpression(QStringLiteral("[\\r\\n]+")),
-                   Qt::SkipEmptyParts);
-  QStringList names;
-  for (const auto& line : lines) {
-    const QString trimmed = line.trimmed();
-    if (trimmed.isEmpty()) {
-      continue;
-    }
-    if (trimmed.compare(QStringLiteral("Name"), Qt::CaseInsensitive) == 0) {
-      continue;
-    }
-    names.push_back(trimmed);
-  }
-  return names;
-}
-
-QString PickPreferredGpuName(const QStringList& names) {
-  for (const auto& name : names) {
-    if (name.contains(QStringLiteral("NVIDIA"), Qt::CaseInsensitive) ||
-        name.contains(QStringLiteral("RTX"), Qt::CaseInsensitive) ||
-        name.contains(QStringLiteral("GTX"), Qt::CaseInsensitive)) {
-      return name.trimmed();
-    }
-  }
-  for (const auto& name : names) {
-    if (!name.trimmed().isEmpty()) {
-      return name.trimmed();
-    }
-  }
-  return {};
-}
-
-QString QueryGpuName() {
-#ifdef _WIN32
-  const QString wmicOutput = RunCommandOutput(
-      QStringLiteral("wmic"),
-      {QStringLiteral("path"),
-       QStringLiteral("win32_VideoController"),
-       QStringLiteral("get"),
-       QStringLiteral("Name")},
-      2000);
-  QStringList names = ParseGpuNames(wmicOutput);
-  if (names.isEmpty()) {
-    const QString psOutput = RunCommandOutput(
-        QStringLiteral("powershell"),
-        {QStringLiteral("-NoProfile"),
-         QStringLiteral("-Command"),
-         QStringLiteral("Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name")},
-        2500);
-    names = ParseGpuNames(psOutput);
-  }
-  return PickPreferredGpuName(names);
-#else
-  return {};
-#endif
-}
-
-int ParseNvidiaSeries(const QString& gpuName) {
-  const QString lowered = gpuName.toLower();
-  if (!lowered.contains(QStringLiteral("nvidia")) &&
-      !lowered.contains(QStringLiteral("rtx")) &&
-      !lowered.contains(QStringLiteral("gtx"))) {
-    return 0;
-  }
-  const QRegularExpression re(
-      QStringLiteral("(rtx|gtx)\\s*(\\d{4})"),
-      QRegularExpression::CaseInsensitiveOption);
-  const QRegularExpressionMatch match = re.match(gpuName);
-  if (!match.hasMatch()) {
-    return 0;
-  }
-  bool ok = false;
-  const int model = match.captured(2).toInt(&ok);
-  if (!ok || model < 1000) {
-    return 0;
-  }
-  const int series = (model / 1000) * 10;
-  if (series < 10 || series > 50) {
-    return 0;
-  }
-  return series;
-}
-
-QString FindRealEsrganPath(bool* supportsGpu) {
-  if (supportsGpu) {
-    *supportsGpu = false;
-  }
-  const QStringList names = {
-      QStringLiteral("realesrgan-ncnn-vulkan.exe"),
-      QStringLiteral("realesrgan-ncnn-vulkan"),
-      QStringLiteral("realesrgan-ncnn.exe"),
-      QStringLiteral("realesrgan-ncnn")
-  };
-
-  for (const auto& name : names) {
-    const QString hit = QStandardPaths::findExecutable(name);
-    if (!hit.isEmpty()) {
-      if (supportsGpu) {
-        *supportsGpu = name.contains(QStringLiteral("vulkan"),
-                                     Qt::CaseInsensitive);
-      }
-      return hit;
-    }
-  }
-
-  QString baseDir = UiRuntimePaths::AppRootDir();
-  if (baseDir.isEmpty()) {
-    baseDir = QCoreApplication::applicationDirPath();
-  }
-  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
-  const QStringList roots = {
-      baseDir,
-      QDir(baseDir).filePath(QStringLiteral("tools/realesrgan")),
-      runtimeDir,
-      runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(QStringLiteral("tools/realesrgan"))
-  };
-
-  for (const auto& root : roots) {
-    if (root.isEmpty()) {
-      continue;
-    }
-    for (const auto& name : names) {
-      const QString candidate = QDir(root).filePath(name);
-      if (QFileInfo::exists(candidate)) {
-        if (supportsGpu) {
-          *supportsGpu = name.contains(QStringLiteral("vulkan"),
-                                       Qt::CaseInsensitive);
-        }
-        return candidate;
-      }
-    }
-  }
-  return {};
-}
-
-bool DetectAiEnhanceGpuAvailable() {
-  bool gpuSupported = false;
-  const QString exe = FindRealEsrganPath(&gpuSupported);
-  if (exe.isEmpty() || !gpuSupported) {
-    return false;
-  }
-#ifdef _WIN32
-  const QString systemRoot = qEnvironmentVariable("SystemRoot");
-  if (!systemRoot.isEmpty()) {
-    const QString vulkan =
-        QDir(systemRoot).filePath(QStringLiteral("System32/vulkan-1.dll"));
-    if (!QFileInfo::exists(vulkan)) {
-      return false;
-    }
-  }
-#endif
-  return true;
-}
-
-int RunProcessQuietly(const QString& program, const QStringList& args) {
-  QProcess process;
-  process.setProgram(program);
-  process.setArguments(args);
-  process.setProcessChannelMode(QProcess::SeparateChannels);
-  process.start();
-  if (!process.waitForStarted()) {
-    return -1;
-  }
-  while (!process.waitForFinished(250)) {
-    process.readAllStandardOutput();
-    process.readAllStandardError();
-  }
-  process.readAllStandardOutput();
-  process.readAllStandardError();
-  return process.exitStatus() == QProcess::NormalExit ? process.exitCode() : -1;
-}
-
-int RunRealEsrganQuietly(const QString& exe, const QStringList& args) {
-  return RunProcessQuietly(exe, args);
-}
-
-QString FindRealEsrganModelDir(const QString& exePath,
-                               const QString& modelName) {
-  const QString trimmedModel = modelName.trimmed();
-  if (trimmedModel.isEmpty()) {
-    return {};
-  }
-  const QString dataDir = ResolveUiDataDir();
-  const QString baseDir = UiRuntimePaths::AppRootDir();
-  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
-  const QString exeDir = exePath.isEmpty()
-                             ? QString()
-                             : QFileInfo(exePath).dir().absolutePath();
-  const QStringList roots = {
-      exeDir.isEmpty() ? QString() : QDir(exeDir).filePath(QStringLiteral("models")),
-      dataDir.isEmpty() ? QString() : QDir(dataDir).filePath(QStringLiteral("ai_models/realesrgan")),
-      baseDir.isEmpty() ? QString() : QDir(baseDir).filePath(QStringLiteral("models/realesrgan")),
-      runtimeDir.isEmpty() ? QString() : QDir(runtimeDir).filePath(QStringLiteral("models/realesrgan"))
-  };
-  for (const auto& root : roots) {
-    if (root.isEmpty()) {
-      continue;
-    }
-    const QString param =
-        QDir(root).filePath(trimmedModel + QStringLiteral(".param"));
-    const QString bin =
-        QDir(root).filePath(trimmedModel + QStringLiteral(".bin"));
-    if (QFileInfo::exists(param) && QFileInfo::exists(bin)) {
-      return root;
-    }
-  }
-  return {};
-}
-
-QString SelectRealEsrganModelName(int scale, bool anime) {
-  const int clamped = ClampEnhanceScale(scale);
-  if (clamped == kAiEnhanceScaleX2) {
-    return QStringLiteral("realesrgan-x2plus");
-  }
-  if (anime) {
-    return QStringLiteral("realesrgan-x4plus-anime");
-  }
-  return QStringLiteral("realesrgan-x4plus");
-}
-
-bool LoadAiEnhanceSettings(bool gpuAvailable,
-                           const AiEnhanceRecommendation& rec,
-                           bool& enabled,
-                           int& quality,
-                           bool& x4Confirmed) {
-  const QString path = AiSettingsPath();
-  if (path.isEmpty()) {
-    enabled = gpuAvailable;
-    quality = rec.perf_scale;
-    x4Confirmed = false;
-    return false;
-  }
-  if (!QFileInfo::exists(path)) {
-    enabled = gpuAvailable;
-    quality = rec.perf_scale;
-    x4Confirmed = false;
-    return false;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  enabled = settings.value(QStringLiteral("ai/enabled"), gpuAvailable).toBool();
-  quality = settings.value(QStringLiteral("ai/quality"), rec.perf_scale).toInt();
-  const bool hasConfirm = settings.contains(QStringLiteral("ai/x4_confirmed"));
-  x4Confirmed =
-      settings.value(QStringLiteral("ai/x4_confirmed"), false).toBool();
-  quality = ClampEnhanceScale(quality);
-  if (!hasConfirm && quality == kAiEnhanceScaleX4) {
-    x4Confirmed = true;
-  }
-  return true;
-}
-
-void SaveAiEnhanceSettings(bool enabled, int quality, bool x4Confirmed) {
-  const QString path = AiSettingsPath();
-  if (path.isEmpty()) {
-    return;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  settings.setValue(QStringLiteral("ai/enabled"), enabled);
-  settings.setValue(QStringLiteral("ai/quality"), ClampEnhanceScale(quality));
-  settings.setValue(QStringLiteral("ai/x4_confirmed"), x4Confirmed);
-  settings.sync();
-}
-
-bool LoadPrivacySettings(bool& historySaveEnabled) {
-  const QString path = PrivacySettingsPath();
-  if (path.isEmpty() || !QFileInfo::exists(path)) {
-    historySaveEnabled = false;
-    return false;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  historySaveEnabled =
-      settings.value(QStringLiteral("privacy/save_history"), false).toBool();
-  return true;
-}
-
-void SavePrivacySettings(bool historySaveEnabled) {
-  const QString path = PrivacySettingsPath();
-  if (path.isEmpty()) {
-    return;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  settings.setValue(QStringLiteral("privacy/save_history"), historySaveEnabled);
-  settings.sync();
-}
-
-void LoadChatBackgrounds(QHash<QString, QString>& out) {
-  out.clear();
-  const QString path = ChatBackgroundsPath();
-  if (path.isEmpty() || !QFileInfo::exists(path)) {
-    return;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  settings.beginGroup(QStringLiteral("backgrounds"));
-  const QStringList keys = settings.childKeys();
-  for (const auto& key : keys) {
-    const QString value = settings.value(key).toString();
-    if (!value.isEmpty()) {
-      out.insert(key, value);
-    }
-  }
-  settings.endGroup();
-}
-
-void SaveChatBackgrounds(const QHash<QString, QString>& in) {
-  const QString path = ChatBackgroundsPath();
-  if (path.isEmpty()) {
-    return;
-  }
-  QSettings settings(path, QSettings::IniFormat);
-  settings.beginGroup(QStringLiteral("backgrounds"));
-  settings.remove(QStringLiteral(""));
-  for (auto it = in.constBegin(); it != in.constEnd(); ++it) {
-    settings.setValue(it.key(), it.value());
-  }
-  settings.endGroup();
-  settings.sync();
-}
-
-QString ChatBackgroundKey(const QString& username, const QString& chatId) {
-  const QString trimmed = chatId.trimmed();
-  if (username.isEmpty()) {
-    return trimmed;
-  }
-  return username + QStringLiteral(":") + trimmed;
-}
-
-bool IsSessionInvalidError(const QString& message) {
-  const QString lowered = message.trimmed().toLower();
-  return lowered == QStringLiteral("unauthorized") ||
-         lowered == QStringLiteral("session invalid") ||
-         lowered == QStringLiteral("not logged in");
-}
-
-struct PinyinIndex {
-  QHash<QString, QStringList> dict;
-  QVector<QString> keys;
-  QSet<QString> keySet;
-  int maxKeyLength{0};
-  QHash<QString, QStringList> abbrDict;
-  QVector<QString> abbrKeys;
-};
-
-bool LoadPinyinDictFromResource(const char* resourcePath,
-                                QHash<QString, QStringList>& dict,
-                                int* maxKeyLength) {
-  QFile file(QString::fromLatin1(resourcePath));
-  if (!file.open(QIODevice::ReadOnly)) {
-    return false;
-  }
-  QTextStream stream(&file);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-  stream.setEncoding(QStringConverter::Utf8);
-#else
-  stream.setCodec("UTF-8");
-#endif
-  int maxLen = 0;
-  while (!stream.atEnd()) {
-    const QString line = stream.readLine();
-    if (line.isEmpty() || line.startsWith(QChar('#'))) {
-      continue;
-    }
-    const int tab = line.indexOf(QChar('\t'));
-    if (tab <= 0) {
-      continue;
-    }
-    const QString key = line.left(tab).trimmed();
-    const QString phrase = line.mid(tab + 1).trimmed();
-    if (key.isEmpty() || phrase.isEmpty()) {
-      continue;
-    }
-    auto& list = dict[key];
-    if (list.size() >= kMaxPinyinCandidatesPerKey || list.contains(phrase)) {
-      continue;
-    }
-    list.push_back(phrase);
-    maxLen = qMax(maxLen, key.size());
-  }
-  if (maxKeyLength) {
-    *maxKeyLength = maxLen;
-  }
-  return !dict.isEmpty();
-}
-
-PinyinIndex BuildPinyinIndex() {
-  PinyinIndex index;
-  LoadPinyinDictFromResource(kPinyinDictResourcePath, index.dict,
-                             &index.maxKeyLength);
-  LoadPinyinDictFromResource(kPinyinAbbrDictResourcePath, index.abbrDict,
-                             nullptr);
-  index.keys.reserve(index.dict.size());
-  for (auto it = index.dict.constBegin(); it != index.dict.constEnd(); ++it) {
-    index.keys.push_back(it.key());
-    index.keySet.insert(it.key());
-    index.maxKeyLength = qMax(index.maxKeyLength, it.key().size());
-  }
-  std::sort(index.keys.begin(), index.keys.end());
-  index.abbrKeys.reserve(index.abbrDict.size());
-  for (auto it = index.abbrDict.constBegin(); it != index.abbrDict.constEnd();
-       ++it) {
-    index.abbrKeys.push_back(it.key());
-  }
-  std::sort(index.abbrKeys.begin(), index.abbrKeys.end());
-  return index;
-}
-
-const PinyinIndex& GetPinyinIndex() {
-  static PinyinIndex index = BuildPinyinIndex();
-  return index;
-}
-
-void AppendCandidate(QStringList& list, const QString& candidate, int limit) {
-  if (candidate.isEmpty() || list.contains(candidate)) {
-    return;
-  }
-  list.push_back(candidate);
-  if (limit > 0 && list.size() > limit) {
-    list.removeLast();
-  }
-}
-
-bool IsAudioFormatSupported(const QAudioDevice& device,
-                            int sampleRate,
-                            int channels) {
-  if (device.isNull() || sampleRate <= 0 || channels <= 0) {
-    return false;
-  }
-  QAudioFormat format;
-  format.setSampleRate(sampleRate);
-  format.setChannelCount(channels);
-  format.setSampleFormat(QAudioFormat::Int16);
-  return device.isFormatSupported(format);
-}
-
-bool PickPreferredAudioFormat(const QAudioDevice& device,
-                              int& sampleRate,
-                              int& channels) {
-  if (device.isNull()) {
-    return false;
-  }
-  const QAudioFormat preferred = device.preferredFormat();
-  if (preferred.sampleFormat() != QAudioFormat::Int16) {
-    return false;
-  }
-  const int rate = preferred.sampleRate();
-  const int ch = preferred.channelCount();
-  if (rate <= 0 || ch <= 0) {
-    return false;
-  }
-  if (!device.isFormatSupported(preferred)) {
-    return false;
-  }
-  sampleRate = rate;
-  channels = ch;
-  return true;
-}
-
-bool FindCandidateAudioFormat(const QAudioDevice& inDevice,
-                              const QAudioDevice& outDevice,
-                              bool checkIn,
-                              bool checkOut,
-                              int& sampleRate,
-                              int& channels) {
-  const std::array<int, 5> rates = {48000, 44100, 32000, 24000, 16000};
-  const std::array<int, 2> chans = {1, 2};
-  for (const int rate : rates) {
-    for (const int ch : chans) {
-      if (checkIn && !IsAudioFormatSupported(inDevice, rate, ch)) {
-        continue;
-      }
-      if (checkOut && !IsAudioFormatSupported(outDevice, rate, ch)) {
-        continue;
-      }
-      sampleRate = rate;
-      channels = ch;
-      return true;
-    }
-  }
-  return false;
-}
-
-void AdjustAudioConfigForDevices(
-    const QAudioDevice& inDevice,
-    const QAudioDevice& outDevice,
-    mi::client::media::AudioPipelineConfig& config) {
-  const bool haveIn = !inDevice.isNull();
-  const bool haveOut = !outDevice.isNull();
-  if (!haveIn && !haveOut) {
-    return;
-  }
-  const bool inOk =
-      !haveIn || IsAudioFormatSupported(inDevice, config.sample_rate,
-                                        config.channels);
-  const bool outOk =
-      !haveOut || IsAudioFormatSupported(outDevice, config.sample_rate,
-                                         config.channels);
-  if (inOk && outOk) {
-    return;
-  }
-
-  int rate = config.sample_rate;
-  int ch = config.channels;
-  if (haveIn && haveOut) {
-    if (FindCandidateAudioFormat(inDevice, outDevice, true, true, rate, ch)) {
-      config.sample_rate = rate;
-      config.channels = ch;
-      return;
-    }
-    int prefRate = 0;
-    int prefCh = 0;
-    if (PickPreferredAudioFormat(inDevice, prefRate, prefCh) &&
-        IsAudioFormatSupported(outDevice, prefRate, prefCh)) {
-      config.sample_rate = prefRate;
-      config.channels = prefCh;
-      return;
-    }
-    if (PickPreferredAudioFormat(outDevice, prefRate, prefCh) &&
-        IsAudioFormatSupported(inDevice, prefRate, prefCh)) {
-      config.sample_rate = prefRate;
-      config.channels = prefCh;
-      return;
-    }
-  }
-  if (haveIn) {
-    int prefRate = 0;
-    int prefCh = 0;
-    if (PickPreferredAudioFormat(inDevice, prefRate, prefCh) ||
-        FindCandidateAudioFormat(inDevice, outDevice, true, false,
-                                 prefRate, prefCh)) {
-      config.sample_rate = prefRate;
-      config.channels = prefCh;
-      return;
-    }
-  }
-  if (haveOut) {
-    int prefRate = 0;
-    int prefCh = 0;
-    if (PickPreferredAudioFormat(outDevice, prefRate, prefCh) ||
-        FindCandidateAudioFormat(inDevice, outDevice, false, true,
-                                 prefRate, prefCh)) {
-      config.sample_rate = prefRate;
-      config.channels = prefCh;
-      return;
-    }
-  }
-}
-
-QString SegmentFallback(const QString& pinyin) {
-  const auto& index = GetPinyinIndex();
-  const int n = pinyin.size();
-  const int maxLen = index.maxKeyLength;
-  if (n <= 0 || maxLen <= 0) {
-    return {};
-  }
-  QVector<int> score(n + 1, -1);
-  QVector<int> prev(n + 1, -1);
-  QVector<QString> prevKey(n + 1);
-  score[0] = 0;
-  for (int i = 0; i < n; ++i) {
-    if (score[i] < 0) {
-      continue;
-    }
-    const int limit = qMin(maxLen, n - i);
-    for (int len = 1; len <= limit; ++len) {
-      const QString key = pinyin.mid(i, len);
-      if (!index.keySet.contains(key)) {
-        continue;
-      }
-      const int j = i + len;
-      const int nextScore = score[i] + len * 2 - 1;
-      if (nextScore > score[j]) {
-        score[j] = nextScore;
-        prev[j] = i;
-        prevKey[j] = key;
-      }
-    }
-  }
-  if (score[n] < 0) {
-    return {};
-  }
-  QStringList chunks;
-  int cur = n;
-  while (cur > 0 && prev[cur] >= 0) {
-    const QString key = prevKey[cur];
-    const auto it = index.dict.constFind(key);
-    if (it != index.dict.constEnd() && !it.value().isEmpty()) {
-      chunks.push_front(it.value().front());
-    }
-    cur = prev[cur];
-  }
-  return chunks.join(QString());
-}
-
-QStringList BuildPinyinCandidates(const QString& pinyin, int limit) {
-  const auto& index = GetPinyinIndex();
-  QStringList list;
-  if (pinyin.isEmpty()) {
-    return list;
-  }
-  const auto it = index.dict.constFind(pinyin);
-  if (it != index.dict.constEnd()) {
-    list = it.value();
-  }
-  const bool allowAbbr = pinyin.size() <= kMaxAbbrInputLength;
-  if (allowAbbr) {
-    const auto abbrIt = index.abbrDict.constFind(pinyin);
-    if (abbrIt != index.abbrDict.constEnd()) {
-      for (const auto& cand : abbrIt.value()) {
-        AppendCandidate(list, cand, limit);
-        if (limit > 0 && list.size() >= limit) {
-          break;
-        }
-      }
-    }
-  }
-  const QString fallback = SegmentFallback(pinyin);
-  if (!fallback.isEmpty()) {
-    AppendCandidate(list, fallback, limit);
-  }
-  if (list.size() < limit) {
-    auto itKey = std::lower_bound(index.keys.begin(), index.keys.end(),
-                                  pinyin);
-    for (; itKey != index.keys.end(); ++itKey) {
-      if (!itKey->startsWith(pinyin)) {
-        break;
-      }
-      if (*itKey == pinyin) {
-        continue;
-      }
-      const auto hit = index.dict.constFind(*itKey);
-      if (hit == index.dict.constEnd() || hit.value().isEmpty()) {
-        continue;
-      }
-      AppendCandidate(list, hit.value().front(), limit);
-      if (list.size() >= limit) {
-        break;
-      }
-    }
-  }
-  if (allowAbbr && list.size() < limit) {
-    auto itKey =
-        std::lower_bound(index.abbrKeys.begin(), index.abbrKeys.end(), pinyin);
-    for (; itKey != index.abbrKeys.end(); ++itKey) {
-      if (!itKey->startsWith(pinyin)) {
-        break;
-      }
-      if (*itKey == pinyin) {
-        continue;
-      }
-      const auto hit = index.abbrDict.constFind(*itKey);
-      if (hit == index.abbrDict.constEnd() || hit.value().isEmpty()) {
-        continue;
-      }
-      AppendCandidate(list, hit.value().front(), limit);
-      if (list.size() >= limit) {
-        break;
-      }
-    }
-  }
-  if (list.isEmpty()) {
-    list.push_back(pinyin);
-  }
-  if (limit > 0 && list.size() > limit) {
-    list = list.mid(0, limit);
-  }
-  return list;
-}
-
-QString FindConfigFile(const QString& name) {
-  if (name.isEmpty()) {
-    return {};
-  }
-  const QFileInfo info(name);
-  const QString appRoot = UiRuntimePaths::AppRootDir();
-  const QString baseDir =
-      appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
-  if (info.isAbsolute()) {
-    return QFile::exists(name) ? name : QString();
-  }
-  if (info.path() != QStringLiteral(".") && !info.path().isEmpty()) {
-    const QString candidate = baseDir + QStringLiteral("/") + name;
-    if (QFile::exists(candidate)) {
-      return candidate;
-    }
-    if (QFile::exists(name)) {
-      return QFileInfo(name).absoluteFilePath();
-    }
-    return {};
-  }
-  const QString in_config = baseDir + QStringLiteral("/config/") + name;
-  if (QFile::exists(in_config)) {
-    return in_config;
-  }
-  const QString in_app = baseDir + QStringLiteral("/") + name;
-  if (QFile::exists(in_app)) {
-    return in_app;
-  }
-  if (QFile::exists(name)) {
-    return QFileInfo(name).absoluteFilePath();
-  }
-  return {};
-}
-
-QString NowTimeString() {
-  return QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
-}
-
-struct CallInvite {
-  bool ok{false};
-  bool video{false};
-  QString callId;
-};
-
-CallInvite ParseCallInvite(const QString& text) {
-  CallInvite invite;
-  if (text.startsWith(QString::fromLatin1(kCallVoicePrefix))) {
-    invite.ok = true;
-    invite.video = false;
-    invite.callId = text.mid(static_cast<int>(std::strlen(kCallVoicePrefix)));
-  } else if (text.startsWith(QString::fromLatin1(kCallVideoPrefix))) {
-    invite.ok = true;
-    invite.video = true;
-    invite.callId = text.mid(static_cast<int>(std::strlen(kCallVideoPrefix)));
-  }
-  invite.callId = invite.callId.trimmed();
-  if (invite.callId.isEmpty()) {
-    invite.ok = false;
-  }
-  return invite;
-}
-
-QString ParseCallEndId(const QString& text) {
-  if (!text.startsWith(QString::fromLatin1(kCallEndPrefix))) {
-    return {};
-  }
-  return text.mid(static_cast<int>(std::strlen(kCallEndPrefix))).trimmed();
-}
-
-QString ParseRecallTargetId(const QString& text) {
-  if (!text.startsWith(QString::fromLatin1(kRecallPrefix))) {
-    return {};
-  }
-  return text.mid(static_cast<int>(std::strlen(kRecallPrefix))).trimmed();
-}
-
-QString FormatCoordE7(std::int32_t v_e7) {
-  const qint64 v64 = static_cast<qint64>(v_e7);
-  const bool neg = v64 < 0;
-  const quint64 abs = static_cast<quint64>(neg ? -v64 : v64);
-  const quint64 deg = abs / 10000000ULL;
-  const quint64 frac = abs % 10000000ULL;
-  return QStringLiteral("%1%2.%3")
-      .arg(neg ? QStringLiteral("-") : QString())
-      .arg(deg)
-      .arg(frac, 7, 10, QChar('0'));
-}
-
-QString FormatLocationText(double lat, double lon, const QString& label) {
-  const auto lat_e7 = static_cast<std::int32_t>(std::llround(lat * 10000000.0));
-  const auto lon_e7 = static_cast<std::int32_t>(std::llround(lon * 10000000.0));
-  const QString safeLabel =
-      label.trimmed().isEmpty() ? QStringLiteral("（未命名）") : label.trimmed();
-  return QStringLiteral("【位置】%1\nlat:%2, lon:%3")
-      .arg(safeLabel, FormatCoordE7(lat_e7), FormatCoordE7(lon_e7));
-}
-
-QString SanitizeFileId(const QString& fileId) {
-  QString out;
-  out.reserve(fileId.size());
-  for (const QChar ch : fileId) {
-    if ((ch >= QLatin1Char('a') && ch <= QLatin1Char('z')) ||
-        (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z')) ||
-        (ch >= QLatin1Char('0') && ch <= QLatin1Char('9')) ||
-        ch == QLatin1Char('_') || ch == QLatin1Char('-')) {
-      out.append(ch);
-    } else {
-      out.append(QLatin1Char('_'));
-    }
-  }
-  if (out.isEmpty()) {
-    out = QStringLiteral("file");
-  }
-  if (out.size() > 64) {
-    out = out.left(64);
-  }
-  return out;
-}
-
-QString ResolveAiUpscaleDir() {
-  const QString tempRoot =
-      QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-  if (tempRoot.isEmpty()) {
-    return {};
-  }
-  const QString scoped =
-      QStringLiteral("mi_e2ee_ai_upscale/%1")
-          .arg(QString::number(QCoreApplication::applicationPid()));
-  return QDir(tempRoot).filePath(scoped);
-}
-
-bool EnsureAiUpscaleDir(QDir& outDir, QString& error) {
-  const QString dirPath = ResolveAiUpscaleDir();
-  if (dirPath.isEmpty()) {
-    error = QStringLiteral("存储目录无效");
-    return false;
-  }
-  QDir dir(dirPath);
-  if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
-    error = QStringLiteral("创建超清目录失败");
-    return false;
-  }
-  outDir = dir;
-  return true;
-}
-
-QString BuildEnhancedImagePath(const QString& messageId,
-                               int scale,
-                               QString& error) {
-  const QString trimmed = messageId.trimmed();
-  if (trimmed.isEmpty()) {
-    error = QStringLiteral("图片标识无效");
-    return {};
-  }
-  QDir outDir;
-  if (!EnsureAiUpscaleDir(outDir, error)) {
-    return {};
-  }
-  const QString token = SanitizeFileId(trimmed);
-  if (token.isEmpty()) {
-    error = QStringLiteral("图片标识无效");
-    return {};
-  }
-  const int clamped = ClampEnhanceScale(scale);
-  return outDir.filePath(
-      QStringLiteral("msg_%1_x%2.png").arg(token).arg(clamped));
-}
-
-QString EnhancedImagePathIfExists(const QString& messageId) {
-  QString error;
-  const std::array<int, 2> scales = {kAiEnhanceScaleX4, kAiEnhanceScaleX2};
-  for (const int scale : scales) {
-    const QString path = BuildEnhancedImagePath(messageId, scale, error);
-    if (path.isEmpty()) {
-      continue;
-    }
-    if (QFileInfo::exists(path)) {
-      return path;
-    }
-  }
-  return {};
-}
-
-struct ImageQualityMetrics {
-  bool valid{false};
-  int width{0};
-  int height{0};
-  bool low_res{false};
-  double sharpness{0.0};
-  double noise{0.0};
-  bool anime_like{false};
-};
-
-ImageQualityMetrics AnalyzeImageQuality(const QString& path) {
-  ImageQualityMetrics metrics;
-  QImageReader reader(path);
-  reader.setAutoTransform(true);
-  QSize size = reader.size();
-  QImage image;
-  constexpr int kAnalyzeMaxDim = 256;
-
-  if (size.isValid()) {
-    metrics.width = size.width();
-    metrics.height = size.height();
-    QSize scaled = size;
-    if (std::max(scaled.width(), scaled.height()) > kAnalyzeMaxDim) {
-      scaled.scale(kAnalyzeMaxDim, kAnalyzeMaxDim, Qt::KeepAspectRatio);
-      reader.setScaledSize(scaled);
-    }
-    image = reader.read();
-  } else {
-    image = reader.read();
-    if (!image.isNull()) {
-      size = image.size();
-      metrics.width = size.width();
-      metrics.height = size.height();
-      if (std::max(size.width(), size.height()) > kAnalyzeMaxDim) {
-        image = image.scaled(kAnalyzeMaxDim, kAnalyzeMaxDim,
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
-      }
-    }
-  }
-
-  if (metrics.width > 0 && metrics.height > 0) {
-    const int minSide = std::min(metrics.width, metrics.height);
-    const std::int64_t area =
-        static_cast<std::int64_t>(metrics.width) *
-        static_cast<std::int64_t>(metrics.height);
-    constexpr int kLowResMinSide = 900;
-    constexpr std::int64_t kLowResArea = 1000000;
-    metrics.low_res = (minSide < kLowResMinSide) || (area < kLowResArea);
-  }
-
-  if (image.isNull()) {
-    return metrics;
-  }
-
-  QImage color = image.convertToFormat(QImage::Format_ARGB32);
-  const int colorW = color.width();
-  const int colorH = color.height();
-  int colorSamples = 0;
-  int uniqueColors = 0;
-  double saturationSum = 0.0;
-  std::vector<bool> colorSeen(32768, false);
-  if (colorW > 0 && colorH > 0) {
-    const int step = std::max(colorW, colorH) > 128 ? 2 : 1;
-    for (int y = 0; y < colorH; y += step) {
-      const QRgb* line =
-          reinterpret_cast<const QRgb*>(color.constScanLine(y));
-      for (int x = 0; x < colorW; x += step) {
-        const QRgb px = line[x];
-        const int r = qRed(px);
-        const int g = qGreen(px);
-        const int b = qBlue(px);
-        const int maxc = std::max({r, g, b});
-        const int minc = std::min({r, g, b});
-        if (maxc > 0) {
-          saturationSum +=
-              static_cast<double>(maxc - minc) / static_cast<double>(maxc);
-        }
-        const int key =
-            ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-        if (!colorSeen[static_cast<std::size_t>(key)]) {
-          colorSeen[static_cast<std::size_t>(key)] = true;
-          ++uniqueColors;
-        }
-        ++colorSamples;
-      }
-    }
-  }
-
-  QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
-  const int w = gray.width();
-  const int h = gray.height();
-  if (w < 3 || h < 3) {
-    metrics.valid = true;
-    return metrics;
-  }
-
-  double sum = 0.0;
-  double sum2 = 0.0;
-  double noiseSum = 0.0;
-  int edgeCount = 0;
-  int count = 0;
-  constexpr int kEdgeThreshold = 25;
-
-  for (int y = 1; y < h - 1; ++y) {
-    const uchar* prev = gray.constScanLine(y - 1);
-    const uchar* cur = gray.constScanLine(y);
-    const uchar* next = gray.constScanLine(y + 1);
-    for (int x = 1; x < w - 1; ++x) {
-      const int center = cur[x];
-      const int lap =
-          -4 * center + cur[x - 1] + cur[x + 1] + prev[x] + next[x];
-      sum += lap;
-      sum2 += static_cast<double>(lap) * static_cast<double>(lap);
-      if (std::abs(lap) > kEdgeThreshold) {
-        ++edgeCount;
-      }
-      const int mean =
-          (center + cur[x - 1] + cur[x + 1] + prev[x] + next[x] +
-           prev[x - 1] + prev[x + 1] + next[x - 1] + next[x + 1]) /
-          9;
-      noiseSum += std::abs(center - mean);
-      ++count;
-    }
-  }
-
-  if (count > 0) {
-    const double mean = sum / count;
-    metrics.sharpness = (sum2 / count) - (mean * mean);
-    metrics.noise = noiseSum / count;
-    const double edgeRatio =
-        static_cast<double>(edgeCount) / static_cast<double>(count);
-    const double uniqueRatio =
-        colorSamples > 0
-            ? static_cast<double>(uniqueColors) /
-                  static_cast<double>(colorSamples)
-            : 1.0;
-    const double avgSat =
-        colorSamples > 0 ? saturationSum / static_cast<double>(colorSamples)
-                         : 0.0;
-    metrics.anime_like =
-        avgSat > 0.08 && uniqueRatio < 0.18 && edgeRatio > 0.08;
-  }
-  metrics.valid = true;
-  return metrics;
-}
-
-bool ShouldAutoEnhanceImage(const QString& path) {
-  const ImageQualityMetrics metrics = AnalyzeImageQuality(path);
-  if (!metrics.valid) {
-    return false;
-  }
-  if (metrics.low_res) {
-    return true;
-  }
-  constexpr double kSharpnessThreshold = 100.0;
-  constexpr double kNoiseThreshold = 12.0;
-  return metrics.sharpness < kSharpnessThreshold ||
-         metrics.noise > kNoiseThreshold;
-}
-
-bool IsVideoExt(const QString& ext) {
-  const QString e = ext.toLower();
-  return e == QStringLiteral("mp4") || e == QStringLiteral("mov") ||
-         e == QStringLiteral("mkv") || e == QStringLiteral("webm") ||
-         e == QStringLiteral("avi");
-}
-
-bool IsImageExt(const QString& ext) {
-  const QString e = ext.toLower();
-  return e == QStringLiteral("png") || e == QStringLiteral("jpg") ||
-         e == QStringLiteral("jpeg") || e == QStringLiteral("webp") ||
-         e == QStringLiteral("bmp");
-}
-
-bool IsGifExt(const QString& ext) {
-  return ext.toLower() == QStringLiteral("gif");
-}
-
-bool IsAlreadyCompressedExt(const QString& ext) {
-  const QString e = ext.toLower();
-  static const QSet<QString> kCompressed = {
-      QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
-      QStringLiteral("gif"),  QStringLiteral("webp"), QStringLiteral("bmp"),
-      QStringLiteral("ico"),  QStringLiteral("heic"),
-      QStringLiteral("mp4"),  QStringLiteral("mkv"),  QStringLiteral("mov"),
-      QStringLiteral("webm"), QStringLiteral("avi"),  QStringLiteral("flv"),
-      QStringLiteral("m4v"),  QStringLiteral("mp3"),  QStringLiteral("m4a"),
-      QStringLiteral("aac"),  QStringLiteral("ogg"),  QStringLiteral("opus"),
-      QStringLiteral("flac"), QStringLiteral("wav"),  QStringLiteral("zip"),
-      QStringLiteral("rar"),  QStringLiteral("7z"),   QStringLiteral("gz"),
-      QStringLiteral("bz2"),  QStringLiteral("xz"),   QStringLiteral("zst"),
-      QStringLiteral("pdf"),  QStringLiteral("docx"), QStringLiteral("xlsx"),
-      QStringLiteral("pptx")
-  };
-  return kCompressed.contains(e);
-}
-
-constexpr quint64 kMaxAttachmentCacheBytes = 200ull * 1024ull * 1024ull * 1024ull;
-constexpr quint64 kTier128M = 128ull * 1024ull * 1024ull;
-constexpr quint64 kTier256M = 256ull * 1024ull * 1024ull;
-constexpr quint64 kTier512M = 512ull * 1024ull * 1024ull;
-constexpr quint64 kTier1G = 1024ull * 1024ull * 1024ull;
-constexpr quint64 kTier2G = 2ull * 1024ull * 1024ull * 1024ull;
-constexpr quint64 kTier10G = 10ull * 1024ull * 1024ull * 1024ull;
-
-constexpr char kAttachmentCacheMagic[8] = {'M', 'I', 'A', 'C',
-                                           'A', 'C', 'H', 'E'};
-constexpr quint8 kAttachmentCacheVersion = 1;
-constexpr char kAttachmentChunkMagic[4] = {'M', 'I', 'A', 'C'};
-constexpr quint8 kAttachmentChunkVersion = 1;
-
-enum class CacheChunkMethod : quint8 {
-  kRaw = 0,
-  kDeflate = 1,
-  kDeflate2 = 2
-};
-
-struct CachePolicy {
-  int level{1};
-  int passes{1};
-  quint64 chunkBytes{4ull * 1024ull * 1024ull};
-  bool keepRaw{false};
-  bool forceRaw{false};
-};
-
-struct CacheIndex {
-  quint64 fileSize{0};
-  quint64 chunkBytes{0};
-  quint32 chunkCount{0};
-  quint8 flags{0};
-  quint8 level{0};
-  quint8 passes{1};
-  QString fileName;
-  QString rawName;
-};
-
-constexpr quint8 kCacheFlagKeepRaw = 0x1;
-constexpr quint8 kCacheFlagForceRaw = 0x2;
-
-class LambdaTask final : public QRunnable {
- public:
-  explicit LambdaTask(std::function<void()> fn) : fn_(std::move(fn)) {}
-  void run() override { fn_(); }
-
- private:
-  std::function<void()> fn_;
-};
-
-CachePolicy SelectCachePolicy(quint64 fileSize) {
-  CachePolicy policy;
-  if (fileSize == 0) {
-    policy.level = 5;
-    policy.passes = 1;
-    policy.chunkBytes = 8ull * 1024ull * 1024ull;
-    policy.keepRaw = false;
-    return policy;
-  }
-  if (fileSize <= kTier128M) {
-    policy.level = 1;
-    policy.passes = 1;
-    policy.chunkBytes = 4ull * 1024ull * 1024ull;
-    policy.keepRaw = true;
-  } else if (fileSize <= kTier256M) {
-    policy.level = 3;
-    policy.passes = 1;
-    policy.chunkBytes = 8ull * 1024ull * 1024ull;
-  } else if (fileSize <= kTier512M) {
-    policy.level = 5;
-    policy.passes = 1;
-    policy.chunkBytes = 16ull * 1024ull * 1024ull;
-  } else if (fileSize <= kTier1G) {
-    policy.level = 7;
-    policy.passes = 1;
-    policy.chunkBytes = 32ull * 1024ull * 1024ull;
-  } else if (fileSize <= kTier2G) {
-    policy.level = 9;
-    policy.passes = 1;
-    policy.chunkBytes = 32ull * 1024ull * 1024ull;
-  } else if (fileSize <= kTier10G) {
-    policy.level = 9;
-    policy.passes = 2;
-    policy.chunkBytes = 64ull * 1024ull * 1024ull;
-  } else {
-    policy.level = 9;
-    policy.passes = 2;
-    policy.chunkBytes = 128ull * 1024ull * 1024ull;
-  }
-  return policy;
-}
-
-QString CacheChunkName(int index) {
-  return QStringLiteral("chunk_%1.bin").arg(index, 8, 10, QLatin1Char('0'));
-}
-
-QString CacheIndexPath(const QDir& dir) {
-  return dir.filePath(QStringLiteral("cache.idx"));
-}
-
-bool ReadCacheIndex(const QString& path, CacheIndex& out, QString& error) {
-  out = CacheIndex{};
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly)) {
-    error = QStringLiteral("cache index read failed");
-    return false;
-  }
-  QDataStream stream(&file);
-  stream.setByteOrder(QDataStream::LittleEndian);
-  char magic[sizeof(kAttachmentCacheMagic)] = {};
-  if (stream.readRawData(magic, sizeof(magic)) != sizeof(magic)) {
-    error = QStringLiteral("cache index read failed");
-    return false;
-  }
-  if (std::memcmp(magic, kAttachmentCacheMagic, sizeof(magic)) != 0) {
-    error = QStringLiteral("cache index magic mismatch");
-    return false;
-  }
-  quint8 version = 0;
-  stream >> version;
-  if (version != kAttachmentCacheVersion) {
-    error = QStringLiteral("cache index version mismatch");
-    return false;
-  }
-  stream >> out.flags;
-  stream >> out.level;
-  stream >> out.passes;
-  stream >> out.fileSize;
-  stream >> out.chunkBytes;
-  stream >> out.chunkCount;
-  quint16 nameLen = 0;
-  stream >> nameLen;
-  if (nameLen > 0) {
-    QByteArray name;
-    name.resize(nameLen);
-    if (stream.readRawData(name.data(), name.size()) != name.size()) {
-      error = QStringLiteral("cache index read failed");
-      return false;
-    }
-    out.fileName = QString::fromUtf8(name);
-  }
-  quint16 rawLen = 0;
-  stream >> rawLen;
-  if (rawLen > 0) {
-    QByteArray raw;
-    raw.resize(rawLen);
-    if (stream.readRawData(raw.data(), raw.size()) != raw.size()) {
-      error = QStringLiteral("cache index read failed");
-      return false;
-    }
-    out.rawName = QString::fromUtf8(raw);
-  }
-  return true;
-}
-
-bool WriteCacheIndex(const QString& path, const CacheIndex& index, QString& error) {
-  QSaveFile file(path);
-  if (!file.open(QIODevice::WriteOnly)) {
-    error = QStringLiteral("cache index write failed");
-    return false;
-  }
-  QDataStream stream(&file);
-  stream.setByteOrder(QDataStream::LittleEndian);
-  stream.writeRawData(kAttachmentCacheMagic, sizeof(kAttachmentCacheMagic));
-  stream << static_cast<quint8>(kAttachmentCacheVersion);
-  stream << index.flags;
-  stream << index.level;
-  stream << index.passes;
-  stream << index.fileSize;
-  stream << index.chunkBytes;
-  stream << index.chunkCount;
-  const QByteArray name = index.fileName.toUtf8();
-  stream << static_cast<quint16>(name.size());
-  if (!name.isEmpty()) {
-    stream.writeRawData(name.constData(), name.size());
-  }
-  const QByteArray raw = index.rawName.toUtf8();
-  stream << static_cast<quint16>(raw.size());
-  if (!raw.isEmpty()) {
-    stream.writeRawData(raw.constData(), raw.size());
-  }
-  if (!file.commit()) {
-    error = QStringLiteral("cache index write failed");
-    return false;
-  }
-  return true;
-}
-
-bool CacheChunksReady(const QDir& dir, const CacheIndex& index) {
-  if (index.chunkCount == 0) {
-    return index.fileSize == 0;
-  }
-  for (quint32 i = 0; i < index.chunkCount; ++i) {
-    if (!QFileInfo::exists(dir.filePath(CacheChunkName(static_cast<int>(i))))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool WriteChunkFile(const QString& path,
-                    const QByteArray& payload,
-                    CacheChunkMethod method,
-                    int level,
-                    quint32 rawSize,
-                    QString& error) {
-  QSaveFile file(path);
-  if (!file.open(QIODevice::WriteOnly)) {
-    error = QStringLiteral("cache chunk write failed");
-    return false;
-  }
-  QDataStream stream(&file);
-  stream.setByteOrder(QDataStream::LittleEndian);
-  stream.writeRawData(kAttachmentChunkMagic, sizeof(kAttachmentChunkMagic));
-  stream << static_cast<quint8>(kAttachmentChunkVersion);
-  stream << static_cast<quint8>(method);
-  stream << static_cast<quint8>(level);
-  stream << static_cast<quint8>(0);
-  stream << rawSize;
-  stream << static_cast<quint32>(payload.size());
-  if (!payload.isEmpty()) {
-    if (file.write(payload) != payload.size()) {
-      error = QStringLiteral("cache chunk write failed");
-      return false;
-    }
-  }
-  if (!file.commit()) {
-    error = QStringLiteral("cache chunk write failed");
-    return false;
-  }
-  return true;
-}
-
-bool CompressChunk(const QByteArray& input,
-                   const CachePolicy& policy,
-                   QByteArray& output,
-                   CacheChunkMethod& method) {
-  if (policy.forceRaw) {
-    output = input;
-    method = CacheChunkMethod::kRaw;
-    return true;
-  }
-  QByteArray compressed = qCompress(input, policy.level);
-  if (policy.passes > 1) {
-    compressed = qCompress(compressed, policy.level);
-  }
-  if (compressed.size() >= input.size()) {
-    output = input;
-    method = CacheChunkMethod::kRaw;
-    return true;
-  }
-  output = compressed;
-  method = policy.passes > 1 ? CacheChunkMethod::kDeflate2
-                             : CacheChunkMethod::kDeflate;
-  return true;
-}
-
-bool BuildChunkedCache(const QString& sourcePath,
-                       const CachePolicy& policy,
-                       QDir& dir,
-                       quint64& outFileSize,
-                       quint32& outChunkCount,
-                       QString& error) {
-  if (policy.chunkBytes == 0) {
-    error = QStringLiteral("cache chunk size invalid");
-    return false;
-  }
-  QFile source(sourcePath);
-  if (!source.open(QIODevice::ReadOnly)) {
-    error = QStringLiteral("cache source open failed");
-    return false;
-  }
-  const quint64 totalSize = static_cast<quint64>(source.size());
-  if (totalSize > kMaxAttachmentCacheBytes) {
-    error = QStringLiteral("cache file too large");
-    return false;
-  }
-  outFileSize = totalSize;
-  outChunkCount = 0;
-  quint64 remaining = totalSize;
-  while (remaining > 0) {
-    const quint64 want = std::min(policy.chunkBytes, remaining);
-    const qint64 wantRead = static_cast<qint64>(want);
-    QByteArray chunk = source.read(wantRead);
-    if (chunk.size() != wantRead) {
-      error = QStringLiteral("cache source read failed");
-      return false;
-    }
-    QByteArray payload;
-    CacheChunkMethod method = CacheChunkMethod::kRaw;
-    if (!CompressChunk(chunk, policy, payload, method)) {
-      error = QStringLiteral("cache compress failed");
-      return false;
-    }
-    const QString chunkPath =
-        dir.filePath(CacheChunkName(static_cast<int>(outChunkCount)));
-    if (!WriteChunkFile(chunkPath,
-                        payload,
-                        method,
-                        policy.level,
-                        static_cast<quint32>(chunk.size()),
-                        error)) {
-      return false;
-    }
-    remaining -= static_cast<quint64>(chunk.size());
-    ++outChunkCount;
-  }
-  return true;
-}
-
-bool EnsureCacheRootDir(QDir& out, QString& error) {
-  QString baseDir = UiRuntimePaths::AppRootDir();
-  if (baseDir.isEmpty()) {
-    baseDir = QCoreApplication::applicationDirPath();
-  }
-  QDir root(baseDir);
-  if (!root.mkpath(QStringLiteral("database/attachments_cache"))) {
-    error = QStringLiteral("cache dir failed");
-    return false;
-  }
-  root.cd(QStringLiteral("database/attachments_cache"));
-  out = root;
-  return true;
-}
-
-bool CopyFileToPath(const QString& src,
-                    const QString& dest,
-                    QString& error) {
-  if (src.isEmpty() || dest.isEmpty()) {
-    error = QStringLiteral("cache copy failed");
-    return false;
-  }
-  if (QFileInfo(src).absoluteFilePath() == QFileInfo(dest).absoluteFilePath()) {
-    return true;
-  }
-  if (QFileInfo::exists(dest)) {
-    QFile::remove(dest);
-  }
-  if (!QFile::copy(src, dest)) {
-    error = QStringLiteral("cache copy failed");
-    return false;
-  }
-  return true;
-}
-
-bool ReadChunkFile(const QString& path,
-                   CacheChunkMethod& method,
-                   quint32& rawSize,
-                   QByteArray& payload,
-                   QString& error) {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly)) {
-    error = QStringLiteral("cache chunk read failed");
-    return false;
-  }
-  QDataStream stream(&file);
-  stream.setByteOrder(QDataStream::LittleEndian);
-  char magic[sizeof(kAttachmentChunkMagic)] = {};
-  if (stream.readRawData(magic, sizeof(magic)) != sizeof(magic)) {
-    error = QStringLiteral("cache chunk read failed");
-    return false;
-  }
-  if (std::memcmp(magic, kAttachmentChunkMagic, sizeof(magic)) != 0) {
-    error = QStringLiteral("cache chunk invalid");
-    return false;
-  }
-  quint8 version = 0;
-  quint8 methodByte = 0;
-  quint8 level = 0;
-  quint8 reserved = 0;
-  quint32 payloadSize = 0;
-  stream >> version;
-  stream >> methodByte;
-  stream >> level;
-  stream >> reserved;
-  stream >> rawSize;
-  stream >> payloadSize;
-  (void)level;
-  (void)reserved;
-  if (version != kAttachmentChunkVersion) {
-    error = QStringLiteral("cache chunk invalid");
-    return false;
-  }
-  if (payloadSize == 0 && rawSize == 0) {
-    payload.clear();
-    method = static_cast<CacheChunkMethod>(methodByte);
-    return true;
-  }
-  if (payloadSize >
-      static_cast<quint32>(file.size() - file.pos())) {
-    error = QStringLiteral("cache chunk invalid");
-    return false;
-  }
-  payload = file.read(static_cast<qint64>(payloadSize));
-  if (payload.size() != static_cast<int>(payloadSize)) {
-    error = QStringLiteral("cache chunk read failed");
-    return false;
-  }
-  method = static_cast<CacheChunkMethod>(methodByte);
-  return true;
-}
-
-bool DecompressChunk(CacheChunkMethod method,
-                     const QByteArray& payload,
-                     quint32 rawSize,
-                     QByteArray& out,
-                     QString& error) {
-  out.clear();
-  if (rawSize == 0) {
-    return true;
-  }
-  if (method == CacheChunkMethod::kRaw) {
-    out = payload;
-  } else if (method == CacheChunkMethod::kDeflate) {
-    out = qUncompress(payload);
-  } else if (method == CacheChunkMethod::kDeflate2) {
-    const QByteArray stage1 = qUncompress(payload);
-    out = qUncompress(stage1);
-  } else {
-    error = QStringLiteral("cache chunk invalid");
-    return false;
-  }
-  if (out.size() != static_cast<int>(rawSize)) {
-    error = QStringLiteral("cache chunk invalid");
-    return false;
-  }
-  return true;
-}
-
-bool RestoreChunkedCache(const QDir& dir,
-                         const CacheIndex& index,
-                         const QString& destPath,
-                         const std::function<void(double)>& onProgress,
-                         QString& error) {
-  QFile out(destPath);
-  if (QFileInfo::exists(destPath)) {
-    QFile::remove(destPath);
-  }
-  if (!out.open(QIODevice::WriteOnly)) {
-    error = QStringLiteral("cache restore failed");
-    return false;
-  }
-  if (index.chunkCount == 0) {
-    out.close();
-    if (onProgress) {
-      onProgress(1.0);
-    }
-    return true;
-  }
-  for (quint32 i = 0; i < index.chunkCount; ++i) {
-    const QString chunkPath = dir.filePath(CacheChunkName(static_cast<int>(i)));
-    CacheChunkMethod method = CacheChunkMethod::kRaw;
-    quint32 rawSize = 0;
-    QByteArray payload;
-    if (!ReadChunkFile(chunkPath, method, rawSize, payload, error)) {
-      out.close();
-      QFile::remove(destPath);
-      return false;
-    }
-    QByteArray plain;
-    if (!DecompressChunk(method, payload, rawSize, plain, error)) {
-      out.close();
-      QFile::remove(destPath);
-      return false;
-    }
-    if (!plain.isEmpty()) {
-      if (out.write(plain) != plain.size()) {
-        error = QStringLiteral("cache restore failed");
-        out.close();
-        QFile::remove(destPath);
-        return false;
-      }
-    }
-    if (onProgress) {
-      onProgress(static_cast<double>(i + 1) /
-                 static_cast<double>(index.chunkCount));
-    }
-  }
-  out.close();
-  if (index.fileSize > 0 &&
-      static_cast<quint64>(QFileInfo(destPath).size()) != index.fileSize) {
-    error = QStringLiteral("cache restore failed");
-    QFile::remove(destPath);
-    return false;
-  }
-  return true;
-}
-
-struct CacheTaskResult {
-  bool ok{false};
-  QString fileUrl;
-  QString previewUrl;
-  QString error;
-};
-
-QString FindFfmpegPath();
-
-struct ProgressAdapter {
-  std::function<void(double)> onProgress;
-};
-
-void ProgressThunk(std::uint64_t done,
-                   std::uint64_t total,
-                   void* user_data) {
-  if (!user_data || total == 0) {
-    return;
-  }
-  auto* adapter = static_cast<ProgressAdapter*>(user_data);
-  if (!adapter->onProgress) {
-    return;
-  }
-  adapter->onProgress(static_cast<double>(done) /
-                      static_cast<double>(total));
-}
-
-CacheTaskResult BuildAttachmentCache(
-    mi_client_handle* c_api,
-    const QString& fileId,
-    const std::array<std::uint8_t, 32>& fileKey,
-    const QString& fileName,
-    qint64 fileSize,
-    const std::function<void(double)>& onProgress) {
-  CacheTaskResult result;
-  QDir cacheRoot;
-  QString error;
-  if (!EnsureCacheRootDir(cacheRoot, error)) {
-    result.error = error;
-    return result;
-  }
-
-  const QString safeId = SanitizeFileId(fileId);
-  QString ext = QFileInfo(fileName).suffix().toLower();
-  if (ext.isEmpty()) {
-    ext = QStringLiteral("bin");
-  }
-  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
-  auto downloadToPath = [&](const QString& path) -> bool {
-    if (!c_api) {
-      result.error = QStringLiteral("未初始化");
-      return false;
-    }
-    const QByteArray pathUtf8 = path.toUtf8();
-    const QByteArray nameUtf8 = fileName.toUtf8();
-    const char* namePtr = nameUtf8.isEmpty() ? nullptr : nameUtf8.constData();
-    ProgressAdapter adapter{onProgress};
-    const mi_progress_callback_t cb = onProgress ? ProgressThunk : nullptr;
-    void* userData = onProgress ? &adapter : nullptr;
-    const std::uint64_t sizeValue =
-        fileSize > 0 ? static_cast<std::uint64_t>(fileSize) : 0;
-    const bool ok = mi_client_download_chat_file_to_path(
-                        c_api, fileId.toStdString().c_str(), fileKey.data(),
-                        static_cast<std::uint32_t>(fileKey.size()), namePtr,
-                        sizeValue, pathUtf8.constData(), 1, cb, userData) != 0;
-    if (!ok) {
-      const char* apiErr = mi_client_last_error(c_api);
-      if (apiErr && *apiErr) {
-        result.error = QString::fromUtf8(apiErr);
-      }
-    }
-    return ok;
-  };
-
-  if (isMedia) {
-    const QString filePath =
-        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
-    const QString previewPath =
-        cacheRoot.filePath(safeId + QStringLiteral(".preview.jpg"));
-    if (!QFileInfo::exists(filePath)) {
-      if (!downloadToPath(filePath)) {
-        return result;
-      }
-    }
-    result.fileUrl = filePath;
-    if (IsVideoExt(ext)) {
-      if (!QFileInfo::exists(previewPath)) {
-        const QString ffmpeg = FindFfmpegPath();
-        if (!ffmpeg.isEmpty()) {
-          QStringList args;
-          args << QStringLiteral("-y")
-               << QStringLiteral("-ss") << QStringLiteral("0.2")
-               << QStringLiteral("-i") << filePath
-               << QStringLiteral("-frames:v") << QStringLiteral("1")
-               << QStringLiteral("-vf") << QStringLiteral("scale=480:-1")
-               << previewPath;
-          (void)RunProcessQuietly(ffmpeg, args);
-        }
-      }
-      if (QFileInfo::exists(previewPath)) {
-        result.previewUrl = previewPath;
-      }
-    } else {
-      result.previewUrl = filePath;
-    }
-    result.ok = true;
-    return result;
-  }
-
-  QDir fileDir(cacheRoot.filePath(safeId));
-  if (!fileDir.exists()) {
-    if (!cacheRoot.mkpath(safeId)) {
-      result.error = QStringLiteral("cache dir failed");
-      return result;
-    }
-  }
-  fileDir.setPath(cacheRoot.filePath(safeId));
-
-  const QString indexPath = CacheIndexPath(fileDir);
-  CacheIndex existing;
-  if (QFileInfo::exists(indexPath)) {
-    if (ReadCacheIndex(indexPath, existing, error) &&
-        CacheChunksReady(fileDir, existing)) {
-      if ((existing.flags & kCacheFlagKeepRaw) && !existing.rawName.isEmpty()) {
-        const QString rawPath = fileDir.filePath(existing.rawName);
-        if (QFileInfo::exists(rawPath)) {
-          result.fileUrl = rawPath;
-        }
-      }
-      result.ok = true;
-      return result;
-    }
-  }
-
-  const QFileInfoList oldFiles =
-      fileDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-  for (const auto& entry : oldFiles) {
-    QFile::remove(entry.absoluteFilePath());
-  }
-
-  const QString tempPath = fileDir.filePath(QStringLiteral("download.tmp"));
-  if (QFileInfo::exists(tempPath)) {
-    QFile::remove(tempPath);
-  }
-
-  if (!downloadToPath(tempPath)) {
-    return result;
-  }
-
-  const quint64 tempSize =
-      static_cast<quint64>(QFileInfo(tempPath).size());
-  if (tempSize > kMaxAttachmentCacheBytes) {
-    QFile::remove(tempPath);
-    result.error = QStringLiteral("file too large");
-    return result;
-  }
-
-  quint64 actualSize = 0;
-  quint32 chunkCount = 0;
-  CachePolicy policy = SelectCachePolicy(tempSize);
-  if (IsAlreadyCompressedExt(ext)) {
-    policy.forceRaw = true;
-  }
-  if (!BuildChunkedCache(tempPath, policy, fileDir, actualSize, chunkCount,
-                         error)) {
-    QFile::remove(tempPath);
-    result.error = error;
-    return result;
-  }
-
-  QString rawName;
-  if (policy.keepRaw && actualSize > 0) {
-    rawName = QStringLiteral("raw.") + ext;
-    const QString rawPath = fileDir.filePath(rawName);
-    if (QFileInfo::exists(rawPath)) {
-      QFile::remove(rawPath);
-    }
-    QFile::rename(tempPath, rawPath);
-    result.fileUrl = rawPath;
-  } else {
-    QFile::remove(tempPath);
-  }
-
-  CacheIndex index;
-  index.fileSize = actualSize;
-  index.chunkBytes = policy.chunkBytes;
-  index.chunkCount = chunkCount;
-  index.level = static_cast<quint8>(policy.level);
-  index.passes = static_cast<quint8>(policy.passes);
-  index.fileName = fileName;
-  index.rawName = rawName;
-  if (policy.keepRaw) {
-    index.flags |= kCacheFlagKeepRaw;
-  }
-  if (policy.forceRaw) {
-    index.flags |= kCacheFlagForceRaw;
-  }
-  if (!WriteCacheIndex(indexPath, index, error)) {
-    result.error = error;
-    return result;
-  }
-
-  result.ok = true;
-  return result;
-}
-
-bool RestoreAttachmentFromCache(const QString& fileId,
-                                const QString& fileName,
-                                const QString& savePath,
-                                const std::function<void(double)>& onProgress,
-                                QString& error) {
-  QDir cacheRoot;
-  if (!EnsureCacheRootDir(cacheRoot, error)) {
-    return false;
-  }
-  const QString safeId = SanitizeFileId(fileId);
-  QString ext = QFileInfo(fileName).suffix().toLower();
-  if (ext.isEmpty()) {
-    ext = QStringLiteral("bin");
-  }
-  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
-  if (isMedia) {
-    const QString filePath =
-        cacheRoot.filePath(safeId + QStringLiteral(".") + ext);
-    if (!QFileInfo::exists(filePath)) {
-      error = QStringLiteral("cache missing");
-      return false;
-    }
-    if (!CopyFileToPath(filePath, savePath, error)) {
-      return false;
-    }
-    if (onProgress) {
-      onProgress(1.0);
-    }
-    return true;
-  }
-
-  const QDir fileDir(cacheRoot.filePath(safeId));
-  const QString indexPath = CacheIndexPath(fileDir);
-  CacheIndex index;
-  if (!QFileInfo::exists(indexPath) ||
-      !ReadCacheIndex(indexPath, index, error)) {
-    error = QStringLiteral("cache missing");
-    return false;
-  }
-  if ((index.flags & kCacheFlagKeepRaw) && !index.rawName.isEmpty()) {
-    const QString rawPath = fileDir.filePath(index.rawName);
-    if (QFileInfo::exists(rawPath)) {
-      if (!CopyFileToPath(rawPath, savePath, error)) {
-        return false;
-      }
-      if (onProgress) {
-        onProgress(1.0);
-      }
-      return true;
-    }
-  }
-  if (!CacheChunksReady(fileDir, index)) {
-    error = QStringLiteral("cache missing");
-    return false;
-  }
-  return RestoreChunkedCache(fileDir, index, savePath, onProgress, error);
-}
-
-QString FindFfmpegPath() {
-  QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
-  if (!ffmpeg.isEmpty()) {
-    return ffmpeg;
-  }
-  QString baseDir = UiRuntimePaths::AppRootDir();
-  if (baseDir.isEmpty()) {
-    baseDir = QCoreApplication::applicationDirPath();
-  }
-  const QString local = QDir(baseDir).filePath(QStringLiteral("ffmpeg.exe"));
-  if (QFileInfo::exists(local)) {
-    return local;
-  }
-  const QString runtimeDir = UiRuntimePaths::RuntimeDir();
-  if (!runtimeDir.isEmpty()) {
-    const QString runtime = QDir(runtimeDir).filePath(QStringLiteral("ffmpeg.exe"));
-    if (QFileInfo::exists(runtime)) {
-      return runtime;
-    }
-  }
-  return {};
-}
-
-class Nv12VideoBuffer final : public QAbstractVideoBuffer {
- public:
-  Nv12VideoBuffer(std::vector<std::uint8_t>&& data,
-                  std::uint32_t width,
-                  std::uint32_t height,
-                  std::uint32_t stride)
-      : format_(QSize(static_cast<int>(width), static_cast<int>(height)),
-                QVideoFrameFormat::Format_NV12),
-        data_(std::move(data)),
-        stride_(static_cast<int>(stride)),
-        height_(static_cast<int>(height)) {}
-
-  MapData map(QVideoFrame::MapMode) override {
-    MapData out;
-    if (data_.empty() || stride_ <= 0 || height_ <= 0) {
-      return out;
-    }
-    const std::size_t y_bytes =
-        static_cast<std::size_t>(stride_) * static_cast<std::size_t>(height_);
-    if (data_.size() < y_bytes) {
-      return out;
-    }
-    out.planeCount = 2;
-    out.bytesPerLine[0] = stride_;
-    out.bytesPerLine[1] = stride_;
-    out.data[0] = data_.data();
-    out.data[1] = data_.data() + y_bytes;
-    out.dataSize[0] = static_cast<int>(y_bytes);
-    out.dataSize[1] = static_cast<int>(data_.size() - y_bytes);
-    return out;
-  }
-
-  void unmap() override {}
-
-  QVideoFrameFormat format() const override { return format_; }
-
- private:
-  QVideoFrameFormat format_;
-  std::vector<std::uint8_t> data_;
-  int stride_{0};
-  int height_{0};
-};
-
-}  // namespace
+#include "quick_client_helpers.inc"
 
 QuickClient::QuickClient(QObject* parent) : QObject(parent) {
   poll_timer_.setInterval(500);
@@ -2220,7 +117,7 @@ bool QuickClient::init(const QString& configPath) {
   const QString appRoot = UiRuntimePaths::AppRootDir();
   const QString baseDir =
       appRoot.isEmpty() ? QCoreApplication::applicationDirPath() : appRoot;
-  QString dataDir = ResolveUiDataDir();
+  QString dataDir = resolve_ui_data_dir();
   if (dataDir.isEmpty()) {
     dataDir = QDir(baseDir).filePath(QStringLiteral("database"));
   }
@@ -2238,29 +135,29 @@ bool QuickClient::init(const QString& configPath) {
 #endif
   qputenv("MI_E2EE_DATA_DIR",
           QDir::toNativeSeparators(dataDir).toUtf8());
-  ai_gpu_name_ = QueryGpuName();
-  ai_gpu_series_ = ParseNvidiaSeries(ai_gpu_name_);
-  ai_gpu_available_ = DetectAiEnhanceGpuAvailable();
+  ai_gpu_name_ = query_gpu_name();
+  ai_gpu_series_ = parse_nvidia_series(ai_gpu_name_);
+  ai_gpu_available_ = detect_ai_enhance_gpu_available();
   const AiEnhanceRecommendation rec =
-      BuildAiEnhanceRecommendation(ai_gpu_series_, ai_gpu_available_);
+      build_ai_enhance_recommendation(ai_gpu_series_, ai_gpu_available_);
   ai_rec_perf_scale_ = rec.perf_scale;
   ai_rec_quality_scale_ = rec.quality_scale;
   bool enabled = ai_enhance_enabled_;
   int quality = ai_rec_perf_scale_;
   bool x4Confirmed = ai_enhance_x4_confirmed_;
-  LoadAiEnhanceSettings(ai_gpu_available_, rec, enabled, quality, x4Confirmed);
+  load_ai_enhance_settings(ai_gpu_available_, rec, enabled, quality, x4Confirmed);
   ai_enhance_enabled_ = enabled;
   ai_enhance_quality_ = quality;
   ai_enhance_x4_confirmed_ = x4Confirmed;
   if (!configPath.isEmpty()) {
     config_path_ = configPath;
   } else {
-    config_path_ = FindConfigFile(QStringLiteral("config/client_config.ini"));
+    config_path_ = find_config_file(QStringLiteral("config/client_config.ini"));
     if (config_path_.isEmpty()) {
-      config_path_ = FindConfigFile(QStringLiteral("client_config.ini"));
+      config_path_ = find_config_file(QStringLiteral("client_config.ini"));
     }
     if (config_path_.isEmpty()) {
-      config_path_ = FindConfigFile(QStringLiteral("config.ini"));
+      config_path_ = find_config_file(QStringLiteral("config.ini"));
     }
     if (config_path_.isEmpty()) {
       config_path_ = baseDir + QStringLiteral("/config/client_config.ini");
@@ -2288,12 +185,12 @@ bool QuickClient::init(const QString& configPath) {
   ClearQrLoginCache();
   emit qrLoginChanged();
   bool historySave = history_save_enabled_;
-  LoadPrivacySettings(historySave);
+  load_privacy_settings(historySave);
   history_save_enabled_ = historySave;
   if (c_api_) {
     mi_client_set_history_enabled(c_api_, history_save_enabled_ ? 1 : 0);
   }
-  LoadChatBackgrounds(chat_backgrounds_);
+  load_chat_backgrounds(chat_backgrounds_);
   return ok;
 }
 
@@ -2349,7 +246,7 @@ bool QuickClient::loginWithRootCode(const QString& user,
   }
   if (!ok) {
     emit status(QStringLiteral("登录失败"));
-    token_.clear();
+    logged_in_ = false;
     username_.clear();
     const char* err = mi_client_last_error(c_api_);
     UpdateLastError(err ? QString::fromUtf8(err) : QString());
@@ -2359,7 +256,7 @@ bool QuickClient::loginWithRootCode(const QString& user,
   }
   UpdateConnectionState(true);
   MaybeEmitTrustSignals();
-  emit tokenChanged();
+  emit authStateChanged();
   emit userChanged();
   return ok;
 }
@@ -2369,7 +266,7 @@ bool QuickClient::beginQrLogin(const QString& username) {
     UpdateLastError(QStringLiteral("未初始化"));
     return false;
   }
-  if (!token_.isEmpty()) {
+  if (logged_in_) {
     UpdateLastError(QStringLiteral("已登录"));
     return false;
   }
@@ -2438,7 +335,7 @@ bool QuickClient::pollQrLogin() {
     HandleLoginSuccess(user);
     UpdateConnectionState(true);
     MaybeEmitTrustSignals();
-    emit tokenChanged();
+    emit authStateChanged();
     emit userChanged();
   } else {
     UpdateConnectionState(false);
@@ -2493,7 +390,7 @@ void QuickClient::logout() {
   qr_login_payload_.clear();
   ClearQrLoginCache();
   emit qrLoginChanged();
-  token_.clear();
+  logged_in_ = false;
   username_.clear();
   UpdateLastError(QString());
   friends_.clear();
@@ -2507,7 +404,7 @@ void QuickClient::logout() {
   group_call_rooms_.clear();
   UpdateConnectionState(true);
   MaybeEmitTrustSignals();
-  emit tokenChanged();
+  emit authStateChanged();
   emit userChanged();
   emit friendsChanged();
   emit groupsChanged();
@@ -2642,7 +539,7 @@ bool QuickClient::sendText(const QString& convId, const QString& text, bool isGr
   msg.insert(QStringLiteral("isGroup"), isGroup);
   msg.insert(QStringLiteral("kind"), QStringLiteral("text"));
   InsertProtectedUiText(msg, message);
-  msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("time"), now_time_string());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   return true;
@@ -2700,7 +597,7 @@ bool QuickClient::sendFile(const QString& convId, const QString& path, bool isGr
   msg.insert(QStringLiteral("filePath"), info.absoluteFilePath());
   msg.insert(QStringLiteral("fileUrl"),
              QUrl::fromLocalFile(info.absoluteFilePath()).toString());
-  msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("time"), now_time_string());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   MaybeAutoEnhanceImage(QString::fromStdString(msg_id),
@@ -2750,7 +647,7 @@ bool QuickClient::sendSticker(const QString& convId,
   msg.insert(QStringLiteral("isGroup"), false);
   msg.insert(QStringLiteral("kind"), QStringLiteral("sticker"));
   msg.insert(QStringLiteral("stickerId"), sid);
-  msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("time"), now_time_string());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   const auto meta = BuildStickerMeta(sid);
   msg.insert(QStringLiteral("stickerUrl"), meta.value(QStringLiteral("stickerUrl")));
@@ -2783,7 +680,7 @@ bool QuickClient::sendLocation(const QString& convId,
       UpdateLastError(QStringLiteral("位置超出范围"));
       return false;
     }
-    const QString text = FormatLocationText(lat, lon, label);
+    const QString text = format_location_text(lat, lon, label);
     std::string msg_id;
     bool ok = false;
     char* out_id = nullptr;
@@ -2810,7 +707,7 @@ bool QuickClient::sendLocation(const QString& convId,
     msg.insert(QStringLiteral("locationLat"), lat);
     msg.insert(QStringLiteral("locationLon"), lon);
     InsertProtectedUiText(msg, text);
-    msg.insert(QStringLiteral("time"), NowTimeString());
+    msg.insert(QStringLiteral("time"), now_time_string());
     msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
     EmitMessage(msg);
     return true;
@@ -2855,7 +752,54 @@ bool QuickClient::sendLocation(const QString& convId,
   msg.insert(QStringLiteral("locationLabel"), label);
   msg.insert(QStringLiteral("locationLat"), lat);
   msg.insert(QStringLiteral("locationLon"), lon);
-  msg.insert(QStringLiteral("time"), NowTimeString());
+  msg.insert(QStringLiteral("time"), now_time_string());
+  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
+  EmitMessage(msg);
+  return true;
+}
+
+bool QuickClient::sendContactCard(const QString& convId,
+                                  const QString& cardUsername,
+                                  const QString& cardDisplay) {
+  const QString target = convId.trimmed();
+  const QString card_user = cardUsername.trimmed();
+  const QString card_name = cardDisplay.trimmed();
+  if (target.isEmpty() || card_user.isEmpty()) {
+    return false;
+  }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+
+  std::string msg_id;
+  char* out_id = nullptr;
+  const bool ok =
+      mi_client_send_private_contact(c_api_, target.toStdString().c_str(),
+                                     card_user.toStdString().c_str(),
+                                     card_name.toStdString().c_str(),
+                                     &out_id) != 0;
+  if (out_id) {
+    msg_id.assign(out_id);
+    mi_client_free(out_id);
+  }
+  if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
+    emit status(QStringLiteral("名片发送失败"));
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
+    return false;
+  }
+
+  UpdateLastError(QString());
+  QVariantMap msg;
+  msg.insert(QStringLiteral("convId"), target);
+  msg.insert(QStringLiteral("sender"), username_);
+  msg.insert(QStringLiteral("outgoing"), true);
+  msg.insert(QStringLiteral("isGroup"), false);
+  msg.insert(QStringLiteral("kind"), QStringLiteral("contact"));
+  msg.insert(QStringLiteral("contactUsername"), card_user);
+  msg.insert(QStringLiteral("contactDisplay"), card_name);
+  msg.insert(QStringLiteral("time"), now_time_string());
   msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
   EmitMessage(msg);
   return true;
@@ -2923,17 +867,17 @@ QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
 
   QDir cacheRoot;
   QString rootErr;
-  if (!EnsureCacheRootDir(cacheRoot, rootErr)) {
+  if (!ensure_cache_root_dir(cacheRoot, rootErr)) {
     out.insert(QStringLiteral("error"), rootErr);
     return out;
   }
 
-  const QString safeId = SanitizeFileId(fid);
+  const QString safeId = sanitize_file_id(fid);
   QString ext = QFileInfo(fileName).suffix().toLower();
   if (ext.isEmpty()) {
     ext = QStringLiteral("bin");
   }
-  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+  const bool isMedia = is_image_ext(ext) || is_gif_ext(ext) || is_video_ext(ext);
 
   if (isMedia) {
     const QString filePath =
@@ -2942,7 +886,7 @@ QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
         cacheRoot.filePath(safeId + QStringLiteral(".preview.jpg"));
     if (QFileInfo::exists(filePath)) {
       out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(filePath));
-      if (IsVideoExt(ext)) {
+      if (is_video_ext(ext)) {
         if (QFileInfo::exists(previewPath)) {
           out.insert(QStringLiteral("previewUrl"),
                      QUrl::fromLocalFile(previewPath));
@@ -2958,12 +902,12 @@ QVariantMap QuickClient::ensureAttachmentCached(const QString& fileId,
     }
   } else {
     QDir fileDir(cacheRoot.filePath(safeId));
-    const QString indexPath = CacheIndexPath(fileDir);
+    const QString indexPath = cache_index_path(fileDir);
     CacheIndex existing;
     QString readErr;
     if (QFileInfo::exists(indexPath) &&
-        ReadCacheIndex(indexPath, existing, readErr) &&
-        CacheChunksReady(fileDir, existing)) {
+        read_cache_index(indexPath, existing, readErr) &&
+        cache_chunks_ready(fileDir, existing)) {
       if ((existing.flags & kCacheFlagKeepRaw) && !existing.rawName.isEmpty()) {
         const QString rawPath = fileDir.filePath(existing.rawName);
         if (QFileInfo::exists(rawPath)) {
@@ -3009,10 +953,8 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
   QFileInfo destInfo(resolved);
   if (destInfo.isDir() || resolved.endsWith(QLatin1Char('/')) ||
       resolved.endsWith(QLatin1Char('\\'))) {
-    const QString fallbackName =
-        fileName.trimmed().isEmpty()
-            ? (SanitizeFileId(fid) + QStringLiteral(".bin"))
-            : fileName.trimmed();
+    const QString fallbackName = sanitize_download_file_name(
+        fileName, sanitize_file_id(fid) + QStringLiteral(".bin"));
     resolved = QDir(resolved).filePath(fallbackName);
     destInfo = QFileInfo(resolved);
   }
@@ -3027,23 +969,21 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     return false;
   }
 
-  const QString safeId = SanitizeFileId(fid);
+  const QString safeId = sanitize_file_id(fid);
   QString ext = QFileInfo(fileName).suffix().toLower();
   if (ext.isEmpty()) {
     ext = QStringLiteral("bin");
   }
-  QString effectiveName = fileName.trimmed();
-  if (effectiveName.isEmpty()) {
-    effectiveName = safeId + QStringLiteral(".") + ext;
-  }
+  const QString effectiveName = sanitize_download_file_name(
+      fileName, safeId + QStringLiteral(".") + ext);
 
   QDir cacheRoot;
   QString rootErr;
-  if (!EnsureCacheRootDir(cacheRoot, rootErr)) {
+  if (!ensure_cache_root_dir(cacheRoot, rootErr)) {
     UpdateLastError(rootErr);
     return false;
   }
-  const bool isMedia = IsImageExt(ext) || IsGifExt(ext) || IsVideoExt(ext);
+  const bool isMedia = is_image_ext(ext) || is_gif_ext(ext) || is_video_ext(ext);
   bool cacheReady = false;
 
   if (isMedia) {
@@ -3054,12 +994,12 @@ bool QuickClient::requestAttachmentDownload(const QString& fileId,
     }
   } else {
     const QDir fileDir(cacheRoot.filePath(safeId));
-    const QString indexPath = CacheIndexPath(fileDir);
+    const QString indexPath = cache_index_path(fileDir);
     CacheIndex existing;
     QString readErr;
     if (QFileInfo::exists(indexPath) &&
-        ReadCacheIndex(indexPath, existing, readErr) &&
-        CacheChunksReady(fileDir, existing)) {
+        read_cache_index(indexPath, existing, readErr) &&
+        cache_chunks_ready(fileDir, existing)) {
       cacheReady = true;
     }
   }
@@ -3098,7 +1038,7 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
     return false;
   }
   const QString sourceUrl = fileUrl.trimmed();
-  const QString sourcePath = ResolveLocalFilePath(sourceUrl);
+  const QString sourcePath = resolve_local_file_path(sourceUrl);
   if (sourcePath.isEmpty()) {
     UpdateLastError(QStringLiteral("图片路径为空"));
     return false;
@@ -3108,7 +1048,7 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
     UpdateLastError(QStringLiteral("图片不存在"));
     return false;
   }
-  if (!IsImageExt(sourceInfo.suffix())) {
+  if (!is_image_ext(sourceInfo.suffix())) {
     UpdateLastError(QStringLiteral("仅支持图片优化"));
     return false;
   }
@@ -3119,7 +1059,7 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
     return true;
   }
   if (!trimmedMsg.isEmpty()) {
-    const QString existing = EnhancedImagePathIfExists(trimmedMsg);
+    const QString existing = enhanced_image_path_if_exists(trimmedMsg);
     if (!existing.isEmpty()) {
       const QString outputUrl = QUrl::fromLocalFile(existing).toString();
       emit imageEnhanceFinished(trimmedMsg, sourceUrl, outputUrl, true,
@@ -3132,16 +1072,16 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
   QString outPath;
   QString pathError;
   const int scale =
-      ResolveEnhanceScale(ai_enhance_quality_, ai_enhance_x4_confirmed_);
+      resolve_enhance_scale(ai_enhance_quality_, ai_enhance_x4_confirmed_);
   if (!trimmedMsg.isEmpty()) {
-    outPath = BuildEnhancedImagePath(trimmedMsg, scale, pathError);
+    outPath = build_enhanced_image_path(trimmedMsg, scale, pathError);
   } else {
     QDir outDir;
-    if (!EnsureAiUpscaleDir(outDir, pathError)) {
+    if (!ensure_ai_upscale_dir(outDir, pathError)) {
       UpdateLastError(pathError);
       return false;
     }
-    const QString stem = SanitizeFileStem(
+    const QString stem = sanitize_file_stem(
         fileName.trimmed().isEmpty() ? sourceInfo.fileName() : fileName);
     const QString suffix = QStringLiteral("_x%1").arg(scale);
     outPath = outDir.filePath(stem + suffix + QStringLiteral(".png"));
@@ -3184,13 +1124,13 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
       return;
     }
     bool gpuSupported = false;
-    const QString exe = FindRealEsrganPath(&gpuSupported);
-    const ImageQualityMetrics metrics = AnalyzeImageQuality(sourcePath);
-    QString modelName = SelectRealEsrganModelName(scale, metrics.anime_like);
-    QString modelDir = FindRealEsrganModelDir(exe, modelName);
+    const QString exe = find_real_esrgan_path(&gpuSupported);
+    const ImageQualityMetrics metrics = analyze_image_quality(sourcePath);
+    QString modelName = select_real_esrgan_model_name(scale, metrics.anime_like);
+    QString modelDir = find_real_esrgan_model_dir(exe, modelName);
     if (modelDir.isEmpty() && metrics.anime_like) {
-      modelName = SelectRealEsrganModelName(scale, false);
-      modelDir = FindRealEsrganModelDir(exe, modelName);
+      modelName = select_real_esrgan_model_name(scale, false);
+      modelDir = find_real_esrgan_model_dir(exe, modelName);
     }
     QString error;
     bool ok = false;
@@ -3211,14 +1151,14 @@ bool QuickClient::requestImageEnhanceForMessage(const QString& messageId,
       if (gpuSupported) {
         QStringList gpuArgs = args;
         gpuArgs << QStringLiteral("-g") << QStringLiteral("0");
-        exitCode = RunRealEsrganQuietly(exe, gpuArgs);
+        exitCode = run_real_esrgan_quietly(exe, gpuArgs);
         if (exitCode != 0) {
           QStringList cpuArgs = args;
           cpuArgs << QStringLiteral("-g") << QStringLiteral("-1");
-          exitCode = RunRealEsrganQuietly(exe, cpuArgs);
+          exitCode = run_real_esrgan_quietly(exe, cpuArgs);
         }
       } else {
-        exitCode = RunRealEsrganQuietly(exe, args);
+        exitCode = run_real_esrgan_quietly(exe, args);
       }
 
       if (exitCode == 0 && QFileInfo::exists(outPath)) {
@@ -3264,7 +1204,7 @@ void QuickClient::QueueAttachmentCacheTask(
     if (!self) {
       return;
     }
-    const CacheTaskResult result = BuildAttachmentCache(
+    const CacheTaskResult result = build_attachment_cache(
         self->c_api_, fileId, fileKey, fileName, fileSize,
         [self, fileId](double progress) {
           if (!self) {
@@ -3309,7 +1249,7 @@ void QuickClient::QueueAttachmentRestoreTask(const QString& fileId,
       return;
     }
     QString error;
-    const bool ok = RestoreAttachmentFromCache(
+    const bool ok = restore_attachment_from_cache(
         fileId, fileName, savePath,
         [self, fileId, savePath](double progress) {
           if (!self) {
@@ -3401,10 +1341,10 @@ void QuickClient::MaybeAutoEnhanceImage(const QString& messageId,
   if (!info.exists() || !info.isFile()) {
     return;
   }
-  if (!IsImageExt(info.suffix())) {
+  if (!is_image_ext(info.suffix())) {
     return;
   }
-  if (!EnhancedImagePathIfExists(trimmedMsg).isEmpty()) {
+  if (!enhanced_image_path_if_exists(trimmedMsg).isEmpty()) {
     return;
   }
 
@@ -3413,7 +1353,7 @@ void QuickClient::MaybeAutoEnhanceImage(const QString& messageId,
     if (!self) {
       return;
     }
-    const bool shouldEnhance = ShouldAutoEnhanceImage(trimmedPath);
+    const bool shouldEnhance = should_auto_enhance_image(trimmedPath);
     QMetaObject::invokeMethod(
         self,
         [self, trimmedMsg, trimmedPath, fileName, shouldEnhance]() {
@@ -3563,15 +1503,39 @@ bool QuickClient::respondFriendRequest(const QString& requesterUsername,
     const std::uint32_t req_count =
         mi_client_list_friend_requests(c_api_, req_buffer.data(),
                                        kMaxFriendRequestEntries);
-    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+    UpdateFriendRequests(read_friend_request_entries(req_buffer.data(),
                                                   req_count));
     if (accept) {
       std::vector<mi_friend_entry_t> buffer(kMaxFriendEntries);
       const std::uint32_t count =
           mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
-      UpdateFriendList(ReadFriendEntries(buffer.data(), count));
+      UpdateFriendList(read_friend_entries(buffer.data(), count));
     }
   }
+  return ok;
+}
+
+bool QuickClient::setUserBlocked(const QString& blockedUsername,
+                                 bool blocked) {
+  const QString target = blockedUsername.trimmed();
+  if (target.isEmpty()) {
+    return false;
+  }
+  if (!c_api_) {
+    UpdateLastError(QStringLiteral("未初始化"));
+    return false;
+  }
+  const bool ok =
+      mi_client_set_user_blocked(c_api_, target.toStdString().c_str(),
+                                 blocked ? 1 : 0) != 0;
+  if (!ok) {
+    const char* err = mi_client_last_error(c_api_);
+    UpdateLastError(err ? QString::fromUtf8(err) : QString());
+  } else {
+    UpdateLastError(QString());
+  }
+  emit status(ok ? QStringLiteral("屏蔽状态已更新")
+                 : QStringLiteral("屏蔽状态更新失败"));
   return ok;
 }
 
@@ -3719,510 +1683,7 @@ bool QuickClient::trustPendingPeer(const QString& pin) {
   return ok;
 }
 
-QString QuickClient::startVoiceCall(const QString& peerUsername) {
-  const QString peer = peerUsername.trimmed();
-  if (peer.isEmpty()) {
-    return {};
-  }
-  if (!c_api_) {
-    UpdateLastError(QStringLiteral("未初始化"));
-    return {};
-  }
-  if (group_call_session_) {
-    emit status(QStringLiteral("当前已有群通话进行中"));
-    return {};
-  }
-  std::array<std::uint8_t, 16> call_id{};
-  for (auto& b : call_id) {
-    b = static_cast<std::uint8_t>(QRandomGenerator::global()->generate() & 0xFF);
-  }
-  const QString call_hex = BytesToHex(call_id);
-  QString err;
-  if (!InitMediaSession(peer, call_hex, true, false, err)) {
-    emit status(err.isEmpty() ? QStringLiteral("语音通话初始化失败") : err);
-    return {};
-  }
-
-  const QString invite =
-      QString::fromLatin1(kCallVoicePrefix) + call_hex;
-  std::string msg_id;
-  char* out_id = nullptr;
-  (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
-                                    invite.toStdString().c_str(), &out_id);
-  if (out_id) {
-    msg_id.assign(out_id);
-    mi_client_free(out_id);
-  }
-
-  QVariantMap msg;
-  msg.insert(QStringLiteral("convId"), peer);
-  msg.insert(QStringLiteral("sender"), username_);
-  msg.insert(QStringLiteral("outgoing"), true);
-  msg.insert(QStringLiteral("isGroup"), false);
-  msg.insert(QStringLiteral("kind"), QStringLiteral("call_invite"));
-  msg.insert(QStringLiteral("callId"), call_hex);
-  msg.insert(QStringLiteral("video"), false);
-  msg.insert(QStringLiteral("time"), NowTimeString());
-  msg.insert(QStringLiteral("timestampSec"),
-             QDateTime::currentSecsSinceEpoch());
-  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
-  EmitMessage(msg);
-  emit status(QStringLiteral("语音通话已发起"));
-  return call_hex;
-}
-
-QString QuickClient::startVideoCall(const QString& peerUsername) {
-  const QString peer = peerUsername.trimmed();
-  if (peer.isEmpty()) {
-    return {};
-  }
-  if (!c_api_) {
-    UpdateLastError(QStringLiteral("未初始化"));
-    return {};
-  }
-  if (group_call_session_) {
-    emit status(QStringLiteral("当前已有群通话进行中"));
-    return {};
-  }
-  std::array<std::uint8_t, 16> call_id{};
-  for (auto& b : call_id) {
-    b = static_cast<std::uint8_t>(QRandomGenerator::global()->generate() & 0xFF);
-  }
-  const QString call_hex = BytesToHex(call_id);
-  QString err;
-  if (!InitMediaSession(peer, call_hex, true, true, err)) {
-    emit status(err.isEmpty() ? QStringLiteral("视频通话初始化失败") : err);
-    return {};
-  }
-
-  const QString invite =
-      QString::fromLatin1(kCallVideoPrefix) + call_hex;
-  std::string msg_id;
-  char* out_id = nullptr;
-  (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
-                                    invite.toStdString().c_str(), &out_id);
-  if (out_id) {
-    msg_id.assign(out_id);
-    mi_client_free(out_id);
-  }
-
-  QVariantMap msg;
-  msg.insert(QStringLiteral("convId"), peer);
-  msg.insert(QStringLiteral("sender"), username_);
-  msg.insert(QStringLiteral("outgoing"), true);
-  msg.insert(QStringLiteral("isGroup"), false);
-  msg.insert(QStringLiteral("kind"), QStringLiteral("call_invite"));
-  msg.insert(QStringLiteral("callId"), call_hex);
-  msg.insert(QStringLiteral("video"), true);
-  msg.insert(QStringLiteral("time"), NowTimeString());
-  msg.insert(QStringLiteral("timestampSec"),
-             QDateTime::currentSecsSinceEpoch());
-  msg.insert(QStringLiteral("messageId"), QString::fromStdString(msg_id));
-  EmitMessage(msg);
-  emit status(QStringLiteral("视频通话已发起"));
-  return call_hex;
-}
-
-bool QuickClient::joinCall(const QString& peerUsername,
-                           const QString& callIdHex,
-                           bool video) {
-  if (group_call_session_) {
-    emit status(QStringLiteral("当前已有群通话进行中"));
-    return false;
-  }
-  QString err;
-  if (!InitMediaSession(peerUsername, callIdHex, false, video, err)) {
-    emit status(err.isEmpty() ? QStringLiteral("加入通话失败") : err);
-    return false;
-  }
-  emit status(QStringLiteral("已加入通话"));
-  return true;
-}
-
-void QuickClient::endCall() {
-  EndCallInternal(true);
-}
-
-bool QuickClient::sendCallEnd(const QString& peerUsername,
-                              const QString& callIdHex) {
-  const QString peer = peerUsername.trimmed();
-  const QString callId = callIdHex.trimmed();
-  if (peer.isEmpty() || callId.isEmpty()) {
-    return false;
-  }
-  if (!c_api_) {
-    UpdateLastError(QStringLiteral("未初始化"));
-    return false;
-  }
-  const QString payload =
-      QString::fromLatin1(kCallEndPrefix) + callId;
-  std::string msg_id;
-  char* out_id = nullptr;
-  const bool ok =
-      mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
-                                  payload.toStdString().c_str(),
-                                  &out_id) != 0;
-  if (out_id) {
-    msg_id.assign(out_id);
-    mi_client_free(out_id);
-  }
-  if (!ok) {
-    const char* err = mi_client_last_error(c_api_);
-    UpdateLastError(err ? QString::fromUtf8(err) : QString());
-  } else {
-    UpdateLastError(QString());
-  }
-  return ok;
-}
-
-QString QuickClient::startGroupCall(const QString& groupId, bool video) {
-  const QString group = groupId.trimmed();
-  if (group.isEmpty()) {
-    return {};
-  }
-  if (!c_api_) {
-    UpdateLastError(QStringLiteral("未初始化"));
-    emit status(lastError());
-    return {};
-  }
-  if (!active_call_id_.isEmpty() || group_call_session_) {
-    emit status(QStringLiteral("当前已有通话进行中"));
-    return {};
-  }
-  std::array<std::uint8_t, 16> call_id{};
-  std::uint32_t key_id = 0;
-  if (mi_client_start_group_call(c_api_, group.toStdString().c_str(),
-                                 video ? 1 : 0, call_id.data(),
-                                 static_cast<std::uint32_t>(call_id.size()),
-                                 &key_id) == 0) {
-    const char* err = mi_client_last_error(c_api_);
-    UpdateLastError(err ? QString::fromUtf8(err) : QString());
-    emit status(lastError());
-    return {};
-  }
-  QString err;
-  if (!InitGroupCallSession(group, call_id, key_id, video, true, err)) {
-    emit status(err.isEmpty() ? QStringLiteral("群通话初始化失败") : err);
-    return {};
-  }
-  std::vector<std::string> members;
-  bool snap_ok = false;
-  std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
-  std::uint32_t count = 0;
-  std::array<std::uint8_t, 16> snap_call{};
-  std::uint32_t snap_key_id = 0;
-  snap_ok = mi_client_send_group_call_signal(
-                c_api_, kGroupCallOpPing, group.toStdString().c_str(),
-                call_id.data(), static_cast<std::uint32_t>(call_id.size()),
-                video ? 1 : 0, key_id, 0, 0, nullptr, 0, snap_call.data(),
-                static_cast<std::uint32_t>(snap_call.size()), &snap_key_id,
-                buffer.data(),
-                static_cast<std::uint32_t>(buffer.size()), &count) != 0;
-  if (snap_ok) {
-    members = ReadGroupCallMembers(buffer.data(), count);
-  }
-  if (snap_ok) {
-    UpdateGroupCallParticipants(members);
-  } else {
-    std::vector<std::string> members;
-    std::vector<mi_group_member_entry_t> member_buffer(kMaxGroupMemberEntries);
-    const std::uint32_t member_count =
-        mi_client_list_group_members_info(c_api_, group.toStdString().c_str(),
-                                          member_buffer.data(),
-                                          kMaxGroupMemberEntries);
-    members.reserve(member_count);
-    for (std::uint32_t i = 0; i < member_count; ++i) {
-      if (member_buffer[i].username) {
-        members.emplace_back(member_buffer[i].username);
-      }
-    }
-    UpdateGroupCallParticipants(members);
-  }
-
-  const std::string notify_text =
-      video ? "[groupcall] video started" : "[groupcall] voice started";
-  std::string msg_id;
-  char* out_id = nullptr;
-  (void)mi_client_send_group_text(c_api_, group.toStdString().c_str(),
-                                  notify_text.c_str(), &out_id);
-  if (out_id) {
-    msg_id.assign(out_id);
-    mi_client_free(out_id);
-  }
-
-  group_call_rooms_map_[group.toStdString()] = call_id;
-  group_call_media_flags_[group.toStdString()] =
-      static_cast<std::uint8_t>(kGroupCallMediaAudio |
-                                (video ? kGroupCallMediaVideo : 0));
-  UpdateGroupCallRooms();
-  return BytesToHex(call_id);
-}
-
-bool QuickClient::joinGroupCall(const QString& groupId,
-                                const QString& callIdHex,
-                                bool video) {
-  const QString group = groupId.trimmed();
-  if (group.isEmpty()) {
-    return false;
-  }
-  if (!c_api_) {
-    UpdateLastError(QStringLiteral("未初始化"));
-    emit status(lastError());
-    return false;
-  }
-  if (!active_call_id_.isEmpty() || group_call_session_) {
-    emit status(QStringLiteral("当前已有通话进行中"));
-    return false;
-  }
-  std::array<std::uint8_t, 16> call_id{};
-  if (!HexToBytes16(callIdHex, call_id)) {
-    UpdateLastError(QStringLiteral("群通话 ID 格式错误"));
-    return false;
-  }
-  std::uint32_t key_id = 0;
-  if (mi_client_join_group_call(
-          c_api_, group.toStdString().c_str(), call_id.data(),
-          static_cast<std::uint32_t>(call_id.size()), video ? 1 : 0,
-          &key_id) == 0) {
-    const char* err = mi_client_last_error(c_api_);
-    UpdateLastError(err ? QString::fromUtf8(err) : QString());
-    emit status(lastError());
-    return false;
-  }
-
-  std::array<std::uint8_t, 32> call_key{};
-  const bool has_key =
-      mi_client_get_group_call_key(
-          c_api_, group.toStdString().c_str(), call_id.data(),
-          static_cast<std::uint32_t>(call_id.size()), key_id, call_key.data(),
-          static_cast<std::uint32_t>(call_key.size())) != 0;
-  if (has_key) {
-    QString err;
-    if (!InitGroupCallSession(group, call_id, key_id, video, false, err)) {
-      emit status(err.isEmpty() ? QStringLiteral("加入群通话失败") : err);
-      return false;
-    }
-    std::vector<std::string> members;
-    bool snap_ok = false;
-    std::vector<mi_group_call_member_t> buffer(kMaxGroupCallMembers);
-    std::uint32_t count = 0;
-    std::array<std::uint8_t, 16> snap_call{};
-    std::uint32_t snap_key_id = 0;
-    snap_ok = mi_client_send_group_call_signal(
-                  c_api_, kGroupCallOpPing, group.toStdString().c_str(),
-                  call_id.data(),
-                  static_cast<std::uint32_t>(call_id.size()), video ? 1 : 0,
-                  key_id, 0, 0, nullptr, 0, snap_call.data(),
-                  static_cast<std::uint32_t>(snap_call.size()), &snap_key_id,
-                  buffer.data(),
-                  static_cast<std::uint32_t>(buffer.size()), &count) != 0;
-    if (snap_ok) {
-      members = ReadGroupCallMembers(buffer.data(), count);
-    }
-    if (snap_ok) {
-      UpdateGroupCallParticipants(members);
-    } else {
-      std::vector<std::string> members;
-      std::vector<mi_group_member_entry_t> member_buffer(kMaxGroupMemberEntries);
-      const std::uint32_t member_count =
-          mi_client_list_group_members_info(
-              c_api_, group.toStdString().c_str(), member_buffer.data(),
-              kMaxGroupMemberEntries);
-      members.reserve(member_count);
-      for (std::uint32_t i = 0; i < member_count; ++i) {
-        if (member_buffer[i].username) {
-          members.emplace_back(member_buffer[i].username);
-        }
-      }
-      UpdateGroupCallParticipants(members);
-    }
-  } else {
-    pending_group_call_id_bytes_ = call_id;
-    pending_group_call_group_ = group;
-    pending_group_call_video_ = video;
-    pending_group_call_owner_ = false;
-    pending_group_call_key_id_ = key_id;
-    emit status(QStringLiteral("正在等待群通话密钥"));
-  }
-
-  group_call_rooms_map_[group.toStdString()] = call_id;
-  group_call_media_flags_[group.toStdString()] =
-      static_cast<std::uint8_t>(kGroupCallMediaAudio |
-                                (video ? kGroupCallMediaVideo : 0));
-  UpdateGroupCallRooms();
-  return true;
-}
-
-void QuickClient::leaveGroupCall() {
-  if (!group_call_session_) {
-    return;
-  }
-  if (!active_group_call_group_.isEmpty()) {
-    if (active_group_call_owner_) {
-      const std::string notify_text = "[groupcall] ended";
-      std::string msg_id;
-      if (c_api_) {
-        char* out_id = nullptr;
-        (void)mi_client_send_group_text(
-            c_api_, active_group_call_group_.toStdString().c_str(),
-            notify_text.c_str(), &out_id);
-        if (out_id) {
-          msg_id.assign(out_id);
-          mi_client_free(out_id);
-        }
-      }
-    }
-    if (c_api_) {
-      (void)mi_client_leave_group_call(
-          c_api_, active_group_call_group_.toStdString().c_str(),
-          active_group_call_id_bytes_.data(),
-          static_cast<std::uint32_t>(active_group_call_id_bytes_.size()));
-    }
-  }
-  StopMedia();
-  emit groupCallStateChanged();
-  emit groupCallParticipantsChanged();
-  emit status(QStringLiteral("已退出群通话"));
-}
-
-void QuickClient::endGroupCall() {
-  if (!group_call_session_) {
-    return;
-  }
-  if (!active_group_call_group_.isEmpty()) {
-    if (active_group_call_owner_) {
-      if (c_api_) {
-        (void)mi_client_send_group_call_signal(
-            c_api_, kGroupCallOpEnd,
-            active_group_call_group_.toStdString().c_str(),
-            active_group_call_id_bytes_.data(),
-            static_cast<std::uint32_t>(active_group_call_id_bytes_.size()),
-            active_group_call_video_ ? 1 : 0, 0, 0, 0, nullptr, 0, nullptr, 0,
-            nullptr, nullptr, 0, nullptr);
-      }
-      const std::string notify_text = "[groupcall] ended";
-      std::string msg_id;
-      if (c_api_) {
-        char* out_id = nullptr;
-        (void)mi_client_send_group_text(
-            c_api_, active_group_call_group_.toStdString().c_str(),
-            notify_text.c_str(), &out_id);
-        if (out_id) {
-          msg_id.assign(out_id);
-          mi_client_free(out_id);
-        }
-      }
-    } else {
-      if (c_api_) {
-        (void)mi_client_leave_group_call(
-            c_api_, active_group_call_group_.toStdString().c_str(),
-            active_group_call_id_bytes_.data(),
-            static_cast<std::uint32_t>(active_group_call_id_bytes_.size()));
-      }
-    }
-  }
-  StopMedia();
-  emit groupCallStateChanged();
-  emit groupCallParticipantsChanged();
-  emit status(QStringLiteral("群通话已结束"));
-}
-
-bool QuickClient::callMicEnabled() const {
-  return call_mic_enabled_;
-}
-
-void QuickClient::setCallMicEnabled(bool enabled) {
-  call_mic_enabled_ = enabled;
-  if (!call_mic_enabled_) {
-    audio_in_buffer_.clear();
-    audio_in_offset_ = 0;
-  }
-}
-
-bool QuickClient::callCameraEnabled() const {
-  return call_camera_enabled_;
-}
-
-void QuickClient::setCallCameraEnabled(bool enabled) {
-  call_camera_enabled_ = enabled;
-  if (!camera_) {
-    return;
-  }
-  if (call_camera_enabled_) {
-    if (!camera_->isActive()) {
-      camera_->start();
-    }
-  } else {
-    camera_->stop();
-    if (local_video_sink_) {
-      local_video_sink_->setVideoFrame(QVideoFrame());
-    }
-  }
-}
-
-void QuickClient::EndCallInternal(bool notify_peer) {
-  const QString peer = active_call_peer_;
-  const QString callId = active_call_id_;
-  if (notify_peer && !peer.isEmpty() && !callId.isEmpty()) {
-    const QString payload =
-        QString::fromLatin1(kCallEndPrefix) + callId;
-    std::string msg_id;
-    if (c_api_) {
-      char* out_id = nullptr;
-      (void)mi_client_send_private_text(c_api_, peer.toStdString().c_str(),
-                                        payload.toStdString().c_str(), &out_id);
-      if (out_id) {
-        msg_id.assign(out_id);
-        mi_client_free(out_id);
-      }
-    }
-  }
-  StopMedia();
-  active_call_id_.clear();
-  active_call_peer_.clear();
-  active_call_video_ = false;
-  emit callStateChanged();
-  emit status(QStringLiteral("通话已结束"));
-}
-
-void QuickClient::bindRemoteVideoSink(QObject* sink) {
-  auto* casted = qobject_cast<QVideoSink*>(sink);
-  if (!casted || casted == remote_video_sink_) {
-    return;
-  }
-  remote_video_sink_ = casted;
-}
-
-void QuickClient::bindLocalVideoSink(QObject* sink) {
-  auto* casted = qobject_cast<QVideoSink*>(sink);
-  if (!casted || casted == local_video_sink_) {
-    return;
-  }
-  if (local_video_sink_) {
-    disconnect(local_video_sink_, nullptr, this, nullptr);
-  }
-  local_video_sink_ = casted;
-  if (auto* session = EnsureCaptureSession()) {
-    session->setVideoSink(local_video_sink_);
-  }
-  connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
-          &QuickClient::HandleLocalVideoFrame);
-}
-
-void QuickClient::bindGroupCallVideoSink(const QString& username,
-                                         QObject* sink) {
-  const QString user = username.trimmed();
-  auto* casted = qobject_cast<QVideoSink*>(sink);
-  if (user.isEmpty() || !casted) {
-    return;
-  }
-  EnsureGroupCallRemote(user.toStdString());
-  auto it = group_call_remotes_.find(user.toStdString());
-  if (it == group_call_remotes_.end()) {
-    return;
-  }
-  it->second.sink = casted;
-}
+#include "quick_client_call_methods.inc"
 
 QString QuickClient::serverInfo() const {
   return QStringLiteral("config: %1").arg(config_path_);
@@ -4244,7 +1705,9 @@ QUrl QuickClient::defaultDownloadFileUrl(const QString& fileName) const {
   if (fileName.trimmed().isEmpty()) {
     return QUrl::fromLocalFile(base);
   }
-  return QUrl::fromLocalFile(QDir(base).filePath(fileName.trimmed()));
+  return QUrl::fromLocalFile(
+      QDir(base).filePath(sanitize_download_file_name(
+          fileName, QStringLiteral("download.bin"))));
 }
 
 QString QuickClient::systemClipboardText() const {
@@ -4259,7 +1722,7 @@ bool QuickClient::imeAvailable() {
   if (EnsureImeSession() != nullptr) {
     return true;
   }
-  return !GetPinyinIndex().dict.isEmpty();
+  return !get_pinyin_index().dict.isEmpty();
 }
 
 bool QuickClient::imeRimeAvailable() {
@@ -4281,7 +1744,7 @@ QVariantList QuickClient::imeCandidates(const QString& input,
     list = ImePluginLoader::instance().queryCandidates(session, trimmed, limit);
   }
   if (list.isEmpty()) {
-    list = BuildPinyinCandidates(trimmed, limit);
+    list = build_pinyin_candidates(trimmed, limit);
   }
   for (const auto& candidate : list) {
     items.push_back(candidate);
@@ -4336,7 +1799,7 @@ bool QuickClient::aiEnhanceEnabled() const {
 
 void QuickClient::setAiEnhanceEnabled(bool enabled) {
   ai_enhance_enabled_ = enabled;
-  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+  save_ai_enhance_settings(ai_enhance_enabled_, ai_enhance_quality_,
                         ai_enhance_x4_confirmed_);
 }
 
@@ -4345,8 +1808,8 @@ int QuickClient::aiEnhanceQualityLevel() const {
 }
 
 void QuickClient::setAiEnhanceQualityLevel(int level) {
-  ai_enhance_quality_ = ClampEnhanceScale(level);
-  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+  ai_enhance_quality_ = clamp_enhance_scale(level);
+  save_ai_enhance_settings(ai_enhance_enabled_, ai_enhance_quality_,
                         ai_enhance_x4_confirmed_);
 }
 
@@ -4356,7 +1819,7 @@ bool QuickClient::aiEnhanceX4Confirmed() const {
 
 void QuickClient::setAiEnhanceX4Confirmed(bool confirmed) {
   ai_enhance_x4_confirmed_ = confirmed;
-  SaveAiEnhanceSettings(ai_enhance_enabled_, ai_enhance_quality_,
+  save_ai_enhance_settings(ai_enhance_enabled_, ai_enhance_quality_,
                         ai_enhance_x4_confirmed_);
 }
 
@@ -4376,7 +1839,7 @@ bool QuickClient::historySaveEnabled() const {
 
 void QuickClient::setHistorySaveEnabled(bool enabled) {
   history_save_enabled_ = enabled;
-  SavePrivacySettings(history_save_enabled_);
+  save_privacy_settings(history_save_enabled_);
   if (c_api_) {
     mi_client_set_history_enabled(c_api_, history_save_enabled_ ? 1 : 0);
   }
@@ -4397,7 +1860,7 @@ void QuickClient::setClipboardIsolation(bool enabled) {
 }
 
 QUrl QuickClient::chatBackground(const QString& chatId) const {
-  const QString key = ChatBackgroundKey(username_, chatId);
+  const QString key = chat_background_key(username_, chatId);
   if (key.isEmpty()) {
     return {};
   }
@@ -4414,17 +1877,17 @@ QUrl QuickClient::chatBackground(const QString& chatId) const {
 
 bool QuickClient::setChatBackground(const QString& chatId,
                                     const QString& imageUrl) {
-  const QString key = ChatBackgroundKey(username_, chatId);
+  const QString key = chat_background_key(username_, chatId);
   if (key.isEmpty()) {
     UpdateLastError(QStringLiteral("聊天对象为空"));
     return false;
   }
-  const QString localPath = ResolveLocalFilePath(imageUrl);
+  const QString localPath = resolve_local_file_path(imageUrl);
   if (localPath.isEmpty() || !QFileInfo::exists(localPath)) {
     UpdateLastError(QStringLiteral("图片不存在"));
     return false;
   }
-  const QString dir = ChatBackgroundsDir();
+  const QString dir = chat_backgrounds_dir();
   if (dir.isEmpty()) {
     UpdateLastError(QStringLiteral("背景目录不可用"));
     return false;
@@ -4441,7 +1904,7 @@ bool QuickClient::setChatBackground(const QString& chatId,
           .toHex()
           .left(8);
   const QString fileName =
-      SanitizeFileStem(key) + QStringLiteral("_") +
+      sanitize_file_stem(key) + QStringLiteral("_") +
       QString::fromLatin1(hash) +
       (ext.isEmpty() ? QString() : QStringLiteral(".") + ext);
   const QString targetPath = QDir(dir).filePath(fileName);
@@ -4452,7 +1915,7 @@ bool QuickClient::setChatBackground(const QString& chatId,
     }
   }
   chat_backgrounds_.insert(key, targetPath);
-  SaveChatBackgrounds(chat_backgrounds_);
+  save_chat_backgrounds(chat_backgrounds_);
   UpdateLastError(QString());
   return true;
 }
@@ -4463,8 +1926,8 @@ QString QuickClient::renderProtectedText(const QString& protectedTextId) const {
     return {};
   }
   QString rendered;
-  (void)WithProtectedUiText(it.value(), [&](std::string_view view) {
-    rendered = ToUiQString(view);
+  (void)with_protected_ui_text(it.value(), [&](std::string_view view) {
+    rendered = to_ui_qstring(view);
     return true;
   });
   return rendered;
@@ -4491,12 +1954,8 @@ void QuickClient::InsertProtectedUiText(QVariantMap& msg,
   msg.insert(QStringLiteral("protectedTextId"), StoreProtectedUiText(text));
 }
 
-QString QuickClient::token() const {
-  return token_;
-}
-
 bool QuickClient::loggedIn() const {
-  return !token_.isEmpty();
+  return logged_in_;
 }
 
 QString QuickClient::username() const {
@@ -4651,7 +2110,7 @@ void QuickClient::PollOnce() {
   poll_result = std::move(polled.chat);
   call_events = std::move(polled.group_calls);
   const QString poll_error = QString::fromStdString(poll_err);
-  if (IsSessionInvalidError(poll_error)) {
+  if (is_session_invalid_error(poll_error)) {
     HandleSessionInvalid(QStringLiteral("登录已失效，请重新登录"));
     return;
   }
@@ -4672,7 +2131,7 @@ void QuickClient::PollOnce() {
         mi_client_sync_friends(c_api_, buffer.data(), kMaxFriendEntries,
                                &changed);
     if (changed) {
-      UpdateFriendList(ReadFriendEntries(buffer.data(), count));
+      UpdateFriendList(read_friend_entries(buffer.data(), count));
     }
     last_friend_sync_ms_ = now;
   }
@@ -4682,7 +2141,7 @@ void QuickClient::PollOnce() {
     const std::uint32_t req_count =
         mi_client_list_friend_requests(c_api_, req_buffer.data(),
                                        kMaxFriendRequestEntries);
-    UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+    UpdateFriendRequests(read_friend_request_entries(req_buffer.data(),
                                                   req_count));
     last_request_sync_ms_ = now;
   }
@@ -4835,13 +2294,13 @@ QVariantMap QuickClient::BuildHistoryMessageFromC(
       }
       msg.insert(QStringLiteral("fileKey"), BytesToHex32(key));
       if (!messageId.isEmpty()) {
-        const QString enhancedPath = EnhancedImagePathIfExists(messageId);
+        const QString enhancedPath = enhanced_image_path_if_exists(messageId);
         if (!enhancedPath.isEmpty()) {
           const QString ext =
               QFileInfo(entry.file_name ? QString::fromUtf8(entry.file_name)
                                         : QString())
                   .suffix();
-          if (IsImageExt(ext)) {
+          if (is_image_ext(ext)) {
             msg.insert(QStringLiteral("fileUrl"),
                        QUrl::fromLocalFile(enhancedPath));
             msg.insert(QStringLiteral("imageEnhanced"), true);
@@ -4882,12 +2341,12 @@ QVariantMap QuickClient::BuildHistoryMessageFromC(
 }
 
 void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
-  const QString now = NowTimeString();
+  const QString now = now_time_string();
   const qint64 nowSec = QDateTime::currentSecsSinceEpoch();
 
   for (const auto& t : result.texts) {
     const QString text = QString::fromStdString(t.text_utf8);
-    const QString callEndId = ParseCallEndId(text);
+    const QString callEndId = parse_call_end_id(text);
     if (!callEndId.isEmpty()) {
       if (callEndId == active_call_id_) {
         EndCallInternal(false);
@@ -4906,7 +2365,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
       EmitMessage(msg);
       continue;
     }
-    const QString recallId = ParseRecallTargetId(text);
+    const QString recallId = parse_recall_target_id(text);
     if (!recallId.isEmpty()) {
       QVariantMap msg;
       msg.insert(QStringLiteral("convId"),
@@ -4922,7 +2381,7 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
       EmitMessage(msg);
       continue;
     }
-    const auto invite = ParseCallInvite(text);
+    const auto invite = parse_call_invite(text);
     QVariantMap msg;
     msg.insert(QStringLiteral("convId"),
                QString::fromStdString(t.from_username));
@@ -4947,8 +2406,8 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
 
   for (const auto& t : result.outgoing_texts) {
     const QString text = QString::fromStdString(t.text_utf8);
-    if (!ParseCallEndId(text).isEmpty() ||
-        !ParseRecallTargetId(text).isEmpty()) {
+    if (!parse_call_end_id(text).isEmpty() ||
+        !parse_recall_target_id(text).isEmpty()) {
       continue;
     }
     QVariantMap msg;
@@ -5054,11 +2513,11 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
       emit groupsChanged();
     }
     const QString text = QString::fromStdString(t.text_utf8);
-    const QString callEndId = ParseCallEndId(text);
+    const QString callEndId = parse_call_end_id(text);
     if (!callEndId.isEmpty()) {
       continue;
     }
-    const QString recallId = ParseRecallTargetId(text);
+    const QString recallId = parse_recall_target_id(text);
     if (!recallId.isEmpty()) {
       QVariantMap msg;
       msg.insert(QStringLiteral("convId"), group_id);
@@ -5094,8 +2553,8 @@ void QuickClient::HandlePollResult(const mi::sdk::ChatPollResult& result) {
       emit groupsChanged();
     }
     const QString text = QString::fromStdString(t.text_utf8);
-    if (!ParseCallEndId(text).isEmpty() ||
-        !ParseRecallTargetId(text).isEmpty()) {
+    if (!parse_call_end_id(text).isEmpty() ||
+        !parse_recall_target_id(text).isEmpty()) {
       continue;
     }
     QVariantMap msg;
@@ -5305,7 +2764,7 @@ void QuickClient::HandleGroupCallEvents(
                       &snap_key_id, buffer.data(),
                       static_cast<std::uint32_t>(buffer.size()), &count) != 0;
         if (snap_ok) {
-          members = ReadGroupCallMembers(buffer.data(), count);
+          members = read_group_call_members(buffer.data(), count);
         }
         if (snap_ok) {
           if (active_group_call_owner_) {
@@ -5635,7 +3094,7 @@ void QuickClient::TryActivatePendingGroupCall() {
                 buffer.data(),
                 static_cast<std::uint32_t>(buffer.size()), &count) != 0;
   if (snap_ok) {
-    members = ReadGroupCallMembers(buffer.data(), count);
+    members = read_group_call_members(buffer.data(), count);
   }
   if (snap_ok) {
     UpdateGroupCallParticipants(members);
@@ -5713,14 +3172,14 @@ void QuickClient::HandleSessionInvalid(const QString& message) {
   const QString hint = message.trimmed().isEmpty()
                            ? QStringLiteral("登录已失效，请重新登录")
                            : message.trimmed();
-  const bool was_logged_in = !token_.isEmpty() || !username_.isEmpty();
+  const bool was_logged_in = logged_in_ || !username_.isEmpty();
 
   StopPolling();
   StopMedia();
   if (c_api_) {
     mi_client_logout(c_api_);
   }
-  token_.clear();
+  logged_in_ = false;
   username_.clear();
   friends_.clear();
   groups_.clear();
@@ -5736,7 +3195,7 @@ void QuickClient::HandleSessionInvalid(const QString& message) {
     emit errorChanged();
   }
   if (was_logged_in) {
-    emit tokenChanged();
+    emit authStateChanged();
     emit userChanged();
     emit friendsChanged();
     emit groupsChanged();
@@ -5750,8 +3209,7 @@ void QuickClient::HandleSessionInvalid(const QString& message) {
 }
 
 void QuickClient::HandleLoginSuccess(const QString& username) {
-  const char* token = mi_client_token(c_api_);
-  token_ = token ? QString::fromUtf8(token) : QString();
+  logged_in_ = true;
   username_ = username.trimmed();
   QString historyErr;
   if (!history_save_enabled_) {
@@ -5773,14 +3231,14 @@ void QuickClient::HandleLoginSuccess(const QString& username) {
   if (sync_err && *sync_err) {
     count = mi_client_list_friends(c_api_, buffer.data(), kMaxFriendEntries);
   }
-  UpdateFriendList(ReadFriendEntries(buffer.data(), count));
+  UpdateFriendList(read_friend_entries(buffer.data(), count));
 
   std::vector<mi_friend_request_entry_t> req_buffer(
       kMaxFriendRequestEntries);
   const std::uint32_t req_count =
       mi_client_list_friend_requests(c_api_, req_buffer.data(),
                                      kMaxFriendRequestEntries);
-  UpdateFriendRequests(ReadFriendRequestEntries(req_buffer.data(),
+  UpdateFriendRequests(read_friend_request_entries(req_buffer.data(),
                                                 req_count));
   emit deviceChanged();
 }
@@ -5791,7 +3249,7 @@ void QuickClient::ClearQrLoginCache() {
 
 void QuickClient::UpdateLastError(const QString& message) {
   const QString trimmed = message.trimmed();
-  if (IsSessionInvalidError(trimmed)) {
+  if (is_session_invalid_error(trimmed)) {
     HandleSessionInvalid(QStringLiteral("登录已失效，请重新登录"));
     return;
   }
@@ -5889,867 +3347,7 @@ bool QuickClient::LoadMediaConfig(mi_media_config_t& out_config,
   return false;
 }
 
-bool QuickClient::InitMediaSession(const QString& peerUsername,
-                                   const QString& callIdHex,
-                                   bool initiator,
-                                   bool video,
-                                   QString& outError) {
-  outError.clear();
-  StopMedia();
-  ResetMediaTransport();
-  if (!media_transport_) {
-    outError = QStringLiteral("媒体通道不可用");
-    return false;
-  }
-  const QString peer = peerUsername.trimmed();
-  if (peer.isEmpty() || callIdHex.trimmed().isEmpty()) {
-    outError = QStringLiteral("通话参数无效");
-    return false;
-  }
-  std::array<std::uint8_t, 16> call_id{};
-  if (!HexToBytes16(callIdHex, call_id)) {
-    outError = QStringLiteral("通话 ID 格式错误");
-    return false;
-  }
-  mi::client::media::MediaSessionConfig cfg;
-  cfg.peer_username = peer.toStdString();
-  cfg.call_id = call_id;
-  cfg.initiator = initiator;
-  cfg.enable_audio = true;
-  cfg.enable_video = video;
-  mi_media_config_t media_cfg{};
-  if (!LoadMediaConfig(media_cfg, outError)) {
-    return false;
-  }
-  cfg.audio_delay_ms = media_cfg.audio_delay_ms;
-  cfg.video_delay_ms = media_cfg.video_delay_ms;
-  cfg.audio_max_frames = media_cfg.audio_max_frames;
-  cfg.video_max_frames = media_cfg.video_max_frames;
+#include "quick_client_media_methods.inc"
 
-  auto session =
-      std::make_unique<mi::client::media::MediaSession>(*media_transport_, cfg);
-  std::string err;
-  if (!session->Init(err)) {
-    outError = err.empty() ? QStringLiteral("通话初始化失败")
-                           : QString::fromStdString(err);
-    return false;
-  }
-  media_session_ = std::move(session);
-  call_mic_enabled_ = true;
-  call_camera_enabled_ = true;
-  audio_config_ = mi::client::media::AudioPipelineConfig{};
-  const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
-  const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
-  AdjustAudioConfigForDevices(in_device, out_device, audio_config_);
-  audio_pipeline_ = std::make_unique<mi::client::media::AudioPipeline>(
-      *media_session_, audio_config_);
-  if (!audio_pipeline_->Init(err)) {
-    outError = err.empty() ? QStringLiteral("音频编码初始化失败")
-                           : QString::fromStdString(err);
-    StopMedia();
-    return false;
-  }
-  if (video) {
-    video_config_ = mi::client::media::VideoPipelineConfig{};
-    if (!SetupVideo(outError)) {
-      StopMedia();
-      return false;
-    }
-    video_pipeline_ = std::make_unique<mi::client::media::VideoPipeline>(
-        *media_session_, video_config_);
-    if (!video_pipeline_->Init(err)) {
-      outError = err.empty() ? QStringLiteral("视频编码初始化失败")
-                             : QString::fromStdString(err);
-      StopMedia();
-      return false;
-    }
-  }
-  if (!SetupAudio(outError)) {
-    StopMedia();
-    return false;
-  }
-  StartMedia();
-  active_call_id_ = callIdHex.trimmed();
-  active_call_peer_ = peer;
-  active_call_video_ = video;
-  emit callStateChanged();
-  return true;
-}
-
-bool QuickClient::InitGroupCallSession(
-    const QString& groupId,
-    const std::array<std::uint8_t, 16>& callId,
-    std::uint32_t keyId,
-    bool video,
-    bool owner,
-    QString& outError) {
-  outError.clear();
-  StopMedia();
-  ResetMediaTransport();
-  if (!media_transport_) {
-    outError = QStringLiteral("媒体通道不可用");
-    return false;
-  }
-  const QString group = groupId.trimmed();
-  if (group.isEmpty()) {
-    outError = QStringLiteral("群 ID 不能为空");
-    return false;
-  }
-  if (callId == std::array<std::uint8_t, 16>{}) {
-    outError = QStringLiteral("群通话 ID 不能为空");
-    return false;
-  }
-  mi::client::media::GroupCallSessionConfig cfg;
-  cfg.group_id = group.toStdString();
-  cfg.call_id = callId;
-  cfg.key_id = keyId;
-  cfg.enable_audio = true;
-  cfg.enable_video = video;
-  mi_media_config_t media_cfg{};
-  if (!LoadMediaConfig(media_cfg, outError)) {
-    return false;
-  }
-  cfg.audio_delay_ms = media_cfg.audio_delay_ms;
-  cfg.video_delay_ms = media_cfg.video_delay_ms;
-  cfg.audio_max_frames = media_cfg.audio_max_frames;
-  cfg.video_max_frames = media_cfg.video_max_frames;
-
-  auto session = std::make_unique<mi::client::media::GroupCallSession>(
-      *media_transport_, cfg);
-  std::string err;
-  if (!session->Init(err)) {
-    outError = err.empty() ? QStringLiteral("群通话初始化失败")
-                           : QString::fromStdString(err);
-    return false;
-  }
-  group_call_session_ = std::move(session);
-  group_call_adapter_ =
-      std::make_unique<mi::client::media::GroupCallMediaAdapter>(
-          *group_call_session_);
-
-  call_mic_enabled_ = true;
-  call_camera_enabled_ = true;
-  audio_config_ = mi::client::media::AudioPipelineConfig{};
-  const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
-  const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
-  AdjustAudioConfigForDevices(in_device, out_device, audio_config_);
-  audio_pipeline_ = std::make_unique<mi::client::media::AudioPipeline>(
-      *group_call_adapter_, audio_config_);
-  if (!audio_pipeline_->Init(err)) {
-    outError = err.empty() ? QStringLiteral("群通话音频初始化失败")
-                           : QString::fromStdString(err);
-    StopMedia();
-    return false;
-  }
-  if (video) {
-    video_config_ = mi::client::media::VideoPipelineConfig{};
-    if (!SetupVideo(outError)) {
-      StopMedia();
-      return false;
-    }
-    video_pipeline_ = std::make_unique<mi::client::media::VideoPipeline>(
-        *group_call_adapter_, video_config_);
-    if (!video_pipeline_->Init(err)) {
-      outError = err.empty() ? QStringLiteral("群通话视频初始化失败")
-                             : QString::fromStdString(err);
-      StopMedia();
-      return false;
-    }
-  }
-  if (!SetupAudio(outError)) {
-    StopMedia();
-    return false;
-  }
-  StartMedia();
-
-  active_group_call_id_bytes_ = callId;
-  active_group_call_id_ = BytesToHex(callId);
-  active_group_call_group_ = group;
-  active_group_call_video_ = video;
-  active_group_call_owner_ = owner;
-  active_group_call_key_id_ = keyId;
-  pending_group_call_key_id_ = 0;
-  pending_group_call_group_.clear();
-  pending_group_call_video_ = false;
-  pending_group_call_owner_ = false;
-  group_call_participants_.clear();
-  ClearGroupCallRemotes();
-  emit groupCallStateChanged();
-  return true;
-}
-
-void QuickClient::StartMedia() {
-  if (!media_timer_.isActive()) {
-    media_timer_.start();
-  }
-  if (camera_ && !camera_->isActive()) {
-    camera_->start();
-  }
-}
-
-void QuickClient::StopMedia() {
-  if (media_timer_.isActive()) {
-    media_timer_.stop();
-  }
-  ShutdownAudio();
-  ShutdownVideo();
-  audio_pipeline_.reset();
-  video_pipeline_.reset();
-  media_session_.reset();
-  group_call_adapter_.reset();
-  group_call_session_.reset();
-  audio_in_buffer_.clear();
-  audio_out_pending_.clear();
-  audio_in_offset_ = 0;
-  audio_frame_tmp_.clear();
-  video_send_buffer_.clear();
-  call_mic_enabled_ = true;
-  call_camera_enabled_ = true;
-  if (remote_video_sink_) {
-    remote_video_sink_->setVideoFrame(QVideoFrame());
-  }
-  ClearGroupCallState(false);
-}
-
-void QuickClient::PumpMedia() {
-  if (media_session_) {
-    mi_media_config_t media_cfg{};
-    QString cfg_err;
-    if (LoadMediaConfig(media_cfg, cfg_err)) {
-      std::string err;
-      media_session_->PollIncoming(media_cfg.pull_max_packets,
-                                   media_cfg.pull_wait_ms, err);
-    }
-
-    if (audio_pipeline_) {
-      audio_pipeline_->PumpIncoming();
-      DrainAudioInput();
-      mi::client::media::PcmFrame decoded;
-      const int frame_samples = audio_pipeline_->frame_samples();
-      const int frame_bytes =
-          frame_samples * static_cast<int>(sizeof(std::int16_t));
-      const int max_pending = frame_bytes * 10;
-      while (audio_pipeline_->PopDecodedFrame(decoded)) {
-        if (!decoded.samples.empty()) {
-          const char* ptr =
-              reinterpret_cast<const char*>(decoded.samples.data());
-          const int bytes =
-              static_cast<int>(decoded.samples.size() * sizeof(std::int16_t));
-          if (bytes > 0) {
-            audio_out_pending_.append(ptr, bytes);
-            if (audio_out_pending_.size() > max_pending) {
-              const int trim = audio_out_pending_.size() - max_pending;
-              audio_out_pending_.remove(0, trim);
-            }
-          }
-        }
-      }
-      FlushAudioOutput();
-    }
-
-    if (video_pipeline_) {
-      video_pipeline_->PumpIncoming();
-      mi::client::media::VideoFrameData latest;
-      bool has_frame = false;
-      while (video_pipeline_->PopDecodedFrame(latest)) {
-        has_frame = true;
-      }
-      if (has_frame && remote_video_sink_ && latest.width > 0 &&
-          latest.height > 0 && !latest.nv12.empty()) {
-        std::uint32_t stride = latest.stride;
-        if (stride == 0) {
-          const std::size_t denom =
-              static_cast<std::size_t>(latest.height) * 3;
-          const std::size_t maybe =
-              denom == 0 ? 0 : latest.nv12.size() * 2 / denom;
-          stride = maybe >= latest.width
-                       ? static_cast<std::uint32_t>(maybe)
-                       : latest.width;
-        }
-        auto buffer = std::make_unique<Nv12VideoBuffer>(
-            std::move(latest.nv12), latest.width, latest.height, stride);
-        QVideoFrame frame(std::move(buffer));
-        frame.setStartTime(static_cast<qint64>(latest.timestamp_ms));
-        remote_video_sink_->setVideoFrame(frame);
-      }
-    }
-    return;
-  }
-
-  if (group_call_session_) {
-    PumpGroupCall();
-  }
-}
-
-void QuickClient::PumpGroupCall() {
-  if (!group_call_session_) {
-    return;
-  }
-  mi_media_config_t media_cfg{};
-  QString cfg_err;
-  if (LoadMediaConfig(media_cfg, cfg_err)) {
-    std::string err;
-    group_call_session_->PollIncoming(media_cfg.group_pull_max_packets,
-                                      media_cfg.group_pull_wait_ms, err);
-  }
-
-  const std::uint64_t now_ms = NowMonotonicMs();
-  mi::client::media::GroupMediaFrame frame;
-  while (group_call_session_->PopAudioFrame(now_ms, frame)) {
-    EnsureGroupCallRemote(frame.sender);
-    auto it = group_call_remotes_.find(frame.sender);
-    if (it != group_call_remotes_.end() && it->second.adapter) {
-      it->second.adapter->PushIncoming(std::move(frame));
-    }
-  }
-  while (group_call_session_->PopVideoFrame(now_ms, frame)) {
-    EnsureGroupCallRemote(frame.sender);
-    auto it = group_call_remotes_.find(frame.sender);
-    if (it != group_call_remotes_.end() && it->second.adapter) {
-      it->second.adapter->PushIncoming(std::move(frame));
-    }
-  }
-
-  for (auto& kv : group_call_remotes_) {
-    if (kv.second.audio) {
-      kv.second.audio->PumpIncoming();
-    }
-    if (kv.second.video) {
-      kv.second.video->PumpIncoming();
-    }
-  }
-
-  PumpGroupAudioOutput();
-  PumpGroupVideoOutput();
-  DrainAudioInput();
-}
-
-void QuickClient::PumpGroupAudioOutput() {
-  if (!audio_out_device_) {
-    return;
-  }
-  if (!audio_pipeline_) {
-    return;
-  }
-  const int frame_samples = audio_pipeline_->frame_samples();
-  if (frame_samples <= 0) {
-    return;
-  }
-  if (group_mix_buffer_.size() != static_cast<std::size_t>(frame_samples)) {
-    group_mix_buffer_.assign(static_cast<std::size_t>(frame_samples), 0);
-  } else {
-    std::fill(group_mix_buffer_.begin(), group_mix_buffer_.end(), 0);
-  }
-  bool has_frame = false;
-  for (auto& kv : group_call_remotes_) {
-    if (!kv.second.audio) {
-      continue;
-    }
-    mi::client::media::PcmFrame decoded;
-    if (!kv.second.audio->PopDecodedFrame(decoded)) {
-      continue;
-    }
-    if (decoded.samples.size() != group_mix_buffer_.size()) {
-      continue;
-    }
-    has_frame = true;
-    for (std::size_t i = 0; i < decoded.samples.size(); ++i) {
-      const int mixed =
-          static_cast<int>(group_mix_buffer_[i]) +
-          static_cast<int>(decoded.samples[i]);
-      group_mix_buffer_[i] = static_cast<std::int16_t>(
-          std::max(-32768, std::min(32767, mixed)));
-    }
-  }
-  if (!has_frame) {
-    return;
-  }
-  const char* ptr =
-      reinterpret_cast<const char*>(group_mix_buffer_.data());
-  const int bytes =
-      static_cast<int>(group_mix_buffer_.size() * sizeof(std::int16_t));
-  if (bytes > 0) {
-    audio_out_pending_.append(ptr, bytes);
-  }
-  FlushAudioOutput();
-}
-
-void QuickClient::PumpGroupVideoOutput() {
-  for (auto& kv : group_call_remotes_) {
-    if (!kv.second.video || !kv.second.sink) {
-      continue;
-    }
-    mi::client::media::VideoFrameData latest;
-    bool has_frame = false;
-    while (kv.second.video->PopDecodedFrame(latest)) {
-      has_frame = true;
-    }
-    if (!has_frame || latest.width == 0 || latest.height == 0 ||
-        latest.nv12.empty()) {
-      continue;
-    }
-    std::uint32_t stride = latest.stride;
-    if (stride == 0) {
-      const std::size_t denom =
-          static_cast<std::size_t>(latest.height) * 3;
-      const std::size_t maybe =
-          denom == 0 ? 0 : latest.nv12.size() * 2 / denom;
-      stride = maybe >= latest.width
-                   ? static_cast<std::uint32_t>(maybe)
-                   : latest.width;
-    }
-    auto buffer = std::make_unique<Nv12VideoBuffer>(
-        std::move(latest.nv12), latest.width, latest.height, stride);
-    QVideoFrame frame_obj(std::move(buffer));
-    frame_obj.setStartTime(static_cast<qint64>(latest.timestamp_ms));
-    kv.second.sink->setVideoFrame(frame_obj);
-  }
-}
-
-void QuickClient::DrainAudioInput() {
-  if (!audio_pipeline_ || !audio_in_device_) {
-    return;
-  }
-  if (!call_mic_enabled_) {
-    audio_in_buffer_.clear();
-    audio_in_offset_ = 0;
-    return;
-  }
-  const int frame_samples = audio_pipeline_->frame_samples();
-  if (frame_samples <= 0) {
-    return;
-  }
-  const int frame_bytes = frame_samples * static_cast<int>(sizeof(std::int16_t));
-  if (frame_bytes <= 0) {
-    return;
-  }
-  if (audio_frame_tmp_.size() != static_cast<std::size_t>(frame_samples)) {
-    audio_frame_tmp_.assign(static_cast<std::size_t>(frame_samples), 0);
-  }
-  while (audio_in_buffer_.size() - audio_in_offset_ >= frame_bytes) {
-    const char* src = audio_in_buffer_.constData() + audio_in_offset_;
-    std::memcpy(audio_frame_tmp_.data(), src,
-                static_cast<std::size_t>(frame_bytes));
-    audio_in_offset_ += frame_bytes;
-    audio_pipeline_->SendPcmFrame(audio_frame_tmp_.data(),
-                                  static_cast<std::size_t>(frame_samples));
-  }
-  if (audio_in_offset_ > 0 &&
-      audio_in_offset_ >= audio_in_buffer_.size() / 2) {
-    audio_in_buffer_.remove(0, audio_in_offset_);
-    audio_in_offset_ = 0;
-  }
-}
-
-void QuickClient::FlushAudioOutput() {
-  if (!audio_out_device_ || audio_out_pending_.isEmpty()) {
-    return;
-  }
-  for (;;) {
-    const qint64 written = audio_out_device_->write(audio_out_pending_);
-    if (written <= 0) {
-      break;
-    }
-    audio_out_pending_.remove(0, static_cast<int>(written));
-    if (audio_out_pending_.isEmpty()) {
-      break;
-    }
-  }
-}
-
-bool QuickClient::SetupAudio(QString& outError) {
-  outError.clear();
-  if (!audio_pipeline_) {
-    return true;
-  }
-  const QAudioDevice in_device = QMediaDevices::defaultAudioInput();
-  const QAudioDevice out_device = QMediaDevices::defaultAudioOutput();
-  const bool have_in = !in_device.isNull();
-  const bool have_out = !out_device.isNull();
-  if (!have_in && !have_out) {
-    outError = QStringLiteral("未找到音频设备");
-    return false;
-  }
-  QAudioFormat format;
-  format.setSampleRate(audio_config_.sample_rate);
-  format.setChannelCount(audio_config_.channels);
-  format.setSampleFormat(QAudioFormat::Int16);
-  const bool in_ok = have_in && in_device.isFormatSupported(format);
-  const bool out_ok = have_out && out_device.isFormatSupported(format);
-  if (!in_ok && !out_ok) {
-    outError = QStringLiteral("音频格式不支持");
-    return false;
-  }
-  if (in_ok) {
-    audio_source_ = std::make_unique<QAudioSource>(in_device, format, this);
-  }
-  if (out_ok) {
-    audio_sink_ = std::make_unique<QAudioSink>(out_device, format, this);
-  }
-  const int frame_bytes =
-      audio_pipeline_->frame_samples() * static_cast<int>(sizeof(std::int16_t));
-  if (frame_bytes > 0) {
-    if (audio_source_) {
-      audio_source_->setBufferSize(frame_bytes * 4);
-    }
-    if (audio_sink_) {
-      audio_sink_->setBufferSize(frame_bytes * 8);
-    }
-  }
-  if (audio_source_) {
-    audio_in_device_ = audio_source_->start();
-    if (!audio_in_device_) {
-      audio_source_.reset();
-    }
-  }
-  if (audio_sink_) {
-    audio_out_device_ = audio_sink_->start();
-    if (!audio_out_device_) {
-      audio_sink_.reset();
-    }
-  }
-  if (!audio_in_device_ && !audio_out_device_) {
-    outError = QStringLiteral("音频设备启动失败");
-    return false;
-  }
-  if (audio_in_device_) {
-    connect(audio_in_device_, &QIODevice::readyRead, this,
-            &QuickClient::HandleAudioReady);
-  }
-  return true;
-}
-
-bool QuickClient::SetupVideo(QString& outError) {
-  outError.clear();
-  const QCameraDevice device = QMediaDevices::defaultVideoInput();
-  if (device.isNull()) {
-    return true;
-  }
-  QMediaCaptureSession* session = EnsureCaptureSession();
-  if (!session) {
-    outError = QStringLiteral("视频模块初始化失败");
-    return false;
-  }
-  camera_ = std::make_unique<QCamera>(device);
-  session->setCamera(camera_.get());
-  session->setVideoSink(local_video_sink_);
-  if (local_video_sink_) {
-    disconnect(local_video_sink_, nullptr, this, nullptr);
-    connect(local_video_sink_, &QVideoSink::videoFrameChanged, this,
-            &QuickClient::HandleLocalVideoFrame);
-  }
-  if (!SelectCameraFormat()) {
-    const QCameraFormat fmt = camera_->cameraFormat();
-    if (fmt.isNull()) {
-      outError = QStringLiteral("摄像头格式不可用");
-      return false;
-    }
-    const QSize res = fmt.resolution();
-    if (res.isValid()) {
-      video_config_.width = static_cast<std::uint32_t>(res.width());
-      video_config_.height = static_cast<std::uint32_t>(res.height());
-    }
-    const float max_fps = fmt.maxFrameRate();
-    if (max_fps > 1.0f) {
-      video_config_.fps =
-          static_cast<std::uint32_t>(std::lround(max_fps));
-    }
-    if (video_config_.fps == 0) {
-      video_config_.fps = 24;
-    }
-  }
-  return true;
-}
-
-void QuickClient::ShutdownAudio() {
-  if (audio_source_) {
-    audio_source_->stop();
-  }
-  if (audio_sink_) {
-    audio_sink_->stop();
-  }
-  audio_in_device_ = nullptr;
-  audio_out_device_ = nullptr;
-  audio_source_.reset();
-  audio_sink_.reset();
-  audio_in_buffer_.clear();
-  audio_out_pending_.clear();
-  audio_in_offset_ = 0;
-}
-
-void QuickClient::ShutdownVideo() {
-  if (camera_) {
-    camera_->stop();
-  }
-  if (capture_session_) {
-    capture_session_->setVideoSink(nullptr);
-    capture_session_->setCamera(nullptr);
-  }
-  camera_.reset();
-}
-
-QMediaCaptureSession* QuickClient::EnsureCaptureSession() {
-  if (!capture_session_) {
-    capture_session_ = std::make_unique<QMediaCaptureSession>(this);
-  }
-  return capture_session_.get();
-}
-
-void* QuickClient::EnsureImeSession() {
-  if (ime_session_) {
-    return ime_session_;
-  }
-  ime_session_ = ImePluginLoader::instance().createSession();
-  return ime_session_;
-}
-
-void QuickClient::HandleAudioReady() {
-  if (!audio_in_device_) {
-    return;
-  }
-  const QByteArray data = audio_in_device_->readAll();
-  if (data.isEmpty()) {
-    return;
-  }
-  audio_in_buffer_.append(data);
-  DrainAudioInput();
-}
-
-void QuickClient::HandleLocalVideoFrame(const QVideoFrame& frame) {
-  if (!video_pipeline_ || (!media_session_ && !group_call_session_)) {
-    return;
-  }
-  if (!call_camera_enabled_) {
-    return;
-  }
-  std::uint32_t width = 0;
-  std::uint32_t height = 0;
-  std::size_t stride = 0;
-  if (!ConvertVideoFrameToNv12(frame, video_send_buffer_, width, height,
-                               stride)) {
-    return;
-  }
-  if (width == 0 || height == 0 || stride == 0) {
-    return;
-  }
-  video_pipeline_->SendNv12Frame(video_send_buffer_.data(), stride, width,
-                                 height);
-}
-
-bool QuickClient::ConvertVideoFrameToNv12(const QVideoFrame& frame,
-                                          std::vector<std::uint8_t>& out,
-                                          std::uint32_t& width,
-                                          std::uint32_t& height,
-                                          std::size_t& stride) const {
-  QVideoFrame mapped(frame);
-  if (!mapped.isValid()) {
-    return false;
-  }
-  if (!mapped.map(QVideoFrame::ReadOnly)) {
-    return false;
-  }
-  width = static_cast<std::uint32_t>(mapped.width());
-  height = static_cast<std::uint32_t>(mapped.height());
-  if (width == 0 || height == 0) {
-    mapped.unmap();
-    return false;
-  }
-  stride = width;
-  const std::size_t y_bytes =
-      static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  const std::size_t uv_bytes = y_bytes / 2;
-  out.resize(y_bytes + uv_bytes);
-  std::uint8_t* y_out = out.data();
-  std::uint8_t* uv_out = out.data() + y_bytes;
-  const auto fmt = mapped.pixelFormat();
-
-  if (fmt == QVideoFrameFormat::Format_NV12 ||
-      fmt == QVideoFrameFormat::Format_NV21) {
-    const int y_stride = mapped.bytesPerLine(0);
-    const int uv_stride = mapped.bytesPerLine(1);
-    const std::uint8_t* y_src = mapped.bits(0);
-    const std::uint8_t* uv_src = mapped.bits(1);
-    for (std::uint32_t row = 0; row < height; ++row) {
-      std::memcpy(y_out + row * width, y_src + row * y_stride, width);
-    }
-    const std::uint32_t uv_height = height / 2;
-    if (fmt == QVideoFrameFormat::Format_NV12) {
-      for (std::uint32_t row = 0; row < uv_height; ++row) {
-        std::memcpy(uv_out + row * width, uv_src + row * uv_stride, width);
-      }
-    } else {
-      for (std::uint32_t row = 0; row < uv_height; ++row) {
-        const std::uint8_t* src = uv_src + row * uv_stride;
-        std::uint8_t* dst = uv_out + row * width;
-        for (std::uint32_t col = 0; col + 1 < width; col += 2) {
-          dst[col] = src[col + 1];
-          dst[col + 1] = src[col];
-        }
-      }
-    }
-    mapped.unmap();
-    return true;
-  }
-
-  if (fmt == QVideoFrameFormat::Format_YUV420P ||
-      fmt == QVideoFrameFormat::Format_YV12) {
-    const int y_stride = mapped.bytesPerLine(0);
-    const int u_stride = mapped.bytesPerLine(1);
-    const int v_stride = mapped.bytesPerLine(2);
-    const std::uint8_t* y_src = mapped.bits(0);
-    const std::uint8_t* u_src = mapped.bits(fmt == QVideoFrameFormat::Format_YUV420P ? 1 : 2);
-    const std::uint8_t* v_src = mapped.bits(fmt == QVideoFrameFormat::Format_YUV420P ? 2 : 1);
-    for (std::uint32_t row = 0; row < height; ++row) {
-      std::memcpy(y_out + row * width, y_src + row * y_stride, width);
-    }
-    const std::uint32_t uv_height = height / 2;
-    for (std::uint32_t row = 0; row < uv_height; ++row) {
-      const std::uint8_t* u_line = u_src + row * u_stride;
-      const std::uint8_t* v_line = v_src + row * v_stride;
-      std::uint8_t* dst = uv_out + row * width;
-      for (std::uint32_t col = 0; col + 1 < width; col += 2) {
-        dst[col] = u_line[col / 2];
-        dst[col + 1] = v_line[col / 2];
-      }
-    }
-    mapped.unmap();
-    return true;
-  }
-
-  if (fmt == QVideoFrameFormat::Format_YUYV ||
-      fmt == QVideoFrameFormat::Format_UYVY) {
-    const int src_stride = mapped.bytesPerLine(0);
-    const std::uint8_t* src = mapped.bits(0);
-    const std::uint32_t width_even = width & ~1u;
-    for (std::uint32_t row = 0; row < height; ++row) {
-      const std::uint8_t* line = src + row * src_stride;
-      for (std::uint32_t col = 0; col < width_even; col += 2) {
-        std::uint8_t y0 = 0;
-        std::uint8_t y1 = 0;
-        std::uint8_t u = 0;
-        std::uint8_t v = 0;
-        if (fmt == QVideoFrameFormat::Format_YUYV) {
-          y0 = line[0];
-          u = line[1];
-          y1 = line[2];
-          v = line[3];
-        } else {
-          u = line[0];
-          y0 = line[1];
-          v = line[2];
-          y1 = line[3];
-        }
-        y_out[row * width + col] = y0;
-        if (col + 1 < width) {
-          y_out[row * width + col + 1] = y1;
-        }
-        if ((row & 1u) == 0) {
-          std::uint8_t* dst = uv_out + (row / 2) * width;
-          dst[col] = u;
-          if (col + 1 < width) {
-            dst[col + 1] = v;
-          }
-        }
-        line += 4;
-      }
-    }
-    mapped.unmap();
-    return true;
-  }
-
-  mapped.unmap();
-  return false;
-}
-
-bool QuickClient::SelectCameraFormat() {
-  if (!camera_) {
-    return false;
-  }
-  const auto formats = camera_->cameraDevice().videoFormats();
-  if (formats.isEmpty()) {
-    return false;
-  }
-  const QSize target(static_cast<int>(video_config_.width),
-                     static_cast<int>(video_config_.height));
-  int best_score = std::numeric_limits<int>::max();
-  QCameraFormat best;
-  bool found = false;
-  for (const auto& fmt : formats) {
-    const auto pix = fmt.pixelFormat();
-    if (pix != QVideoFrameFormat::Format_NV12 &&
-        pix != QVideoFrameFormat::Format_NV21 &&
-        pix != QVideoFrameFormat::Format_YUV420P &&
-        pix != QVideoFrameFormat::Format_YV12 &&
-        pix != QVideoFrameFormat::Format_YUYV &&
-        pix != QVideoFrameFormat::Format_UYVY) {
-      continue;
-    }
-    const QSize res = fmt.resolution();
-    int score = std::abs(res.width() - target.width()) +
-                std::abs(res.height() - target.height());
-    if (pix != QVideoFrameFormat::Format_NV12) {
-      score += 200;
-    }
-    const float max_fps = fmt.maxFrameRate();
-    if (max_fps > 0.0f) {
-      score += static_cast<int>(
-          std::abs(max_fps - static_cast<float>(video_config_.fps)) * 10.0f);
-    }
-    if (!found || score < best_score) {
-      best = fmt;
-      best_score = score;
-      found = true;
-    }
-  }
-  if (!found || best.isNull()) {
-    return false;
-  }
-  camera_->setCameraFormat(best);
-  const QSize res = best.resolution();
-  if (res.isValid()) {
-    video_config_.width = static_cast<std::uint32_t>(res.width());
-    video_config_.height = static_cast<std::uint32_t>(res.height());
-  }
-  const float max_fps = best.maxFrameRate();
-  if (max_fps > 1.0f) {
-    video_config_.fps = static_cast<std::uint32_t>(std::lround(max_fps));
-  }
-  if (video_config_.fps == 0) {
-    video_config_.fps = 24;
-  }
-  return true;
-}
-
-QString QuickClient::BytesToHex(const std::array<std::uint8_t, 16>& bytes) {
-  const QByteArray raw(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-  return QString::fromLatin1(raw.toHex());
-}
-
-bool QuickClient::HexToBytes16(const QString& hex,
-                               std::array<std::uint8_t, 16>& out) {
-  const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
-  if (raw.size() != static_cast<int>(out.size())) {
-    return false;
-  }
-  std::memcpy(out.data(), raw.data(), out.size());
-  return true;
-}
-
-QString QuickClient::BytesToHex32(const std::array<std::uint8_t, 32>& bytes) {
-  const QByteArray raw(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-  return QString::fromLatin1(raw.toHex());
-}
-
-bool QuickClient::HexToBytes32(const QString& hex,
-                               std::array<std::uint8_t, 32>& out) {
-  const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
-  if (raw.size() != static_cast<int>(out.size())) {
-    return false;
-  }
-  std::memcpy(out.data(), raw.data(), out.size());
-  return true;
-}
 
 }  // namespace mi::client::ui

@@ -112,6 +112,38 @@ int main() {
   assert(loaded.server_port == 9444);
   assert(loaded.kt.root_pubkey_path == "kt_root_pub.bin");
 
+  const auto missing_server_cfg = dir / "missing_server.ini";
+  const std::string missing_server_cfg_text = missing_server_cfg.string();
+  std::vector<const char*> missing_server_args = {
+      "mi_e2ee_client_config_tool",
+      "--config",
+      missing_server_cfg_text.c_str(),
+      "--port",
+      "9444",
+      "--pinned-fingerprint",
+      "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      "--non-interactive",
+  };
+  assert(mi::client::RunClientConfigTool(
+             static_cast<int>(missing_server_args.size()),
+             const_cast<char**>(missing_server_args.data())) != 0);
+
+  const auto missing_port_cfg = dir / "missing_port.ini";
+  const std::string missing_port_cfg_text = missing_port_cfg.string();
+  std::vector<const char*> missing_port_args = {
+      "mi_e2ee_client_config_tool",
+      "--config",
+      missing_port_cfg_text.c_str(),
+      "--server",
+      "ci.example.test",
+      "--pinned-fingerprint",
+      "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      "--non-interactive",
+  };
+  assert(mi::client::RunClientConfigTool(
+             static_cast<int>(missing_port_args.size()),
+             const_cast<char**>(missing_port_args.data())) != 0);
+
   std::filesystem::remove_all(dir);
   return 0;
 }

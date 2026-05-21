@@ -11,62 +11,10 @@ Rectangle {
     property string detailText: ""
     property bool compact: false
 
-    readonly property color toneAccent: {
-        switch (kind) {
-        case "photo":
-            return Ui.Style.accent
-        case "video":
-            return "#3B82F6"
-        case "voice":
-            return Ui.Style.success
-        case "link":
-            return "#0EA5E9"
-        default:
-            return Ui.Style.textSecondary
-        }
-    }
-    readonly property color toneBg: {
-        switch (kind) {
-        case "photo":
-            return Qt.rgba(37 / 255, 99 / 255, 235 / 255, Ui.Style.isDark ? 0.18 : 0.09)
-        case "video":
-            return Qt.rgba(59 / 255, 130 / 255, 246 / 255, Ui.Style.isDark ? 0.18 : 0.09)
-        case "voice":
-            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.18 : 0.09)
-        case "link":
-            return Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.18 : 0.09)
-        default:
-            return Qt.rgba(100 / 255, 116 / 255, 139 / 255, Ui.Style.isDark ? 0.18 : 0.08)
-        }
-    }
-    readonly property color toneBorder: {
-        switch (kind) {
-        case "photo":
-            return Qt.rgba(37 / 255, 99 / 255, 235 / 255, Ui.Style.isDark ? 0.30 : 0.18)
-        case "video":
-            return Qt.rgba(59 / 255, 130 / 255, 246 / 255, Ui.Style.isDark ? 0.30 : 0.18)
-        case "voice":
-            return Qt.rgba(5 / 255, 150 / 255, 105 / 255, Ui.Style.isDark ? 0.30 : 0.18)
-        case "link":
-            return Qt.rgba(14 / 255, 165 / 255, 233 / 255, Ui.Style.isDark ? 0.30 : 0.18)
-        default:
-            return Ui.Style.borderSubtle
-        }
-    }
-    readonly property string iconSource: {
-        switch (kind) {
-        case "photo":
-            return "qrc:/mi/e2ee/ui/icons/image.svg"
-        case "video":
-            return "qrc:/mi/e2ee/ui/icons/video.svg"
-        case "voice":
-            return "qrc:/mi/e2ee/ui/icons/mic.svg"
-        case "link":
-            return "qrc:/mi/e2ee/ui/icons/info.svg"
-        default:
-            return "qrc:/mi/e2ee/ui/icons/file.svg"
-        }
-    }
+    readonly property color toneAccent: Ui.UiUtil.preview_accent_for(kind)
+    readonly property color toneBg: Ui.UiUtil.preview_tint_for(kind)
+    readonly property color toneBorder: Ui.UiUtil.preview_border_for(kind)
+    readonly property string iconSource: Ui.UiUtil.preview_icon_for(kind)
 
     radius: Ui.Style.radiusLarge
     color: Ui.Style.mediaCardBg

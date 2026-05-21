@@ -18,6 +18,7 @@ ToolButton {
     implicitWidth: buttonSize
     implicitHeight: buttonSize
     hoverEnabled: true
+    focusPolicy: Qt.TabFocus
     Accessible.role: Accessible.Button
     Accessible.name: root.accessibleName.length > 0
                      ? root.accessibleName
@@ -32,8 +33,18 @@ ToolButton {
 
     background: Rectangle {
         radius: Ui.Style.radiusMedium
-        color: root.down ? root.pressedBg : (root.hovered ? root.hoverBg : root.bgColor)
+        color: root.down ? root.pressedBg
+                         : (root.activeFocus ? root.hoverBg
+                                             : (root.hovered ? root.hoverBg : root.bgColor))
+        border.width: root.activeFocus ? 1 : 0
+        border.color: Ui.Style.accent
+        Behavior on color {
+            ColorAnimation { duration: Ui.Style.motionFast }
+        }
     }
+
+    Keys.onReturnPressed: root.clicked()
+    Keys.onEnterPressed: root.clicked()
 
     MouseArea {
         anchors.fill: parent

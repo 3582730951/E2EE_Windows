@@ -39,39 +39,17 @@ Item {
         id: systemPalette
     }
 
-    readonly property string smokeThemeMode: typeof uiSmokeTheme !== "undefined"
-                                             ? (uiSmokeTheme || "")
-                                             : ""
-    readonly property string smokeSceneName: typeof uiSmokeScene !== "undefined"
-                                             ? ((uiSmokeScene || "").toLowerCase())
-                                             : ""
-    readonly property bool smokePostLoginScene: smokeSceneName === "post_login"
-    readonly property bool smokePostLoginLightScene: smokeSceneName === "post_login_light" ||
-                                                     smokeSceneName === "chat_list_light"
-    readonly property bool smokeLightPrimaryPalette: smokeThemeMode === "light" && smokePostLoginScene
-    readonly property bool smokeLightAltPalette: smokeThemeMode === "light" && smokePostLoginLightScene
-    readonly property var smokeViewportContract: ({
-        loginWidth: typeof uiSmokeLoginViewportWidth !== "undefined"
-                    ? Number(uiSmokeLoginViewportWidth)
-                    : 840,
-        shellWidth: typeof uiSmokeShellViewportWidth !== "undefined"
-                    ? Number(uiSmokeShellViewportWidth)
-                    : 900,
-        height: typeof uiSmokeViewportHeight !== "undefined"
-                ? Number(uiSmokeViewportHeight)
-                : 620
-    })
     readonly property var shellLayoutContract: ({
         shellMinWidth: typeof uiShellMinWidth !== "undefined" ? Number(uiShellMinWidth) : 760,
         compactTwoColumnMinWidth: typeof uiCompactTwoColumnMinWidth !== "undefined"
                                   ? Number(uiCompactTwoColumnMinWidth)
-                                  : 980,
+                                  : 760,
         twoColumnDrawerMinWidth: typeof uiTwoColumnDrawerMinWidth !== "undefined"
                                  ? Number(uiTwoColumnDrawerMinWidth)
                                  : 1120,
         threeColumnMinWidth: typeof uiThreeColumnMinWidth !== "undefined"
                              ? Number(uiThreeColumnMinWidth)
-                             : 980
+                             : 1360
     })
     property string themeMode: (styleSettings.storedThemeMode === "dark" ||
                                 styleSettings.storedThemeMode === "light" ||
@@ -83,10 +61,7 @@ Item {
         var luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
         return luminance < 0.55
     }
-    property bool isDark: {
-        var activeTheme = smokeThemeMode.length > 0 ? smokeThemeMode : themeMode
-        return activeTheme === "dark" || (activeTheme === "system" && systemDark)
-    }
+    property bool isDark: themeMode === "dark" || (themeMode === "system" && systemDark)
 
     onThemeModeChanged: {
         if (styleSettings.storedThemeMode !== themeMode) {
@@ -317,22 +292,19 @@ Item {
     property int authFieldHeight: 42
     property int authPrimaryButtonHeight: 40
     property int shellMinWidth: shellLayoutContract.shellMinWidth
+    property int shellMinHeight: 560
     property int leftPaneWidthUtilityRail: 60
-    property int leftPaneWidthMin: 232
-    property int leftPaneWidthCompact: 336
+    property int leftPaneWidthMin: 260
+    property int leftPaneWidthCompact: 340
     property int leftPaneWidthDefault: 352
-    // property int leftPaneWidthDetailTight: 248
-    property int leftPaneWidthDetailTight: 236
-    // property int leftPaneWidthDrawerTight: 272
-    property int leftPaneWidthDrawerTight: 260
+    property int leftPaneWidthDetailTight: 300
+    property int leftPaneWidthDrawerTight: 300
     property int centerPaneWidthMin: 320
-    property int rightPaneWidth: 248
-    property int rightPaneWidthMin: 220
-    // property int rightPaneWidthTight: 72
-    property int rightPaneWidthTight: 228
-    // property int rightPaneDrawerCompactWidth: 244
-    property int rightPaneDrawerCompactWidth: 236
-    property int rightPaneWidthDrawerNarrow: 108
+    property int rightPaneWidth: 320
+    property int rightPaneWidthMin: 280
+    property int rightPaneWidthTight: 280
+    property int rightPaneDrawerCompactWidth: 340
+    property int rightPaneWidthDrawerNarrow: 320
     property int rightPaneWidthMax: 420
     property int compactTwoColumnMinWidth: shellLayoutContract.compactTwoColumnMinWidth
     property int twoColumnDrawerMinWidth: shellLayoutContract.twoColumnDrawerMinWidth
@@ -340,6 +312,8 @@ Item {
     property int iconButtonSize: 38
     property int iconButtonSmall: 24
     property int microTextSize: 13
+    property int motionFast: 140
+    property int motionNormal: 220
 
     readonly property var overflowRoles: ({
         display: { elide: Text.ElideRight, wrapMode: Text.NoWrap, maximumLineCount: 1 },

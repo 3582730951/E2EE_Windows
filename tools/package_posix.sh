@@ -39,8 +39,8 @@ server_build=""
 server_mode="demo"
 mysql_username=""
 mysql_password=""
-client_server_host="${MI_E2EE_PACKAGE_CLIENT_SERVER_HOST:-127.0.0.1}"
-client_server_port="${MI_E2EE_PACKAGE_CLIENT_SERVER_PORT:-9000}"
+client_server_host="${MI_E2EE_PACKAGE_CLIENT_SERVER_HOST:-}"
+client_server_port="${MI_E2EE_PACKAGE_CLIENT_SERVER_PORT:-}"
 codesign_id=""
 codesign_entitlements=""
 notary_profile=""
@@ -130,10 +130,12 @@ if [[ -z "$workspace" ]]; then
   workspace="$(cd "$script_dir/.." && pwd)"
 fi
 if [[ -z "$client_server_host" ]]; then
-  client_server_host="127.0.0.1"
+  echo "client server host required: pass --client-server-host or set MI_E2EE_PACKAGE_CLIENT_SERVER_HOST" >&2
+  exit 1
 fi
 if [[ -z "$client_server_port" || "$client_server_port" == "0" ]]; then
-  client_server_port="9000"
+  echo "client server port required: pass --client-server-port or set MI_E2EE_PACKAGE_CLIENT_SERVER_PORT" >&2
+  exit 1
 fi
 if [[ -z "$platform" ]]; then
   uname_s="$(uname -s | tr '[:upper:]' '[:lower:]')"

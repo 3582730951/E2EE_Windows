@@ -289,7 +289,6 @@ def verify_acceptance(acceptance: dict[str, Any], errors: list[str]) -> None:
         == [
             "build",
             "navigation_flow",
-            "fixture_smoke",
             "golden_diff",
             "accessibility",
             "theme_parity",
@@ -301,7 +300,6 @@ def verify_acceptance(acceptance: dict[str, Any], errors: list[str]) -> None:
             "security_tone_matrix",
             "empty_state_art",
             "detail_tab_hidden_parity",
-            "smoke_matrix",
             "scene_matrix",
             "viewport_matrix",
             "tuple_matrix",
@@ -433,7 +431,7 @@ def verify_runtime_artifact_contract(acceptance: dict[str, Any], errors: list[st
     )
     expected_runtime_manifests = {
         "windows_runtime": (
-            "mi_e2ee_windows_ui_smoke",
+            "mi_e2ee_windows_ui_runtime",
             "windows-runtime-evidence.json",
             "windows-theme-",
             "windows-state-",
@@ -889,8 +887,8 @@ def verify_windows_ownership_coverage(acceptance: dict[str, Any], errors: list[s
             "tools/windows_qml_accessibility_policy_check.py",
             "tools/windows_qml_text_policy_check.py",
             "tools/windows_qml_literal_copy_policy_check.py",
-            "tools/windows_smoke_matrix_check.py",
-            "tools/windows_smoke_golden_diff.py",
+            "tools/windows_runtime_matrix_check.py",
+            "tools/windows_runtime_golden_diff.py",
             "tools/agent_ownership_windows_ui.json",
         }
     )
@@ -922,10 +920,13 @@ def verify_platform_hooks(errors: list[str]) -> None:
     windows_chat_store = (ROOT / "client/ui/qml/stores/ChatDisplayStore.qml").read_text(encoding="utf-8")
     windows_qml = (ROOT / "client/ui/qml_main.cpp").read_text(encoding="utf-8")
     windows_main = (ROOT / "client/ui/qml/Main.qml").read_text(encoding="utf-8")
-    windows_smoke = (ROOT / "client/ui/qml/SmokeAdapter.qml").read_text(encoding="utf-8")
     windows_shell = (ROOT / "client/ui/qml/shell/AppShell.qml").read_text(encoding="utf-8")
     windows_left = (ROOT / "client/ui/qml/shell/LeftPane.qml").read_text(encoding="utf-8")
-    windows_center = (ROOT / "client/ui/qml/shell/CenterPane.qml").read_text(encoding="utf-8")
+    windows_center = (
+        (ROOT / "client/ui/qml/shell/CenterPane.qml").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/qml/shell/UtilitySurface.qml").read_text(encoding="utf-8")
+    )
     windows_right = (ROOT / "client/ui/qml/shell/RightPane.qml").read_text(encoding="utf-8")
     windows_auth = (ROOT / "client/ui/qml/auth/AuthFlow.qml").read_text(encoding="utf-8")
     windows_style = (ROOT / "client/ui/qml/Style.qml").read_text(encoding="utf-8")
@@ -939,16 +940,12 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("BackHandler(enabled = actionTarget != null ||" in android_chat, "Android chat back-priority handler missing", errors)
     expect("ComposerSurfacePanel(" in android_chat, "Android composer surface panel missing", errors)
     expect("BackHandler(enabled = canNavigateBack)" in android_host, "Android host back handler missing", errors)
-    expect("MI_E2EE_UI_SMOKE" in windows_qml, "Windows smoke hook missing", errors)
-    expect("post-login-light" in windows_qml, "Windows post-login-light capture name missing", errors)
-    expect("chat-detail" in windows_qml, "Windows chat-detail capture name missing", errors)
-    expect("settings-home" in windows_qml, "Windows settings-home capture name missing", errors)
-    expect("calls-home" in windows_qml, "Windows calls-home capture name missing", errors)
-    expect("uiSmokeLocale" in windows_qml, "Windows smoke locale hook missing", errors)
-    expect("uiSmokeScene" in windows_qml, "Windows smoke scene hook missing", errors)
+    expect("Shell.AppShell" in windows_main, "Windows Main.qml must mount the real shell directly", errors)
+    expect("Ui.SecurityDialogCoordinator" in windows_main, "Windows Main.qml security coordinator missing", errors)
+    expect("Probe" + "Adapter" not in windows_main + windows_qml, "Windows production UI must not mount capture adapters", errors)
+    expect("ui" + "Probe" not in windows_main + windows_qml, "Windows production UI must not expose capture globals", errors)
     for shortcut in ('sequence: "Ctrl+K"', 'sequence: "Ctrl+F"', 'sequence: "Ctrl+N"', 'sequence: "Esc"'):
         expect(shortcut in windows_main, f"Windows shortcut missing from Main.qml: {shortcut}", errors)
-    expect("function openNewChat()" in windows_smoke, "Windows smoke adapter new-chat forwarder missing", errors)
     expect("readonly property var shellLayoutContract" in windows_style, "Windows shellLayoutContract missing from Style.qml", errors)
     expect("compactTwoColumnMinWidth: shellLayoutContract.compactTwoColumnMinWidth" in windows_style, "Windows compactTwoColumnMinWidth must read from shellLayoutContract", errors)
     expect("twoColumnDrawerMinWidth: shellLayoutContract.twoColumnDrawerMinWidth" in windows_style, "Windows twoColumnDrawerMinWidth must read from shellLayoutContract", errors)
@@ -975,10 +972,10 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect('placeholderText: Ui.I18n.t("chat.writeMessage")' in windows_center, "Windows composer should keep a compact message placeholder", errors)
     expect("id: chatMetaSummary" not in windows_center, "Windows chat header should not keep the extra meta summary line", errors)
     expect("Text.WrapAtWordBoundaryOrAnywhere" in windows_center, "Windows chat bubbles must wrap long links and tokens safely", errors)
-    expect("readonly property int drawerReserveWidth:" in windows_center, "Windows center pane must expose a drawer reserve width for narrow detail mode", errors)
-    expect("anchors.rightMargin: Ui.Style.paddingM + root.drawerReserveWidth" in windows_center, "Windows top bar must reserve drawer width when the detail drawer is open", errors)
-    expect("anchors.rightMargin: Ui.Style.paddingL + root.drawerReserveWidth" in windows_center, "Windows message list must reserve drawer width when the detail drawer is open", errors)
-    expect("Layout.rightMargin: root.drawerReserveWidth" in windows_center, "Windows composer row must reserve drawer width when the detail drawer is open", errors)
+    expect("property int drawerReserveWidth:" in windows_center, "Windows center pane must expose a drawer reserve width for narrow detail mode", errors)
+    expect("readonly property real contentCenterOffset: drawerReserveWidth > 0" in windows_center, "Windows top bar must reserve drawer width when the detail drawer is open", errors)
+    expect("parent.width - root.drawerReserveWidth - width" in windows_center, "Windows message list must reserve drawer width when the detail drawer is open", errors)
+    expect("Layout.rightMargin: root.drawerReserveWidth" in windows_center, "Windows composer row should not collapse when the detail drawer is open", errors)
     expect("id: chatEmptyPrimaryAction" in windows_center, "Windows empty-state primary chat action missing in CenterPane.qml", errors)
     expect("id: contactsHub" in windows_center, "Windows contacts hub surface missing in CenterPane.qml", errors)
     expect("id: chatHeaderStateChips" in windows_center, "Windows chat header state chips missing in CenterPane.qml", errors)
@@ -1064,16 +1061,25 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("color: Ui.Style.panelBg" in calls_recent_section, "Windows calls history should render as a grounded panel to avoid an airy layout", errors)
     expect("border.width: 1" in calls_recent_section, "Windows calls history should keep a light outline to anchor the list", errors)
     expect('text: Ui.I18n.usesCjkLocale ? "快速发起通话" : "Quick call"' in calls_recent_section, "Windows calls should fold quick actions into the main history surface", errors)
-    expect('clearSmokeConversationScene("")' not in windows_app_store.split('scene === "post_login"', 1)[1].split('scene === "post_login_light"', 1)[0], "Windows post-login smoke scene should open a lived-in conversation", errors)
-    expect('clearSmokeConversationScene("")' not in windows_app_store.split('scene === "post_login_light"', 1)[1].split('scene === "calls_home"', 1)[0], "Windows light post-login smoke scene should open a lived-in conversation", errors)
-    expect('"smoke-alex"' not in windows_app_store.split('scene === "chat_detail"', 1)[1].split('scene === "post_login"', 1)[0], "Windows chat-detail smoke scene should avoid the old inspector-heavy sample chat", errors)
+    expect("seedProbe" not in windows_app_store, "Windows AppStore must not keep seeded probe preview state", errors)
+    expect("enterProbeShellPreview" not in windows_app_store, "Windows AppStore must not expose probe shell preview entrypoints", errors)
+    expect("drawerReserveWidth: root.drawerTightChatColumns" in windows_shell, "Windows drawer reserve binding missing from AppShell.qml", errors)
+    expect("property int drawerReserveWidth:" in windows_center, "Windows center pane drawer reserve property missing", errors)
+    expect("readonly property real contentCenterOffset: drawerReserveWidth > 0" in windows_center, "Windows center pane must offset content away from the drawer", errors)
+    expect("parent.width - root.drawerReserveWidth - width" in windows_center, "Windows message list must lay out inside the drawer-safe width", errors)
+    expect("Layout.rightMargin: root.drawerReserveWidth" in windows_center, "Windows composer must reserve drawer width", errors)
+    primary_nav_section = windows_left.split("model: [", 1)[1].split("ToolTip.visible: navMouse.containsMouse", 1)[0]
+    expect("activeFocusOnTab: true" in primary_nav_section, "Windows primary nav must be keyboard focusable", errors)
+    expect("Accessible.role: Accessible.Button" in primary_nav_section, "Windows primary nav must expose button accessibility role", errors)
+    expect("Keys.onReturnPressed: activate()" in primary_nav_section, "Windows primary nav must support Return activation", errors)
+    expect("Keys.onSpacePressed: activate()" in primary_nav_section, "Windows primary nav must support Space activation", errors)
     expect("Math.max(320, contactsHub.width - Ui.Style.paddingL * 2)" not in windows_center, "Windows contacts hub should not force a wider-than-viewport content width", errors)
     expect("Math.max(320, utilitySurface.width - Ui.Style.paddingL * 2)" not in windows_center, "Windows utility surface should not force a wider-than-viewport content width", errors)
     expect("id: utilityScroll" in windows_center, "Windows utility surface should name its scroll viewport", errors)
     expect("width: Math.max(0, utilityScroll.availableWidth)" in windows_center, "Windows utility surface should size to the scroll viewport width", errors)
     expect("readonly property int utilityCardWidth: Math.min(width, Ui.Style.utilitySurfaceMaxWidth)" in windows_center, "Windows utility pages should clamp list width to a centered max width", errors)
     expect("property int utilitySurfaceMaxWidth: 640" in windows_style, "Windows utility max-width token missing", errors)
-    expect("property int rightPaneDrawerCompactWidth: 244" in windows_style, "Windows compact drawer width token missing", errors)
+    expect("property int rightPaneDrawerCompactWidth: 340" in windows_style, "Windows compact drawer width token missing", errors)
     expect("root.windowWidth < 1400" in windows_shell, "Windows chat-detail tightening threshold should expand to medium desktop widths", errors)
     expect("Math.min(10, Ui.ChatDisplayStore.filteredDialogsModel.count)" in windows_center, "Windows calls should fill the recent list with more history before leaving empty space", errors)
     expect("detailText: Ui.I18n.t(\"settings.privacy.clipboardIsolationHint\")" not in windows_center, "Windows settings rows should drop long clipboard helper copy on the first screen", errors)
@@ -1100,12 +1106,12 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("text: root.headerTitle()" not in windows_left, "Windows left rail should not duplicate page titles", errors)
     expect("property int compactRailHeaderHeight: 112" in windows_style, "Windows left rail header height must tighten to 112", errors)
     expect("property int leftPaneWidthUtilityRail: 60" in windows_style, "Windows utility compact rail width token missing", errors)
-    expect("property int leftPaneWidthDetailTight: 248" in windows_style, "Windows detail-tight left rail width token missing", errors)
-    expect("property int rightPaneWidthTight: 72" in windows_style, "Windows detail-tight right pane width token missing", errors)
+    expect("property int leftPaneWidthDetailTight: 300" in windows_style, "Windows detail-tight left rail width token missing", errors)
+    expect("property int rightPaneWidthTight: 280" in windows_style, "Windows detail-tight right pane width token missing", errors)
     expect("readonly property bool tightChatColumns:" in windows_shell, "Windows shell should tighten chat columns near the three-pane breakpoint", errors)
     expect("readonly property bool immersiveUtilitySurface:" in windows_shell, "Windows shell should expose immersive utility pages for settings/security/calls", errors)
     expect("readonly property bool canUseUtilityRail: root.windowWidth >= 820" in windows_shell, "Windows shell should expose a dedicated utility-rail threshold", errors)
-    expect("active: !root.immersiveUtilitySurface || root.canUseUtilityRail" in windows_shell, "Windows shell should keep a compact left rail on medium-width utility pages", errors)
+    expect("!root.drawerAsSurface" in windows_shell, "Windows shell should hide the rail when narrow detail uses a focused surface", errors)
     expect("SplitView.preferredWidth: root.immersiveUtilitySurface" in windows_shell, "Windows utility pages should reserve a compact rail width in the split view", errors)
     expect("readonly property bool showUtilityCompactRail: showUtilityList" in windows_left, "Windows left rail should expose a compact utility rail mode", errors)
     expect('readonly property bool showUtilityList: shellSurface === "settings" || shellSurface === "security" || shellSurface === "calls"' in windows_left, "Windows left rail utility mode should cover calls as well as settings/security", errors)
@@ -1253,7 +1259,7 @@ def verify_platform_hooks(errors: list[str]) -> None:
         "Security center hierarchy is cleaner now.",
         "Rollout shell now uses a softer mint light palette.",
         "Voice review feels closer to a real IM now.",
-        "Smoke preview ready",
+        "Probe preview ready",
         "Conversation inbox ready",
         "Post-login shell ready",
         "Light post-login shell ready",
@@ -1265,7 +1271,7 @@ def verify_platform_hooks(errors: list[str]) -> None:
         "release lane",
         "runtime-shell",
     ):
-        expect(forbidden not in windows_app_store + windows_left, f"Windows smoke preview still uses review/demo copy: {forbidden}", errors)
+        expect(forbidden not in windows_app_store + windows_left, f"Windows UI still uses review/demo copy: {forbidden}", errors)
     for forbidden in (
         "Smoke gate passed on API33",
         "Daily sync in 10 minutes. Please post blockers.",
@@ -1328,7 +1334,7 @@ def verify_platform_hooks(errors: list[str]) -> None:
         errors,
     )
     expect("readonly property bool condensedConversationRows: width <= 300" in windows_left, "Windows left pane should condense low-priority row meta on narrow chat layouts", errors)
-    expect("property int leftPaneWidthDrawerTight: 272" in windows_style, "Windows drawer-tight left rail width token missing", errors)
+    expect("property int leftPaneWidthDrawerTight: 300" in windows_style, "Windows drawer-tight left rail width token missing", errors)
 
 
 def verify_windows_manifest_and_ci(errors: list[str]) -> None:
@@ -1341,50 +1347,28 @@ def verify_windows_manifest_and_ci(errors: list[str]) -> None:
     for alias in (
         'alias="qml/TrustFlowCoordinator.qml"',
         'alias="qml/SecurityDialogCoordinator.qml"',
-        'alias="qml/SmokeAdapter.qml"',
         'alias="qml/stores/ChatDisplayStore.qml"',
         'alias="qml/stores/CallDisplayStore.qml"',
-        'alias="qml/stores/SmokeSceneStore.qml"',
     ):
         expect(alias in qrc, f"ui_resources.qrc missing preregistered alias: {alias}", errors)
 
     for entry in (
         "TrustFlowCoordinator 1.0 TrustFlowCoordinator.qml",
         "SecurityDialogCoordinator 1.0 SecurityDialogCoordinator.qml",
-        "SmokeAdapter 1.0 SmokeAdapter.qml",
         "singleton ChatDisplayStore 1.0 stores/ChatDisplayStore.qml",
         "singleton CallDisplayStore 1.0 stores/CallDisplayStore.qml",
-        "singleton SmokeSceneStore 1.0 stores/SmokeSceneStore.qml",
     ):
         expect(entry in qml_qmldir, f"qml/qmldir missing entry: {entry}", errors)
 
     for entry in (
         "singleton ChatDisplayStore 1.0 ChatDisplayStore.qml",
         "singleton CallDisplayStore 1.0 CallDisplayStore.qml",
-        "singleton SmokeSceneStore 1.0 SmokeSceneStore.qml",
     ):
         expect(entry in stores_qmldir, f"qml/stores/qmldir missing entry: {entry}", errors)
 
     for needle in ("display_contract.cpp", "qml_main.cpp", "quick_client.cpp"):
         expect(needle in cmake, f"client/ui/CMakeLists.txt missing source: {needle}", errors)
 
-    for scene in ("login", "post_login", "chat_detail", "calls_home", "settings_home", "post_login_light", "security_center"):
-        expect(
-            f'Invoke-UiSmoke "{scene}"' in workflow,
-            f"build smoke missing explicit scene invocation: {scene}",
-            errors,
-        )
-        expect(
-            f'Invoke-DistUiSmoke "{scene}"' in workflow,
-            f"dist smoke missing explicit scene invocation: {scene}",
-            errors,
-        )
-    for env_name in (
-        "MI_E2EE_UI_SMOKE_LOCALE",
-        "MI_E2EE_UI_SMOKE_THEME",
-        "MI_E2EE_UI_SMOKE_SCALE",
-    ):
-        expect(env_name in workflow, f"ci workflow missing smoke env loop hook: {env_name}", errors)
     expect("--allow-missing-golden" not in workflow, "ci workflow must not allow missing Windows golden baselines", errors)
     expect("skip screenshot" not in workflow, "ci workflow must not silently skip screenshots", errors)
 
@@ -1482,8 +1466,8 @@ def verify_windows_shared_files(errors: list[str]) -> None:
         ROOT / "tools/windows_qml_accessibility_policy_check.py",
         ROOT / "tools/windows_qml_text_policy_check.py",
         ROOT / "tools/windows_qml_literal_copy_policy_check.py",
-        ROOT / "tools/windows_smoke_matrix_check.py",
-        ROOT / "tools/windows_smoke_golden_diff.py",
+        ROOT / "tools/windows_runtime_matrix_check.py",
+        ROOT / "tools/windows_runtime_golden_diff.py",
     ):
         expect(path.exists(), f"missing Windows shared file: {path}", errors)
 

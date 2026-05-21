@@ -108,7 +108,8 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
     proxyForm->addRow(UiSettings::Tr(QStringLiteral("类型"), QStringLiteral("Type")), proxyType_);
 
     proxyHost_ = new QLineEdit(proxyGroup);
-    proxyHost_->setPlaceholderText(QStringLiteral("127.0.0.1"));
+    proxyHost_->setPlaceholderText(
+        UiSettings::Tr(QStringLiteral("代理主机名"), QStringLiteral("Proxy host")));
     proxyForm->addRow(UiSettings::Tr(QStringLiteral("主机"), QStringLiteral("Host")), proxyHost_);
 
     proxyPort_ = new QSpinBox(proxyGroup);

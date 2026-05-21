@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
-project(mi_e2ee_client_demo LANGUAGES C CXX)
+project(mi_e2ee_client LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-option(MI_E2EE_BUILD_UI "Build Qt Quick UI demo" ON)
-option(MI_E2EE_BUILD_DEMO_CLIENT "Build demo client CLI" OFF)
-option(MI_E2EE_BUILD_LEGACY_UI "Build legacy Qt widget/demo UIs" OFF)
+option(MI_E2EE_BUILD_UI "Build Qt Quick UI" ON)
+option(MI_E2EE_BUILD_DEMO_CLIENT "Build client CLI tool" OFF)
+option(MI_E2EE_BUILD_LEGACY_UI "Build legacy Qt widget UIs" OFF)
 option(MI_E2EE_BUILD_SDK_SHARED "Build shared C SDK library for bindings" ON)
 set(MI_E2EE_CLIENT_CONFIG_KEY_HEX "" CACHE STRING
     "Optional 64-hex package key used to encrypt bundled client_config.ini")

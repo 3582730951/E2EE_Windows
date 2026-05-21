@@ -102,7 +102,7 @@ def main() -> int:
     if diff > args.threshold:
         print(f"ERROR: golden diff rms {diff:.2f} exceeds threshold {args.threshold:.2f}")
         return 1
-    print(f"Windows smoke golden diff passed with rms {diff:.2f}.")
+    print(f"Windows runtime golden diff passed with rms {diff:.2f}.")
     return 0
 
 

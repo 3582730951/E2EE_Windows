@@ -18,14 +18,13 @@
         "client/ui/qml/shell/AppShell.qml",
         "client/ui/qml/shell/LeftPane.qml",
         "client/ui/qml/shell/CenterPane.qml",
-        "client/ui/qml/SmokeAdapter.qml",
         "client/ui/qml/AppStore.qml",
         "client/ui/qml/Style.qml"
       ],
       "acceptance": [
         "desktop breakpoints must drive actual shell behavior",
         "Ctrl+N must exist and Esc must resolve to the correct foreground surface",
-        "calls/settings/security smoke surfaces must map to distinct shell behavior"
+        "calls/settings/security surfaces must map to distinct shell behavior"
       ]
     },
     {
@@ -72,7 +71,7 @@
     }
   ],
   "regression_perimeter": [
-    "Windows smoke scene activation and desktop shell shortcuts",
+    "Windows desktop shell shortcuts and runtime surface activation",
     "Android chat composer interaction flow and screenshot routing",
     "iOS chat list/detail navigation semantics",
     "CI acceptance checks and screenshot capture requirements"

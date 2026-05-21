@@ -189,7 +189,7 @@ Item {
             store.refresh()
         }
 
-        function onTokenChanged() {
+        function onAuthStateChanged() {
             store.refresh()
         }
     }

@@ -409,6 +409,10 @@ bool LoadClientConfig(const std::string& path, ClientConfig& out_cfg,
   }
   out_cfg.require_pinned_fingerprint =
       (out_cfg.tls_verify_mode == TlsVerifyMode::kPin);
+  if (out_cfg.server_ip.empty()) {
+    error = "server_ip missing";
+    return false;
+  }
   if (out_cfg.server_port == 0) {
     error = "server_port missing";
     return false;

@@ -145,20 +145,20 @@ $clientServerHostValue = if ($ClientServerHost) {
 } elseif ($env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST) {
   $env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST
 } else {
-  "127.0.0.1"
+  ""
 }
 $clientServerPortValue = if ($ClientServerPort) {
   $ClientServerPort
 } elseif ($env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT) {
   $env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT
 } else {
-  "9000"
+  ""
 }
 if ([string]::IsNullOrWhiteSpace($clientServerHostValue)) {
-  $clientServerHostValue = "127.0.0.1"
+  throw "client server host required: pass -ClientServerHost or set MI_E2EE_PACKAGE_CLIENT_SERVER_HOST"
 }
 if ([string]::IsNullOrWhiteSpace($clientServerPortValue) -or $clientServerPortValue -eq "0") {
-  $clientServerPortValue = "9000"
+  throw "client server port required: pass -ClientServerPort or set MI_E2EE_PACKAGE_CLIENT_SERVER_PORT"
 }
 
 $clientRoot = Join-Path $distRoot "mi_e2ee_client"

@@ -196,7 +196,6 @@
     "acceptance_surfaces": [
       "client/ui/qml/auth/AuthFlow.qml",
       "client/ui/qml/Main.qml",
-      "client/ui/qml/SmokeAdapter.qml",
       "client/ui/qml/TrustFlowCoordinator.qml",
       "client/ui/qml/SecurityDialogCoordinator.qml",
       "client/ui/qml/components/UiText.qml",
@@ -216,7 +215,6 @@
   "required_evidence": [
     "build",
     "navigation_flow",
-    "fixture_smoke",
     "golden_diff",
     "accessibility",
     "theme_parity",
@@ -228,7 +226,6 @@
     "security_tone_matrix",
     "empty_state_art",
     "detail_tab_hidden_parity",
-    "smoke_matrix",
     "scene_matrix",
     "viewport_matrix",
     "tuple_matrix"
@@ -246,7 +243,7 @@
         ]
       },
       "windows_runtime": {
-        "artifact_name": "mi_e2ee_windows_ui_smoke",
+        "artifact_name": "mi_e2ee_windows_ui_runtime",
         "manifest_file": "windows-runtime-evidence.json",
         "theme_marker_prefix": "windows-theme-",
         "state_marker_prefix": "windows-state-",

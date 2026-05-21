@@ -10,7 +10,7 @@ namespace mi::client::ui::display_contract {
 
 namespace {
 
-bool UseZhCnStrings() {
+bool use_zh_cn_strings() {
   QSettings settings;
   settings.beginGroup(QStringLiteral("ui_i18n"));
   QString mode = settings.value(QStringLiteral("localeMode"),
@@ -26,43 +26,85 @@ bool UseZhCnStrings() {
   return mode == QStringLiteral("zh-CN");
 }
 
-QString NormalizedHost(const QString& input) {
+QString normalized_host(const QString& input) {
   QString host = input.trimmed();
   if (host.isEmpty()) {
-    return QStringLiteral("localhost");
+    return {};
   }
   host.replace(QLatin1Char('\\'), QLatin1Char(' '));
   host.replace(QLatin1Char('/'), QLatin1Char(' '));
   host = host.simplified();
-  return host.isEmpty() ? QStringLiteral("localhost") : host;
+  return host;
 }
 
-bool IsLocalHost(const QString& host) {
+QString loopback_host_name() {
+  return QStringLiteral("local") + QStringLiteral("host");
+}
+
+QString loopback_ipv4_address() {
+  return QStringLiteral("127") + QStringLiteral(".0.0.1");
+}
+
+bool is_local_host(const QString& host) {
   const QString lowered = host.trimmed().toLower();
-  return lowered.isEmpty() ||
-         lowered == QStringLiteral("localhost") ||
-         lowered == QStringLiteral("127.0.0.1") ||
+  return lowered == loopback_host_name() ||
+         lowered == loopback_ipv4_address() ||
          lowered == QStringLiteral("::1");
 }
 
-QString GatewayStateFor(const QString& host,
-                        bool requirePinnedFingerprint,
-                        const QString& pinnedFingerprint,
-                        const QString& trustStore) {
-  if (IsLocalHost(host)) {
+QString normalized_tls_verify_mode(const QString& input,
+                                   bool requirePinnedFingerprint) {
+  const QString mode = input.trimmed().toLower();
+  if (mode.isEmpty()) {
+    return requirePinnedFingerprint ? QStringLiteral("pin")
+                                    : QStringLiteral("ca");
+  }
+  if (mode == QStringLiteral("pin") ||
+      mode == QStringLiteral("pinned") ||
+      mode == QStringLiteral("fingerprint") ||
+      mode == QStringLiteral("0")) {
+    return QStringLiteral("pin");
+  }
+  if (mode == QStringLiteral("ca") ||
+      mode == QStringLiteral("cert") ||
+      mode == QStringLiteral("certificate") ||
+      mode == QStringLiteral("pkix") ||
+      mode == QStringLiteral("1")) {
+    return QStringLiteral("ca");
+  }
+  if (mode == QStringLiteral("hybrid") ||
+      mode == QStringLiteral("both") ||
+      mode == QStringLiteral("pin+ca") ||
+      mode == QStringLiteral("ca+pin") ||
+      mode == QStringLiteral("2")) {
+    return QStringLiteral("hybrid");
+  }
+  return requirePinnedFingerprint ? QStringLiteral("pin")
+                                  : QStringLiteral("ca");
+}
+
+QString gateway_state_for(const QString& host,
+                          bool requirePinnedFingerprint,
+                          const QString& pinnedFingerprint,
+                          const QString& tlsVerifyMode) {
+  if (host.trimmed().isEmpty()) {
+    return {};
+  }
+  if (is_local_host(host)) {
     return QStringLiteral("本地配置");
   }
-  if (requirePinnedFingerprint ||
-      !pinnedFingerprint.trimmed().isEmpty() ||
-      !trustStore.trimmed().isEmpty()) {
+  const QString mode =
+      normalized_tls_verify_mode(tlsVerifyMode, requirePinnedFingerprint);
+  if (mode == QStringLiteral("pin") ||
+      !pinnedFingerprint.trimmed().isEmpty()) {
     return QStringLiteral("已固定");
   }
   return QStringLiteral("远程接入");
 }
 
-QString SanitizedGatewayDetail(const QString& host, int port) {
-  QString detail = NormalizedHost(host);
-  if (port > 0) {
+QString sanitized_gateway_detail(const QString& host, int port) {
+  QString detail = normalized_host(host);
+  if (!detail.isEmpty() && port > 0) {
     detail += QStringLiteral(":%1").arg(port);
   }
   detail.replace(QStringLiteral("config:"), QString());
@@ -71,23 +113,23 @@ QString SanitizedGatewayDetail(const QString& host, int port) {
   return detail.simplified();
 }
 
-QString FormatDuration(int lastSeenSec) {
+QString format_duration(int lastSeenSec) {
   if (lastSeenSec <= 0) {
-    return UseZhCnStrings() ? QStringLiteral("在线") : QStringLiteral("Online");
+    return use_zh_cn_strings() ? QStringLiteral("在线") : QStringLiteral("Online");
   }
   if (lastSeenSec < 60) {
-    return UseZhCnStrings()
+    return use_zh_cn_strings()
                ? QStringLiteral("最近在线：%1 秒").arg(lastSeenSec)
                : QStringLiteral("Last seen: %1s").arg(lastSeenSec);
   }
   if (lastSeenSec < 3600) {
     const int minutes = lastSeenSec / 60;
-    return UseZhCnStrings()
+    return use_zh_cn_strings()
                ? QStringLiteral("最近在线：%1 分钟").arg(minutes)
                : QStringLiteral("Last seen: %1m").arg(minutes);
   }
   const int hours = lastSeenSec / 3600;
-  return UseZhCnStrings()
+  return use_zh_cn_strings()
              ? QStringLiteral("最近在线：%1 小时").arg(hours)
              : QStringLiteral("Last seen: %1h").arg(hours);
 }
@@ -99,8 +141,7 @@ GatewayDisplayInfo BuildGatewayDisplayInfo(const QString& configPath) {
   QSettings config(configPath, QSettings::IniFormat);
   const QString host =
       config.value(QStringLiteral("client/server_ip"),
-                   config.value(QStringLiteral("server_ip"),
-                                QStringLiteral("localhost")))
+                   config.value(QStringLiteral("server_ip")))
           .toString();
   const int port =
       config.value(QStringLiteral("client/server_port"),
@@ -108,20 +149,21 @@ GatewayDisplayInfo BuildGatewayDisplayInfo(const QString& configPath) {
           .toInt();
   const bool requirePinnedFingerprint =
       config.value(QStringLiteral("client/require_pinned_fingerprint"),
-                   config.value(QStringLiteral("require_pinned_fingerprint"), 0))
+                   config.value(QStringLiteral("require_pinned_fingerprint"), 1))
           .toInt() != 0;
   const QString pinnedFingerprint =
       config.value(QStringLiteral("client/pinned_fingerprint"),
                    config.value(QStringLiteral("pinned_fingerprint")))
           .toString();
-  const QString trustStore =
-      config.value(QStringLiteral("client/trust_store"),
-                   config.value(QStringLiteral("trust_store")))
+  const QString tlsVerifyMode =
+      config.value(QStringLiteral("client/tls_verify_mode"),
+                   config.value(QStringLiteral("tls_verify_mode")))
           .toString();
 
   out.state =
-      GatewayStateFor(host, requirePinnedFingerprint, pinnedFingerprint, trustStore);
-  out.detail = SanitizedGatewayDetail(host, port);
+      gateway_state_for(host, requirePinnedFingerprint, pinnedFingerprint,
+                      tlsVerifyMode);
+  out.detail = sanitized_gateway_detail(host, port);
   return out;
 }
 
@@ -136,7 +178,7 @@ QString MaskedDeviceId(const QString& rawId) {
   return trimmed.left(4) + QStringLiteral("…") + trimmed.right(4);
 }
 
-QString LocalizedLastSeen(int lastSeenSec) { return FormatDuration(lastSeenSec); }
+QString LocalizedLastSeen(int lastSeenSec) { return format_duration(lastSeenSec); }
 
 QVariantList BuildDeviceDisplayList(const QVariantList& rawDevices,
                                     const QString& currentDeviceId,

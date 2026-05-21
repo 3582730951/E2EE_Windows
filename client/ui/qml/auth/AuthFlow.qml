@@ -16,12 +16,9 @@ Item {
     property int qrSeconds: 30
     property string errorText: ""
     property string lastLoginAccount: ""
-    property string lastLoginPassword: ""
-    property string lastLoginRootCode: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
     property bool advancedExpanded: false
-    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
     readonly property bool compactStage: width <= 720 || height <= 760
     readonly property string heroEyebrow: waitingServerTrust
                                           ? (Ui.I18n.usesCjkLocale ? "需要确认服务器信任" : "Server trust review")
@@ -59,13 +56,39 @@ Item {
 
     function completeAuth() {
         stopQrLogin()
+        clear_login_secrets()
         authSucceeded()
+    }
+
+    function clear_login_secrets() {
+        passwordInput = ""
+        rootCodeInput = ""
+        if (passwordField) {
+            passwordField.text = ""
+        }
+        if (rootCodeFieldCard) {
+            rootCodeFieldCard.text = ""
+        }
+    }
+
+    function clear_register_secrets() {
+        registerPassword = ""
+        registerConfirm = ""
+        if (registerPasswordField) {
+            registerPasswordField.text = ""
+        }
+        if (registerConfirmField) {
+            registerConfirmField.text = ""
+        }
     }
 
     function attemptLogin(user, pass, rootCode, fromTrust) {
         if (!Ui.AuthDisplayStore.login(user, pass, rootCode)) {
             waitingServerTrust = Ui.AuthDisplayStore.waitingServerTrust
             errorText = Ui.AuthDisplayStore.errorText
+            if (!waitingServerTrust) {
+                clear_login_secrets()
+            }
             if (waitingServerTrust && !fromTrust && errorText.length === 0) {
                 errorText = Ui.I18n.t("auth.error.login")
             }
@@ -480,8 +503,6 @@ Item {
                                     }
                                     errorText = ""
                                     lastLoginAccount = accountInput
-                                    lastLoginPassword = passwordInput
-                                    lastLoginRootCode = rootCodeInput
                                     attemptLogin(accountInput, passwordInput, rootCodeInput, false)
                                 }
                             }
@@ -598,6 +619,7 @@ Item {
             }
 
             Components.SecureTextField {
+                id: registerPasswordField
                 Layout.fillWidth: true
                 Layout.preferredHeight: Ui.Style.authFieldHeight
                 echoMode: TextInput.Password
@@ -616,6 +638,7 @@ Item {
             }
 
             Components.SecureTextField {
+                id: registerConfirmField
                 Layout.fillWidth: true
                 Layout.preferredHeight: Ui.Style.authFieldHeight
                 echoMode: TextInput.Password
@@ -655,10 +678,12 @@ Item {
                 onClicked: {
                     if (registerAccount.length === 0 || registerPassword.length === 0 || registerConfirm.length === 0) {
                         errorText = Ui.I18n.t("auth.error.registerIncomplete")
+                        clear_register_secrets()
                         return
                     }
                     if (registerPassword !== registerConfirm) {
                         errorText = Ui.I18n.t("auth.error.passwordMismatch")
+                        clear_register_secrets()
                         return
                     }
                     errorText = ""
@@ -666,9 +691,11 @@ Item {
                         errorText = Ui.AuthDisplayStore.errorText.length > 0
                             ? Ui.AuthDisplayStore.errorText
                             : Ui.I18n.t("auth.error.registerIncomplete")
+                        clear_register_secrets()
                         return
                     }
                     errorText = ""
+                    clear_register_secrets()
                     registerPopup.close()
                 }
             }
@@ -807,7 +834,8 @@ Item {
         target: Ui.AuthDisplayStore
         function onWaitingServerTrustChanged() {
             if (waitingServerTrust && !Ui.AuthDisplayStore.waitingServerTrust) {
-                attemptLogin(lastLoginAccount, lastLoginPassword, lastLoginRootCode, true)
+                var retryAccount = lastLoginAccount.length > 0 ? lastLoginAccount : accountInput
+                attemptLogin(retryAccount, passwordInput, rootCodeInput, true)
             }
         }
         function onErrorTextChanged() {

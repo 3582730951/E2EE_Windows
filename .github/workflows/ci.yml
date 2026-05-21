@@ -20,7 +20,7 @@ on:
         required: false
         default: ""
       client_server_port:
-        description: "Optional packaged client server port (default 9000 when empty/0)"
+        description: "Packaged client server port; required when packaging a ready-to-run client config"
         required: false
         default: ""
       skip_e2e:
@@ -35,8 +35,8 @@ on:
 env:
   MI_E2EE_CI_SERVER_HOST: ${{ github.event.inputs.server_host || '127.0.0.1' }}
   MI_E2EE_CI_SERVER_PORT: ${{ github.event.inputs.server_port || '0' }}
-  MI_E2EE_PACKAGE_CLIENT_SERVER_HOST: ${{ github.event.inputs.client_server_host || github.event.inputs.server_host || '127.0.0.1' }}
-  MI_E2EE_PACKAGE_CLIENT_SERVER_PORT: ${{ github.event.inputs.client_server_port || github.event.inputs.server_port || '9000' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_HOST: ${{ github.event.inputs.client_server_host || '' }}
+  MI_E2EE_PACKAGE_CLIENT_SERVER_PORT: ${{ github.event.inputs.client_server_port || '' }}
   MI_E2EE_CI_SKIP_E2E: ${{ github.event.inputs.skip_e2e || '0' }}
   MI_E2EE_CI_SKIP_ANDROID_TESTS: ${{ github.event.inputs.skip_android_tests || '0' }}
   MI_E2EE_PERF_MIN_FRAME_ENCODE_OPS: "10000"
@@ -443,25 +443,25 @@ jobs:
             Copy-Item $qtQmlCoreModule $dstQmlCoreModule -Recurse -Force
           }
 
-      - name: UI smoke regression
+      - name: Windows UI runtime capture regression
         env:
-          MI_E2EE_UI_SMOKE: "1"
-          MI_E2EE_UI_SMOKE_MS: "4000"
-          MI_E2EE_UI_SMOKE_USER: "ui_smoke"
-          MI_E2EE_UI_SMOKE_PASS: "ui_smoke_pass"
-          MI_E2EE_UI_SMOKE_CAPTURE_DIR: ${{ github.workspace }}\build\ui_smoke_artifacts\build
+          MI_E2EE_CI_UI_CAPTURE: "1"
+          MI_E2EE_CI_UI_CAPTURE_MS: "4000"
+          MI_E2EE_CI_UI_CAPTURE_USER: "ui_runtime"
+          MI_E2EE_CI_UI_CAPTURE_PASS: "ui_runtime_pass"
+          MI_E2EE_CI_UI_CAPTURE_DIR: ${{ github.workspace }}\build\windows_runtime_artifacts\build
           MI_E2EE_HARDENING: off
           QT_LOGGING_RULES: "*.debug=false;*.info=false"
         run: |
           $ErrorActionPreference = "Stop"
-          $work = Join-Path $env:GITHUB_WORKSPACE "build\\ui_smoke_runtime"
+          $work = Join-Path $env:GITHUB_WORKSPACE "build\\windows_ui_runtime"
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           $dataDir = Join-Path $work "database"
           New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
           $offline = Join-Path $work "offline"
           New-Item -ItemType Directory -Force -Path $offline | Out-Null
           $testUsers = Join-Path $work "test_user.txt"
-          "ui_smoke:ui_smoke_pass" | Out-File -FilePath $testUsers -Encoding ascii
+          "ui_runtime:ui_runtime_pass" | Out-File -FilePath $testUsers -Encoding ascii
           $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
           if (-not $ktKeygen) {
             throw "mi_e2ee_kt_keygen.exe not found"
@@ -527,9 +527,9 @@ jobs:
           $clientConfigPath = Join-Path $work "client_config.ini"
           $clientConfig | Out-File -FilePath $clientConfigPath -Encoding ascii
           "" | Out-File -FilePath $trustStorePath -Encoding ascii
-          $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
+          $env:MI_E2EE_CI_UI_CAPTURE_CONFIG = $clientConfigPath
           $env:MI_E2EE_DATA_DIR = $dataDir
-          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_CI_UI_CAPTURE_DIR | Out-Null
           $serverExe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_server.exe" | Select-Object -First 1
           if (-not $serverExe) {
             throw "mi_e2ee_server.exe not found"
@@ -555,12 +555,12 @@ jobs:
             if (-not $ready) {
               throw "server not ready"
             }
-            function Invoke-UiSmokeOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-UiRuntimeCaptureOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
-              $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
-              $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
-              $env:MI_E2EE_UI_SMOKE_THEME = $theme
-              $env:MI_E2EE_UI_SMOKE_SCALE = [string]$scale
+              $env:MI_E2EE_CI_UI_CAPTURE_SCENE = $sceneName
+              $env:MI_E2EE_CI_UI_CAPTURE_LOCALE = $locale
+              $env:MI_E2EE_CI_UI_CAPTURE_THEME = $theme
+              $env:MI_E2EE_CI_UI_CAPTURE_SCALE = [string]$scale
               $env:QT_SCALE_FACTOR = [string]$scale
               $scaleLabel = [int][Math]::Round($scale * 100.0)
               $label = "$sceneName-$locale-$theme-$scaleLabel"
@@ -573,7 +573,7 @@ jobs:
                 "post_login_light" { "post-login-light.png" }
                 default { "post-login.png" }
               }
-              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              $capturePath = Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $captureName
               Remove-Item $capturePath -ErrorAction SilentlyContinue
               $stdoutLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stdout-" + $label)
               $stderrLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stderr-" + $label)
@@ -586,7 +586,7 @@ jobs:
                   Get-Content $stderrLog | Write-Host
                 }
                 Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
-                throw "UI smoke timed out after 45s ($label)"
+                throw "UI runtime capture timed out after 45s ($label)"
               }
               if ($uiProc.ExitCode -ne 0) {
                 if (Test-Path $stdoutLog) {
@@ -595,33 +595,33 @@ jobs:
                 if (Test-Path $stderrLog) {
                   Get-Content $stderrLog | Write-Host
                 }
-                throw "UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
+                throw "UI runtime capture failed with exit code $($uiProc.ExitCode) ($label)"
               }
               if (-not (Test-Path $capturePath)) {
-                throw "UI smoke capture missing: $capturePath"
+                throw "UI runtime capture missing: $capturePath"
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
-              Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
-              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              Copy-Item $capturePath (Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $targetName) -Force
+              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_runtime_matrix_check.py") --capture-dir $env:MI_E2EE_CI_UI_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
               if ($locale -eq "zh-CN" -and $theme -eq "light" -and $scale -eq 1.0) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
                 if (Test-Path $golden) {
-                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden
+                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_runtime_golden_diff.py") --actual (Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $targetName) --golden $golden
                 }
               }
             }
-            function Invoke-UiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-UiRuntimeCapture([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $maxAttempts = 3
               for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
                 try {
-                  Invoke-UiSmokeOnce $scene $locale $theme $scale
+                  Invoke-UiRuntimeCaptureOnce $scene $locale $theme $scale
                   return
                 } catch {
                   if ($attempt -ge $maxAttempts) {
                     throw
                   }
                   $labelScene = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
-                  Write-Host "UI smoke retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
+                  Write-Host "UI runtime capture retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
                   Start-Sleep -Seconds 2
                 }
               }
@@ -630,21 +630,21 @@ jobs:
             try {
               $scales = @(1.0, 1.25, 1.5, 1.75, 2.0)
               foreach ($scale in $scales) {
-                Invoke-UiSmoke "login" "zh-CN" "light" $scale
-                Invoke-UiSmoke "post_login" "zh-CN" "light" $scale
-                Invoke-UiSmoke "post_login_light" "zh-CN" "light" $scale
-                Invoke-UiSmoke "security_center" "zh-CN" "light" $scale
+                Invoke-UiRuntimeCapture "login" "zh-CN" "light" $scale
+                Invoke-UiRuntimeCapture "post_login" "zh-CN" "light" $scale
+                Invoke-UiRuntimeCapture "post_login_light" "zh-CN" "light" $scale
+                Invoke-UiRuntimeCapture "security_center" "zh-CN" "light" $scale
               }
-              Invoke-UiSmoke "chat_detail" "zh-CN" "light" 1.0
-              Invoke-UiSmoke "calls_home" "zh-CN" "light" 1.0
-              Invoke-UiSmoke "settings_home" "zh-CN" "light" 1.0
-              Invoke-UiSmoke "post_login" "zh-CN" "dark" 1.0
-              Invoke-UiSmoke "post_login" "en-US" "light" 1.0
+              Invoke-UiRuntimeCapture "chat_detail" "zh-CN" "light" 1.0
+              Invoke-UiRuntimeCapture "calls_home" "zh-CN" "light" 1.0
+              Invoke-UiRuntimeCapture "settings_home" "zh-CN" "light" 1.0
+              Invoke-UiRuntimeCapture "post_login" "zh-CN" "dark" 1.0
+              Invoke-UiRuntimeCapture "post_login" "en-US" "light" 1.0
             } finally {
-              Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_LOCALE -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_THEME -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_SCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_SCENE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_LOCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_THEME -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_SCALE -ErrorAction SilentlyContinue
               Remove-Item Env:QT_SCALE_FACTOR -ErrorAction SilentlyContinue
               Pop-Location
             }
@@ -668,10 +668,10 @@ jobs:
             $pkgHost = $env:MI_E2EE_PACKAGE_CLIENT_SERVER_HOST
             $pkgPort = $env:MI_E2EE_PACKAGE_CLIENT_SERVER_PORT
             if ([string]::IsNullOrWhiteSpace($pkgHost)) {
-              $pkgHost = "127.0.0.1"
+              throw "MI_E2EE_PACKAGE_CLIENT_SERVER_HOST is required"
             }
             if ([string]::IsNullOrWhiteSpace($pkgPort) -or $pkgPort -eq "0") {
-              $pkgPort = "9000"
+              throw "MI_E2EE_PACKAGE_CLIENT_SERVER_PORT is required"
             }
             .\\tools\\package_windows.ps1 -BuildConfig Release -ClientServerHost $pkgHost -ClientServerPort $pkgPort
           } finally {
@@ -683,13 +683,13 @@ jobs:
         run: .\\tools\\verify_package_windows.ps1
 
 
-      - name: UI smoke regression (dist launcher TLS)
+      - name: Windows UI runtime capture (dist launcher TLS)
         env:
-          MI_E2EE_UI_SMOKE: "1"
-          MI_E2EE_UI_SMOKE_MS: "4000"
-          MI_E2EE_UI_SMOKE_USER: "ui_smoke"
-          MI_E2EE_UI_SMOKE_PASS: "ui_smoke_pass"
-          MI_E2EE_UI_SMOKE_CAPTURE_DIR: ${{ github.workspace }}\build\ui_smoke_artifacts\dist
+          MI_E2EE_CI_UI_CAPTURE: "1"
+          MI_E2EE_CI_UI_CAPTURE_MS: "4000"
+          MI_E2EE_CI_UI_CAPTURE_USER: "ui_runtime"
+          MI_E2EE_CI_UI_CAPTURE_PASS: "ui_runtime_pass"
+          MI_E2EE_CI_UI_CAPTURE_DIR: ${{ github.workspace }}\build\windows_runtime_artifacts\dist
           MI_E2EE_HARDENING: off
           QT_LOGGING_RULES: "*.debug=false;*.info=false"
         run: |
@@ -706,7 +706,7 @@ jobs:
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
           $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
-          "ui_smoke:ui_smoke_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
+          "ui_runtime:ui_runtime_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
           $serverConfig = @(
             "[mode]"
             "mode=1"
@@ -744,8 +744,8 @@ jobs:
             --trust-store server_trust.ini `
             --kt-root-pub kt_root_pub.bin `
             --non-interactive | Out-Null
-          $env:MI_E2EE_UI_SMOKE_CONFIG = $clientConfigPath
-          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR | Out-Null
+          $env:MI_E2EE_CI_UI_CAPTURE_CONFIG = $clientConfigPath
+          New-Item -ItemType Directory -Force -Path $env:MI_E2EE_CI_UI_CAPTURE_DIR | Out-Null
           $serverLauncher = Join-Path $serverRoot "mi_e2ee_server.exe"
           $clientLauncher = Join-Path $clientRoot "mi_e2ee.exe"
           if (-not (Test-Path $serverLauncher)) {
@@ -776,12 +776,12 @@ jobs:
             if (-not $ready) {
               throw "dist server not ready"
             }
-            function Invoke-DistUiSmokeOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-DistUiRuntimeCaptureOnce([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $sceneName = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
-              $env:MI_E2EE_UI_SMOKE_SCENE = $sceneName
-              $env:MI_E2EE_UI_SMOKE_LOCALE = $locale
-              $env:MI_E2EE_UI_SMOKE_THEME = $theme
-              $env:MI_E2EE_UI_SMOKE_SCALE = [string]$scale
+              $env:MI_E2EE_CI_UI_CAPTURE_SCENE = $sceneName
+              $env:MI_E2EE_CI_UI_CAPTURE_LOCALE = $locale
+              $env:MI_E2EE_CI_UI_CAPTURE_THEME = $theme
+              $env:MI_E2EE_CI_UI_CAPTURE_SCALE = [string]$scale
               $env:QT_SCALE_FACTOR = [string]$scale
               $scaleLabel = [int][Math]::Round($scale * 100.0)
               $label = "$sceneName-$locale-$theme-$scaleLabel"
@@ -794,7 +794,7 @@ jobs:
                 "post_login_light" { "post-login-light.png" }
                 default { "post-login.png" }
               }
-              $capturePath = Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $captureName
+              $capturePath = Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $captureName
               Remove-Item $capturePath -ErrorAction SilentlyContinue
               $stdoutLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stdout-" + $label)
               $stderrLog = Join-Path $env:RUNNER_TEMP ("mi-e2ee-ui-stderr-" + $label)
@@ -807,7 +807,7 @@ jobs:
                   Get-Content $stderrLog | Write-Host
                 }
                 Stop-Process -Id $uiProc.Id -Force -ErrorAction SilentlyContinue
-                throw "dist UI smoke timed out after 45s ($label)"
+                throw "dist UI runtime capture timed out after 45s ($label)"
               }
               if ($uiProc.ExitCode -ne 0) {
                 if (Test-Path $stdoutLog) {
@@ -816,33 +816,33 @@ jobs:
                 if (Test-Path $stderrLog) {
                   Get-Content $stderrLog | Write-Host
                 }
-                throw "dist UI smoke failed with exit code $($uiProc.ExitCode) ($label)"
+                throw "dist UI runtime capture failed with exit code $($uiProc.ExitCode) ($label)"
               }
               if (-not (Test-Path $capturePath)) {
-                throw "dist UI smoke capture missing: $capturePath"
+                throw "dist UI runtime capture missing: $capturePath"
               }
               $targetName = [System.IO.Path]::GetFileNameWithoutExtension($captureName) + "-" + $locale + "-" + $theme + "-" + $scaleLabel + ".png"
-              Copy-Item $capturePath (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) -Force
-              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_matrix_check.py") --capture-dir $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
+              Copy-Item $capturePath (Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $targetName) -Force
+              python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_runtime_matrix_check.py") --capture-dir $env:MI_E2EE_CI_UI_CAPTURE_DIR --scene $sceneName --file $targetName --scale $scale
               if ($locale -eq "zh-CN" -and $theme -eq "light" -and $scale -eq 1.0) {
                 $golden = Join-Path $env:GITHUB_WORKSPACE ("ui_contract\\golden\\windows\\" + $targetName)
                 if (Test-Path $golden) {
-                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_smoke_golden_diff.py") --actual (Join-Path $env:MI_E2EE_UI_SMOKE_CAPTURE_DIR $targetName) --golden $golden
+                  python (Join-Path $env:GITHUB_WORKSPACE "tools\\windows_runtime_golden_diff.py") --actual (Join-Path $env:MI_E2EE_CI_UI_CAPTURE_DIR $targetName) --golden $golden
                 }
               }
             }
-            function Invoke-DistUiSmoke([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
+            function Invoke-DistUiRuntimeCapture([string]$scene, [string]$locale, [string]$theme, [double]$scale) {
               $maxAttempts = 3
               for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
                 try {
-                  Invoke-DistUiSmokeOnce $scene $locale $theme $scale
+                  Invoke-DistUiRuntimeCaptureOnce $scene $locale $theme $scale
                   return
                 } catch {
                   if ($attempt -ge $maxAttempts) {
                     throw
                   }
                   $labelScene = if ([string]::IsNullOrWhiteSpace($scene)) { "post_login" } else { $scene }
-                  Write-Host "Dist UI smoke retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
+                  Write-Host "Dist UI runtime capture retry attempt $attempt failed for $labelScene/$locale/$theme/$scale. Retrying..."
                   Start-Sleep -Seconds 2
                 }
               }
@@ -851,21 +851,21 @@ jobs:
             try {
               $scales = @(1.0, 1.25, 1.5, 1.75, 2.0)
               foreach ($scale in $scales) {
-                Invoke-DistUiSmoke "login" "zh-CN" "light" $scale
-                Invoke-DistUiSmoke "post_login" "zh-CN" "light" $scale
-                Invoke-DistUiSmoke "post_login_light" "zh-CN" "light" $scale
-                Invoke-DistUiSmoke "security_center" "zh-CN" "light" $scale
+                Invoke-DistUiRuntimeCapture "login" "zh-CN" "light" $scale
+                Invoke-DistUiRuntimeCapture "post_login" "zh-CN" "light" $scale
+                Invoke-DistUiRuntimeCapture "post_login_light" "zh-CN" "light" $scale
+                Invoke-DistUiRuntimeCapture "security_center" "zh-CN" "light" $scale
               }
-              Invoke-DistUiSmoke "chat_detail" "zh-CN" "light" 1.0
-              Invoke-DistUiSmoke "calls_home" "zh-CN" "light" 1.0
-              Invoke-DistUiSmoke "settings_home" "zh-CN" "light" 1.0
-              Invoke-DistUiSmoke "post_login" "zh-CN" "dark" 1.0
-              Invoke-DistUiSmoke "post_login" "en-US" "light" 1.0
+              Invoke-DistUiRuntimeCapture "chat_detail" "zh-CN" "light" 1.0
+              Invoke-DistUiRuntimeCapture "calls_home" "zh-CN" "light" 1.0
+              Invoke-DistUiRuntimeCapture "settings_home" "zh-CN" "light" 1.0
+              Invoke-DistUiRuntimeCapture "post_login" "zh-CN" "dark" 1.0
+              Invoke-DistUiRuntimeCapture "post_login" "en-US" "light" 1.0
             } finally {
-              Remove-Item Env:MI_E2EE_UI_SMOKE_SCENE -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_LOCALE -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_THEME -ErrorAction SilentlyContinue
-              Remove-Item Env:MI_E2EE_UI_SMOKE_SCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_SCENE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_LOCALE -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_THEME -ErrorAction SilentlyContinue
+              Remove-Item Env:MI_E2EE_CI_UI_CAPTURE_SCALE -ErrorAction SilentlyContinue
               Remove-Item Env:QT_SCALE_FACTOR -ErrorAction SilentlyContinue
               Pop-Location
             }
@@ -879,7 +879,7 @@ jobs:
             }
           }
 
-      - name: Normalize Windows UI smoke screenshots
+      - name: Normalize Windows UI runtime captures
         if: always()
         run: |
           $ErrorActionPreference = "Stop"
@@ -1058,7 +1058,7 @@ jobs:
               print(f"trimmed {path}: {width}x{height} -> {crop_w}x{crop_h} (l={left}, t={top}, r={width-right-1}, b={height-bottom-1})")
               return True
 
-          roots = [Path("build/ui_smoke_artifacts")]
+          roots = [Path("build/windows_runtime_artifacts")]
           canonical_aliases = {
               "login.png": "login-zh-CN-light-100.png",
               "post-login.png": "post-login-zh-CN-light-100.png",
@@ -1093,9 +1093,9 @@ jobs:
           import json
           from pathlib import Path
 
-          root = Path("build/ui_smoke_artifacts")
+          root = Path("build/windows_runtime_artifacts")
           if not root.exists():
-              raise SystemExit("build/ui_smoke_artifacts is missing")
+              raise SystemExit("build/windows_runtime_artifacts is missing")
 
           acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
           tuple_entries = acceptance["runtime_artifact_contract"]["tuple_inventory"]["windows"]
@@ -1140,14 +1140,12 @@ jobs:
               "required_evidence_satisfied": [
                   "build",
                   "navigation_flow",
-                  "fixture_smoke",
                   "golden_diff",
                   "theme_parity",
                   "packaging",
                   "identity_visuals",
                   "security_tone_matrix",
                   "empty_state_art",
-                  "smoke_matrix",
                   "scene_matrix",
                   "viewport_matrix",
                   "tuple_matrix",
@@ -1218,12 +1216,12 @@ jobs:
               )
           '@ | python -
 
-      - name: Upload UI smoke captures
+      - name: Upload Windows UI runtime captures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mi_e2ee_windows_ui_smoke
-          path: build/ui_smoke_artifacts/**/*
+          name: mi_e2ee_windows_ui_runtime
+          path: build/windows_runtime_artifacts/**/*
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -2151,7 +2149,6 @@ jobs:
               "required_evidence_satisfied": [
                   "build",
                   "navigation_flow",
-                  "fixture_smoke",
                   "theme_parity",
                   "identity_visuals",
                   "security_tone_matrix",
@@ -2841,7 +2838,6 @@ jobs:
           expected_required_evidence = [
               "build",
               "navigation_flow",
-              "fixture_smoke",
               "theme_parity",
               "identity_visuals",
               "security_tone_matrix",

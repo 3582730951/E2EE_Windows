@@ -7,4 +7,3 @@ singleton AuthDisplayStore 1.0 AuthDisplayStore.qml
 singleton SecurityDisplayStore 1.0 SecurityDisplayStore.qml
 singleton ChatDisplayStore 1.0 ChatDisplayStore.qml
 singleton CallDisplayStore 1.0 CallDisplayStore.qml
-singleton SmokeSceneStore 1.0 SmokeSceneStore.qml

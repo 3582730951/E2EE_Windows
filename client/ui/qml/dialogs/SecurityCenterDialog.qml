@@ -9,8 +9,6 @@ ApplicationWindow {
     id: root
 
     property var ownerWindow: null
-    readonly property bool smokeMode: typeof uiSmokeMode !== "undefined" ? !!uiSmokeMode : false
-    readonly property bool smokeFixtureMode: smokeMode && Ui.SmokeSceneStore.securityCenterScene
 
     property string currentDeviceDisplay: ""
     property string currentDeviceCopyValue: ""
@@ -20,8 +18,8 @@ ApplicationWindow {
     signal requestManageDevices()
 
     visible: false
-    width: smokeFixtureMode ? Ui.SmokeSceneStore.viewportWidth(false) : 700
-    height: smokeFixtureMode ? Ui.SmokeSceneStore.viewportHeight() : 540
+    width: 700
+    height: 540
     minimumWidth: width
     minimumHeight: height
     maximumWidth: width
@@ -39,78 +37,24 @@ ApplicationWindow {
     palette.highlight: Ui.Style.accent
     palette.highlightedText: Ui.Style.textPrimary
 
-    readonly property bool effectiveTransportHealthy: smokeFixtureMode
-                                                     ? true
-                                                     : Ui.SecurityDisplayStore.transportHealthy
-    readonly property string smokeTransportHint: Ui.I18n.usesCjkLocale
-                                                 ? "TLS、会话密钥、轮换正常。"
-                                                 : "TLS, keys, rotation healthy."
-    readonly property string smokeTrustHint: Ui.I18n.usesCjkLocale
-                                             ? "根信任已就绪。"
-                                             : "Root trust ready."
-    readonly property string smokeGatewayStatus: Ui.I18n.usesCjkLocale
-                                                 ? "已固定指纹"
-                                                 : "Pinned fingerprint"
-    readonly property string smokeGatewayHint: Ui.I18n.usesCjkLocale
-                                               ? "网关走安全传输。"
-                                               : "Gateway on secure transport."
-    readonly property string smokeCurrentDeviceHint: Ui.I18n.usesCjkLocale
-                                                     ? "当前会话的主端点。"
-                                                     : "Primary endpoint for this session."
-    readonly property string smokeDevicesSectionTitle: Ui.I18n.usesCjkLocale
-                                                       ? "设备与会话"
-                                                       : "Devices & session"
-    readonly property string smokeDevicesHint: Ui.I18n.usesCjkLocale
-                                               ? "查看、移除或关联可信设备。"
-                                               : "Review, remove, or link trusted devices."
-    readonly property string currentDeviceDetailText: smokeFixtureMode
-                                                      ? smokeCurrentDeviceHint
-                                                      : (Ui.I18n.usesCjkLocale
-                                                         ? "与已绑定设备分开。"
-                                                         : "Separate from linked devices.")
-    readonly property string linkedDevicesHintText: smokeFixtureMode
-                                                    ? smokeDevicesHint
-                                                    : (Ui.I18n.usesCjkLocale
-                                                       ? "已绑定设备单独列出，解绑需确认。"
-                                                       : "Listed separately. Unlink requires confirmation.")
+    readonly property bool effectiveTransportHealthy: Ui.SecurityDisplayStore.transportHealthy
+    readonly property string currentDeviceDetailText: Ui.I18n.usesCjkLocale
+                                                      ? "与已绑定设备分开。"
+                                                      : "Separate from linked devices."
+    readonly property string linkedDevicesHintText: Ui.I18n.usesCjkLocale
+                                                    ? "已绑定设备单独列出，解绑需确认。"
+                                                    : "Listed separately. Unlink requires confirmation."
     readonly property string manageDevicesHintText: Ui.I18n.usesCjkLocale
                                                     ? "复制标识或确认解绑。"
                                                     : "Copy identifiers or confirm unlink."
-    readonly property var smokeLinkedDevices: [
-        {
-            maskedDeviceDisplayId: "win-23..ac91",
-            lastSeenDisplay: "Windows desktop · 2m ago"
-        },
-        {
-            maskedDeviceDisplayId: "ipad-b2..77fe",
-            lastSeenDisplay: "iPad Pro · 18m ago"
-        },
-        {
-            maskedDeviceDisplayId: "mac-51..1d42",
-            lastSeenDisplay: "MacBook Air · Yesterday"
-        },
-        {
-            maskedDeviceDisplayId: "ios-88..9b31",
-            lastSeenDisplay: "iPhone 15 Pro · Yesterday"
-        }
-    ]
-    readonly property string fallbackCurrentDeviceDisplay: "eb7f..0c0e"
-    readonly property int linkedDeviceCountValue: smokeFixtureMode
-                                                  ? smokeLinkedDevices.length
-                                                  : Ui.SecurityDisplayStore.linkedDeviceCount
-    readonly property var effectiveDevicesModel: smokeFixtureMode
-                                                 ? smokeLinkedDevices
-                                                 : Ui.SecurityDisplayStore.devicesModel
-    readonly property string effectiveCurrentDeviceDisplay: currentDeviceDisplay.length > 0
-                                                            ? currentDeviceDisplay
-                                                            : fallbackCurrentDeviceDisplay
+    readonly property int linkedDeviceCountValue: Ui.SecurityDisplayStore.linkedDeviceCount
+    readonly property var effectiveDevicesModel: Ui.SecurityDisplayStore.devicesModel
+    readonly property string effectiveCurrentDeviceDisplay: currentDeviceDisplay
+
     readonly property string transportHeadline: effectiveTransportHealthy
                                                 ? Ui.I18n.t("dialog.securityCenter.transportHealthy")
                                                 : Ui.I18n.t("dialog.securityCenter.transportNeedsAttention")
     readonly property string transportDetail: {
-        if (smokeFixtureMode) {
-            return root.smokeTransportHint
-        }
         var detail = Ui.SecurityDisplayStore.connectionSummary()
         if (detail.length > 0) {
             return detail
@@ -119,26 +63,18 @@ ApplicationWindow {
              ? Ui.I18n.t("dialog.securityCenter.transportHealthyHint")
              : Ui.I18n.t("dialog.securityCenter.transportNeedsAttentionHint")
     }
-    readonly property string trustHeadline: smokeFixtureMode
-                                            ? Ui.I18n.t("dialog.securityCenter.trustReady")
-                                            : (gatewayState.length > 0
-                                               ? gatewayState
-                                               : Ui.I18n.t("dialog.securityCenter.trustReview"))
-    readonly property string trustDetail: smokeFixtureMode
-                                          ? root.smokeTrustHint
-                                          : (gatewayInfo.length > 0
+    readonly property string trustHeadline: gatewayState.length > 0
+                                            ? gatewayState
+                                            : Ui.I18n.t("dialog.securityCenter.trustReview")
+    readonly property string trustDetail: gatewayInfo.length > 0
+                                          ? gatewayInfo
+                                          : Ui.I18n.t("dialog.securityCenter.trustReviewHint")
+    readonly property string serverHeadline: gatewayInfo.length > 0
                                              ? gatewayInfo
-                                             : Ui.I18n.t("dialog.securityCenter.trustReviewHint"))
-    readonly property string serverHeadline: smokeFixtureMode
-                                             ? root.smokeGatewayStatus
-                                             : (gatewayInfo.length > 0
-                                                ? gatewayInfo
-                                                : Ui.I18n.t("dialog.securityCenter.serverTitle"))
-    readonly property string serverDetail: smokeFixtureMode
-                                           ? root.smokeGatewayHint
-                                           : (gatewayState.length > 0
-                                              ? gatewayState
-                                              : Ui.I18n.t("dialog.securityCenter.serverHint"))
+                                             : Ui.I18n.t("dialog.securityCenter.serverTitle")
+    readonly property string serverDetail: gatewayState.length > 0
+                                           ? gatewayState
+                                           : Ui.I18n.t("dialog.securityCenter.serverHint")
     readonly property string linkedDevicesSummary: Ui.I18n.t("dialog.securityCenter.devicesValue").arg(linkedDeviceCountValue)
     readonly property var statusRows: [
         {
@@ -151,24 +87,17 @@ ApplicationWindow {
             title: Ui.I18n.t("dialog.securityCenter.trustTitle"),
             value: trustHeadline,
             detail: trustDetail,
-            tone: smokeFixtureMode ? "healthy" : "review"
+            tone: "review"
         },
         {
             title: Ui.I18n.t("dialog.securityCenter.serverTitle"),
             value: serverHeadline,
             detail: serverDetail,
-            tone: smokeFixtureMode ? "healthy" : "checking"
+            tone: "checking"
         }
     ]
 
     function refreshOverview() {
-        if (smokeFixtureMode) {
-            currentDeviceDisplay = ""
-            currentDeviceCopyValue = ""
-            gatewayState = ""
-            gatewayInfo = ""
-            return
-        }
         Ui.SecurityDisplayStore.refresh()
         currentDeviceDisplay = Ui.SecurityDisplayStore.maskedCurrentDeviceId
         currentDeviceCopyValue = Ui.SecurityDisplayStore.currentDeviceCopyValue
@@ -360,9 +289,7 @@ ApplicationWindow {
                             spacing: Ui.Style.paddingS
 
                             Components.UiText {
-                                text: smokeFixtureMode
-                                      ? root.smokeDevicesSectionTitle
-                                      : Ui.I18n.t("dialog.securityCenter.devicesTitle")
+                                text: Ui.I18n.t("dialog.securityCenter.devicesTitle")
                                 textRole: "subtitle"
                                 roleColor: Ui.Style.textPrimary
                             }
@@ -444,7 +371,7 @@ ApplicationWindow {
                                     labelText: Ui.I18n.usesCjkLocale ? "设备标识" : "Device identifier"
                                     valueText: root.effectiveCurrentDeviceDisplay
                                     detailText: root.currentDeviceDetailText
-                                    copyValue: smokeFixtureMode ? "" : root.currentDeviceCopyValue
+                                    copyValue: root.currentDeviceCopyValue
                                 }
                             }
                         }
@@ -469,11 +396,11 @@ ApplicationWindow {
 
                             delegate: Rectangle {
                                 width: ListView.view.width
-                                property var deviceEntry: root.smokeFixtureMode
-                                                          ? ((typeof modelData !== "undefined" && modelData)
+                                property var deviceEntry: (typeof model !== "undefined" && model.maskedDeviceDisplayId)
+                                                          ? model
+                                                          : ((typeof modelData !== "undefined" && modelData)
                                                              ? modelData
                                                              : ({}))
-                                                          : model
                                 property string deviceDisplayId: deviceEntry &&
                                                                  deviceEntry.maskedDeviceDisplayId
                                                                  ? deviceEntry.maskedDeviceDisplayId
@@ -566,11 +493,9 @@ ApplicationWindow {
                                     }
 
                                     Components.UiText {
-                                        text: root.smokeFixtureMode
-                                              ? root.smokeDevicesHint
-                                              : (Ui.I18n.usesCjkLocale
-                                                 ? "新设备会在这里出现。"
-                                                 : "New trusted devices appear here.")
+                                        text: Ui.I18n.usesCjkLocale
+                                              ? "新设备会在这里出现。"
+                                              : "New trusted devices appear here."
                                         textRole: "detail"
                                         roleColor: Ui.Style.textMuted
                                     }

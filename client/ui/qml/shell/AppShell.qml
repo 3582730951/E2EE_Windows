@@ -29,8 +29,7 @@ Item {
                                              hasActiveChat &&
                                              Ui.ChatDisplayStore.rightPaneVisible &&
                                              canUseThreeColumn &&
-                                             // root.windowWidth < 1400
-                                             root.windowWidth < 1300
+                                             root.windowWidth < 1400
     readonly property bool rightPaneMounted: hasActiveChat &&
                                              canUseThreeColumn &&
                                              Ui.ChatDisplayStore.rightPaneVisible
@@ -38,13 +37,28 @@ Item {
                                                    !canUseThreeColumn &&
                                                    Ui.ChatDisplayStore.rightPaneVisible &&
                                                    shellSurface === "chat"
+    property bool rightPaneDrawerMounted: false
+    readonly property bool drawerAsSurface: rightPaneDrawerVisible && !canUseDrawerTwoColumn
     readonly property bool drawerTightChatColumns: shellSurface === "chat" &&
                                                    hasActiveChat &&
-                                                   rightPaneDrawerVisible
+                                                   rightPaneDrawerVisible &&
+                                                   !drawerAsSurface
     readonly property int rightPaneDrawerWidth: canUseDrawerTwoColumn
-                                                ? Math.min(rightWidth, Ui.Style.rightPaneWidthMax)
-                                                : Ui.Style.rightPaneWidthDrawerNarrow
+                                                ? Math.min(Ui.Style.rightPaneWidthMax,
+                                                           Math.max(rightWidth,
+                                                                    Ui.Style.rightPaneDrawerCompactWidth))
+                                                : Math.max(Ui.Style.centerPaneWidthMin,
+                                                           root.windowWidth - Ui.Style.paddingM * 2)
     readonly property Window hostWindow: root.Window.window
+
+    onRightPaneDrawerVisibleChanged: {
+        if (rightPaneDrawerVisible) {
+            rightPaneDrawerMounted = true
+            drawerCloseTimer.stop()
+        } else {
+            drawerCloseTimer.restart()
+        }
+    }
 
     onWindowWidthChanged: {
         var leftMaxWidth = windowWidth < 1160
@@ -112,7 +126,8 @@ Item {
 
                 Loader {
                     id: leftPaneLoader
-                    active: !root.immersiveUtilitySurface || root.canUseUtilityRail
+                    active: (!root.immersiveUtilitySurface || root.canUseUtilityRail) &&
+                            !root.drawerAsSurface
                     visible: active
                     SplitView.preferredWidth: root.immersiveUtilitySurface
                                               ? Ui.Style.leftPaneWidthUtilityRail
@@ -153,6 +168,11 @@ Item {
                     id: centerPane
                     SplitView.fillWidth: true
                     SplitView.minimumWidth: Ui.Style.centerPaneWidthMin
+                    drawerReserveWidth: root.drawerTightChatColumns
+                                        ? Math.min(root.rightPaneDrawerWidth,
+                                                   Math.max(0, split.width - x))
+                                        : 0
+                    drawerVisible: root.rightPaneDrawerVisible
                 }
 
                 Loader {
@@ -180,11 +200,20 @@ Item {
                 id: rightPaneDrawer
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                anchors.right: parent.right
-                width: root.rightPaneDrawerWidth
-                active: root.rightPaneDrawerVisible
+                width: Math.min(root.rightPaneDrawerWidth, parent.width)
+                active: root.rightPaneDrawerMounted
                 visible: active
                 z: 30
+                focus: active
+                x: root.rightPaneDrawerVisible ? parent.width - width : parent.width
+                opacity: root.rightPaneDrawerVisible ? 1.0 : 0.0
+                Keys.onEscapePressed: Ui.ChatDisplayStore.closeRightPane()
+                Behavior on x {
+                    NumberAnimation { duration: Ui.Style.motionFast; easing.type: Easing.OutCubic }
+                }
+                Behavior on opacity {
+                    NumberAnimation { duration: Ui.Style.motionFast; easing.type: Easing.OutCubic }
+                }
                 sourceComponent: Item {
                     anchors.fill: parent
 
@@ -211,6 +240,17 @@ Item {
                 z: 20
                 acceptedButtons: Qt.LeftButton
                 onClicked: Ui.ChatDisplayStore.closeRightPane()
+            }
+        }
+    }
+
+    Timer {
+        id: drawerCloseTimer
+        interval: Ui.Style.motionFast + 40
+        repeat: false
+        onTriggered: {
+            if (!root.rightPaneDrawerVisible) {
+                root.rightPaneDrawerMounted = false
             }
         }
     }

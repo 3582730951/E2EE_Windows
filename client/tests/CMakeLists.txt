@@ -186,7 +186,8 @@ add_executable(ui_ai_enhance_privacy_test
 )
 
 target_compile_definitions(ui_ai_enhance_privacy_test PRIVATE
-    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp")
+    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp"
+    MI_E2EE_QUICK_CLIENT_HELPERS_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client_helpers.inc")
 
 add_test(NAME ui_ai_enhance_privacy_test COMMAND ui_ai_enhance_privacy_test)
 
@@ -218,11 +219,36 @@ add_executable(ui_protected_text_source_test
 
 target_compile_definitions(ui_protected_text_source_test PRIVATE
     MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp"
+    MI_E2EE_QUICK_CLIENT_HELPERS_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client_helpers.inc"
     MI_E2EE_APP_STORE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/AppStore.qml"
     MI_E2EE_CHAT_DISPLAY_STORE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/stores/ChatDisplayStore.qml"
     MI_E2EE_CENTER_PANE_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/qml/shell/CenterPane.qml")
 
 add_test(NAME ui_protected_text_source_test COMMAND ui_protected_text_source_test)
+
+add_executable(ui_download_path_policy_test
+    ui_download_path_policy_test.cpp
+)
+
+target_compile_definitions(ui_download_path_policy_test PRIVATE
+    MI_E2EE_QUICK_CLIENT_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client.cpp"
+    MI_E2EE_QUICK_CLIENT_HELPERS_SOURCE="${CMAKE_CURRENT_LIST_DIR}/../ui/quick_client_helpers.inc")
+
+add_test(NAME ui_download_path_policy_test COMMAND ui_download_path_policy_test)
+
+find_package(Qt6 COMPONENTS Core QUIET)
+if(Qt6Core_FOUND)
+  add_executable(ui_display_contract_test
+      ui_display_contract_test.cpp
+      ../ui/display_contract.cpp
+  )
+  target_include_directories(ui_display_contract_test PRIVATE ../ui)
+  target_link_libraries(ui_display_contract_test PRIVATE Qt6::Core)
+  if (COMMAND mi_copy_msvc_runtime)
+    mi_copy_msvc_runtime(ui_display_contract_test)
+  endif()
+  add_test(NAME ui_display_contract_test COMMAND ui_display_contract_test)
+endif()
 
 add_executable(windows_native_syscall_source_test
     windows_native_syscall_source_test.cpp

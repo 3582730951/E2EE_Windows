@@ -177,7 +177,7 @@ Item {
         target: store.client
         ignoreUnknownSignals: true
 
-        function onTokenChanged() {
+        function onAuthStateChanged() {
             store.syncState()
         }
 

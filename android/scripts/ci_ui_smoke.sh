@@ -209,7 +209,6 @@ manifest = {
     "required_evidence_satisfied": [
         "build",
         "navigation_flow",
-        "fixture_smoke",
         "theme_parity",
         "identity_visuals",
         "security_tone_matrix",
