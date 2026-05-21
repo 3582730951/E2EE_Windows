@@ -717,8 +717,9 @@ class MessageBubble extends StatelessWidget {
     final useDesktopAttachmentShell = hasAttachment && !isMobile;
     final attachment = message.attachment;
     final hasVisualAttachment = switch (attachment) {
-      final ChatAttachment value =>
-        _resolvedAttachmentKind(value) != ChatAttachmentKind.file,
+      final ChatAttachment value => _isVisualAttachmentKind(
+        _resolvedAttachmentKind(value),
+      ),
       null => false,
     };
     final useDesktopInlineMediaMeta =
@@ -1289,7 +1290,7 @@ class AttachmentMessageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolvedKind = _resolvedAttachmentKind(attachment);
-    if (resolvedKind != ChatAttachmentKind.file) {
+    if (_isVisualAttachmentKind(resolvedKind)) {
       return _MediaAttachmentBubble(
         attachment: attachment,
         isOutgoing: isOutgoing,
@@ -2256,7 +2257,14 @@ ChatAttachmentKind _resolvedAttachmentKind(ChatAttachment attachment) {
   if (_videoExtensions.contains(extension)) {
     return ChatAttachmentKind.video;
   }
+  if (_audioExtensions.contains(extension)) {
+    return ChatAttachmentKind.audio;
+  }
   return ChatAttachmentKind.file;
+}
+
+bool _isVisualAttachmentKind(ChatAttachmentKind kind) {
+  return kind == ChatAttachmentKind.image || kind == ChatAttachmentKind.video;
 }
 
 String _attachmentExtensionLabelFor(ChatAttachment attachment) {
@@ -2338,6 +2346,16 @@ const Set<String> _imageExtensions = <String>{
 };
 
 const Set<String> _videoExtensions = <String>{'mp4', 'mov', 'm4v', 'webm'};
+
+const Set<String> _audioExtensions = <String>{
+  'm4a',
+  'aac',
+  'mp3',
+  'wav',
+  'ogg',
+  'opus',
+  'amr',
+};
 
 String _sensitivityOverlayLabel(ChatAttachmentSensitivity sensitivity) {
   return switch (sensitivity) {

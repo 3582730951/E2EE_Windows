@@ -79,6 +79,50 @@ void main() {
         find.descendant(of: sidebar, matching: find.text('通知设置')),
         findsOneWidget,
       );
+
+      await tester.tap(find.byKey(const ValueKey('desktop-context-tab-成员')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: sidebar,
+          matching: find.byKey(const ValueKey('desktop-context-member-list')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sidebar,
+          matching: find.byKey(const ValueKey('desktop-context-member-row-0')),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('desktop-context-tab-媒体')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: sidebar,
+          matching: find.byKey(const ValueKey('desktop-context-media-grid')),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('desktop-context-tab-文件')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: sidebar,
+          matching: find.byKey(const ValueKey('desktop-context-file-row-0')),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('desktop-context-tab-链接')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: sidebar, matching: find.text('暂无共享链接。')),
+        findsOneWidget,
+      );
     },
   );
 

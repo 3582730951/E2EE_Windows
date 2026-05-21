@@ -545,5 +545,25 @@ class EmptyCaptureSdkClient implements NativeSdkClient {
   }) async {}
 
   @override
+  Future<void> sendFile({
+    required String conversationId,
+    required String path,
+  }) async {}
+
+  @override
+  Future<String?> createGroup() async => null;
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  }) async {}
+
+  @override
+  Future<void> clearConversationHistory({
+    required String conversationId,
+  }) async {}
+
+  @override
   void dispose() {}
 }

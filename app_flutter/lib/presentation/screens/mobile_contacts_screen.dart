@@ -54,11 +54,16 @@ class _MobileContactsScreenState extends ConsumerState<MobileContactsScreen> {
     final serviceContacts = contacts
         .where((contact) => contact.groupLabel == '公众号或服务号')
         .toList(growable: false);
+    final newFriendContacts = contacts
+        .where((contact) => contact.groupLabel == '新的朋友')
+        .toList(growable: false);
     final friendContacts =
         contacts
             .where(
               (contact) =>
-                  contact.groupLabel != '群聊' && contact.groupLabel != '公众号或服务号',
+                  contact.groupLabel != '群聊' &&
+                  contact.groupLabel != '公众号或服务号' &&
+                  contact.groupLabel != '新的朋友',
             )
             .toList(growable: false)
           ..sort(_contactCompare);
@@ -70,6 +75,8 @@ class _MobileContactsScreenState extends ConsumerState<MobileContactsScreen> {
           controller: _searchController,
           cupertinoStyle: cupertinoStyle,
           onChanged: (value) => setState(() => _query = value),
+          onAddFriend: _showAddFriendDialog,
+          onCreateGroup: _createGroup,
         ),
         Expanded(
           child: ListView(
@@ -113,7 +120,11 @@ class _MobileContactsScreenState extends ConsumerState<MobileContactsScreen> {
                     ),
                   ]
                 : <Widget>[
-                    _QuickEntryGrid(cupertinoStyle: cupertinoStyle),
+                    _QuickEntryGrid(
+                      cupertinoStyle: cupertinoStyle,
+                      onAddFriend: _showAddFriendDialog,
+                      onCreateGroup: _createGroup,
+                    ),
                     SizedBox(height: cupertinoStyle ? 12 : 16),
                     const _ContactsSectionHeader(
                       key: Key('mobile-contacts-section-new-friends'),
@@ -122,11 +133,13 @@ class _MobileContactsScreenState extends ConsumerState<MobileContactsScreen> {
                     ),
                     const SizedBox(height: 8),
                     _ContactsGroup(
-                      children: const <Widget>[
+                      children: <Widget>[
                         _QuickContactRow(
+                          key: const Key('mobile-contacts-new-friends-row'),
                           icon: AppSemanticIcon.contactAdd,
                           title: '新的朋友',
                           subtitle: '查看好友申请和通讯录推荐',
+                          onTap: () => _showNewFriends(newFriendContacts),
                         ),
                       ],
                     ),
@@ -238,6 +251,98 @@ class _MobileContactsScreenState extends ConsumerState<MobileContactsScreen> {
     ref.read(chatActionsProvider).selectConversation(conversation.id);
     context.go('/app/chats');
   }
+
+  Future<void> _createGroup() async {
+    final conversationId = await ref.read(chatActionsProvider).createGroup();
+    if (!mounted) {
+      return;
+    }
+    if (conversationId == null) {
+      _showStatus('暂时无法创建群聊');
+      return;
+    }
+    context.go('/app/chats');
+  }
+
+  Future<void> _showAddFriendDialog() async {
+    final request = await showDialog<_ContactFriendRequestDraft>(
+      context: context,
+      builder: (context) => const _ContactAddFriendDialog(),
+    );
+    if (request == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    await ref
+        .read(chatActionsProvider)
+        .sendFriendRequest(
+          accountId: request.accountId,
+          remark: request.remark,
+        );
+    if (!mounted) {
+      return;
+    }
+    _showStatus('好友请求已发送');
+  }
+
+  void _showNewFriends(List<ContactProfile> contacts) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '新的朋友',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              if (contacts.isEmpty)
+                const Text('暂无新的好友申请')
+              else
+                for (final contact in contacts.take(6))
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: SocialAvatar(
+                      id: contact.id,
+                      title: contact.displayName,
+                      size: 36,
+                    ),
+                    title: Text(contact.displayName),
+                    subtitle: Text(contact.statusLabel),
+                  ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  key: const Key('mobile-contacts-new-friends-add'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showAddFriendDialog();
+                  },
+                  child: const Text('添加好友'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showStatus(String message) {
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
+  }
 }
 
 class _ContactsTopChrome extends StatelessWidget {
@@ -245,11 +350,15 @@ class _ContactsTopChrome extends StatelessWidget {
     required this.controller,
     required this.cupertinoStyle,
     required this.onChanged,
+    required this.onAddFriend,
+    required this.onCreateGroup,
   });
 
   final TextEditingController controller;
   final bool cupertinoStyle;
   final ValueChanged<String> onChanged;
+  final Future<void> Function() onAddFriend;
+  final Future<void> Function() onCreateGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -286,6 +395,7 @@ class _ContactsTopChrome extends StatelessWidget {
                 icon: AppSemanticIcon.contactAdd,
                 tooltip: '添加好友',
                 cupertinoStyle: cupertinoStyle,
+                onPressed: onAddFriend,
               ),
               const SizedBox(width: 4),
               _TopIconButton(
@@ -293,6 +403,7 @@ class _ContactsTopChrome extends StatelessWidget {
                 icon: AppSemanticIcon.groupChat,
                 tooltip: '创建群聊',
                 cupertinoStyle: cupertinoStyle,
+                onPressed: onCreateGroup,
               ),
             ],
           ),
@@ -368,26 +479,36 @@ class _ContactsSearchField extends StatelessWidget {
 }
 
 class _QuickEntryGrid extends StatelessWidget {
-  const _QuickEntryGrid({required this.cupertinoStyle});
+  const _QuickEntryGrid({
+    required this.cupertinoStyle,
+    required this.onAddFriend,
+    required this.onCreateGroup,
+  });
 
   final bool cupertinoStyle;
+  final Future<void> Function() onAddFriend;
+  final Future<void> Function() onCreateGroup;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       key: const Key('mobile-contacts-quick-entries'),
-      children: const <Widget>[
+      children: <Widget>[
         Expanded(
           child: _QuickEntryCard(
+            key: const Key('mobile-contacts-quick-add-friend'),
             icon: AppSemanticIcon.contactAdd,
             title: '添加好友',
+            onPressed: onAddFriend,
           ),
         ),
-        SizedBox(width: 10),
+        const SizedBox(width: 10),
         Expanded(
           child: _QuickEntryCard(
+            key: const Key('mobile-contacts-quick-create-group'),
             icon: AppSemanticIcon.groupChat,
             title: '创建群聊',
+            onPressed: onCreateGroup,
           ),
         ),
       ],
@@ -396,35 +517,52 @@ class _QuickEntryGrid extends StatelessWidget {
 }
 
 class _QuickEntryCard extends StatelessWidget {
-  const _QuickEntryCard({required this.icon, required this.title});
+  const _QuickEntryCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.onPressed,
+  });
 
   final AppSemanticIcon icon;
   final String title;
+  final Future<void> Function() onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final palette = theme.extension<AppShellColors>()!;
     final compact = theme.platform == TargetPlatform.iOS;
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 13, vertical: compact ? 9 : 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.divider.withValues(alpha: 0.12)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          AppIcon(icon, size: 17, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+    final radius = BorderRadius.circular(14);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onPressed,
+        child: Ink(
+          padding: EdgeInsets.symmetric(
+            horizontal: 13,
+            vertical: compact ? 9 : 12,
           ),
-        ],
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withValues(alpha: 0.94),
+            borderRadius: radius,
+            border: Border.all(color: palette.divider.withValues(alpha: 0.12)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              AppIcon(icon, size: 17, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -518,32 +656,39 @@ class _GroupedContactRow extends StatelessWidget {
 
 class _QuickContactRow extends StatelessWidget {
   const _QuickContactRow({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.onTap,
   });
 
   final AppSemanticIcon icon;
   final String title;
   final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final compact = theme.platform == TargetPlatform.iOS;
-    return ListTile(
-      dense: compact,
-      minLeadingWidth: compact ? 38 : null,
-      minVerticalPadding: compact ? 7 : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 13),
-      leading: CircleAvatar(
-        radius: compact ? 20 : 22,
-        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.14),
-        child: AppIcon(icon, color: theme.colorScheme.primary),
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        dense: compact,
+        minLeadingWidth: compact ? 38 : null,
+        minVerticalPadding: compact ? 7 : null,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 13),
+        leading: CircleAvatar(
+          radius: compact ? 20 : 22,
+          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.14),
+          child: AppIcon(icon, color: theme.colorScheme.primary),
+        ),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const AppIcon(AppSemanticIcon.chevronRight),
+        onTap: onTap,
       ),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const AppIcon(AppSemanticIcon.chevronRight),
     );
   }
 }
@@ -665,11 +810,13 @@ class _TopIconButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.cupertinoStyle,
+    required this.onPressed,
   });
 
   final AppSemanticIcon icon;
   final String tooltip;
   final bool cupertinoStyle;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -677,7 +824,7 @@ class _TopIconButton extends StatelessWidget {
       return CupertinoButton(
         padding: EdgeInsets.zero,
         minimumSize: const Size(34, 34),
-        onPressed: () {},
+        onPressed: onPressed,
         child: AppIcon(
           icon,
           size: 18,
@@ -687,8 +834,87 @@ class _TopIconButton extends StatelessWidget {
     }
     return IconButton(
       tooltip: tooltip,
-      onPressed: () {},
+      onPressed: onPressed,
       icon: AppIcon(icon, size: 20),
+    );
+  }
+}
+
+class _ContactFriendRequestDraft {
+  const _ContactFriendRequestDraft({
+    required this.accountId,
+    required this.remark,
+  });
+
+  final String accountId;
+  final String remark;
+}
+
+class _ContactAddFriendDialog extends StatefulWidget {
+  const _ContactAddFriendDialog();
+
+  @override
+  State<_ContactAddFriendDialog> createState() =>
+      _ContactAddFriendDialogState();
+}
+
+class _ContactAddFriendDialogState extends State<_ContactAddFriendDialog> {
+  final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _remarkController = TextEditingController();
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _remarkController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final accountId = _accountController.text.trim();
+    if (accountId.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(
+      _ContactFriendRequestDraft(
+        accountId: accountId,
+        remark: _remarkController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('添加好友'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            key: const Key('mobile-contacts-add-friend-username'),
+            controller: _accountController,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: '账号'),
+          ),
+          TextField(
+            key: const Key('mobile-contacts-add-friend-remark'),
+            controller: _remarkController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(labelText: '备注'),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const Key('mobile-contacts-add-friend-submit'),
+          onPressed: _submit,
+          child: const Text('发送请求'),
+        ),
+      ],
     );
   }
 }

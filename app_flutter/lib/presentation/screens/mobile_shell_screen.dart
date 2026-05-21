@@ -154,7 +154,14 @@ class MobileShellScreen extends ConsumerWidget {
                                 .read(chatActionsProvider)
                                 .selectConversation(null),
                           )
-                        : const MobileChatsScreen(),
+                        : MobileChatsScreen(
+                            onOpenContacts: () => context.go(
+                              '/app/${AppSection.contacts.routeSegment}',
+                            ),
+                            onOpenSettings: () => context.go(
+                              '/app/${AppSection.settings.routeSegment}',
+                            ),
+                          ),
                   AppSection.contacts => const MobileContactsScreen(),
                   AppSection.settings => const SettingsSecurityScreen(),
                 },

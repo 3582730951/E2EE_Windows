@@ -1,8 +1,14 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../../application/chat_providers.dart';
 import '../../domain/entities/models.dart';
@@ -45,6 +51,12 @@ class MobileChatDetailScreen extends ConsumerWidget {
       onSend: (text) => ref
           .read(chatActionsProvider)
           .sendConversationMessage(conversationId: conversation.id, text: text),
+      onSendFile: (path) => ref
+          .read(chatActionsProvider)
+          .sendConversationFile(conversationId: conversation.id, path: path),
+      onClearHistory: () => ref
+          .read(chatActionsProvider)
+          .clearConversationHistory(conversationId: conversation.id),
     );
   }
 }

@@ -4,7 +4,7 @@ enum MessageDirection { incoming, outgoing }
 
 enum MessageDeliveryStatus { sending, sent, delivered, read, failed }
 
-enum ChatAttachmentKind { file, image, video }
+enum ChatAttachmentKind { file, image, video, audio }
 
 enum ConversationKind { direct, group, channel, bot, system, fileAssistant }
 

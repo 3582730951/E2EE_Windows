@@ -20,6 +20,13 @@ abstract class NativeSdkClient {
     required String conversationId,
     required String text,
   });
+  Future<void> sendFile({required String conversationId, required String path});
+  Future<String?> createGroup();
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  });
+  Future<void> clearConversationHistory({required String conversationId});
   void dispose();
 }
 

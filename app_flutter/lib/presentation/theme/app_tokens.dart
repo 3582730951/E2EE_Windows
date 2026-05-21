@@ -67,6 +67,8 @@ class ImUiMetrics {
 
   static const double androidChatListTop = 48;
   static const double androidChatListTopWithFilters = 88;
+  static const double androidChatListTopWithSearch = 88;
+  static const double androidChatListTopWithSearchAndFilters = 128;
   static const double iosChatListTop = 106;
   static const double iosChatListTopWithFilters = 148;
 

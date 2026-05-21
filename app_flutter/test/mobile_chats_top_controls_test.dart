@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:mi_e2ee_im_app/application/chat_providers.dart';
 import 'package:mi_e2ee_im_app/bootstrap/app_providers.dart';
-import 'package:mi_e2ee_im_app/domain/entities/models.dart';
 import 'fakes/fake_sdk_client.dart';
 import 'package:mi_e2ee_im_app/presentation/screens/mobile_chats_screen.dart';
 import 'package:mi_e2ee_im_app/presentation/theme/app_theme.dart';
@@ -59,6 +57,16 @@ void main() {
     );
     expect(find.text('Aurora 设计群'), findsOneWidget);
     expect(find.text('草稿'), findsWidgets);
+
+    await tester.enterText(
+      find.byKey(const Key('mobile-chats-search-input-cupertino')),
+      '质量',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('质量回归'), findsOneWidget);
+    expect(find.text('Bob Chen'), findsNothing);
+    expect(find.byKey(const Key('mobile-chats-search-clear')), findsOneWidget);
   });
 
   testWidgets('iOS enhanced chat search stays matte inside top chrome', (
@@ -111,6 +119,45 @@ void main() {
     expect(find.byKey(const Key('mobile-chats-fab-compose')), findsOneWidget);
     expect(find.byType(LiquidGlassPanel), findsNothing);
     expect(find.byKey(const ValueKey('chat-home-filter-all')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('mobile-chats-nav-search')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('mobile-chats-search-material')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const Key('mobile-chats-search-input-material')),
+      '文件',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('文件传输助手'), findsOneWidget);
+    expect(find.text('Bob Chen'), findsNothing);
+    await tester.tap(find.byKey(const Key('mobile-chats-search-clear')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('mobile-chats-search-material')), findsNothing);
+    expect(find.text('Bob Chen'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('mobile-chats-fab-compose')));
+    await tester.pumpAndSettle();
+    expect(find.text('创建群聊'), findsOneWidget);
+    await tester.tap(find.text('创建群聊'));
+    await tester.pumpAndSettle();
+    expect(find.text('新群聊'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('mobile-chats-fab-compose')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('加好友'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('mobile-add-friend-username')),
+      'charlie',
+    );
+    await tester.tap(find.byKey(const Key('mobile-add-friend-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('好友请求已发送'), findsOneWidget);
 
     await tester.drag(
       find.byKey(const Key('mobile-chats-list')),
@@ -165,13 +212,7 @@ Future<void> _pumpChatsScreen(
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          sdkClientProvider.overrideWith((_) => fakeClient),
-          conversationsProvider.overrideWith(
-            (ref) =>
-                Stream<List<ConversationSummary>>.value(_denseConversations()),
-          ),
-        ],
+        overrides: [sdkClientProvider.overrideWith((_) => fakeClient)],
         child: MaterialApp(
           theme: AppTheme.light(visualTier: visualTier),
           home: const Scaffold(body: MobileChatsScreen()),
@@ -182,60 +223,4 @@ Future<void> _pumpChatsScreen(
   } finally {
     debugDefaultTargetPlatformOverride = previousPlatform;
   }
-}
-
-List<ConversationSummary> _denseConversations() {
-  final now = DateTime(2026, 4, 21, 9);
-  return <ConversationSummary>[
-    ConversationSummary(
-      id: 'group-design',
-      title: 'Aurora 设计群',
-      preview: 'Alice: 新版顶部栏先收窄再验证',
-      lastUpdated: now,
-      kind: ConversationKind.group,
-      isGroup: true,
-      unreadCount: 6,
-      isPinned: true,
-      memberCount: 128,
-      onlineCount: 19,
-      lastSenderLabel: 'Alice',
-    ),
-    ConversationSummary(
-      id: 'file-helper',
-      title: '文件传输助手',
-      preview: 'UI-review-v12.fig',
-      lastUpdated: now.subtract(const Duration(minutes: 4)),
-      kind: ConversationKind.fileAssistant,
-      unreadCount: 1,
-      lastSenderLabel: '文件',
-    ),
-    ConversationSummary(
-      id: 'group-qa',
-      title: '质量回归',
-      preview: '@你 Android 截图流程已回归通过',
-      lastUpdated: now.subtract(const Duration(minutes: 8)),
-      kind: ConversationKind.group,
-      isGroup: true,
-      unreadCount: 3,
-      mentionCount: 1,
-      lastSenderLabel: 'QA Bot',
-    ),
-    ConversationSummary(
-      id: 'chat-bob',
-      title: 'Bob Chen',
-      preview: '今晚把登录页再收一轮',
-      lastUpdated: now.subtract(const Duration(minutes: 11)),
-      isOnline: true,
-      lastSenderLabel: 'Bob',
-    ),
-    ConversationSummary(
-      id: 'chat-mina',
-      title: 'Mina Xu',
-      preview: '草稿：文件卡片密度要继续压',
-      lastUpdated: now.subtract(const Duration(minutes: 14)),
-      draftText: '文件卡片密度要继续压',
-      isOnline: true,
-      lastSenderLabel: 'Mina',
-    ),
-  ];
 }

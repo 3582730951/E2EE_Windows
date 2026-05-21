@@ -314,6 +314,148 @@ class FfiSdkClient implements NativeSdkClient {
   }
 
   @override
+  Future<void> sendFile({
+    required String conversationId,
+    required String path,
+  }) async {
+    final trimmedPath = path.trim();
+    if (!_authenticated || trimmedPath.isEmpty || _handle == nullptr) {
+      return;
+    }
+    final conversationKey = sdkConversationKey(conversationId);
+    final result = await _withNative(() {
+      final targetPtr = conversationKey.toNativeUtf8();
+      final pathPtr = trimmedPath.toNativeUtf8();
+      final outMessageId = calloc<Pointer<Utf8>>();
+      try {
+        final ok = isGroupConversationId(conversationId)
+            ? _extra.sendGroupFile(_handle, targetPtr, pathPtr, outMessageId)
+            : _extra.sendPrivateFile(_handle, targetPtr, pathPtr, outMessageId);
+        return (ok: ok == 1, messageId: _takeOwnedString(outMessageId));
+      } finally {
+        calloc.free(outMessageId);
+        calloc.free(targetPtr);
+        calloc.free(pathPtr);
+      }
+    });
+    final timestamp = DateTime.now();
+    final fileName = _fileNameFromPath(trimmedPath);
+    _upsertMessage(
+      ChatMessage(
+        id: result.messageId.isEmpty
+            ? '${result.ok ? 'file' : 'failed-file'}-${timestamp.microsecondsSinceEpoch}'
+            : result.messageId,
+        conversationId: conversationId,
+        senderLabel: '你',
+        text: '',
+        timestamp: timestamp,
+        direction: MessageDirection.outgoing,
+        status: result.ok
+            ? MessageDeliveryStatus.sent
+            : MessageDeliveryStatus.failed,
+        attachment: ChatAttachment(
+          kind: _attachmentKindForPath(fileName),
+          title: fileName,
+          detail: result.ok ? '已发送' : '发送失败',
+          actionLabel: result.ok ? '打开' : '重试',
+          state: result.ok
+              ? ChatAttachmentState.completed
+              : ChatAttachmentState.failed,
+          fileExtension: _fileExtension(fileName).toUpperCase(),
+        ),
+      ),
+    );
+    _refreshConversationSummary(
+      conversationId,
+      isGroup: isGroupConversationId(conversationId),
+    );
+    _emitConversations();
+  }
+
+  @override
+  Future<String?> createGroup() async {
+    if (!_authenticated || _handle == nullptr) {
+      return null;
+    }
+    final groupId = await _withNative(() {
+      final outGroup = calloc<Pointer<Utf8>>();
+      try {
+        final ok = _extra.createGroup(_handle, outGroup) == 1;
+        if (!ok) {
+          return '';
+        }
+        return _takeOwnedString(outGroup);
+      } finally {
+        calloc.free(outGroup);
+      }
+    });
+    if (groupId.isEmpty) {
+      return null;
+    }
+    final conversationId = groupConversationId(groupId);
+    _refreshConversationSummary(
+      conversationId,
+      title: '群聊 $groupId',
+      isGroup: true,
+    );
+    _emitConversations();
+    return conversationId;
+  }
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  }) async {
+    final trimmedAccountId = accountId.trim();
+    if (!_authenticated || trimmedAccountId.isEmpty || _handle == nullptr) {
+      return;
+    }
+    await _withNative(() {
+      final accountPtr = trimmedAccountId.toNativeUtf8();
+      final remarkPtr = remark.trim().toNativeUtf8();
+      try {
+        _extra.sendFriendRequest(_handle, accountPtr, remarkPtr);
+      } finally {
+        calloc.free(accountPtr);
+        calloc.free(remarkPtr);
+      }
+    });
+    await _reloadContacts();
+  }
+
+  @override
+  Future<void> clearConversationHistory({
+    required String conversationId,
+  }) async {
+    if (!_authenticated || _handle == nullptr) {
+      return;
+    }
+    final conversationKey = sdkConversationKey(conversationId);
+    await _withNative(() {
+      final conversationPtr = conversationKey.toNativeUtf8();
+      try {
+        _extra.deleteChatHistory(
+          _handle,
+          conversationPtr,
+          isGroupConversationId(conversationId) ? 1 : 0,
+          1,
+          1,
+        );
+      } finally {
+        calloc.free(conversationPtr);
+      }
+    });
+    _messages[conversationId] = const <ChatMessage>[];
+    _controllerFor(conversationId).add(const <ChatMessage>[]);
+    _refreshConversationSummary(
+      conversationId,
+      isGroup: isGroupConversationId(conversationId),
+    );
+    _emitConversations();
+  }
+
+  @override
   void dispose() {
     _stopBackgroundSync();
     for (final controller in _messageControllers.values) {
@@ -736,6 +878,55 @@ class FfiSdkClient implements NativeSdkClient {
     }
   }
 
+  String _fileNameFromPath(String path) {
+    final slashIndex = path.lastIndexOf('/');
+    final backslashIndex = path.lastIndexOf('\\');
+    final separatorIndex = slashIndex > backslashIndex
+        ? slashIndex
+        : backslashIndex;
+    if (separatorIndex < 0 || separatorIndex + 1 >= path.length) {
+      return path;
+    }
+    return path.substring(separatorIndex + 1);
+  }
+
+  String _fileExtension(String fileName) {
+    final dotIndex = fileName.lastIndexOf('.');
+    if (dotIndex <= 0 || dotIndex + 1 >= fileName.length) {
+      return '';
+    }
+    return fileName.substring(dotIndex + 1);
+  }
+
+  ChatAttachmentKind _attachmentKindForPath(String fileName) {
+    final extension = _fileExtension(fileName).toLowerCase();
+    if (<String>{
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    }.contains(extension)) {
+      return ChatAttachmentKind.image;
+    }
+    if (<String>{'mp4', 'mov', 'm4v', 'webm'}.contains(extension)) {
+      return ChatAttachmentKind.video;
+    }
+    if (<String>{
+      'm4a',
+      'aac',
+      'mp3',
+      'wav',
+      'ogg',
+      'opus',
+      'amr',
+    }.contains(extension)) {
+      return ChatAttachmentKind.audio;
+    }
+    return ChatAttachmentKind.file;
+  }
+
   StreamController<List<ChatMessage>> _controllerFor(String conversationId) {
     return _messageControllers.putIfAbsent(
       conversationId,
@@ -839,8 +1030,10 @@ class FfiSdkClient implements NativeSdkClient {
       fileName: _readString(entry.fileName),
       fileSize: entry.fileSize,
       stickerId: _readString(entry.stickerId),
-      canonicalEnvelope:
-          _readBytes(entry.canonicalEnvelope, entry.canonicalEnvelopeLen),
+      canonicalEnvelope: _readBytes(
+        entry.canonicalEnvelope,
+        entry.canonicalEnvelopeLen,
+      ),
       messageType: entry.messageType,
     );
   }

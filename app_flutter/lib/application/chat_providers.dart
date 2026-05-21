@@ -53,6 +53,41 @@ List<ConversationSummary> filterConversationsByPreset(
   );
 }
 
+List<ConversationSummary> filterConversationsBySearch(
+  Iterable<ConversationSummary> conversations,
+  String query,
+) {
+  final normalizedQuery = _normalizeConversationSearchToken(query);
+  if (normalizedQuery.isEmpty) {
+    return prioritizeChatConversations(conversations);
+  }
+  return prioritizeChatConversations(
+    conversations.where(
+      (conversation) =>
+          _conversationSearchIndex(conversation).contains(normalizedQuery),
+    ),
+  );
+}
+
+String _conversationSearchIndex(ConversationSummary conversation) {
+  final fields = <String>[
+    conversation.title,
+    conversation.preview,
+    conversation.draftText ?? '',
+    conversation.lastSenderLabel ?? '',
+    conversation.pillLabel ?? '',
+    conversation.previewBadge ?? '',
+    conversation.presenceLabel ?? '',
+    conversation.membersPreview ?? '',
+    conversation.kind.name,
+  ];
+  return _normalizeConversationSearchToken(fields.join(' '));
+}
+
+String _normalizeConversationSearchToken(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+}
+
 List<ConversationSummary> prioritizeChatConversations(
   Iterable<ConversationSummary> conversations,
 ) {
@@ -180,6 +215,44 @@ class ChatActions {
     await ref
         .read(sdkClientProvider)
         .sendMessage(conversationId: conversationId, text: text);
+  }
+
+  Future<void> sendConversationFile({
+    required String conversationId,
+    required String path,
+  }) async {
+    await ref
+        .read(sdkClientProvider)
+        .sendFile(conversationId: conversationId, path: path);
+  }
+
+  Future<String?> createGroup() async {
+    final conversationId = await ref.read(sdkClientProvider).createGroup();
+    if (conversationId != null) {
+      selectConversation(conversationId);
+    }
+    return conversationId;
+  }
+
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  }) async {
+    final targetAccountId = accountId.trim();
+    if (targetAccountId.isEmpty) {
+      return;
+    }
+    await ref
+        .read(sdkClientProvider)
+        .sendFriendRequest(accountId: targetAccountId, remark: remark);
+  }
+
+  Future<void> clearConversationHistory({
+    required String conversationId,
+  }) async {
+    await ref
+        .read(sdkClientProvider)
+        .clearConversationHistory(conversationId: conversationId);
   }
 
   void selectConversation(String? conversationId) {

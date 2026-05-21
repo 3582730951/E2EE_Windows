@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSFileProtectionKey</key>
 	<string>NSFileProtectionComplete</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于录制并发送语音消息。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于选择并发送聊天图片。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

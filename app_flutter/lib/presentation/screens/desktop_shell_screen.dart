@@ -1,5 +1,7 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../application/chat_providers.dart';
 import '../../bootstrap/app_providers.dart';
@@ -24,7 +26,43 @@ class DesktopShellScreen extends ConsumerStatefulWidget {
 }
 
 class _DesktopShellScreenState extends ConsumerState<DesktopShellScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   bool _contextPanelOpen = false;
+  ConversationFilterPreset _filter = ConversationFilterPreset.all;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_syncSearchQuery);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_syncSearchQuery);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _syncSearchQuery() {
+    final query = _searchController.text;
+    if (query == _searchQuery) {
+      return;
+    }
+    setState(() {
+      _searchQuery = query;
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+  }
+
+  void _focusSearch() {
+    _searchFocusNode.requestFocus();
+  }
 
   void _closeContextPanel() {
     if (!_contextPanelOpen) {
@@ -66,7 +104,10 @@ class _DesktopShellScreenState extends ConsumerState<DesktopShellScreen> {
           return conversation.copyWith(unreadCount: snapshotUnread);
         })
         .toList(growable: false);
-    final conversations = prioritizeConversations(rawConversations);
+    final conversations = filterConversationsBySearch(
+      filterConversationsByPreset(rawConversations, _filter),
+      _searchQuery,
+    );
     if (activeConversation != null) {
       final activeIndex = conversations.indexWhere(
         (conversation) => conversation.id == activeConversation.id,
@@ -95,94 +136,170 @@ class _DesktopShellScreenState extends ConsumerState<DesktopShellScreen> {
           data: (value) => value,
           orElse: () => const <DeviceTrustInfo>[],
         );
+    final contacts = ref
+        .watch(contactsProvider)
+        .maybeWhen(
+          data: (value) => value,
+          orElse: () => const <ContactProfile>[],
+        );
     final attachments = messages
         .where((message) => message.attachment != null)
         .map((message) => message.attachment!)
         .toList(growable: false);
     final isFileConversationActive = isFileConversation(activeConversation);
+    final fileAssistantId = _firstConversationIdOfKind(
+      rawConversations,
+      ConversationKind.fileAssistant,
+    );
 
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTokens.spacingSm,
-              AppTokens.spacingXs + 2,
-              0,
-              AppTokens.spacingXs + 2,
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            _focusSearch,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
             ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final canShowAuxiliaryPanel = constraints.maxWidth >= 1200;
-                final showAuxiliaryPanel =
-                    canShowAuxiliaryPanel && _contextPanelOpen;
-                final leftRailWidth = constraints.maxWidth >= 1440
-                    ? ImUiMetrics.desktopLeftRailWide
-                    : ImUiMetrics.desktopLeftRailCompact;
-                final rightRailWidth = isFileConversationActive
-                    ? ImUiMetrics.desktopFilePanel
-                    : ImUiMetrics.desktopRightPanel;
-                return _DesktopWorkbenchFrame(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      SizedBox(
-                        width: leftRailWidth,
-                        child: _DesktopConversationRail(
-                          displayName: session.profile?.displayName ?? '消息',
-                          sessionSubtitle:
-                              session.profile?.subtitle ?? '消息、群聊与文件同步',
-                          conversations: conversations,
-                          activeConversation: activeConversation,
-                          onSelectConversation: (conversationId) => ref
-                              .read(chatActionsProvider)
-                              .selectConversation(conversationId),
-                        ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTokens.spacingSm,
+                  AppTokens.spacingXs + 2,
+                  0,
+                  AppTokens.spacingXs + 2,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final canShowAuxiliaryPanel = constraints.maxWidth >= 1200;
+                    final showAuxiliaryPanel =
+                        canShowAuxiliaryPanel && _contextPanelOpen;
+                    final leftRailWidth = constraints.maxWidth >= 1440
+                        ? ImUiMetrics.desktopLeftRailWide
+                        : ImUiMetrics.desktopLeftRailCompact;
+                    final rightRailWidth = isFileConversationActive
+                        ? ImUiMetrics.desktopFilePanel
+                        : ImUiMetrics.desktopRightPanel;
+                    return _DesktopWorkbenchFrame(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          SizedBox(
+                            width: leftRailWidth,
+                            child: _DesktopConversationRail(
+                              displayName: session.profile?.displayName ?? '消息',
+                              sessionSubtitle:
+                                  session.profile?.subtitle ?? '消息、群聊与文件同步',
+                              totalUnreadCount: rawConversations.fold<int>(
+                                0,
+                                (sum, conversation) =>
+                                    sum + conversation.unreadCount,
+                              ),
+                              conversations: conversations,
+                              activeConversation: activeConversation,
+                              filter: _filter,
+                              searchController: _searchController,
+                              searchQuery: _searchQuery,
+                              searchFocusNode: _searchFocusNode,
+                              onFilterChanged: (filter) =>
+                                  setState(() => _filter = filter),
+                              onClearSearch: _clearSearch,
+                              onSelectConversation: (conversationId) => ref
+                                  .read(chatActionsProvider)
+                                  .selectConversation(conversationId),
+                            ),
+                          ),
+                          const _DesktopWorkbenchDivider(),
+                          Expanded(
+                            child: _DesktopConversationStage(
+                              activeConversation: activeConversation,
+                              openingUnreadCount: activeConversation == null
+                                  ? 0
+                                  : openedUnreadSnapshots[activeConversation
+                                            .id] ??
+                                        activeConversation.unreadCount,
+                              messages: messages,
+                              attachments: attachments,
+                              contextPanelVisible: showAuxiliaryPanel,
+                              canToggleContextPanel: canShowAuxiliaryPanel,
+                              onOpenContextPanel: _openContextPanel,
+                              onFocusConversationSearch: _focusSearch,
+                              onCreateGroup: () async {
+                                final conversationId = await ref
+                                    .read(chatActionsProvider)
+                                    .createGroup();
+                                if (conversationId == null && context.mounted) {
+                                  _showDesktopStatus(context, '暂时无法创建群聊');
+                                }
+                              },
+                              onAddContact: () => _showDesktopAddFriendDialog(
+                                context,
+                                onSubmit: (request) async {
+                                  await ref
+                                      .read(chatActionsProvider)
+                                      .sendFriendRequest(
+                                        accountId: request.accountId,
+                                        remark: request.remark,
+                                      );
+                                  if (context.mounted) {
+                                    _showDesktopStatus(context, '好友请求已发送');
+                                  }
+                                },
+                              ),
+                              onOpenFileAssistant: fileAssistantId == null
+                                  ? null
+                                  : () => ref
+                                        .read(chatActionsProvider)
+                                        .selectConversation(fileAssistantId),
+                              onSendFile: activeConversation == null
+                                  ? null
+                                  : (path) => ref
+                                        .read(chatActionsProvider)
+                                        .sendConversationFile(
+                                          conversationId: activeConversation.id,
+                                          path: path,
+                                        ),
+                              onClearHistory: activeConversation == null
+                                  ? null
+                                  : () => ref
+                                        .read(chatActionsProvider)
+                                        .clearConversationHistory(
+                                          conversationId: activeConversation.id,
+                                        ),
+                              onSend: (text) => ref
+                                  .read(chatActionsProvider)
+                                  .sendCurrentConversationMessage(text),
+                            ),
+                          ),
+                          if (showAuxiliaryPanel) ...<Widget>[
+                            const _DesktopWorkbenchDivider(),
+                            SizedBox(
+                              width: rightRailWidth,
+                              child: isFileConversationActive
+                                  ? _DesktopFileDetailPanel(
+                                      attachments: attachments,
+                                      totalMessages: messages.length,
+                                      onClose: _closeContextPanel,
+                                    )
+                                  : _DesktopConversationContextPanel(
+                                      activeConversation: activeConversation,
+                                      messages: messages,
+                                      attachments: attachments,
+                                      contacts: contacts,
+                                      devices: devices,
+                                      onClose: _closeContextPanel,
+                                    ),
+                            ),
+                          ],
+                        ],
                       ),
-                      const _DesktopWorkbenchDivider(),
-                      Expanded(
-                        child: _DesktopConversationStage(
-                          activeConversation: activeConversation,
-                          openingUnreadCount: activeConversation == null
-                              ? 0
-                              : openedUnreadSnapshots[activeConversation.id] ??
-                                    activeConversation.unreadCount,
-                          messages: messages,
-                          attachments: attachments,
-                          contextPanelVisible: showAuxiliaryPanel,
-                          canToggleContextPanel: canShowAuxiliaryPanel,
-                          onOpenContextPanel: _openContextPanel,
-                          onSend: (text) => ref
-                              .read(chatActionsProvider)
-                              .sendCurrentConversationMessage(text),
-                        ),
-                      ),
-                      if (showAuxiliaryPanel) ...<Widget>[
-                        const _DesktopWorkbenchDivider(),
-                        SizedBox(
-                          width: rightRailWidth,
-                          child: isFileConversationActive
-                              ? _DesktopFileDetailPanel(
-                                  attachments: attachments,
-                                  totalMessages: messages.length,
-                                  onClose: _closeContextPanel,
-                                )
-                              : _DesktopConversationContextPanel(
-                                  activeConversation: activeConversation,
-                                  messages: messages,
-                                  attachments: attachments,
-                                  devices: devices,
-                                  onClose: _closeContextPanel,
-                                ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),
@@ -303,7 +420,17 @@ class _DesktopWorkbenchSection extends StatelessWidget {
 }
 
 class _DesktopRailSearchBar extends StatelessWidget {
-  const _DesktopRailSearchBar();
+  const _DesktopRailSearchBar({
+    required this.controller,
+    required this.focusNode,
+    required this.query,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String query;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -329,39 +456,78 @@ class _DesktopRailSearchBar extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                '搜索会话',
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                key: const ValueKey('desktop-inbox-search-input'),
+                textInputAction: TextInputAction.search,
+                enableSuggestions: false,
+                autocorrect: false,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                decoration: InputDecoration(
+                  hintText: '搜索会话',
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 5),
+                  hintStyle: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12.1,
+                    color: theme.textTheme.bodySmall?.color?.withValues(
+                      alpha: 0.82,
+                    ),
+                    height: 1.0,
+                  ),
+                ),
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontSize: 12.1,
+                  color: theme.colorScheme.onSurface,
+                  height: 1.0,
+                ),
+              ),
+            ),
+            if (query.trim().isEmpty)
+              Container(
+                key: const ValueKey('desktop-inbox-search-shortcut'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 4.5,
+                  vertical: 1.25,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.surfaceVariant.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Ctrl K',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 8.8,
+                    color: theme.textTheme.labelSmall?.color?.withValues(
+                      alpha: 0.5,
+                    ),
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
+                ),
+              )
+            else
+              IconButton(
+                key: const ValueKey('desktop-inbox-search-clear'),
+                onPressed: onClear,
+                icon: AppIcon(
+                  AppSemanticIcon.close,
+                  size: 11,
                   color: theme.textTheme.bodySmall?.color?.withValues(
-                    alpha: 0.82,
+                    alpha: 0.64,
                   ),
-                  height: 1.0,
+                ),
+                constraints: const BoxConstraints.tightFor(
+                  width: 24,
+                  height: 24,
+                ),
+                padding: EdgeInsets.zero,
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-            ),
-            Container(
-              key: const ValueKey('desktop-inbox-search-shortcut'),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 4.5,
-                vertical: 1.25,
-              ),
-              decoration: BoxDecoration(
-                color: palette.surfaceVariant.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                'Ctrl K',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontSize: 8.8,
-                  color: theme.textTheme.labelSmall?.color?.withValues(
-                    alpha: 0.5,
-                  ),
-                  fontWeight: FontWeight.w600,
-                  height: 1.0,
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -832,24 +998,33 @@ class _DesktopConversationRail extends StatelessWidget {
   const _DesktopConversationRail({
     required this.displayName,
     required this.sessionSubtitle,
+    required this.totalUnreadCount,
     required this.conversations,
     required this.activeConversation,
+    required this.filter,
+    required this.searchController,
+    required this.searchQuery,
+    required this.searchFocusNode,
+    required this.onFilterChanged,
+    required this.onClearSearch,
     required this.onSelectConversation,
   });
 
   final String displayName;
   final String sessionSubtitle;
+  final int totalUnreadCount;
   final List<ConversationSummary> conversations;
   final ConversationSummary? activeConversation;
+  final ConversationFilterPreset filter;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final FocusNode searchFocusNode;
+  final ValueChanged<ConversationFilterPreset> onFilterChanged;
+  final VoidCallback onClearSearch;
   final ValueChanged<String> onSelectConversation;
 
   @override
   Widget build(BuildContext context) {
-    final unreadCount = conversations.fold<int>(
-      0,
-      (sum, conversation) => sum + conversation.unreadCount,
-    );
-
     return _DesktopWorkbenchSection(
       tone: _DesktopWorkbenchTone.rail,
       child: Column(
@@ -869,37 +1044,45 @@ class _DesktopConversationRail extends StatelessWidget {
                   displayName: displayName,
                   summary: _desktopInboxSummary(
                     sessionSubtitle: sessionSubtitle,
-                    unreadCount: unreadCount,
+                    unreadCount: totalUnreadCount,
                   ),
                 ),
                 const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopRailSearchBar(),
+                _DesktopRailSearchBar(
+                  controller: searchController,
+                  focusNode: searchFocusNode,
+                  query: searchQuery,
+                  onClear: onClearSearch,
+                ),
                 const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopFolderStrip(),
+                _DesktopFolderStrip(value: filter, onChanged: onFilterChanged),
               ],
             ),
           ),
           const _DesktopSectionDivider(),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.spacingSm - 1,
-                AppTokens.spacingSm - 2,
-                AppTokens.spacingSm - 1,
-                AppTokens.spacingSm,
-              ),
-              itemCount: conversations.length,
-              separatorBuilder: (_, index) => const SizedBox(height: 3),
-              itemBuilder: (context, index) {
-                final conversation = conversations[index];
-                final selected = activeConversation?.id == conversation.id;
-                return _DesktopInboxConversationTile(
-                  conversation: conversation,
-                  selected: selected,
-                  onTap: () => onSelectConversation(conversation.id),
-                );
-              },
-            ),
+            child: conversations.isEmpty
+                ? _DesktopInboxEmptyState(searchQuery: searchQuery)
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTokens.spacingSm - 1,
+                      AppTokens.spacingSm - 2,
+                      AppTokens.spacingSm - 1,
+                      AppTokens.spacingSm,
+                    ),
+                    itemCount: conversations.length,
+                    separatorBuilder: (_, index) => const SizedBox(height: 3),
+                    itemBuilder: (context, index) {
+                      final conversation = conversations[index];
+                      final selected =
+                          activeConversation?.id == conversation.id;
+                      return _DesktopInboxConversationTile(
+                        conversation: conversation,
+                        selected: selected,
+                        onTap: () => onSelectConversation(conversation.id),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -908,14 +1091,17 @@ class _DesktopConversationRail extends StatelessWidget {
 }
 
 class _DesktopFolderStrip extends StatelessWidget {
-  const _DesktopFolderStrip();
+  const _DesktopFolderStrip({required this.value, required this.onChanged});
+
+  final ConversationFilterPreset value;
+  final ValueChanged<ConversationFilterPreset> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return ConversationFilterTabs(
       key: const ValueKey('desktop-folder-strip'),
       desktop: true,
-      value: ConversationFilterPreset.all,
+      value: value,
       presets: const <ConversationFilterPreset>[
         ConversationFilterPreset.all,
         ConversationFilterPreset.unread,
@@ -923,7 +1109,57 @@ class _DesktopFolderStrip extends StatelessWidget {
         ConversationFilterPreset.channels,
         ConversationFilterPreset.files,
       ],
-      onChanged: (_) {},
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _DesktopInboxEmptyState extends StatelessWidget {
+  const _DesktopInboxEmptyState({required this.searchQuery});
+
+  final String searchQuery;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppShellColors>()!;
+    final query = searchQuery.trim();
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 26),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AppIcon(
+              AppSemanticIcon.search,
+              size: 28,
+              color: palette.textTertiary.withValues(alpha: 0.70),
+            ),
+            const SizedBox(height: 11),
+            Text(
+              query.isEmpty ? '当前分类暂无会话' : '没有找到相关会话',
+              key: const ValueKey('desktop-inbox-empty-title'),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (query.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 5),
+              Text(
+                query,
+                key: const ValueKey('desktop-inbox-empty-query'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: palette.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -937,6 +1173,12 @@ class _DesktopConversationStage extends StatelessWidget {
     required this.contextPanelVisible,
     required this.canToggleContextPanel,
     required this.onOpenContextPanel,
+    required this.onFocusConversationSearch,
+    required this.onCreateGroup,
+    required this.onAddContact,
+    required this.onOpenFileAssistant,
+    required this.onSendFile,
+    required this.onClearHistory,
     required this.onSend,
   });
 
@@ -947,6 +1189,12 @@ class _DesktopConversationStage extends StatelessWidget {
   final bool contextPanelVisible;
   final bool canToggleContextPanel;
   final VoidCallback onOpenContextPanel;
+  final VoidCallback onFocusConversationSearch;
+  final Future<void> Function() onCreateGroup;
+  final VoidCallback onAddContact;
+  final VoidCallback? onOpenFileAssistant;
+  final ValueChanged<String>? onSendFile;
+  final Future<void> Function()? onClearHistory;
   final ValueChanged<String> onSend;
 
   static const double _kStageColumnInsetStart =
@@ -1013,7 +1261,13 @@ class _DesktopConversationStage extends StatelessWidget {
                     children: <Widget>[
                       IconButton(
                         key: const ValueKey('desktop-stage-search-action'),
-                        onPressed: conversation == null ? null : () {},
+                        onPressed: conversation == null
+                            ? null
+                            : () => _showDesktopMessageSearch(
+                                context,
+                                conversation,
+                                messages,
+                              ),
                         icon: const AppIcon(AppSemanticIcon.search),
                         tooltip: '搜索消息',
                         iconSize: 13,
@@ -1037,6 +1291,29 @@ class _DesktopConversationStage extends StatelessWidget {
                       _DesktopStageMoreMenu(
                         enabled: canToggleContextPanel && conversation != null,
                         onOpenContextPanel: onOpenContextPanel,
+                        onSearchMessages: conversation == null
+                            ? null
+                            : () => _showDesktopMessageSearch(
+                                context,
+                                conversation,
+                                messages,
+                              ),
+                        onClearHistory:
+                            conversation == null || onClearHistory == null
+                            ? null
+                            : () async {
+                                final confirmed =
+                                    await _confirmDesktopClearHistory(
+                                      context,
+                                      conversation.title,
+                                    );
+                                if (!context.mounted) {
+                                  return;
+                                }
+                                if (confirmed) {
+                                  await onClearHistory!();
+                                }
+                              },
                       ),
                     ],
                   ),
@@ -1050,7 +1327,13 @@ class _DesktopConversationStage extends StatelessWidget {
                 child: SizedBox.expand(
                   child: _DesktopStageCanvas(
                     child: conversation == null
-                        ? const _DesktopEmptyConversationState()
+                        ? _DesktopEmptyConversationState(
+                            onFocusConversationSearch:
+                                onFocusConversationSearch,
+                            onCreateGroup: onCreateGroup,
+                            onAddContact: onAddContact,
+                            onOpenFileAssistant: onOpenFileAssistant,
+                          )
                         : _DesktopChatTimeline(
                             conversation: conversation,
                             initialUnreadCount: openingUnreadCount,
@@ -1080,7 +1363,11 @@ class _DesktopConversationStage extends StatelessWidget {
                     ),
                   ),
                 ),
-                child: _DesktopChatComposer(enabled: true, onSend: onSend),
+                child: _DesktopChatComposer(
+                  enabled: true,
+                  onSend: onSend,
+                  onSendFile: onSendFile,
+                ),
               ),
           ],
         ),
@@ -1089,16 +1376,20 @@ class _DesktopConversationStage extends StatelessWidget {
   }
 }
 
-enum _DesktopStageMenuAction { profile, search, media, mute, clear }
+enum _DesktopStageMenuAction { profile, search, media, clear }
 
 class _DesktopStageMoreMenu extends StatelessWidget {
   const _DesktopStageMoreMenu({
     required this.enabled,
     required this.onOpenContextPanel,
+    required this.onSearchMessages,
+    required this.onClearHistory,
   });
 
   final bool enabled;
   final VoidCallback onOpenContextPanel;
+  final VoidCallback? onSearchMessages;
+  final Future<void> Function()? onClearHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -1114,37 +1405,42 @@ class _DesktopStageMoreMenu extends StatelessWidget {
       position: PopupMenuPosition.under,
       constraints: const BoxConstraints(minWidth: 172),
       onSelected: (value) {
-        if (value == _DesktopStageMenuAction.profile ||
-            value == _DesktopStageMenuAction.media) {
-          onOpenContextPanel();
+        switch (value) {
+          case _DesktopStageMenuAction.profile:
+          case _DesktopStageMenuAction.media:
+            onOpenContextPanel();
+            return;
+          case _DesktopStageMenuAction.search:
+            onSearchMessages?.call();
+            return;
+          case _DesktopStageMenuAction.clear:
+            onClearHistory?.call();
+            return;
         }
       },
-      itemBuilder: (context) => const <PopupMenuEntry<_DesktopStageMenuAction>>[
-        PopupMenuItem<_DesktopStageMenuAction>(
+      itemBuilder: (context) => <PopupMenuEntry<_DesktopStageMenuAction>>[
+        const PopupMenuItem<_DesktopStageMenuAction>(
           key: ValueKey('desktop-stage-menu-profile'),
           value: _DesktopStageMenuAction.profile,
           child: Text('会话资料'),
         ),
-        PopupMenuItem<_DesktopStageMenuAction>(
-          key: ValueKey('desktop-stage-menu-search'),
-          value: _DesktopStageMenuAction.search,
-          child: Text('搜索消息'),
-        ),
-        PopupMenuItem<_DesktopStageMenuAction>(
+        if (onSearchMessages != null)
+          const PopupMenuItem<_DesktopStageMenuAction>(
+            key: ValueKey('desktop-stage-menu-search'),
+            value: _DesktopStageMenuAction.search,
+            child: Text('搜索消息'),
+          ),
+        const PopupMenuItem<_DesktopStageMenuAction>(
           key: ValueKey('desktop-stage-menu-media'),
           value: _DesktopStageMenuAction.media,
           child: Text('媒体与文件'),
         ),
-        PopupMenuItem<_DesktopStageMenuAction>(
-          key: ValueKey('desktop-stage-menu-mute'),
-          value: _DesktopStageMenuAction.mute,
-          child: Text('静音通知'),
-        ),
-        PopupMenuItem<_DesktopStageMenuAction>(
-          key: ValueKey('desktop-stage-menu-clear'),
-          value: _DesktopStageMenuAction.clear,
-          child: Text('清空记录'),
-        ),
+        if (onClearHistory != null)
+          const PopupMenuItem<_DesktopStageMenuAction>(
+            key: ValueKey('desktop-stage-menu-clear'),
+            value: _DesktopStageMenuAction.clear,
+            child: Text('清空记录'),
+          ),
       ],
       child: SizedBox(
         width: 25,
@@ -1363,11 +1659,14 @@ class _DesktopStageCanvas extends StatelessWidget {
   }
 }
 
-class _DesktopConversationContextPanel extends StatelessWidget {
+enum _DesktopContextTab { profile, members, media, files, links }
+
+class _DesktopConversationContextPanel extends StatefulWidget {
   const _DesktopConversationContextPanel({
     required this.activeConversation,
     required this.messages,
     required this.attachments,
+    required this.contacts,
     required this.devices,
     required this.onClose,
   });
@@ -1375,30 +1674,43 @@ class _DesktopConversationContextPanel extends StatelessWidget {
   final ConversationSummary? activeConversation;
   final List<ChatMessage> messages;
   final List<ChatAttachment> attachments;
+  final List<ContactProfile> contacts;
   final List<DeviceTrustInfo> devices;
   final VoidCallback onClose;
 
   @override
+  State<_DesktopConversationContextPanel> createState() =>
+      _DesktopConversationContextPanelState();
+}
+
+class _DesktopConversationContextPanelState
+    extends State<_DesktopConversationContextPanel> {
+  _DesktopContextTab _activeTab = _DesktopContextTab.profile;
+
+  @override
   Widget build(BuildContext context) {
-    final conversation = activeConversation;
+    final conversation = widget.activeConversation;
     if (conversation == null) {
       return _DesktopWorkbenchSection(
         tone: _DesktopWorkbenchTone.detail,
-        child: _DesktopEmptyContextState(onClose: onClose),
+        child: _DesktopEmptyContextState(onClose: widget.onClose),
       );
     }
 
     final trailingLabel = conversation.isGroup
-        ? '${conversation.memberCount > 0 ? conversation.memberCount : 32} 人'
+        ? conversation.memberCount > 0
+              ? '${conversation.memberCount} 人'
+              : '群成员'
         : conversation.isOnline
         ? '在线'
         : '离线';
-    final recentAttachments = attachments.length <= 4
-        ? attachments
-        : attachments.sublist(attachments.length - 4);
-    final visualAttachments = attachments
+    final visualAttachments = widget.attachments
         .where(_isDesktopVisualAttachment)
         .toList(growable: false);
+    final fileAttachments = widget.attachments
+        .where((attachment) => !_isDesktopVisualAttachment(attachment))
+        .toList(growable: false);
+    final links = _desktopLinksFromMessages(widget.messages);
 
     return _DesktopWorkbenchSection(
       tone: _DesktopWorkbenchTone.detail,
@@ -1417,7 +1729,7 @@ class _DesktopConversationContextPanel extends StatelessWidget {
               title: conversation.title,
               subtitle: conversation.isGroup ? '群组资料' : '联系人资料',
               trailing: trailingLabel,
-              onClose: onClose,
+              onClose: widget.onClose,
             ),
           ),
           const _DesktopSectionDivider(),
@@ -1432,94 +1744,19 @@ class _DesktopConversationContextPanel extends StatelessWidget {
               children: <Widget>[
                 _DesktopContextProfileHero(conversation: conversation),
                 const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopContextTabs(),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextOverviewCard(
-                  containerKey: const ValueKey('desktop-context-summary-card'),
-                  icon: conversation.isGroup
-                      ? AppSemanticIcon.sessions
-                      : AppSemanticIcon.account,
-                  title: conversation.title,
-                  contextLabel: conversation.isGroup ? '当前群组' : '当前联系人',
-                  primaryLine: _desktopSidebarPrimaryLine(
-                    conversation: conversation,
-                    messages: messages,
-                    attachments: attachments,
-                  ),
-                  secondaryLine: _desktopSidebarSecondaryLine(
-                    conversation: conversation,
-                  ),
-                  trailingLabel: conversation.isMuted ? '已静音' : trailingLabel,
+                _DesktopContextTabs(
+                  activeTab: _activeTab,
+                  onChanged: (tab) => setState(() => _activeTab = tab),
                 ),
                 const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextSectionHeader(
-                  title: '成员',
-                  trailing: conversation.isGroupConversation
-                      ? '${conversation.onlineCount} 在线'
-                      : trailingLabel,
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextIdleRow(
-                  title: conversation.isGroupConversation ? '群成员' : '联系人状态',
-                  subtitle: conversation.isGroupConversation
-                      ? '查看成员、群公告和群资料'
-                      : '查看资料、共同群和最近在线',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextSectionHeader(
-                  title: '媒体',
-                  trailing: '${attachments.length} 项',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                if (visualAttachments.isNotEmpty) ...<Widget>[
-                  _DesktopContextMediaGrid(attachments: visualAttachments),
-                  const SizedBox(height: AppTokens.spacingXs + 1),
-                ],
-                if (recentAttachments.isEmpty)
-                  const _DesktopContextEmptyHint(text: '暂无共享内容。')
-                else
-                  for (
-                    var index = 0;
-                    index < recentAttachments.length;
-                    index++
-                  ) ...<Widget>[
-                    _DesktopAttachmentCard(
-                      containerKey: ValueKey(
-                        'desktop-context-attachment-row-$index',
-                      ),
-                      attachment: recentAttachments[index],
-                    ),
-                    const SizedBox(height: AppTokens.spacingXs + 1),
-                  ],
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextSectionHeader(
-                  title: '文件',
-                  trailing:
-                      '${attachments.where((item) => item.kind == ChatAttachmentKind.file).length}',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopContextIdleRow(
-                  title: '最近文件',
-                  subtitle: '图片、文档和压缩包集中在这里',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopContextSectionHeader(title: '链接', trailing: '0'),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopContextIdleRow(
-                  title: '共享链接',
-                  subtitle: '聊天中的链接会自动归档',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                const _DesktopContextSectionHeader(
-                  title: '通知设置',
-                  trailing: '默认',
-                ),
-                const SizedBox(height: AppTokens.spacingXs + 1),
-                _DesktopContextIdleRow(
-                  title: conversation.isMuted ? '已静音' : '接收提醒',
-                  subtitle: conversation.isMuted
-                      ? '当前会话不会打扰你'
-                      : '新消息、@我和文件完成时提醒',
+                ..._contextTabContent(
+                  conversation: conversation,
+                  trailingLabel: trailingLabel,
+                  messages: widget.messages,
+                  contacts: widget.contacts,
+                  visualAttachments: visualAttachments,
+                  fileAttachments: fileAttachments,
+                  links: links,
                 ),
               ],
             ),
@@ -1527,6 +1764,147 @@ class _DesktopConversationContextPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  List<Widget> _contextTabContent({
+    required ConversationSummary conversation,
+    required String trailingLabel,
+    required List<ChatMessage> messages,
+    required List<ContactProfile> contacts,
+    required List<ChatAttachment> visualAttachments,
+    required List<ChatAttachment> fileAttachments,
+    required List<_DesktopSharedLink> links,
+  }) {
+    return switch (_activeTab) {
+      _DesktopContextTab.profile => <Widget>[
+        _DesktopContextOverviewCard(
+          containerKey: const ValueKey('desktop-context-summary-card'),
+          icon: conversation.isGroup
+              ? AppSemanticIcon.sessions
+              : AppSemanticIcon.account,
+          title: conversation.title,
+          contextLabel: conversation.isGroup ? '当前群组' : '当前联系人',
+          primaryLine: _desktopSidebarPrimaryLine(
+            conversation: conversation,
+            messages: widget.messages,
+            attachments: widget.attachments,
+          ),
+          secondaryLine: _desktopSidebarSecondaryLine(
+            conversation: conversation,
+          ),
+          trailingLabel: conversation.isMuted ? '已静音' : trailingLabel,
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextSectionHeader(
+          title: '成员',
+          trailing: conversation.isGroupConversation
+              ? '${conversation.onlineCount} 在线'
+              : trailingLabel,
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextIdleRow(
+          title: conversation.isGroupConversation ? '群成员' : '联系人状态',
+          subtitle: conversation.isGroupConversation
+              ? '查看成员、群公告和群资料'
+              : '查看资料、共同群和最近在线',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextSectionHeader(
+          title: '媒体',
+          trailing: '${visualAttachments.length} 项',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        if (visualAttachments.isNotEmpty) ...<Widget>[
+          _DesktopContextMediaGrid(attachments: visualAttachments),
+          const SizedBox(height: AppTokens.spacingXs + 1),
+        ],
+        _DesktopContextSectionHeader(
+          title: '文件',
+          trailing: '${fileAttachments.length}',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextIdleRow(
+          title: fileAttachments.isEmpty ? '最近文件' : fileAttachments.first.title,
+          subtitle: fileAttachments.isEmpty
+              ? '共享文档和语音文件会集中在这里'
+              : fileAttachments.first.detail,
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextSectionHeader(title: '链接', trailing: '${links.length}'),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextIdleRow(
+          title: links.isEmpty ? '共享链接' : links.first.url,
+          subtitle: links.isEmpty
+              ? '聊天中的链接会自动归档'
+              : '${links.first.senderLabel} · ${_formatClock(links.first.timestamp)}',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        const _DesktopContextSectionHeader(title: '通知设置', trailing: '默认'),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextIdleRow(
+          title: conversation.isMuted ? '已静音' : '接收提醒',
+          subtitle: conversation.isMuted ? '当前会话不会打扰你' : '新消息、@我和文件完成时提醒',
+        ),
+      ],
+      _DesktopContextTab.members => <Widget>[
+        _DesktopContextSectionHeader(
+          title: '成员',
+          trailing: conversation.isGroupConversation
+              ? '${conversation.onlineCount} 在线'
+              : trailingLabel,
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        _DesktopContextMemberList(
+          members: _desktopContextMembers(
+            conversation: conversation,
+            messages: messages,
+            contacts: contacts,
+          ),
+        ),
+      ],
+      _DesktopContextTab.media => <Widget>[
+        _DesktopContextSectionHeader(
+          title: '媒体',
+          trailing: '${visualAttachments.length} 项',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        if (visualAttachments.isEmpty)
+          const _DesktopContextEmptyHint(text: '暂无共享媒体。')
+        else
+          _DesktopContextMediaGrid(attachments: visualAttachments),
+      ],
+      _DesktopContextTab.files => <Widget>[
+        _DesktopContextSectionHeader(
+          title: '文件',
+          trailing: '${fileAttachments.length}',
+        ),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        if (fileAttachments.isEmpty)
+          const _DesktopContextEmptyHint(text: '暂无共享文件。')
+        else
+          for (var index = 0; index < fileAttachments.length; index++) ...[
+            _DesktopAttachmentCard(
+              containerKey: ValueKey('desktop-context-file-row-$index'),
+              attachment: fileAttachments[index],
+            ),
+            const SizedBox(height: AppTokens.spacingXs + 1),
+          ],
+      ],
+      _DesktopContextTab.links => <Widget>[
+        _DesktopContextSectionHeader(title: '链接', trailing: '${links.length}'),
+        const SizedBox(height: AppTokens.spacingXs + 1),
+        if (links.isEmpty)
+          const _DesktopContextEmptyHint(text: '暂无共享链接。')
+        else
+          for (final link in links.take(8)) ...[
+            _DesktopContextIdleRow(
+              title: link.url,
+              subtitle: '${link.senderLabel} · ${_formatClock(link.timestamp)}',
+            ),
+            const SizedBox(height: AppTokens.spacingXs + 1),
+          ],
+      ],
+    };
   }
 }
 
@@ -1601,9 +1979,18 @@ class _DesktopContextProfileHero extends StatelessWidget {
 }
 
 class _DesktopContextTabs extends StatelessWidget {
-  const _DesktopContextTabs();
+  const _DesktopContextTabs({required this.activeTab, required this.onChanged});
 
-  static const tabs = <String>['资料', '成员', '媒体', '文件', '链接'];
+  final _DesktopContextTab activeTab;
+  final ValueChanged<_DesktopContextTab> onChanged;
+
+  static const tabs = <_DesktopContextTab, String>{
+    _DesktopContextTab.profile: '资料',
+    _DesktopContextTab.members: '成员',
+    _DesktopContextTab.media: '媒体',
+    _DesktopContextTab.files: '文件',
+    _DesktopContextTab.links: '链接',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1612,33 +1999,323 @@ class _DesktopContextTabs extends StatelessWidget {
     return Row(
       key: const ValueKey('desktop-context-tabs'),
       children: <Widget>[
-        for (final tab in tabs) ...<Widget>[
+        for (final entry in tabs.entries) ...<Widget>[
           Expanded(
-            child: Container(
-              height: 25,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: tab == '资料'
-                    ? theme.colorScheme.primary.withValues(alpha: 0.08)
-                    : palette.surfaceVariant.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Text(
-                tab,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: tab == '资料'
-                      ? theme.colorScheme.primary
-                      : palette.textSecondary,
+            child: InkWell(
+              key: ValueKey('desktop-context-tab-${entry.value}'),
+              borderRadius: BorderRadius.circular(7),
+              onTap: () => onChanged(entry.key),
+              child: Container(
+                height: 25,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: entry.key == activeTab
+                      ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                      : palette.surfaceVariant.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  entry.value,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: entry.key == activeTab
+                        ? theme.colorScheme.primary
+                        : palette.textSecondary,
+                  ),
                 ),
               ),
             ),
           ),
-          if (tab != tabs.last) const SizedBox(width: 4),
+          if (entry.key != tabs.keys.last) const SizedBox(width: 4),
         ],
       ],
     );
   }
+}
+
+class _DesktopContextMember {
+  const _DesktopContextMember({
+    required this.id,
+    required this.name,
+    required this.subtitle,
+    required this.online,
+    required this.kind,
+    this.avatarSeed,
+    this.initials,
+    this.trailing,
+  });
+
+  final String id;
+  final String name;
+  final String subtitle;
+  final bool online;
+  final ConversationKind kind;
+  final String? avatarSeed;
+  final String? initials;
+  final String? trailing;
+}
+
+class _DesktopContextMemberList extends StatelessWidget {
+  const _DesktopContextMemberList({required this.members});
+
+  final List<_DesktopContextMember> members;
+
+  @override
+  Widget build(BuildContext context) {
+    if (members.isEmpty) {
+      return const _DesktopContextEmptyHint(text: '暂无成员信息。');
+    }
+    return Column(
+      key: const ValueKey('desktop-context-member-list'),
+      children: <Widget>[
+        for (var index = 0; index < members.length; index++) ...<Widget>[
+          _DesktopContextMemberTile(
+            key: ValueKey('desktop-context-member-row-$index'),
+            member: members[index],
+          ),
+          if (index != members.length - 1)
+            const SizedBox(height: AppTokens.spacingXs + 1),
+        ],
+      ],
+    );
+  }
+}
+
+class _DesktopContextMemberTile extends StatelessWidget {
+  const _DesktopContextMemberTile({super.key, required this.member});
+
+  final _DesktopContextMember member;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<AppShellColors>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      decoration: BoxDecoration(
+        color: palette.surfaceVariant.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.divider.withValues(alpha: 0.055)),
+      ),
+      child: Row(
+        children: <Widget>[
+          SocialAvatar(
+            id: member.id,
+            title: member.name,
+            kind: member.kind,
+            size: 32,
+            avatarSeed: member.avatarSeed,
+            initials: member.initials,
+            online: member.online,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  member.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.8,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  member.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: palette.textSecondary,
+                    fontSize: 10.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (member.trailing != null) ...<Widget>[
+            const SizedBox(width: 8),
+            Text(
+              member.trailing!,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: member.online
+                    ? theme.colorScheme.primary
+                    : palette.textTertiary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+List<_DesktopContextMember> _desktopContextMembers({
+  required ConversationSummary conversation,
+  required List<ChatMessage> messages,
+  required List<ContactProfile> contacts,
+}) {
+  final members = <String, _DesktopContextMember>{};
+
+  void addMember({
+    required String rawLabel,
+    String? subtitle,
+    ContactProfile? contact,
+    DateTime? timestamp,
+    bool self = false,
+  }) {
+    final label = rawLabel.trim();
+    if (label.isEmpty || label == '系统') {
+      return;
+    }
+    final matchedContact = contact ?? _contactForLabel(label, contacts);
+    final name = self ? '你' : matchedContact?.displayName ?? label;
+    final key = _desktopMemberLookupKey(name);
+    if (members.containsKey(key)) {
+      return;
+    }
+    final online = self || matchedContact?.online == true;
+    members[key] = _DesktopContextMember(
+      id: matchedContact?.id ?? key,
+      name: name,
+      subtitle:
+          subtitle ??
+          matchedContact?.statusLabel ??
+          (timestamp == null ? '成员资料' : '${_formatClock(timestamp)} 发言'),
+      online: online,
+      kind: matchedContact?.groupLabel == '群聊'
+          ? ConversationKind.group
+          : ConversationKind.direct,
+      avatarSeed: matchedContact?.avatarSeed,
+      initials: name.characters.take(2).join(),
+      trailing: self
+          ? '我'
+          : online
+          ? '在线'
+          : matchedContact?.lastSeenLabel,
+    );
+  }
+
+  if (!conversation.isGroupConversation) {
+    final contact = _contactForConversation(conversation, contacts);
+    addMember(
+      rawLabel: contact?.displayName ?? conversation.title,
+      subtitle:
+          contact?.statusLabel ??
+          conversation.presenceLabel ??
+          _trailingLabelForConversation(conversation),
+      contact: contact,
+    );
+    return members.values.toList(growable: false);
+  }
+
+  for (final label in _memberLabelsFromPreview(conversation.membersPreview)) {
+    addMember(rawLabel: label);
+  }
+  for (final message in messages.reversed) {
+    addMember(
+      rawLabel: message.senderLabel,
+      timestamp: message.timestamp,
+      self: message.direction == MessageDirection.outgoing,
+    );
+  }
+  if (members.isEmpty) {
+    addMember(
+      rawLabel: conversation.title,
+      subtitle: conversation.presenceLabel ?? '${conversation.memberCount} 位成员',
+    );
+  }
+  return members.values.take(12).toList(growable: false);
+}
+
+String _trailingLabelForConversation(ConversationSummary conversation) {
+  if (conversation.isOnline) {
+    return '在线';
+  }
+  return conversation.presenceLabel ?? '离线';
+}
+
+Iterable<String> _memberLabelsFromPreview(String? preview) {
+  final value = preview?.trim();
+  if (value == null || value.isEmpty) {
+    return const <String>[];
+  }
+  final withoutCount = value.replaceAll(RegExp(r'等\s*\d+\s*人'), '');
+  return withoutCount
+      .split(RegExp(r'[、,，;；]+'))
+      .map((label) => label.trim())
+      .where((label) => label.isNotEmpty);
+}
+
+ContactProfile? _contactForConversation(
+  ConversationSummary conversation,
+  List<ContactProfile> contacts,
+) {
+  final conversationKey = _desktopMemberLookupKey(conversation.id);
+  final titleKey = _desktopMemberLookupKey(conversation.title);
+  for (final contact in contacts) {
+    final contactId = _desktopMemberLookupKey(contact.id);
+    final displayName = _desktopMemberLookupKey(contact.displayName);
+    final handle = _desktopMemberLookupKey(contact.handle);
+    if (contactId == conversationKey ||
+        displayName == titleKey ||
+        handle == conversationKey) {
+      return contact;
+    }
+  }
+  return null;
+}
+
+ContactProfile? _contactForLabel(String label, List<ContactProfile> contacts) {
+  final labelKey = _desktopMemberLookupKey(label);
+  for (final contact in contacts) {
+    final displayName = _desktopMemberLookupKey(contact.displayName);
+    final id = _desktopMemberLookupKey(contact.id);
+    final handle = _desktopMemberLookupKey(contact.handle);
+    if (displayName == labelKey ||
+        id == labelKey ||
+        handle == labelKey ||
+        displayName.contains(labelKey)) {
+      return contact;
+    }
+  }
+  return null;
+}
+
+String _desktopMemberLookupKey(String value) {
+  return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff]+'), '');
+}
+
+class _DesktopSharedLink {
+  const _DesktopSharedLink({
+    required this.url,
+    required this.senderLabel,
+    required this.timestamp,
+  });
+
+  final String url;
+  final String senderLabel;
+  final DateTime timestamp;
+}
+
+List<_DesktopSharedLink> _desktopLinksFromMessages(List<ChatMessage> messages) {
+  final pattern = RegExp(r'https?:\/\/[^\s]+', caseSensitive: false);
+  final links = <_DesktopSharedLink>[];
+  for (final message in messages) {
+    for (final match in pattern.allMatches(message.text)) {
+      links.add(
+        _DesktopSharedLink(
+          url: match.group(0)!,
+          senderLabel: message.senderLabel,
+          timestamp: message.timestamp,
+        ),
+      );
+    }
+  }
+  return links;
 }
 
 class _DesktopContextMediaGrid extends StatelessWidget {
@@ -1951,6 +2628,275 @@ class _DesktopContextHeader extends StatelessWidget {
   }
 }
 
+void _showDesktopMessageSearch(
+  BuildContext context,
+  ConversationSummary conversation,
+  List<ChatMessage> messages,
+) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => _DesktopMessageSearchDialog(
+      conversation: conversation,
+      messages: messages,
+    ),
+  );
+}
+
+Future<String?> _pickDesktopFile() async {
+  final result = await FilePicker.pickFiles(
+    type: FileType.any,
+    allowMultiple: false,
+    withData: false,
+  );
+  if (result == null || result.files.isEmpty) {
+    return null;
+  }
+  return result.files.single.path;
+}
+
+Future<bool> _confirmDesktopClearHistory(
+  BuildContext context,
+  String title,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('清空聊天记录'),
+      content: Text('清空 $title 的本地聊天记录？'),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('desktop-clear-history-confirm'),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('清空'),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+void _showDesktopAddFriendDialog(
+  BuildContext context, {
+  required Future<void> Function(_DesktopFriendRequestDraft request) onSubmit,
+}) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => _DesktopAddFriendDialog(onSubmit: onSubmit),
+  );
+}
+
+void _showDesktopStatus(BuildContext context, String message) {
+  ScaffoldMessenger.maybeOf(
+    context,
+  )?.showSnackBar(SnackBar(content: Text(message)));
+}
+
+String? _firstConversationIdOfKind(
+  Iterable<ConversationSummary> conversations,
+  ConversationKind kind,
+) {
+  for (final conversation in conversations) {
+    if (conversation.kind == kind) {
+      return conversation.id;
+    }
+  }
+  return null;
+}
+
+class _DesktopMessageSearchDialog extends StatefulWidget {
+  const _DesktopMessageSearchDialog({
+    required this.conversation,
+    required this.messages,
+  });
+
+  final ConversationSummary conversation;
+  final List<ChatMessage> messages;
+
+  @override
+  State<_DesktopMessageSearchDialog> createState() =>
+      _DesktopMessageSearchDialogState();
+}
+
+class _DesktopMessageSearchDialogState
+    extends State<_DesktopMessageSearchDialog> {
+  final TextEditingController _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncQuery);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_syncQuery);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncQuery() {
+    setState(() {
+      _query = _controller.text.trim();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results = _query.isEmpty
+        ? widget.messages
+        : widget.messages
+              .where(
+                (message) => '${message.senderLabel} ${message.text}'
+                    .toLowerCase()
+                    .contains(_query.toLowerCase()),
+              )
+              .toList(growable: false);
+    return AlertDialog(
+      title: Text('搜索 ${widget.conversation.title}'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              key: const ValueKey('desktop-message-search-input'),
+              controller: _controller,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                prefixIcon: AppIcon(AppSemanticIcon.search),
+                hintText: '搜索消息内容',
+              ),
+            ),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: results.isEmpty
+                  ? const Center(child: Text('没有找到相关消息'))
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: results.length,
+                      itemBuilder: (context, index) {
+                        final message = results[index];
+                        return ListTile(
+                          key: ValueKey<String>(
+                            'desktop-message-search-result-${message.id}',
+                          ),
+                          dense: true,
+                          title: Text(message.text),
+                          subtitle: Text(
+                            '${message.senderLabel} · ${_formatClock(message.timestamp)}',
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopFriendRequestDraft {
+  const _DesktopFriendRequestDraft({
+    required this.accountId,
+    required this.remark,
+  });
+
+  final String accountId;
+  final String remark;
+}
+
+class _DesktopAddFriendDialog extends StatefulWidget {
+  const _DesktopAddFriendDialog({required this.onSubmit});
+
+  final Future<void> Function(_DesktopFriendRequestDraft request) onSubmit;
+
+  @override
+  State<_DesktopAddFriendDialog> createState() =>
+      _DesktopAddFriendDialogState();
+}
+
+class _DesktopAddFriendDialogState extends State<_DesktopAddFriendDialog> {
+  final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _remarkController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _remarkController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final accountId = _accountController.text.trim();
+    if (accountId.isEmpty || _submitting) {
+      return;
+    }
+    setState(() {
+      _submitting = true;
+    });
+    await widget.onSubmit(
+      _DesktopFriendRequestDraft(
+        accountId: accountId,
+        remark: _remarkController.text.trim(),
+      ),
+    );
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('导入联系人'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            key: const ValueKey('desktop-add-friend-username'),
+            controller: _accountController,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: '账号'),
+          ),
+          TextField(
+            key: const ValueKey('desktop-add-friend-remark'),
+            controller: _remarkController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(labelText: '备注'),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('desktop-add-friend-submit'),
+          onPressed: _submitting ? null : _submit,
+          child: const Text('发送请求'),
+        ),
+      ],
+    );
+  }
+}
+
 class _DesktopStageHeader extends StatelessWidget {
   const _DesktopStageHeader({
     this.leading,
@@ -2090,10 +3036,15 @@ class _DesktopStageIdentity extends StatelessWidget {
 }
 
 class _DesktopChatComposer extends StatefulWidget {
-  const _DesktopChatComposer({required this.enabled, required this.onSend});
+  const _DesktopChatComposer({
+    required this.enabled,
+    required this.onSend,
+    required this.onSendFile,
+  });
 
   final bool enabled;
   final ValueChanged<String> onSend;
+  final ValueChanged<String>? onSendFile;
 
   @override
   State<_DesktopChatComposer> createState() => _DesktopChatComposerState();
@@ -2115,6 +3066,21 @@ class _DesktopChatComposerState extends State<_DesktopChatComposer> {
     final text = _controller.text;
     _controller.clear();
     widget.onSend(text);
+  }
+
+  Future<void> _sendFile() async {
+    final onSendFile = widget.onSendFile;
+    if (onSendFile == null) {
+      return;
+    }
+    final path = await _pickDesktopFile();
+    if (!mounted) {
+      return;
+    }
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    onSendFile(path.trim());
   }
 
   @override
@@ -2177,7 +3143,7 @@ class _DesktopChatComposerState extends State<_DesktopChatComposer> {
         children: <Widget>[
           IconButton(
             key: const ValueKey('desktop-composer-attach-button'),
-            onPressed: () {},
+            onPressed: widget.onSendFile == null ? null : _sendFile,
             icon: const AppIcon(AppSemanticIcon.attachment),
             tooltip: '附件',
             visualDensity: VisualDensity.standard,
@@ -2876,7 +3842,17 @@ class _DesktopEmptyContextState extends StatelessWidget {
 }
 
 class _DesktopEmptyConversationState extends StatelessWidget {
-  const _DesktopEmptyConversationState();
+  const _DesktopEmptyConversationState({
+    required this.onFocusConversationSearch,
+    required this.onCreateGroup,
+    required this.onAddContact,
+    required this.onOpenFileAssistant,
+  });
+
+  final VoidCallback onFocusConversationSearch;
+  final Future<void> Function() onCreateGroup;
+  final VoidCallback onAddContact;
+  final VoidCallback? onOpenFileAssistant;
 
   @override
   Widget build(BuildContext context) {
@@ -2961,11 +3937,26 @@ class _DesktopEmptyConversationState extends StatelessWidget {
                     alignment: WrapAlignment.center,
                     spacing: 8,
                     runSpacing: 8,
-                    children: const <Widget>[
-                      _DesktopEmptyAction(label: '选择一个聊天'),
-                      _DesktopEmptyAction(label: '新建聊天'),
-                      _DesktopEmptyAction(label: '导入联系人'),
-                      _DesktopEmptyAction(label: '打开文件助手'),
+                    children: <Widget>[
+                      _DesktopEmptyAction(
+                        label: '选择一个聊天',
+                        onPressed: onFocusConversationSearch,
+                      ),
+                      _DesktopEmptyAction(
+                        label: '新建聊天',
+                        onPressed: () {
+                          onCreateGroup();
+                        },
+                      ),
+                      _DesktopEmptyAction(
+                        label: '导入联系人',
+                        onPressed: onAddContact,
+                      ),
+                      if (onOpenFileAssistant != null)
+                        _DesktopEmptyAction(
+                          label: '打开文件助手',
+                          onPressed: onOpenFileAssistant!,
+                        ),
                     ],
                   ),
                 ],
@@ -2979,15 +3970,16 @@ class _DesktopEmptyConversationState extends StatelessWidget {
 }
 
 class _DesktopEmptyAction extends StatelessWidget {
-  const _DesktopEmptyAction({required this.label});
+  const _DesktopEmptyAction({required this.label, required this.onPressed});
 
   final String label;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return OutlinedButton(
-      onPressed: () {},
+      onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -3235,6 +4227,7 @@ String _desktopAttachmentExtension(ChatAttachment attachment) {
   return switch (attachment.kind) {
     ChatAttachmentKind.image => 'jpg',
     ChatAttachmentKind.video => 'mp4',
+    ChatAttachmentKind.audio => 'm4a',
     ChatAttachmentKind.file => 'file',
   };
 }

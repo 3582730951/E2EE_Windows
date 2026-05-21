@@ -449,6 +449,9 @@ String _fileMessageLabel(String fileName) {
   if (_videoExtensions.contains(extension)) {
     return '[视频]';
   }
+  if (_audioExtensions.contains(extension)) {
+    return '[语音]';
+  }
   return '[文件] $normalized'.trim();
 }
 
@@ -459,6 +462,9 @@ ChatAttachmentKind _attachmentKindFromName(String fileName) {
   }
   if (_videoExtensions.contains(extension)) {
     return ChatAttachmentKind.video;
+  }
+  if (_audioExtensions.contains(extension)) {
+    return ChatAttachmentKind.audio;
   }
   return ChatAttachmentKind.file;
 }
@@ -501,6 +507,16 @@ const Set<String> _imageExtensions = <String>{
 
 const Set<String> _videoExtensions = <String>{'mp4', 'mov', 'm4v', 'webm'};
 
+const Set<String> _audioExtensions = <String>{
+  'm4a',
+  'aac',
+  'mp3',
+  'wav',
+  'ogg',
+  'opus',
+  'amr',
+};
+
 String _conversationPreview(ChatMessage? latest, {required bool isGroup}) {
   if (latest == null) {
     return '开始新对话';
@@ -532,6 +548,9 @@ String _attachmentConversationPreview(ChatAttachment attachment) {
       sensitivity: attachment.sensitivity,
     );
   }
+  if (resolvedKind == ChatAttachmentKind.audio) {
+    return '[语音]';
+  }
   final normalizedTitle = attachment.title.trim();
   if (normalizedTitle.isEmpty) {
     return '[文件]';
@@ -561,6 +580,9 @@ ChatAttachmentKind _resolvedAttachmentKind(ChatAttachment attachment) {
   }
   if (_videoExtensions.contains(extension)) {
     return ChatAttachmentKind.video;
+  }
+  if (_audioExtensions.contains(extension)) {
+    return ChatAttachmentKind.audio;
   }
   return ChatAttachmentKind.file;
 }

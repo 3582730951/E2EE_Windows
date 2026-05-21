@@ -633,6 +633,7 @@ class FakeSdkClient implements NativeSdkClient {
   late Map<String, List<ChatMessage>> _messages;
   late List<ContactProfile> _contacts;
   late List<DeviceTrustInfo> _devices;
+  int _groupSequence = 1;
 
   @override
   Future<void> initialize() async {
@@ -785,6 +786,186 @@ class FakeSdkClient implements NativeSdkClient {
     _conversationController.add(
       List<ConversationSummary>.unmodifiable(_conversations),
     );
+  }
+
+  @override
+  Future<void> sendFile({
+    required String conversationId,
+    required String path,
+  }) async {
+    final fileName = _fileNameFromPath(path.trim());
+    if (fileName.isEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final message = ChatMessage(
+      id: 'local-file-${now.microsecondsSinceEpoch}',
+      conversationId: conversationId,
+      senderLabel: '你',
+      text: '',
+      timestamp: now,
+      direction: MessageDirection.outgoing,
+      status: MessageDeliveryStatus.read,
+      attachment: ChatAttachment(
+        kind: _attachmentKindForPath(fileName),
+        title: fileName,
+        detail: '已发送',
+        actionLabel: '打开',
+        state: ChatAttachmentState.completed,
+        fileExtension: _fileExtension(fileName).toUpperCase(),
+      ),
+    );
+    final conversationMessages = List<ChatMessage>.from(
+      _messages[conversationId] ?? const <ChatMessage>[],
+    )..add(message);
+    _messages[conversationId] = conversationMessages;
+    _controllerFor(
+      conversationId,
+    ).add(List<ChatMessage>.unmodifiable(conversationMessages));
+    _conversations =
+        _conversations
+            .map(
+              (conversation) => conversation.id == conversationId
+                  ? conversation.copyWith(
+                      preview: fileName,
+                      lastUpdated: now,
+                      unreadCount: 0,
+                      mentionCount: 0,
+                      lastSenderLabel: '你',
+                      previewBadge: '文件',
+                    )
+                  : conversation,
+            )
+            .toList()
+          ..sort(
+            (left, right) => right.lastUpdated.compareTo(left.lastUpdated),
+          );
+    _conversationController.add(
+      List<ConversationSummary>.unmodifiable(_conversations),
+    );
+  }
+
+  @override
+  Future<String?> createGroup() async {
+    final now = DateTime.now();
+    final id = 'group-local-${_groupSequence++}';
+    final conversation = ConversationSummary(
+      id: id,
+      title: '新群聊',
+      preview: '群聊已创建',
+      lastUpdated: now,
+      kind: ConversationKind.group,
+      isGroup: true,
+      memberCount: 1,
+      onlineCount: 1,
+      lastSenderLabel: '系统',
+      pillLabel: '群聊',
+      previewBadge: '群聊',
+    );
+    _messages[id] = const <ChatMessage>[];
+    _conversations = <ConversationSummary>[conversation, ..._conversations];
+    _conversationController.add(
+      List<ConversationSummary>.unmodifiable(_conversations),
+    );
+    _controllerFor(id).add(const <ChatMessage>[]);
+    return id;
+  }
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  }) async {
+    final trimmed = accountId.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final contact = ContactProfile(
+      id: trimmed,
+      displayName: remark.trim().isEmpty ? trimmed : remark.trim(),
+      handle: '@$trimmed',
+      statusLabel: '好友请求已发送',
+      groupLabel: '新的朋友',
+      relationLabel: '等待验证',
+      requestStatus: '已发送',
+    );
+    _contacts = <ContactProfile>[
+      contact,
+      ..._contacts.where((item) => item.id != trimmed),
+    ];
+    _contactController.add(List<ContactProfile>.unmodifiable(_contacts));
+  }
+
+  @override
+  Future<void> clearConversationHistory({
+    required String conversationId,
+  }) async {
+    _messages[conversationId] = const <ChatMessage>[];
+    _controllerFor(conversationId).add(const <ChatMessage>[]);
+    _conversations = _conversations
+        .map(
+          (conversation) => conversation.id == conversationId
+              ? conversation.copyWith(
+                  preview: '',
+                  unreadCount: 0,
+                  mentionCount: 0,
+                  isTyping: false,
+                )
+              : conversation,
+        )
+        .toList();
+    _conversationController.add(
+      List<ConversationSummary>.unmodifiable(_conversations),
+    );
+  }
+
+  String _fileNameFromPath(String path) {
+    final slashIndex = path.lastIndexOf('/');
+    final backslashIndex = path.lastIndexOf('\\');
+    final separatorIndex = slashIndex > backslashIndex
+        ? slashIndex
+        : backslashIndex;
+    if (separatorIndex < 0 || separatorIndex + 1 >= path.length) {
+      return path;
+    }
+    return path.substring(separatorIndex + 1);
+  }
+
+  String _fileExtension(String fileName) {
+    final dotIndex = fileName.lastIndexOf('.');
+    if (dotIndex <= 0 || dotIndex + 1 >= fileName.length) {
+      return '';
+    }
+    return fileName.substring(dotIndex + 1);
+  }
+
+  ChatAttachmentKind _attachmentKindForPath(String fileName) {
+    final extension = _fileExtension(fileName).toLowerCase();
+    if (<String>{
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    }.contains(extension)) {
+      return ChatAttachmentKind.image;
+    }
+    if (<String>{'mp4', 'mov', 'm4v', 'webm'}.contains(extension)) {
+      return ChatAttachmentKind.video;
+    }
+    if (<String>{
+      'm4a',
+      'aac',
+      'mp3',
+      'wav',
+      'ogg',
+      'opus',
+      'amr',
+    }.contains(extension)) {
+      return ChatAttachmentKind.audio;
+    }
+    return ChatAttachmentKind.file;
   }
 
   ChatMessage _copyMessageWithStatus(

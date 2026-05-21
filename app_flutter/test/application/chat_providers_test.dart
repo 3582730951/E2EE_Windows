@@ -56,6 +56,39 @@ void main() {
     },
   );
 
+  test(
+    'chatActions routes media group friend and history actions to sdk',
+    () async {
+      final client = _RecordingSdkClient();
+      final container = ProviderContainer(
+        overrides: [sdkClientProvider.overrideWith((_) => client)],
+      );
+      addTearDown(container.dispose);
+
+      final actions = container.read(chatActionsProvider);
+
+      await actions.sendConversationFile(
+        conversationId: 'chat-bob',
+        path: '/tmp/report.pdf',
+      );
+      final createdGroupId = await actions.createGroup();
+      await actions.sendFriendRequest(
+        accountId: 'new-user',
+        remark: 'New User',
+      );
+      await actions.clearConversationHistory(conversationId: 'chat-bob');
+
+      expect(client.fileCalls, <_FileCall>[
+        const _FileCall('chat-bob', '/tmp/report.pdf'),
+      ]);
+      expect(createdGroupId, 'group-created');
+      expect(client.friendRequestCalls, <_FriendRequestCall>[
+        const _FriendRequestCall('new-user', 'New User'),
+      ]);
+      expect(client.clearHistoryCalls, <String>['chat-bob']);
+    },
+  );
+
   test('filters conversation presets and keeps chat priority ordering', () {
     final now = DateTime(2026, 4, 21, 9);
     final conversations = <ConversationSummary>[
@@ -127,12 +160,27 @@ void main() {
       ).map((item) => item.id),
       <String>['file'],
     );
+    expect(
+      filterConversationsBySearch(conversations, 'bob').map((item) => item.id),
+      <String>['direct'],
+    );
+    expect(
+      filterConversationsBySearch(conversations, '@你').map((item) => item.id),
+      <String>['group'],
+    );
+    expect(
+      filterConversationsBySearch(conversations, '文件').map((item) => item.id),
+      <String>['file'],
+    );
   });
 }
 
 class _RecordingSdkClient implements NativeSdkClient {
   final List<String> markReadCalls = <String>[];
   final List<_SendCall> sendCalls = <_SendCall>[];
+  final List<_FileCall> fileCalls = <_FileCall>[];
+  final List<_FriendRequestCall> friendRequestCalls = <_FriendRequestCall>[];
+  final List<String> clearHistoryCalls = <String>[];
 
   @override
   Future<void> initialize() async {}
@@ -211,6 +259,34 @@ class _RecordingSdkClient implements NativeSdkClient {
   }
 
   @override
+  Future<void> sendFile({
+    required String conversationId,
+    required String path,
+  }) async {
+    fileCalls.add(_FileCall(conversationId, path));
+  }
+
+  @override
+  Future<String?> createGroup() async {
+    return 'group-created';
+  }
+
+  @override
+  Future<void> sendFriendRequest({
+    required String accountId,
+    String remark = '',
+  }) async {
+    friendRequestCalls.add(_FriendRequestCall(accountId, remark));
+  }
+
+  @override
+  Future<void> clearConversationHistory({
+    required String conversationId,
+  }) async {
+    clearHistoryCalls.add(conversationId);
+  }
+
+  @override
   void dispose() {}
 }
 
@@ -253,4 +329,44 @@ class _SendCall {
 
   @override
   String toString() => '_SendCall($conversationId, $text)';
+}
+
+class _FileCall {
+  const _FileCall(this.conversationId, this.path);
+
+  final String conversationId;
+  final String path;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _FileCall &&
+        other.conversationId == conversationId &&
+        other.path == path;
+  }
+
+  @override
+  int get hashCode => Object.hash(conversationId, path);
+
+  @override
+  String toString() => '_FileCall($conversationId, $path)';
+}
+
+class _FriendRequestCall {
+  const _FriendRequestCall(this.username, this.remark);
+
+  final String username;
+  final String remark;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _FriendRequestCall &&
+        other.username == username &&
+        other.remark == remark;
+  }
+
+  @override
+  int get hashCode => Object.hash(username, remark);
+
+  @override
+  String toString() => '_FriendRequestCall($username, $remark)';
 }

@@ -1,6 +1,6 @@
 part of 'mobile_chat_detail_screen.dart';
 
-class _MobileChatDetailContent extends StatelessWidget {
+class _MobileChatDetailContent extends StatefulWidget {
   const _MobileChatDetailContent({
     required this.conversation,
     required this.messages,
@@ -8,6 +8,8 @@ class _MobileChatDetailContent extends StatelessWidget {
     required this.autoScrollToLatest,
     required this.openingUnreadCount,
     required this.onSend,
+    required this.onSendFile,
+    required this.onClearHistory,
   });
 
   final ConversationSummary conversation;
@@ -16,6 +18,33 @@ class _MobileChatDetailContent extends StatelessWidget {
   final bool autoScrollToLatest;
   final int openingUnreadCount;
   final ValueChanged<String> onSend;
+  final FutureOr<void> Function(String) onSendFile;
+  final Future<void> Function() onClearHistory;
+
+  @override
+  State<_MobileChatDetailContent> createState() =>
+      _MobileChatDetailContentState();
+}
+
+class _MobileChatDetailContentState extends State<_MobileChatDetailContent> {
+  final GlobalKey<_MobileChatTimelineState> _timelineKey =
+      GlobalKey<_MobileChatTimelineState>();
+
+  void _showSearch() {
+    _showMobileMessageSearch(
+      context,
+      widget.conversation,
+      widget.messages,
+      onOpenMessage: _openMessage,
+    );
+  }
+
+  void _openMessage(ChatMessage message) {
+    _timelineKey.currentState?.revealMessage(message.id);
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text('已定位到 ${message.senderLabel} 的消息')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +55,7 @@ class _MobileChatDetailContent extends StatelessWidget {
         (isCupertinoStyle
             ? ImUiMetrics.iosChatDetailChromeHeight
             : ImUiMetrics.androidChatDetailChromeHeight);
-    final trailingVisualMedia = _hasTrailingVisualMedia(messages);
+    final trailingVisualMedia = _hasTrailingVisualMedia(widget.messages);
     final bottomChromeHeight =
         viewPadding.bottom +
         (isCupertinoStyle
@@ -38,10 +67,11 @@ class _MobileChatDetailContent extends StatelessWidget {
         Positioned.fill(
           top: topChromeHeight,
           child: _MobileChatTimeline(
-            conversation: conversation,
-            messages: messages,
-            initialUnreadCount: openingUnreadCount,
-            autoScrollToLatest: autoScrollToLatest,
+            key: _timelineKey,
+            conversation: widget.conversation,
+            messages: widget.messages,
+            initialUnreadCount: widget.openingUnreadCount,
+            autoScrollToLatest: widget.autoScrollToLatest,
             contentPadding: EdgeInsets.fromLTRB(
               isCupertinoStyle ? 6 : 4,
               isCupertinoStyle
@@ -76,8 +106,17 @@ class _MobileChatDetailContent extends StatelessWidget {
           left: 0,
           right: 0,
           child: _MobileChatDetailHeader(
-            conversation: conversation,
-            onBack: onBack,
+            conversation: widget.conversation,
+            onBack: widget.onBack,
+            onSearchMessages: _showSearch,
+            onMoreActions: () => _showMobileConversationActions(
+              context,
+              conversation: widget.conversation,
+              messages: widget.messages,
+              onSearchMessages: _showSearch,
+              onOpenMessage: _openMessage,
+              onClearHistory: widget.onClearHistory,
+            ),
           ),
         ),
         Positioned(
@@ -96,7 +135,10 @@ class _MobileChatDetailContent extends StatelessWidget {
           left: 0,
           right: 0,
           bottom: 0,
-          child: _ChatComposerDock(onSend: onSend),
+          child: _ChatComposerDock(
+            onSend: widget.onSend,
+            onSendFile: widget.onSendFile,
+          ),
         ),
       ],
     );
@@ -123,7 +165,7 @@ bool _hasTrailingVisualMedia(List<ChatMessage> messages) {
       continue;
     }
     if (message.attachment case final attachment?) {
-      return _resolvedAttachmentKind(attachment) != ChatAttachmentKind.file;
+      return _isVisualAttachmentKind(_resolvedAttachmentKind(attachment));
     }
     return false;
   }
@@ -205,10 +247,14 @@ class _MobileChatDetailHeader extends StatelessWidget {
   const _MobileChatDetailHeader({
     required this.conversation,
     required this.onBack,
+    required this.onSearchMessages,
+    required this.onMoreActions,
   });
 
   final ConversationSummary conversation;
   final VoidCallback onBack;
+  final VoidCallback onSearchMessages;
+  final VoidCallback onMoreActions;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +353,7 @@ class _MobileChatDetailHeader extends StatelessWidget {
                             key: const Key('mobile-chat-header-search'),
                             icon: AppSemanticIcon.search,
                             tooltip: '搜索消息',
-                            onPressed: () {},
+                            onPressed: onSearchMessages,
                             plain: true,
                           ),
                           const SizedBox(width: 1),
@@ -315,7 +361,7 @@ class _MobileChatDetailHeader extends StatelessWidget {
                             key: const Key('mobile-chat-header-more'),
                             icon: AppSemanticIcon.more,
                             tooltip: '更多操作',
-                            onPressed: () {},
+                            onPressed: onMoreActions,
                             plain: true,
                           ),
                         ],
@@ -394,14 +440,14 @@ class _MobileChatDetailHeader extends StatelessWidget {
             key: const Key('mobile-chat-header-search'),
             icon: AppSemanticIcon.search,
             tooltip: '搜索消息',
-            onPressed: () {},
+            onPressed: onSearchMessages,
           ),
           const SizedBox(width: 2),
           _HeaderActionButton(
             key: const Key('mobile-chat-header-more'),
             icon: AppSemanticIcon.more,
             tooltip: '更多操作',
-            onPressed: () {},
+            onPressed: onMoreActions,
           ),
           const SizedBox(width: 4),
         ],
@@ -427,6 +473,273 @@ class _MobileChatDetailHeader extends StatelessWidget {
             ),
           ),
           child: materialHeaderContent,
+        ),
+      ),
+    );
+  }
+}
+
+void _showMobileMessageSearch(
+  BuildContext context,
+  ConversationSummary conversation,
+  List<ChatMessage> messages, {
+  required ValueChanged<ChatMessage> onOpenMessage,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => _MessageSearchSheet(
+      conversation: conversation,
+      messages: messages,
+      onOpenMessage: onOpenMessage,
+    ),
+  );
+}
+
+void _showMobileConversationActions(
+  BuildContext context, {
+  required ConversationSummary conversation,
+  required List<ChatMessage> messages,
+  required VoidCallback onSearchMessages,
+  required ValueChanged<ChatMessage> onOpenMessage,
+  required Future<void> Function() onClearHistory,
+}) {
+  final attachmentMessages = messages
+      .where((message) => message.attachment != null)
+      .toList(growable: false);
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          ListTile(
+            key: const Key('mobile-chat-more-search'),
+            leading: const AppIcon(AppSemanticIcon.search),
+            title: const Text('搜索消息'),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              onSearchMessages();
+            },
+          ),
+          ListTile(
+            key: const Key('mobile-chat-more-media'),
+            leading: const AppIcon(AppSemanticIcon.file),
+            title: const Text('媒体与文件'),
+            subtitle: Text('${attachmentMessages.length} 个附件'),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              _showMobileAttachmentSummary(
+                context,
+                conversation,
+                attachmentMessages,
+                onOpenMessage: onOpenMessage,
+              );
+            },
+          ),
+          ListTile(
+            key: const Key('mobile-chat-more-clear-history'),
+            leading: const AppIcon(AppSemanticIcon.alert),
+            title: const Text('清空聊天记录'),
+            onTap: () async {
+              Navigator.of(sheetContext).pop();
+              final confirmed = await _confirmMobileClearHistory(
+                context,
+                conversation.title,
+              );
+              if (!context.mounted) {
+                return;
+              }
+              if (confirmed) {
+                await onClearHistory();
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void _showMobileAttachmentSummary(
+  BuildContext context,
+  ConversationSummary conversation,
+  List<ChatMessage> attachmentMessages, {
+  required ValueChanged<ChatMessage> onOpenMessage,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '${conversation.title} 的附件',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            if (attachmentMessages.isEmpty)
+              const Text('当前会话暂无附件')
+            else
+              for (final message in attachmentMessages.take(6))
+                ListTile(
+                  key: ValueKey<String>(
+                    'mobile-chat-attachment-summary-${message.id}',
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const AppIcon(AppSemanticIcon.file),
+                  title: Text(message.attachment!.title),
+                  subtitle: Text(message.attachment!.detail),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    onOpenMessage(message);
+                  },
+                ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<bool> _confirmMobileClearHistory(
+  BuildContext context,
+  String title,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('清空聊天记录'),
+      content: Text('清空 $title 的本地聊天记录？'),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const Key('mobile-chat-clear-history-confirm'),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('清空'),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+class _MessageSearchSheet extends StatefulWidget {
+  const _MessageSearchSheet({
+    required this.conversation,
+    required this.messages,
+    required this.onOpenMessage,
+  });
+
+  final ConversationSummary conversation;
+  final List<ChatMessage> messages;
+  final ValueChanged<ChatMessage> onOpenMessage;
+
+  @override
+  State<_MessageSearchSheet> createState() => _MessageSearchSheetState();
+}
+
+class _MessageSearchSheetState extends State<_MessageSearchSheet> {
+  final TextEditingController _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_syncQuery);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_syncQuery);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncQuery() {
+    setState(() {
+      _query = _controller.text.trim();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final results = _query.isEmpty
+        ? widget.messages
+        : widget.messages
+              .where(
+                (message) => '${message.senderLabel} ${message.text}'
+                    .toLowerCase()
+                    .contains(_query.toLowerCase()),
+              )
+              .toList(growable: false);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          MediaQuery.viewInsetsOf(context).bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '搜索 ${widget.conversation.title}',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const Key('mobile-chat-message-search-input'),
+              controller: _controller,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                prefixIcon: AppIcon(AppSemanticIcon.search),
+                hintText: '搜索消息内容',
+              ),
+            ),
+            const SizedBox(height: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: results.isEmpty
+                  ? const Center(child: Text('没有找到相关消息'))
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: results.length,
+                      itemBuilder: (context, index) {
+                        final message = results[index];
+                        return ListTile(
+                          key: ValueKey<String>(
+                            'mobile-chat-message-search-result-${message.id}',
+                          ),
+                          dense: true,
+                          title: Text(message.text),
+                          subtitle: Text(
+                            '${message.senderLabel} · ${_formatClock(message.timestamp)}',
+                          ),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            widget.onOpenMessage(message);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -552,6 +865,7 @@ String _detailHeaderSummary(ConversationSummary conversation) {
 
 class _MobileChatTimeline extends StatefulWidget {
   const _MobileChatTimeline({
+    super.key,
     required this.conversation,
     required this.messages,
     required this.initialUnreadCount,
@@ -628,6 +942,41 @@ class _MobileChatTimelineState extends State<_MobileChatTimeline> {
           : ImUiMetrics.androidChatDetailLatestBoundarySlack;
       _scrollController.jumpTo(
         (maxScrollExtent - boundarySlack).clamp(0.0, maxScrollExtent),
+      );
+    });
+  }
+
+  void revealMessage(String messageId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final targetContext = GlobalObjectKey(
+        'mobile-chat-message-$messageId',
+      ).currentContext;
+      if (targetContext != null) {
+        Scrollable.ensureVisible(
+          targetContext,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: 0.35,
+        );
+        return;
+      }
+      final index = widget.messages.indexWhere(
+        (message) => message.id == messageId,
+      );
+      if (index < 0 || !_scrollController.hasClients) {
+        return;
+      }
+      final maxScrollExtent = _scrollController.position.maxScrollExtent;
+      final denominator = widget.messages.length <= 1
+          ? 1
+          : widget.messages.length - 1;
+      _scrollController.animateTo(
+        maxScrollExtent * index / denominator,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -832,6 +1181,7 @@ class _ChatMessageTile extends StatelessWidget {
         : 5.0;
 
     return Padding(
+      key: GlobalObjectKey('mobile-chat-message-${message.id}'),
       padding: EdgeInsets.only(top: isClusterStart ? 4.5 : 0.75),
       child: Column(
         crossAxisAlignment: messageAlign,
@@ -968,7 +1318,7 @@ class _ChatBubbleBody extends StatelessWidget {
     if (message.attachment case final attachment?) {
       final useInlineMediaMeta =
           !message.hasText &&
-          _resolvedAttachmentKind(attachment) != ChatAttachmentKind.file;
+          _isVisualAttachmentKind(_resolvedAttachmentKind(attachment));
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1143,7 +1493,7 @@ class _ChatMessageMeta extends StatelessWidget {
     }
     if (message.attachment case final attachment?) {
       if (!message.hasText &&
-          _resolvedAttachmentKind(attachment) != ChatAttachmentKind.file) {
+          _isVisualAttachmentKind(_resolvedAttachmentKind(attachment))) {
         return const SizedBox.shrink();
       }
     }
@@ -1232,9 +1582,10 @@ class _InlineMediaMetaPill extends StatelessWidget {
 }
 
 class _ChatComposerDock extends StatefulWidget {
-  const _ChatComposerDock({required this.onSend});
+  const _ChatComposerDock({required this.onSend, required this.onSendFile});
 
   final ValueChanged<String> onSend;
+  final FutureOr<void> Function(String) onSendFile;
 
   @override
   State<_ChatComposerDock> createState() => _ChatComposerDockState();
@@ -1276,6 +1627,85 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
     }
     _controller.clear();
     widget.onSend(text);
+  }
+
+  void _insertText(String text) {
+    final value = _controller.value;
+    final start = value.selection.start < 0
+        ? value.text.length
+        : value.selection.start;
+    final end = value.selection.end < 0
+        ? value.text.length
+        : value.selection.end;
+    final nextText = value.text.replaceRange(start, end, text);
+    final offset = start + text.length;
+    _controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+
+  Future<void> _sendPickedFile() async {
+    final path = await _MobileAttachmentBridge.pickFile();
+    if (!mounted) {
+      return;
+    }
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    await Future<void>.value(widget.onSendFile(path.trim()));
+  }
+
+  Future<void> _sendImage() async {
+    final pickedImage = await _MobileAttachmentBridge.pickImage();
+    if (!mounted) {
+      await pickedImage?.delete();
+      return;
+    }
+    if (pickedImage != null) {
+      await _sendEphemeralFile(pickedImage);
+    }
+  }
+
+  Future<void> _sendVoice() async {
+    final recordedPath = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _VoiceRecorderSheet(),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (recordedPath != null && recordedPath.trim().isNotEmpty) {
+      await _sendEphemeralFile(
+        _EphemeralPickedFile(
+          path: recordedPath.trim(),
+          cleanupPaths: <String>{recordedPath.trim()},
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendEphemeralFile(_EphemeralPickedFile file) async {
+    try {
+      await Future<void>.value(widget.onSendFile(file.path));
+    } finally {
+      await file.delete();
+    }
+  }
+
+  Future<void> _showEmojiPicker() async {
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => const _EmojiPickerSheet(),
+    );
+    if (emoji == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _insertText(emoji);
   }
 
   @override
@@ -1344,7 +1774,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                       label: '图片',
                       icon: AppSemanticIcon.image,
                       cupertinoStyle: true,
-                      onPressed: () {},
+                      onPressed: _sendImage,
                     ),
                     const SizedBox(width: 2),
                     _ComposerShortcutButton(
@@ -1352,7 +1782,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                       label: '文件',
                       icon: AppSemanticIcon.file,
                       cupertinoStyle: true,
-                      onPressed: () {},
+                      onPressed: _sendPickedFile,
                     ),
                     const SizedBox(width: 5),
                     Expanded(
@@ -1399,7 +1829,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                       label: '表情',
                       icon: AppSemanticIcon.emoji,
                       cupertinoStyle: true,
-                      onPressed: () {},
+                      onPressed: _showEmojiPicker,
                     ),
                     const SizedBox(width: 2),
                     _ComposerShortcutButton(
@@ -1407,7 +1837,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
                       label: '语音',
                       icon: AppSemanticIcon.voice,
                       cupertinoStyle: true,
-                      onPressed: () {},
+                      onPressed: _sendVoice,
                     ),
                     const SizedBox(width: 1),
                     sendSwitcher(cupertinoStyle: true),
@@ -1440,7 +1870,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
               label: '图片',
               icon: AppSemanticIcon.image,
               cupertinoStyle: false,
-              onPressed: () {},
+              onPressed: _sendImage,
             ),
             const SizedBox(width: 2),
             _ComposerShortcutButton(
@@ -1448,7 +1878,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
               label: '文件',
               icon: AppSemanticIcon.file,
               cupertinoStyle: false,
-              onPressed: () {},
+              onPressed: _sendPickedFile,
             ),
             const SizedBox(width: 5),
             Expanded(
@@ -1493,7 +1923,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
               label: '表情',
               icon: AppSemanticIcon.emoji,
               cupertinoStyle: false,
-              onPressed: () {},
+              onPressed: _showEmojiPicker,
             ),
             const SizedBox(width: 1),
             _ComposerShortcutButton(
@@ -1501,7 +1931,7 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
               label: '语音',
               icon: AppSemanticIcon.voice,
               cupertinoStyle: false,
-              onPressed: () {},
+              onPressed: _sendVoice,
             ),
             const SizedBox(width: 1),
             sendSwitcher(cupertinoStyle: false),
@@ -1516,6 +1946,351 @@ class _ChatComposerDockState extends State<_ChatComposerDock> {
         child: SizedBox(
           key: const Key('mobile-chat-composer'),
           child: materialComposerRow,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileAttachmentBridge {
+  const _MobileAttachmentBridge._();
+
+  static final ImagePicker _imagePicker = ImagePicker();
+
+  static Future<String?> pickFile() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.any,
+      allowMultiple: false,
+      withData: false,
+    );
+    if (result == null || result.files.isEmpty) {
+      return null;
+    }
+    return result.files.single.path;
+  }
+
+  static Future<_EphemeralPickedFile?> pickImage() async {
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 96,
+    );
+    final sourcePath = image?.path.trim();
+    if (sourcePath == null || sourcePath.isEmpty) {
+      return null;
+    }
+    final sourceFile = File(sourcePath);
+    if (!await sourceFile.exists()) {
+      return null;
+    }
+    final directory = await getTemporaryDirectory();
+    final targetPath =
+        '${directory.path}/mi_image_${DateTime.now().microsecondsSinceEpoch}${_safeExtension(sourcePath, '.jpg')}';
+    await sourceFile.copy(targetPath);
+    final cleanupPaths = <String>{targetPath};
+    if (_isInsideDirectory(sourcePath, directory.path)) {
+      cleanupPaths.add(sourcePath);
+    }
+    return _EphemeralPickedFile(path: targetPath, cleanupPaths: cleanupPaths);
+  }
+
+  static String _safeExtension(String path, String fallback) {
+    final slash = path.lastIndexOf('/');
+    final backslash = path.lastIndexOf(r'\');
+    final separator = slash > backslash ? slash : backslash;
+    final dot = path.lastIndexOf('.');
+    if (dot <= separator || dot == path.length - 1 || path.length - dot > 12) {
+      return fallback;
+    }
+    return path.substring(dot).toLowerCase();
+  }
+
+  static bool _isInsideDirectory(String path, String directory) {
+    final normalizedPath = path.replaceAll(r'\', '/');
+    var normalizedDirectory = directory.replaceAll(r'\', '/');
+    while (normalizedDirectory.endsWith('/')) {
+      normalizedDirectory = normalizedDirectory.substring(
+        0,
+        normalizedDirectory.length - 1,
+      );
+    }
+    return normalizedPath == normalizedDirectory ||
+        normalizedPath.startsWith('$normalizedDirectory/');
+  }
+}
+
+class _EphemeralPickedFile {
+  const _EphemeralPickedFile({required this.path, required this.cleanupPaths});
+
+  final String path;
+  final Set<String> cleanupPaths;
+
+  Future<void> delete() async {
+    for (final cleanupPath in cleanupPaths) {
+      await _wipeAndDeleteFile(cleanupPath);
+    }
+  }
+}
+
+Future<void> _wipeAndDeleteFile(String path) async {
+  final trimmedPath = path.trim();
+  if (trimmedPath.isEmpty) {
+    return;
+  }
+  final file = File(trimmedPath);
+  try {
+    if (!await file.exists()) {
+      return;
+    }
+    final length = await file.length();
+    if (length > 0) {
+      final sink = file.openWrite(mode: FileMode.write);
+      var remaining = length;
+      final chunk = List<int>.filled(65536, 0);
+      while (remaining > 0) {
+        final writeLength = remaining > chunk.length ? chunk.length : remaining;
+        sink.add(chunk.take(writeLength).toList(growable: false));
+        remaining -= writeLength;
+      }
+      await sink.flush();
+      await sink.close();
+    }
+    await file.delete();
+  } on FileSystemException {
+    return;
+  }
+}
+
+class _VoiceRecorderSheet extends StatefulWidget {
+  const _VoiceRecorderSheet();
+
+  @override
+  State<_VoiceRecorderSheet> createState() => _VoiceRecorderSheetState();
+}
+
+class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
+  final AudioRecorder _recorder = AudioRecorder();
+  Timer? _timer;
+  Duration _elapsed = Duration.zero;
+  String? _recordedPath;
+  String? _errorText;
+  bool _recording = false;
+  bool _busy = false;
+  bool _pathClaimed = false;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    final path = _recordedPath;
+    if (!_pathClaimed && path != null) {
+      unawaited(_wipeAndDeleteFile(path));
+    }
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    if (_busy || _recording) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _errorText = null;
+    });
+    final previousPath = _recordedPath;
+    _recordedPath = null;
+    if (previousPath != null) {
+      unawaited(_wipeAndDeleteFile(previousPath));
+    }
+    final hasPermission = await _recorder.hasPermission();
+    if (!mounted) {
+      return;
+    }
+    if (!hasPermission) {
+      setState(() {
+        _busy = false;
+        _errorText = '未获得麦克风权限';
+      });
+      return;
+    }
+    final directory = await getTemporaryDirectory();
+    if (!mounted) {
+      return;
+    }
+    final path =
+        '${directory.path}/mi_voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    if (!mounted) {
+      return;
+    }
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _elapsed += const Duration(seconds: 1);
+      });
+    });
+    setState(() {
+      _recording = true;
+      _busy = false;
+      _recordedPath = path;
+      _elapsed = Duration.zero;
+    });
+  }
+
+  Future<void> _cancel() async {
+    if (_busy) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _errorText = null;
+    });
+    if (_recording) {
+      try {
+        await _recorder.stop();
+      } on Object {
+        _recording = false;
+      }
+      _timer?.cancel();
+    }
+    final path = _recordedPath;
+    _recordedPath = null;
+    _recording = false;
+    if (path != null) {
+      await _wipeAndDeleteFile(path);
+    }
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  void _send() {
+    final path = _recordedPath;
+    if (path == null) {
+      return;
+    }
+    _pathClaimed = true;
+    Navigator.of(context).pop(path);
+  }
+
+  Future<void> _stop() async {
+    if (_busy || !_recording) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+    });
+    final path = await _recorder.stop();
+    _timer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _recording = false;
+      _busy = false;
+      _recordedPath = path ?? _recordedPath;
+    });
+  }
+
+  String get _elapsedLabel {
+    final minutes = _elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = _elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<String?>(
+      canPop: !_busy && !_recording,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '语音消息',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              Text(_recording ? '正在录音 $_elapsedLabel' : '录制完成后发送语音消息'),
+              if (_errorText != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  _errorText!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Row(
+                children: <Widget>[
+                  FilledButton(
+                    key: const Key('mobile-chat-voice-record-toggle'),
+                    onPressed: _busy ? null : (_recording ? _stop : _start),
+                    child: Text(_recording ? '停止录音' : '开始录音'),
+                  ),
+                  const SizedBox(width: 10),
+                  if (_recordedPath != null && !_recording)
+                    FilledButton.tonal(
+                      key: const Key('mobile-chat-voice-record-send'),
+                      onPressed: _send,
+                      child: const Text('发送语音'),
+                    ),
+                  const Spacer(),
+                  TextButton(
+                    key: const Key('mobile-chat-voice-record-cancel'),
+                    onPressed: _busy ? null : _cancel,
+                    child: const Text('取消'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiPickerSheet extends StatelessWidget {
+  const _EmojiPickerSheet();
+
+  static const List<String> _emojis = <String>[
+    '👍',
+    '👌',
+    '🙏',
+    '😂',
+    '🔥',
+    '✨',
+    '❤️',
+    '🎉',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+        child: Wrap(
+          key: const Key('mobile-chat-emoji-sheet'),
+          spacing: 12,
+          runSpacing: 12,
+          children: <Widget>[
+            for (final emoji in _emojis)
+              ActionChip(
+                label: Text(emoji),
+                onPressed: () => Navigator.of(context).pop(emoji),
+              ),
+          ],
         ),
       ),
     );
@@ -1762,7 +2537,7 @@ class _CompactAttachmentMessageCard extends StatelessWidget {
     final isCupertinoStyle = Theme.of(context).platform == TargetPlatform.iOS;
     final metrics = _AttachmentSyntaxMetrics.of(isCupertinoStyle);
     final resolvedKind = _resolvedAttachmentKind(attachment);
-    final isImageLike = resolvedKind != ChatAttachmentKind.file;
+    final isImageLike = _isVisualAttachmentKind(resolvedKind);
 
     final child = Align(
       alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
@@ -2302,13 +3077,34 @@ ChatAttachmentKind _resolvedAttachmentKind(ChatAttachment attachment) {
   if (_isVideoLikeAttachment(attachment.title)) {
     return ChatAttachmentKind.video;
   }
+  if (_isAudioLikeAttachment(attachment.title)) {
+    return ChatAttachmentKind.audio;
+  }
   return ChatAttachmentKind.file;
+}
+
+bool _isVisualAttachmentKind(ChatAttachmentKind kind) {
+  return kind == ChatAttachmentKind.image || kind == ChatAttachmentKind.video;
 }
 
 bool _isVideoLikeAttachment(String title) {
   const videoExtensions = <String>{'mp4', 'mov', 'm4v', 'webm'};
   final extension = _attachmentExtensionLabel(title).toLowerCase();
   return videoExtensions.contains(extension);
+}
+
+bool _isAudioLikeAttachment(String title) {
+  const audioExtensions = <String>{
+    'm4a',
+    'aac',
+    'mp3',
+    'wav',
+    'ogg',
+    'opus',
+    'amr',
+  };
+  final extension = _attachmentExtensionLabel(title).toLowerCase();
+  return audioExtensions.contains(extension);
 }
 
 String _attachmentExtensionLabel(String title) {

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:mi_e2ee_im_app/bootstrap/app_providers.dart';
 import 'fakes/fake_sdk_client.dart';
@@ -55,6 +56,44 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('风控'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('mobile-contacts-new-friends-row')));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无新的好友申请'), findsOneWidget);
+    expect(
+      find.byKey(const Key('mobile-contacts-new-friends-add')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('contacts top actions submit friend request and create group', (
+    WidgetTester tester,
+  ) async {
+    await _pumpContactsRouter(tester, TargetPlatform.android);
+
+    await tester.tap(find.byKey(const Key('mobile-contacts-quick-add-friend')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('mobile-contacts-add-friend-username')),
+      'charlie',
+    );
+    await tester.enterText(
+      find.byKey(const Key('mobile-contacts-add-friend-remark')),
+      'Charlie',
+    );
+    await tester.tap(
+      find.byKey(const Key('mobile-contacts-add-friend-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('好友请求已发送'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('mobile-contacts-quick-create-group')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chats route'), findsOneWidget);
   });
 }
 
@@ -82,6 +121,56 @@ Future<void> _pumpContactsScreen(
         child: MaterialApp(
           theme: AppTheme.light(),
           home: const Scaffold(body: MobileContactsScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  } finally {
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  }
+}
+
+Future<void> _pumpContactsRouter(
+  WidgetTester tester,
+  TargetPlatform platform,
+) async {
+  final previousPlatform = debugDefaultTargetPlatformOverride;
+  debugDefaultTargetPlatformOverride = platform;
+  try {
+    final fakeClient = FakeSdkClient();
+    await fakeClient.initialize();
+    addTearDown(fakeClient.dispose);
+
+    tester.view.physicalSize = platform == TargetPlatform.iOS
+        ? const Size(393, 852)
+        : const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: <RouteBase>[
+        GoRoute(
+          path: '/',
+          builder: (context, state) =>
+              const Scaffold(body: MobileContactsScreen()),
+        ),
+        GoRoute(
+          path: '/app/chats',
+          builder: (context, state) =>
+              const Scaffold(body: Text('Chats route')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sdkClientProvider.overrideWith((_) => fakeClient)],
+        child: MaterialApp.router(
+          theme: AppTheme.light(),
+          routerConfig: router,
         ),
       ),
     );
