@@ -11,6 +11,7 @@
 #include <QPointer>
 #include <QRect>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -62,6 +63,204 @@ const WindowsUiRuntimeContract& ui_runtime_contract_spec() {
         1360
     };
     return contract;
+}
+
+bool env_flag(const char* name) {
+    const QByteArray value = qgetenv(name).trimmed().toLower();
+    return value == "1" || value == "true" || value == "yes" || value == "on";
+}
+
+QString env_string(const char* name, const QString& fallback = QString()) {
+    const QByteArray value = qgetenv(name);
+    if (value.isEmpty()) {
+        return fallback;
+    }
+    return QString::fromUtf8(value);
+}
+
+int env_int(const char* name, int fallback) {
+    bool ok = false;
+    const int value = env_string(name).toInt(&ok);
+    return ok ? value : fallback;
+}
+
+QSize ci_capture_viewport(const QString& scene) {
+    if (scene == QStringLiteral("login")) {
+        return QSize(840, 620);
+    }
+    return QSize(900, 620);
+}
+
+QString ci_capture_file_name(const QString& scene) {
+    if (scene == QStringLiteral("login")) {
+        return QStringLiteral("login.png");
+    }
+    if (scene == QStringLiteral("chat_detail")) {
+        return QStringLiteral("chat-detail.png");
+    }
+    if (scene == QStringLiteral("calls_home")) {
+        return QStringLiteral("calls-home.png");
+    }
+    if (scene == QStringLiteral("settings_home")) {
+        return QStringLiteral("settings-home.png");
+    }
+    if (scene == QStringLiteral("security_center")) {
+        return QStringLiteral("security-center.png");
+    }
+    if (scene == QStringLiteral("post_login_light")) {
+        return QStringLiteral("post-login-light.png");
+    }
+    return QStringLiteral("post-login.png");
+}
+
+void apply_ci_capture_scene(QQmlApplicationEngine& engine,
+                            const QString& scene,
+                            const QString& locale,
+                            const QString& theme) {
+    QQmlComponent component(&engine);
+    component.setData(R"(
+import QtQuick 2.15
+import "qrc:/mi/e2ee/ui/qml" as Ui
+QtObject {
+    function apply(scene, locale, theme) {
+        if (locale === "zh-CN" || locale === "en-US") {
+            Ui.I18n.setLocaleMode(locale)
+        }
+        if (theme === "dark" || theme === "light") {
+            Ui.Style.themeMode = theme
+        }
+        Ui.AppStore.init()
+        if (scene === "login") {
+            Ui.AppStore.currentPage = 0
+            Ui.AppStore.syncDomainStores()
+            return
+        }
+        var chatId = "ci-runtime-chat"
+        Ui.AppStore.currentPage = 1
+        Ui.AppStore.ensureDialog(chatId, "private", Ui.I18n.t("app.title"), 2, Ui.I18n.t("app.title"))
+        Ui.AppStore.setCurrentChat(chatId)
+        var model = Ui.AppStore.messagesModel(chatId)
+        if (model.count === 0) {
+            Ui.AppStore.appendMessage(chatId, {
+                chatId: chatId,
+                msgId: "ci-runtime-in",
+                kind: "in",
+                contentKind: "text",
+                senderName: Ui.I18n.t("app.title"),
+                text: Ui.I18n.t("status.connected"),
+                protectedTextId: "",
+                timeText: "09:41",
+                timestampMs: Date.now() - 60000,
+                statusTicks: "none",
+                edited: false,
+                fileName: "",
+                fileSize: 0,
+                fileId: "",
+                fileKey: "",
+                fileUrl: "",
+                downloadProgress: 0,
+                imageEnhanced: false,
+                stickerId: "",
+                stickerUrl: "",
+                stickerAnimated: false,
+                previewUrl: "",
+                contactUsername: "",
+                contactDisplay: "",
+                locationLabel: "",
+                locationLat: 0,
+                locationLon: 0,
+                callId: "",
+                callVideo: false,
+                animateEmoji: false
+            }, false)
+            Ui.AppStore.appendMessage(chatId, {
+                chatId: chatId,
+                msgId: "ci-runtime-out",
+                kind: "out",
+                contentKind: "text",
+                senderName: Ui.I18n.t("chat.you"),
+                text: Ui.I18n.t("chat.writeMessage"),
+                protectedTextId: "",
+                timeText: "09:42",
+                timestampMs: Date.now() - 30000,
+                statusTicks: "sent",
+                edited: false,
+                fileName: "",
+                fileSize: 0,
+                fileId: "",
+                fileKey: "",
+                fileUrl: "",
+                downloadProgress: 0,
+                imageEnhanced: false,
+                stickerId: "",
+                stickerUrl: "",
+                stickerAnimated: false,
+                previewUrl: "",
+                contactUsername: "",
+                contactDisplay: "",
+                locationLabel: "",
+                locationLat: 0,
+                locationLon: 0,
+                callId: "",
+                callVideo: false,
+                animateEmoji: false
+            }, false)
+        }
+        if (scene === "calls_home") {
+            Ui.AppStore.setShellSurface("calls")
+        } else if (scene === "settings_home") {
+            Ui.AppStore.setShellSurface("settings")
+        } else if (scene === "security_center") {
+            Ui.AppStore.setShellSurface("security")
+        } else {
+            Ui.AppStore.setShellSurface("chat")
+            if (scene === "chat_detail") {
+                Ui.AppStore.rightPaneVisible = true
+            }
+        }
+        Ui.AppStore.syncDomainStores()
+    }
+}
+)", QUrl(QStringLiteral("qrc:/mi/e2ee/ui/qml/CiRuntimeCapture.qml")));
+    std::unique_ptr<QObject> helper(component.create());
+    if (!helper) {
+        const auto errors = component.errors();
+        for (const auto& error : errors) {
+            qWarning() << error;
+        }
+        return;
+    }
+    QMetaObject::invokeMethod(helper.get(), "apply",
+                              Q_ARG(QVariant, QVariant(scene)),
+                              Q_ARG(QVariant, QVariant(locale)),
+                              Q_ARG(QVariant, QVariant(theme)));
+}
+
+void schedule_ci_capture(QQuickWindow* window, const QString& scene) {
+    if (!window) {
+        return;
+    }
+    const QString capture_dir = env_string("MI_E2EE_CI_UI_CAPTURE_DIR");
+    if (capture_dir.isEmpty()) {
+        QTimer::singleShot(0, [] { QCoreApplication::exit(2); });
+        return;
+    }
+    QDir().mkpath(capture_dir);
+    const QString capture_path = QDir(capture_dir).filePath(ci_capture_file_name(scene));
+    const QSize viewport = ci_capture_viewport(scene);
+    window->setMinimumSize(viewport);
+    window->setMaximumSize(viewport);
+    window->resize(viewport);
+    window->show();
+    const int delay_ms = std::max(500, env_int("MI_E2EE_CI_UI_CAPTURE_MS", 1600));
+    QTimer::singleShot(delay_ms, window, [window, capture_path] {
+        const QImage image = window->grabWindow();
+        if (image.isNull() || !image.save(capture_path)) {
+            QCoreApplication::exit(3);
+            return;
+        }
+        QCoreApplication::exit(0);
+    });
 }
 
 class AuthWindowDragFilter : public QObject {
@@ -379,6 +578,16 @@ int main(int argc, char* argv[]) {
     }
     QObject* rootObject = engine.rootObjects().first();
     auto* window = qobject_cast<QQuickWindow*>(rootObject);
+    if (env_flag("MI_E2EE_CI_UI_CAPTURE")) {
+        const QString scene = env_string("MI_E2EE_CI_UI_CAPTURE_SCENE",
+                                         QStringLiteral("post_login"));
+        const QString locale = env_string("MI_E2EE_CI_UI_CAPTURE_LOCALE",
+                                          QStringLiteral("zh-CN"));
+        const QString theme = env_string("MI_E2EE_CI_UI_CAPTURE_THEME",
+                                         QStringLiteral("light"));
+        apply_ci_capture_scene(engine, scene, locale, theme);
+        schedule_ci_capture(window, scene);
+    }
     if (window) {
         window->installEventFilter(new AuthWindowDragFilter(window));
         window->installEventFilter(new WindowRoundFilter(window));
