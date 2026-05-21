@@ -52,15 +52,15 @@ jobs:
         continue-on-error: true
         run: |
           capture_user="capture_$(python3 - <<'PY'
-import secrets
-print(secrets.token_hex(8))
-PY
-)"
+          import secrets
+          print(secrets.token_hex(8))
+          PY
+          )"
           capture_pass="$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(24))
-PY
-)"
+          import secrets
+          print(secrets.token_urlsafe(24))
+          PY
+          )"
           echo "::add-mask::$capture_user"
           echo "::add-mask::$capture_pass"
           flutter test \
