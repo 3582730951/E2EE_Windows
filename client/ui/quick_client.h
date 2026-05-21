@@ -161,8 +161,6 @@ class QuickClient : public QObject {
   Q_INVOKABLE QString serverInfo() const;
   Q_INVOKABLE QString version() const;
   Q_INVOKABLE QUrl defaultDownloadFileUrl(const QString& fileName) const;
-  Q_INVOKABLE QString systemClipboardText() const;
-  Q_INVOKABLE qint64 systemClipboardTimestamp() const;
   Q_INVOKABLE bool imeAvailable();
   Q_INVOKABLE bool imeRimeAvailable();
   Q_INVOKABLE QVariantList imeCandidates(const QString& input, int maxCandidates);
@@ -379,8 +377,6 @@ class QuickClient : public QObject {
   QString last_remote_error_;
   QString last_pending_server_fingerprint_;
   QString last_pending_peer_fingerprint_;
-  QString last_system_clipboard_text_;
-  qint64 last_system_clipboard_ms_{0};
   QString qr_login_payload_;
   bool qr_login_active_{false};
   QHash<int, QString> qr_login_image_cache_;

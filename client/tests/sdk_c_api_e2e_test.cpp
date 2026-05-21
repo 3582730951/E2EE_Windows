@@ -11,6 +11,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -289,9 +290,21 @@ constexpr std::uint32_t kFileTimeoutMs = 15000;
 constexpr std::uint32_t kMediaTimeoutMs = 10000;
 constexpr std::uint32_t kDeviceTimeoutMs = 10000;
 constexpr std::uint32_t kPostLoginDelayMs = 300;
-constexpr char kTestMetadataKeyHex[] =
-    "00112233445566778899aabbccddeeff"
-    "fedcba98765432100123456789abcdef";
+
+std::string GenerateTestMetadataKeyHex() {
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::random_device rd;
+  std::mt19937 rng(rd());
+  std::uniform_int_distribution<int> dist(0, 255);
+  std::string out;
+  out.reserve(64);
+  for (int i = 0; i < 32; ++i) {
+    const int value = dist(rng);
+    out.push_back(kHex[(value >> 4) & 0x0F]);
+    out.push_back(kHex[value & 0x0F]);
+  }
+  return out;
+}
 
 struct FileEventSnapshot {
   std::string sender;
@@ -502,7 +515,7 @@ std::string WriteServerConfig(const std::filesystem::path& dir,
   out << "tls_enable=0\n";
   out << "require_tls=0\n";
   out << "key_protection=none\n";
-  out << "metadata_key_hex=" << kTestMetadataKeyHex << "\n";
+  out << "metadata_key_hex=" << GenerateTestMetadataKeyHex() << "\n";
   out << "kt_signing_key=" << (dir / "kt_signing_key.bin").string() << "\n";
   out << "allow_legacy_login=0\n";
   out << "max_io_threads=1\n";

@@ -29,8 +29,8 @@ private slots:
 private:
     void applyStyle();
     void setLoginBusy(bool busy);
-    bool handlePendingServerTrust(const QString &account, const QString &password);
-    bool handlePendingServerTrustForRegister(const QString &account, const QString &password);
+    bool handlePendingServerTrust();
+    bool handlePendingServerTrustForRegister();
     void stopQrPolling();
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -39,9 +39,6 @@ private:
     BackendAdapter *backend_{nullptr};
     bool loginBusy_{false};
     bool qrActive_{false};
-    QString pendingAccount_;
-    QString pendingPassword_;
-    QString pendingRootCode_;
     QPoint dragPos_;
     QTimer *qrPollTimer_{nullptr};
 };

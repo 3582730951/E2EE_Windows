@@ -12,8 +12,21 @@ import 'package:mi_e2ee_im_app/native_sdk/sdk_client.dart';
 
 import 'test_capabilities.dart';
 
-const _kCaptureUsername = 'alice';
-const _kCapturePassword = 'hunter2';
+String _captureUsername() {
+  const configured = String.fromEnvironment('MI_E2EE_CAPTURE_USERNAME');
+  if (configured.isNotEmpty) {
+    return configured;
+  }
+  return 'capture_${DateTime.now().microsecondsSinceEpoch}';
+}
+
+String _capturePassword() {
+  const configured = String.fromEnvironment('MI_E2EE_CAPTURE_PASSWORD');
+  if (configured.isNotEmpty) {
+    return configured;
+  }
+  return 'capture_${DateTime.now().microsecondsSinceEpoch}_local';
+}
 
 enum UiCaptureVariant { standard, enhanced }
 
@@ -181,8 +194,8 @@ Future<void> _signIn(WidgetTester tester) async {
   );
   expect(fields, findsAtLeastNWidgets(2));
 
-  await tester.enterText(fields.first, _kCaptureUsername);
-  await tester.enterText(fields.at(1), _kCapturePassword);
+  await tester.enterText(fields.first, _captureUsername());
+  await tester.enterText(fields.at(1), _capturePassword());
   await tester.ensureVisible(continueButton);
   await tester.tap(continueButton);
   await tester.pumpAndSettle();

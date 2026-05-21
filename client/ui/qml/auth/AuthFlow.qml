@@ -8,14 +8,8 @@ Item {
     id: root
 
     property string accountInput: ""
-    property string passwordInput: ""
-    property string rootCodeInput: ""
-    property string registerAccount: ""
-    property string registerPassword: ""
-    property string registerConfirm: ""
     property int qrSeconds: 30
     property string errorText: ""
-    property string lastLoginAccount: ""
     property bool waitingServerTrust: false
     property bool qrActive: false
     property bool advancedExpanded: false
@@ -61,8 +55,6 @@ Item {
     }
 
     function clear_login_secrets() {
-        passwordInput = ""
-        rootCodeInput = ""
         if (passwordField) {
             passwordField.text = ""
         }
@@ -72,8 +64,6 @@ Item {
     }
 
     function clear_register_secrets() {
-        registerPassword = ""
-        registerConfirm = ""
         if (registerPasswordField) {
             registerPasswordField.text = ""
         }
@@ -86,9 +76,7 @@ Item {
         if (!Ui.AuthDisplayStore.login(user, pass, rootCode)) {
             waitingServerTrust = Ui.AuthDisplayStore.waitingServerTrust
             errorText = Ui.AuthDisplayStore.errorText
-            if (!waitingServerTrust) {
-                clear_login_secrets()
-            }
+            clear_login_secrets()
             if (waitingServerTrust && !fromTrust && errorText.length === 0) {
                 errorText = Ui.I18n.t("auth.error.login")
             }
@@ -476,17 +464,15 @@ Item {
                                                   ? Ui.Style.authFieldFocus
                                                   : Ui.Style.authFieldBorder
                                 }
-                                onTextChanged: passwordInput = text
                             }
 
                             Components.RootAuthCodeCard {
                                 id: rootCodeFieldCard
                                 Layout.fillWidth: true
-                                visible: advancedExpanded || rootCodeInput.length > 0
+                                visible: advancedExpanded || text.length > 0
                                 labelText: Ui.I18n.t("auth.placeholder.rootCode")
                                 placeholderText: Ui.I18n.t("auth.placeholder.rootCode")
                                 descriptionText: ""
-                                onTextChanged: rootCodeInput = text
                             }
 
                             Components.PrimaryButton {
@@ -495,15 +481,14 @@ Item {
                                 Layout.preferredHeight: Ui.Style.authPrimaryButtonHeight
                                 text: Ui.I18n.t("auth.login")
                                 Accessible.name: Ui.I18n.t("auth.login")
-                                enabled: accountInput.length > 0 && passwordInput.length > 0
+                                enabled: accountInput.length > 0 && passwordField.text.length > 0
                                 onClicked: {
-                                    if (accountInput.length === 0 || passwordInput.length === 0) {
+                                    if (accountInput.length === 0 || passwordField.text.length === 0) {
                                         errorText = Ui.I18n.t("auth.error.login")
                                         return
                                     }
                                     errorText = ""
-                                    lastLoginAccount = accountInput
-                                    attemptLogin(accountInput, passwordInput, rootCodeInput, false)
+                                    attemptLogin(accountInput, passwordField.text, rootCodeFieldCard.text, false)
                                 }
                             }
 
@@ -602,6 +587,7 @@ Item {
             }
 
             Components.SecureTextField {
+                id: registerAccountField
                 Layout.fillWidth: true
                 Layout.preferredHeight: Ui.Style.authFieldHeight
                 placeholderText: Ui.I18n.t("auth.register.placeholder.account")
@@ -615,7 +601,6 @@ Item {
                     border.width: 1
                     border.color: Ui.Style.authFieldBorder
                 }
-                onTextChanged: registerAccount = text
             }
 
             Components.SecureTextField {
@@ -634,7 +619,6 @@ Item {
                     border.width: 1
                     border.color: Ui.Style.authFieldBorder
                 }
-                onTextChanged: registerPassword = text
             }
 
             Components.SecureTextField {
@@ -653,7 +637,6 @@ Item {
                     border.width: 1
                     border.color: Ui.Style.authFieldBorder
                 }
-                onTextChanged: registerConfirm = text
             }
 
             Button {
@@ -676,18 +659,21 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                 }
                 onClicked: {
-                    if (registerAccount.length === 0 || registerPassword.length === 0 || registerConfirm.length === 0) {
+                    var account = registerAccountField.text.trim()
+                    var password = registerPasswordField.text
+                    var confirm = registerConfirmField.text
+                    if (account.length === 0 || password.length === 0 || confirm.length === 0) {
                         errorText = Ui.I18n.t("auth.error.registerIncomplete")
                         clear_register_secrets()
                         return
                     }
-                    if (registerPassword !== registerConfirm) {
+                    if (password !== confirm) {
                         errorText = Ui.I18n.t("auth.error.passwordMismatch")
                         clear_register_secrets()
                         return
                     }
                     errorText = ""
-                    if (!Ui.AuthDisplayStore.registerAccount(registerAccount, registerPassword)) {
+                    if (!Ui.AuthDisplayStore.registerAccount(account, password)) {
                         errorText = Ui.AuthDisplayStore.errorText.length > 0
                             ? Ui.AuthDisplayStore.errorText
                             : Ui.I18n.t("auth.error.registerIncomplete")
@@ -834,8 +820,7 @@ Item {
         target: Ui.AuthDisplayStore
         function onWaitingServerTrustChanged() {
             if (waitingServerTrust && !Ui.AuthDisplayStore.waitingServerTrust) {
-                var retryAccount = lastLoginAccount.length > 0 ? lastLoginAccount : accountInput
-                attemptLogin(retryAccount, passwordInput, rootCodeInput, true)
+                waitingServerTrust = false
             }
         }
         function onErrorTextChanged() {

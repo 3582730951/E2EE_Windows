@@ -2,38 +2,6 @@ import Foundation
 import SwiftUI
 import UIKit
 
-private enum ScreenshotScenario: String {
-    case none
-    case login
-    case chats
-    case detail
-    case calls
-    case settings
-    case security
-
-    static var current: ScreenshotScenario {
-        let raw = ProcessInfo.processInfo.environment["MI_E2EE_IOS_SCREENSHOT_MODE"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-        switch raw {
-        case "login", "auth_login":
-            return .login
-        case "chats", "chat_list":
-            return .chats
-        case "detail", "chat_detail":
-            return .detail
-        case "calls", "calls_home":
-            return .calls
-        case "settings", "settings_home":
-            return .settings
-        case "security", "security_center":
-            return .security
-        default:
-            return ScreenshotScenario(rawValue: raw) ?? .none
-        }
-    }
-}
-
 struct ClientConversation: Identifiable, Hashable {
     let id: String
     let title: String
@@ -52,11 +20,14 @@ struct ClientMessage: Identifiable, Hashable {
 
 private enum ClientBootstrapError: LocalizedError {
     case appSupportUnavailable
+    case endpointMissing
 
     var errorDescription: String? {
         switch self {
         case .appSupportUnavailable:
             return "Application Support directory unavailable."
+        case .endpointMissing:
+            return "Server host and port are required."
         }
     }
 }
@@ -106,10 +77,13 @@ private enum ClientConfigBootstrap {
 
         let normalizedHost = serverHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPort = serverPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedHost.isEmpty, !normalizedPort.isEmpty else {
+            throw ClientBootstrapError.endpointMissing
+        }
         let config = """
         [client]
-        server_ip=\(normalizedHost.isEmpty ? "127.0.0.1" : normalizedHost)
-        server_port=\(normalizedPort.isEmpty ? "9000" : normalizedPort)
+        server_ip=\(normalizedHost)
+        server_port=\(normalizedPort)
         use_tls=\(useTLS ? 1 : 0)
         trust_store=\(trustStore.path)
 
@@ -177,8 +151,8 @@ func dictionaryArray(_ value: Any?) -> [[String: Any]] {
 
 @MainActor
 final class ClientWorkspaceStore: ObservableObject {
-    @Published var serverHost: String = "127.0.0.1"
-    @Published var serverPort: String = "9000"
+    @Published var serverHost: String = ""
+    @Published var serverPort: String = ""
     @Published var useTLS: Bool = true
     @Published var username: String = ""
     @Published var password: String = ""
@@ -199,11 +173,7 @@ final class ClientWorkspaceStore: ObservableObject {
     private let bridge = MIClientBridge()
     private var pollTimer: Timer?
 
-    fileprivate init(screenshotScenario: ScreenshotScenario = .none) {
-        if screenshotScenario != .none {
-            loadScreenshotFixture(for: screenshotScenario)
-            return
-        }
+    fileprivate init() {
         configureClient(resetSelection: true)
     }
 
@@ -563,187 +533,6 @@ final class ClientWorkspaceStore: ObservableObject {
         return messageType.isEmpty ? "Event received" : "Event \(messageType)"
     }
 
-    private func loadScreenshotFixture(for scenario: ScreenshotScenario) {
-        isReady = true
-        isLoggedIn = scenario != .login
-        remoteOK = scenario != .login
-        deviceDisplayID = "iPhone 15 Pro"
-        serverHost = "secure-gateway.internal"
-        serverPort = "9000"
-        username = "aster"
-        draft = scenario == .login
-            ? ""
-            : "Meeting notes are encrypted and ready to send."
-        statusText = scenario == .login
-            ? "Reconnect to continue the secure session."
-            : "Screenshot fixture loaded."
-        lastError = scenario == .login ? "Session expired. Sign in again." : ""
-        configPath = "screenshot://fixture"
-        let now = UInt64(Date().timeIntervalSince1970 * 1000)
-        let fixtureConversations = [
-            ClientConversation(
-                id: "c-aster",
-                title: "Aster Stone",
-                subtitle: "Shared a release storyboard",
-                isGroup: false
-            ),
-            ClientConversation(
-                id: "g-threat",
-                title: "Threat Guild",
-                subtitle: "[File] Rotation report for 12 members",
-                isGroup: true
-            ),
-            ClientConversation(
-                id: "c-mira",
-                title: "Mira Chen",
-                subtitle: "[Photo] Uploaded the encrypted album",
-                isGroup: false
-            ),
-            ClientConversation(
-                id: "c-ops",
-                title: "Ops Sync",
-                subtitle: "https://secure-gateway.internal/ops/queue",
-                isGroup: false
-            ),
-            ClientConversation(
-                id: "c-rhea",
-                title: "Rhea North",
-                subtitle: "[Voice] Typing indicator verified",
-                isGroup: false
-            ),
-            ClientConversation(
-                id: "g-platform",
-                title: "Platform",
-                subtitle: "[File] API33 smoke gate report",
-                isGroup: true
-            )
-        ]
-        conversations = fixtureConversations
-        messagesByConversation = [
-            "c-aster": [
-                ClientMessage(
-                    id: "m1",
-                    conversationID: "c-aster",
-                    sender: "Aster Stone",
-                    text: "[File] secure-handoff-build-notes.pdf",
-                    outgoing: false,
-                    timestampMS: now - 600_000
-                ),
-                ClientMessage(
-                    id: "m2",
-                    conversationID: "c-aster",
-                    sender: "You",
-                    text: "Send me the final screenshot bundle after CI passes.",
-                    outgoing: true,
-                    timestampMS: now - 420_000
-                ),
-                ClientMessage(
-                    id: "m2b",
-                    conversationID: "c-aster",
-                    sender: "You",
-                    text: "https://secure-gateway.internal/releases/ui-shell-review",
-                    outgoing: true,
-                    timestampMS: now - 360_000
-                ),
-                ClientMessage(
-                    id: "m2c",
-                    conversationID: "c-aster",
-                    sender: "Aster Stone",
-                    text: "[Photo] The updated chat list is denser and the settings shell no longer carries auth UI.",
-                    outgoing: false,
-                    timestampMS: now - 300_000
-                ),
-                ClientMessage(
-                    id: "m3",
-                    conversationID: "c-aster",
-                    sender: "Aster Stone",
-                    text: "Accepted. I will keep the screenshots attached to the release.",
-                    outgoing: false,
-                    timestampMS: now - 180_000
-                ),
-                ClientMessage(
-                    id: "m4",
-                    conversationID: "c-aster",
-                    sender: "Aster Stone",
-                    text: "I also tightened the settings hierarchy so Security Center sits under the main product shell.",
-                    outgoing: false,
-                    timestampMS: now - 120_000
-                ),
-                ClientMessage(
-                    id: "m5",
-                    conversationID: "c-aster",
-                    sender: "You",
-                    text: "Good. Keep the composer compact and the transport status quiet by default.",
-                    outgoing: true,
-                    timestampMS: now - 90_000
-                ),
-                ClientMessage(
-                    id: "m6",
-                    conversationID: "c-aster",
-                    sender: "Aster Stone",
-                    text: "Acknowledged. The release screenshots now separate chat, settings, and security clearly.",
-                    outgoing: false,
-                    timestampMS: now - 45_000
-                )
-            ],
-            "c-ops": [
-                ClientMessage(
-                    id: "o1",
-                    conversationID: "c-ops",
-                    sender: "Ops Sync",
-                    text: "https://secure-gateway.internal/ops/release-package",
-                    outgoing: false,
-                    timestampMS: now - 300_000
-                )
-            ],
-            "c-rhea": [
-                ClientMessage(
-                    id: "r1",
-                    conversationID: "c-rhea",
-                    sender: "Rhea North",
-                    text: "[Voice] Screenshot pass is green on Android.",
-                    outgoing: false,
-                    timestampMS: now - 240_000
-                )
-            ],
-            "g-platform": [
-                ClientMessage(
-                    id: "p1",
-                    conversationID: "g-platform",
-                    sender: "Platform",
-                    text: "[File] Smoke gate passed on API33 with the new fixture set.",
-                    outgoing: false,
-                    timestampMS: now - 120_000
-                )
-            ],
-            "g-threat": [
-                ClientMessage(
-                    id: "g1",
-                    conversationID: "g-threat",
-                    sender: "System",
-                    text: "[File] Sender key rotation completed successfully.",
-                    outgoing: false,
-                    timestampMS: now - 1_200_000
-                )
-            ],
-            "c-mira": [
-                ClientMessage(
-                    id: "m4",
-                    conversationID: "c-mira",
-                    sender: "Mira Chen",
-                    text: "[Photo] Uploaded the encrypted album and device summary.",
-                    outgoing: false,
-                    timestampMS: now - 900_000
-                )
-            ]
-        ]
-        deviceSummaries = [
-            "iPhone 15 Pro · Current · Secure session active",
-            "Windows Workstation · Linked · Last seen 2m ago",
-            "MacBook Air · Linked · Review complete"
-        ]
-        selectedConversationID = "c-aster"
-    }
 }
 
 private enum AppTab: Hashable {
@@ -759,7 +548,6 @@ private enum AppShellRoute: Hashable {
 }
 
 struct AppShell: View {
-    private let screenshotScenario: ScreenshotScenario
     @StateObject private var rootAuthStore = RootAuthStore()
     @StateObject private var clientStore: ClientWorkspaceStore
     @State private var selectedTab: AppTab
@@ -767,25 +555,7 @@ struct AppShell: View {
     @State private var settingsPath: [AppShellRoute]
 
     private var presentsAuthShell: Bool {
-        switch screenshotScenario {
-        case .none:
-            return !clientStore.isLoggedIn
-        case .login:
-            return true
-        case .chats, .detail, .calls, .settings, .security:
-            return false
-        }
-    }
-
-    private static func initialTab(for scenario: ScreenshotScenario) -> AppTab {
-        switch scenario {
-        case .calls:
-            return .calls
-        case .settings, .security:
-            return .settings
-        case .none, .login, .chats, .detail:
-            return .chats
-        }
+        !clientStore.isLoggedIn
     }
 
     private var shellBackground: some View {
@@ -798,12 +568,10 @@ struct AppShell: View {
     }
 
     init() {
-        let scenario = ScreenshotScenario.current
-        screenshotScenario = scenario
-        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore(screenshotScenario: scenario))
-        _selectedTab = State(initialValue: Self.initialTab(for: scenario))
-        _chatsPath = State(initialValue: scenario == .detail ? [.detail] : [])
-        _settingsPath = State(initialValue: scenario == .security ? [.security] : [])
+        _clientStore = StateObject(wrappedValue: ClientWorkspaceStore())
+        _selectedTab = State(initialValue: .chats)
+        _chatsPath = State(initialValue: [])
+        _settingsPath = State(initialValue: [])
         Self.configureTabBarAppearance()
         Self.configureNavigationBarAppearance()
     }
@@ -820,21 +588,6 @@ struct AppShell: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(shellBackground)
-            } else if screenshotScenario == .detail {
-                NavigationStack {
-                    if let conversation = clientStore.primaryConversation {
-                        ClientConversationDetailView(
-                            store: clientStore,
-                            conversation: conversation,
-                            sourceTitle: "Chats"
-                        )
-                    } else {
-                        ClientWorkspaceView(store: clientStore)
-                    }
-                }
-                .toolbar(.hidden, for: .tabBar)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(shellBackground)
             } else {
                 TabView(selection: $selectedTab) {
                     NavigationStack(path: $chatsPath) {
@@ -847,11 +600,6 @@ struct AppShell: View {
                                     }
                                 case .security:
                                     EmptyView()
-                                }
-                            }
-                            .onAppear {
-                                if screenshotScenario == .detail && chatsPath.isEmpty {
-                                    chatsPath = [.detail]
                                 }
                             }
                     }
@@ -891,11 +639,6 @@ struct AppShell: View {
                                     SecurityCenterView(clientStore: clientStore, rootAuthStore: rootAuthStore)
                                 case .detail:
                                     EmptyView()
-                                }
-                            }
-                            .onAppear {
-                                if screenshotScenario == .security && settingsPath.isEmpty {
-                                    settingsPath = [.security]
                                 }
                             }
                     }

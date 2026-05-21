@@ -36,7 +36,7 @@ dist_root=""
 openssl_bin=""
 client_build=""
 server_build=""
-server_mode="demo"
+server_mode="mysql"
 mysql_username=""
 mysql_password=""
 client_server_host="${MI_E2EE_PACKAGE_CLIENT_SERVER_HOST:-}"
@@ -271,13 +271,6 @@ if [[ -z "$server_bin" ]]; then
 fi
 cp "$server_bin" "$server_root/mi_e2ee_server"
 
-demo_users="$(find "$server_build" -type f -name "test_user.txt" | head -n 1 || true)"
-if [[ -n "$demo_users" ]]; then
-  cp "$demo_users" "$server_root/"
-else
-  printf "u:p\n" > "$server_root/test_user.txt"
-fi
-
 for tool in mi_e2ee_kt_keygen mi_e2ee_kt_pubinfo mi_e2ee_business_stress; do
   tool_path="$(find "$server_build" -type f -name "$tool" -perm -111 | head -n 1 || true)"
   if [[ -n "$tool_path" ]]; then
@@ -308,9 +301,17 @@ mkdir -p "$keys_dir"
 "$kt_keygen" --out-dir "$keys_dir" --force
 
 cert_dir="$server_root/config"
+cert_san="DNS:localhost"
+if [[ -n "$client_server_host" && "$client_server_host" != "localhost" ]]; then
+  if [[ "$client_server_host" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    cert_san="DNS:localhost,IP:$client_server_host"
+  else
+    cert_san="DNS:localhost,DNS:$client_server_host"
+  fi
+fi
 "$openssl_bin" req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
   -subj "/CN=MI_E2EE_Server" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -addext "subjectAltName=$cert_san" \
   -keyout "$cert_dir/mi_e2ee_server.key" \
   -out "$cert_dir/mi_e2ee_server.crt"
 cat "$cert_dir/mi_e2ee_server.key" "$cert_dir/mi_e2ee_server.crt" > "$cert_dir/mi_e2ee_server.pem"

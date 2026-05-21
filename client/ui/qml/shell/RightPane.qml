@@ -242,6 +242,37 @@ Item {
             width: Math.min(root.width - compactPadding * 2, root.contentMaxWidth)
             spacing: root.compactMode ? Ui.Style.paddingS : 14
 
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Ui.Style.paddingS
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.summaryEyebrow
+                    color: Ui.Style.sidebarSectionText
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    renderType: Text.NativeRendering
+                    antialiasing: true
+                }
+
+                Components.IconButton {
+                    id: closeDetailButton
+                    accessibleName: Ui.I18n.usesCjkLocale ? "关闭详情" : "Close details"
+                    icon.source: "qrc:/mi/e2ee/ui/icons/close.svg"
+                    buttonSize: 34
+                    iconSize: 14
+                    bgColor: Ui.Style.sidebarNavBg
+                    hoverBg: Ui.Style.hoverBg
+                    pressedBg: Ui.Style.pressedBg
+                    onClicked: Ui.ChatDisplayStore.closeRightPane()
+                    ToolTip.visible: hovered
+                    ToolTip.text: accessibleName
+                }
+            }
+
             Rectangle {
                 id: summaryCard
                 Layout.fillWidth: true

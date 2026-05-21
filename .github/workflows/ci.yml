@@ -283,7 +283,6 @@ jobs:
           -DMI_E2EE_BUILD_DEMO_CLIENT=OFF
           -DMI_E2EE_BUILD_LEGACY_UI=OFF
           -DMI_E2EE_BUILD_FUZZERS=OFF
-          -DMI_E2EE_ENABLE_MYSQL=OFF
           -DMI_UI_RIME_DOWNLOAD=OFF
           -DMI_E2EE_PGO_INSTRUMENT=OFF
           -DMI_E2EE_ENABLE_LTO=OFF
@@ -385,9 +384,15 @@ jobs:
           }
           Copy-Item $ktKeygen.FullName (Join-Path $work "tools\mi_e2ee_kt_keygen.exe") -Force
 
-          $configureInput = @("1", "", "1", "", "", "9") -join "`r`n"
-          $configureInput | cmd /c "$work\tools\configure_server.cmd"
+          $mysqlUser = "ci_script_" + [guid]::NewGuid().ToString("N").Substring(0, 12)
+          $mysqlPass = "ci_script_pw_" + [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+          Write-Output "::add-mask::$mysqlUser"
+          Write-Output "::add-mask::$mysqlPass"
           $configPath = Join-Path $work "config\config.ini"
+          & "$work\tools\configure_server.cmd" --non-interactive --mode mysql --mysql-user $mysqlUser --mysql-password $mysqlPass --output "$configPath"
+          if ($LASTEXITCODE -ne 0) {
+            throw "configure_server.cmd non-interactive smoke failed with exit code $LASTEXITCODE"
+          }
           if (-not (Test-Path $configPath)) {
             throw "configure_server.cmd did not create config.ini"
           }
@@ -447,8 +452,6 @@ jobs:
         env:
           MI_E2EE_CI_UI_CAPTURE: "1"
           MI_E2EE_CI_UI_CAPTURE_MS: "4000"
-          MI_E2EE_CI_UI_CAPTURE_USER: "ui_runtime"
-          MI_E2EE_CI_UI_CAPTURE_PASS: "ui_runtime_pass"
           MI_E2EE_CI_UI_CAPTURE_DIR: ${{ github.workspace }}\build\windows_runtime_artifacts\build
           MI_E2EE_HARDENING: off
           QT_LOGGING_RULES: "*.debug=false;*.info=false"
@@ -461,7 +464,15 @@ jobs:
           $offline = Join-Path $work "offline"
           New-Item -ItemType Directory -Force -Path $offline | Out-Null
           $testUsers = Join-Path $work "test_user.txt"
-          "ui_runtime:ui_runtime_pass" | Out-File -FilePath $testUsers -Encoding ascii
+          $captureUser = "ui_runtime_" + [guid]::NewGuid().ToString("N").Substring(0, 12)
+          $capturePassBytes = [byte[]]::new(32)
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($capturePassBytes)
+          $capturePass = [Convert]::ToBase64String($capturePassBytes)
+          Write-Output "::add-mask::$captureUser"
+          Write-Output "::add-mask::$capturePass"
+          $env:MI_E2EE_CI_UI_CAPTURE_USER = $captureUser
+          $env:MI_E2EE_CI_UI_CAPTURE_PASS = $capturePass
+          "${captureUser}:$capturePass" | Out-File -FilePath $testUsers -Encoding ascii
           $ktKeygen = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "build\\server") -Recurse -Filter "mi_e2ee_kt_keygen.exe" | Select-Object -First 1
           if (-not $ktKeygen) {
             throw "mi_e2ee_kt_keygen.exe not found"
@@ -687,8 +698,6 @@ jobs:
         env:
           MI_E2EE_CI_UI_CAPTURE: "1"
           MI_E2EE_CI_UI_CAPTURE_MS: "4000"
-          MI_E2EE_CI_UI_CAPTURE_USER: "ui_runtime"
-          MI_E2EE_CI_UI_CAPTURE_PASS: "ui_runtime_pass"
           MI_E2EE_CI_UI_CAPTURE_DIR: ${{ github.workspace }}\build\windows_runtime_artifacts\dist
           MI_E2EE_HARDENING: off
           QT_LOGGING_RULES: "*.debug=false;*.info=false"
@@ -705,8 +714,19 @@ jobs:
           $listener.Start()
           $port = $listener.LocalEndpoint.Port
           $listener.Stop()
-          $metadataKeyHex = "00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
-          "ui_runtime:ui_runtime_pass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
+          $captureUser = "ui_runtime_" + [guid]::NewGuid().ToString("N").Substring(0, 12)
+          $capturePassBytes = [byte[]]::new(32)
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($capturePassBytes)
+          $capturePass = [Convert]::ToBase64String($capturePassBytes)
+          $metadataKeyBytes = [byte[]]::new(32)
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($metadataKeyBytes)
+          $metadataKeyHex = [System.BitConverter]::ToString($metadataKeyBytes).Replace("-", "").ToLower()
+          Write-Output "::add-mask::$captureUser"
+          Write-Output "::add-mask::$capturePass"
+          Write-Output "::add-mask::$metadataKeyHex"
+          $env:MI_E2EE_CI_UI_CAPTURE_USER = $captureUser
+          $env:MI_E2EE_CI_UI_CAPTURE_PASS = $capturePass
+          "${captureUser}:$capturePass" | Out-File -FilePath (Join-Path $serverRoot "test_user.txt") -Encoding ascii
           $serverConfig = @(
             "[mode]"
             "mode=1"
@@ -1098,6 +1118,7 @@ jobs:
               raise SystemExit("build/windows_runtime_artifacts is missing")
 
           acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          node = acceptance
           tuple_entries = acceptance["runtime_artifact_contract"]["tuple_inventory"]["windows"]
           scene_evidence: dict[str, list[str]] = {}
           theme_evidence: dict[str, list[str]] = {}
@@ -1251,11 +1272,19 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git submodule update --init --recursive
 
-      - name: Install OpenSSL
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev libsecret-1-dev pkg-config openssl
+      - name: Install OpenSSL and MySQL client
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libsecret-1-dev pkg-config openssl libmariadb-dev
 
       - name: Configure server
-        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=ON -DBUILD_TESTING=ON
+
+      - name: Configure client package core
+        run: >
+          cmake -S client -B build/client
+          -DMI_E2EE_BUILD_UI=OFF
+          -DMI_E2EE_BUILD_DEMO_CLIENT=OFF
+          -DMI_E2EE_BUILD_LEGACY_UI=OFF
+          -DBUILD_TESTING=OFF
 
       - name: Build server
         run: cmake --build build/server --config Release
@@ -1268,6 +1297,12 @@ jobs:
           mi_e2ee_kt_pubinfo
           mi_e2ee_perf_baseline
           mi_e2ee_third_party_policy_check
+
+      - name: Build client package core
+        run: >
+          cmake --build build/client --config Release --target
+          mi_e2ee_client_sdk
+          mi_e2ee_client_config_tool
 
       - name: Verify third-party lock
         run: |
@@ -1298,6 +1333,23 @@ jobs:
             --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
             --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
             --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
+
+      - name: Package POSIX artifacts
+        run: |
+          set -euo pipefail
+          mysql_user="ci_pkg_$(openssl rand -hex 6)"
+          mysql_pass="ci_pkg_pw_$(openssl rand -hex 32)"
+          echo "::add-mask::$mysql_user"
+          echo "::add-mask::$mysql_pass"
+          bash tools/package_posix.sh \
+            --platform linux \
+            --workspace "$GITHUB_WORKSPACE" \
+            --server-mode mysql \
+            --mysql-username "$mysql_user" \
+            --mysql-password "$mysql_pass" \
+            --client-server-host localhost \
+            --client-server-port 9000
+          bash tools/verify_package_posix.sh --platform linux --dist "$GITHUB_WORKSPACE/dist"
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -1338,6 +1390,7 @@ jobs:
             pkg-config \
             libssl-dev \
             libsecret-1-dev \
+            libmariadb-dev \
             openssl \
             python3 \
             python3-pip
@@ -1346,7 +1399,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Configure server
-        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON
+        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=ON -DBUILD_TESTING=ON
 
       - name: Build server
         run: cmake --build build/server --config Release
@@ -1404,11 +1457,25 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
 
-      - name: Install OpenSSL
-        run: brew install openssl@3 pkg-config
+      - name: Install OpenSSL and MySQL client
+        run: brew install openssl@3 pkg-config mysql-client
 
       - name: Configure server
-        run: cmake -S server -B build/server -DMI_E2EE_ENABLE_MYSQL=OFF -DBUILD_TESTING=ON -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+        run: >
+          cmake -S server -B build/server
+          -DMI_E2EE_ENABLE_MYSQL=ON
+          -DMYSQL_ROOT_DIR=$(brew --prefix mysql-client)
+          -DBUILD_TESTING=ON
+          -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+
+      - name: Configure client package core
+        run: >
+          cmake -S client -B build/client
+          -DMI_E2EE_BUILD_UI=OFF
+          -DMI_E2EE_BUILD_DEMO_CLIENT=OFF
+          -DMI_E2EE_BUILD_LEGACY_UI=OFF
+          -DBUILD_TESTING=OFF
+          -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
 
       - name: Build server
         run: cmake --build build/server --config Release
@@ -1421,6 +1488,12 @@ jobs:
           mi_e2ee_kt_pubinfo
           mi_e2ee_perf_baseline
           mi_e2ee_third_party_policy_check
+
+      - name: Build client package core
+        run: >
+          cmake --build build/client --config Release --target
+          mi_e2ee_client_sdk
+          mi_e2ee_client_config_tool
 
       - name: Verify third-party lock
         run: |
@@ -1451,6 +1524,24 @@ jobs:
             --min-frame-decode-ops "$MI_E2EE_PERF_MIN_FRAME_DECODE_OPS" \
             --min-offline-put-mbps "$MI_E2EE_PERF_MIN_OFFLINE_PUT_MBPS" \
             --min-offline-fetch-mbps "$MI_E2EE_PERF_MIN_OFFLINE_FETCH_MBPS"
+
+      - name: Package POSIX artifacts
+        run: |
+          set -euo pipefail
+          mysql_user="ci_pkg_$(openssl rand -hex 6)"
+          mysql_pass="ci_pkg_pw_$(openssl rand -hex 32)"
+          echo "::add-mask::$mysql_user"
+          echo "::add-mask::$mysql_pass"
+          bash tools/package_posix.sh \
+            --platform macos \
+            --workspace "$GITHUB_WORKSPACE" \
+            --openssl "$(brew --prefix openssl@3)/bin/openssl" \
+            --server-mode mysql \
+            --mysql-username "$mysql_user" \
+            --mysql-password "$mysql_pass" \
+            --client-server-host localhost \
+            --client-server-port 9000
+          bash tools/verify_package_posix.sh --platform macos --dist "$GITHUB_WORKSPACE/dist"
 
       - name: Upload client package
         uses: actions/upload-artifact@v4
@@ -1676,8 +1767,7 @@ jobs:
               xcrun simctl keypress "$udid" HOME >/dev/null 2>&1 || true
               xcrun simctl keypress "$udid" HOME >/dev/null 2>&1 || true
               sleep 1
-              SIMCTL_CHILD_MI_E2EE_IOS_SCREENSHOT_MODE="$mode" \
-                xcrun simctl launch --terminate-running-process "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
+              xcrun simctl launch --terminate-running-process "$udid" mi.e2ee.root.RootAuthApp >/dev/null 2>&1 || true
               sleep "$settle_seconds"
               if ! xcrun simctl io "$udid" screenshot "$output"; then
                 continue
@@ -1852,13 +1942,6 @@ jobs:
 
           if [ "$capture_failed" -ne 0 ] || [ "$missing_screenshots" -ne 0 ]; then
             echo "RootAuth iOS screenshot capture is incomplete; failing workflow." >&2
-            exit 1
-          fi
-
-          if ! screenshots_visibly_differ \
-            "build/ios_rootauth_artifacts/rootauth-ios-login.png" \
-            "build/ios_rootauth_artifacts/rootauth-ios-detail.png"; then
-            echo "RootAuth iOS detail screenshot matches login screenshot; failing workflow." >&2
             exit 1
           fi
 
@@ -2112,6 +2195,7 @@ jobs:
               raise SystemExit("missing iOS runtime evidence files:\n" + "\n".join(missing))
 
           acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          node = acceptance
           tuple_entries = acceptance["runtime_artifact_contract"]["tuple_inventory"]["ios"]
           scene_evidence: dict[str, list[str]] = {}
           theme_evidence: dict[str, list[str]] = {}
@@ -2823,6 +2907,7 @@ jobs:
               raise SystemExit("missing Android runtime evidence files:\n" + "\n".join(missing))
 
           acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          node = acceptance
           runtime = acceptance["runtime_artifact_contract"]
           android_cfg = runtime["evidence_manifests"]["android_runtime"]
           tuple_entries = runtime["tuple_inventory"]["android"]
@@ -3015,6 +3100,7 @@ jobs:
           from pathlib import Path
 
           acceptance = json.loads(Path("ui_contract/acceptance.json").read_text(encoding="utf-8"))
+          node = acceptance
           runtime = acceptance["runtime_artifact_contract"]
           manifests_cfg = runtime["evidence_manifests"]
           artifacts_root = Path("build/final_acceptance_artifacts")

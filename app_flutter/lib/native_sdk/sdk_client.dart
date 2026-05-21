@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import '../domain/entities/models.dart';
-import 'fake_sdk_client.dart';
 import 'ffi_sdk_client.dart';
 
 abstract class NativeSdkClient {
@@ -28,10 +27,6 @@ class SdkClientFactory {
   const SdkClientFactory._();
 
   static NativeSdkClient create() {
-    final mode = Platform.environment['MI_E2EE_SDK_MODE']?.toLowerCase();
-    if (mode == 'fake') {
-      return FakeSdkClient();
-    }
     return FfiSdkClient(_defaultLibraryPath());
   }
 

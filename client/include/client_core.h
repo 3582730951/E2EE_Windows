@@ -774,7 +774,6 @@ class ClientCore {
   std::string pending_server_pin_;
   std::string config_path_{"config/client_config.ini"};
   std::string username_;
-  std::string password_;
   std::string token_;
   std::string last_error_;
   mi::server::DerivedKeys keys_{};

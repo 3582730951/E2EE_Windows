@@ -26,6 +26,7 @@ private:
     void setupUi();
     void setupPalette();
     void connectSignals();
+    void showDisabledMessage();
 
     UiPalette palette_;
     QComboBox* userBox_{nullptr};

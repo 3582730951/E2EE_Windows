@@ -45,6 +45,7 @@ ToolButton {
 
     Keys.onReturnPressed: root.clicked()
     Keys.onEnterPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
 
     MouseArea {
         anchors.fill: parent

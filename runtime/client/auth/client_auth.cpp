@@ -286,7 +286,6 @@ bool ClientCore::PollQrLogin(bool& out_completed) {
                                         qr_login_secret_.end());
   token_ = token;
   username_ = username;
-  password_.clear();
   std::string key_err;
   if (!mi::server::DeriveKeysFromOpaqueSessionKey(
           session_key, username, token_, transport_kind_, keys_, key_err)) {
@@ -387,12 +386,8 @@ void ClientCore::CancelQrLogin() {
 }
 
 bool ClientCore::Relogin() {
-  if (username_.empty() || password_.empty()) {
-    last_error_ = "no cached credentials";
-    return false;
-  }
-  const std::string root_code = GetEnvValue("MI_E2EE_ROOT_AUTH_CODE");
-  return LoginWithRootCode(username_, password_, root_code);
+  last_error_ = "explicit login required";
+  return false;
 }
 
 bool ClientCore::Logout() {

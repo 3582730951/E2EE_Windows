@@ -80,7 +80,6 @@ bool AuthService::Register(ClientCore& core, const std::string& username,
                            const std::string& password) const {
   core.last_error_.clear();
   core.username_ = username;
-  core.password_ = password;
   if (username.empty() || password.empty()) {
     core.last_error_ = "credentials empty";
     return false;
@@ -223,7 +222,6 @@ bool AuthService::Login(ClientCore& core, const std::string& username,
                         const std::string& password) const {
 #if 0
   core.username_ = username;
-  core.password_ = password;
   core.last_error_.clear();
 
   constexpr std::size_t kKemSecretKeyBytes = 2400;
@@ -520,7 +518,6 @@ bool AuthService::Login(ClientCore& core, const std::string& username,
 
   core.last_error_.clear();
   core.username_ = username;
-  core.password_ = password;
   core.token_.clear();
   core.send_seq_ = 0;
   core.prekey_published_ = false;
@@ -783,15 +780,6 @@ bool AuthService::Login(ClientCore& core, const std::string& username,
   core.friend_sync_version_ = 0;
   core.last_error_.clear();
   return true;
-}
-
-bool AuthService::Relogin(ClientCore& core) const {
-  core.last_error_.clear();
-  if (core.username_.empty() || core.password_.empty()) {
-    core.last_error_ = "no cached credentials";
-    return false;
-  }
-  return Login(core, core.username_, core.password_);
 }
 
 bool AuthService::Logout(ClientCore& core) const {

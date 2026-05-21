@@ -2,6 +2,7 @@
 
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QVBoxLayout>
 
 namespace mi::client::ui::widgets {
@@ -89,8 +90,18 @@ void LoginDialog::setupUi() {
 }
 
 void LoginDialog::connectSignals() {
-    connect(loginButton_, &QPushButton::clicked, this, &QDialog::accept);
-    connect(passwordEdit_, &QLineEdit::returnPressed, this, &QDialog::accept);
+    connect(loginButton_, &QPushButton::clicked, this, &LoginDialog::showDisabledMessage);
+    connect(passwordEdit_, &QLineEdit::returnPressed, this, &LoginDialog::showDisabledMessage);
+}
+
+void LoginDialog::showDisabledMessage() {
+    if (passwordEdit_) {
+        passwordEdit_->clear();
+    }
+    QMessageBox::warning(
+        this,
+        tr("登录不可用"),
+        tr("旧 QWidget 登录入口已停用，请使用 mi_e2ee_client_ui_app。"));
 }
 
 QString LoginDialog::username() const {

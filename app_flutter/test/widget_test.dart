@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mi_e2ee_im_app/app.dart';
 import 'package:mi_e2ee_im_app/bootstrap/app_providers.dart';
-import 'package:mi_e2ee_im_app/native_sdk/fake_sdk_client.dart';
+import 'fakes/fake_sdk_client.dart';
 
 void main() {
   testWidgets('app signs in to the chat-first mobile shell', (
@@ -86,8 +86,9 @@ Future<void> _pumpApp(WidgetTester tester) async {
 
 Future<void> _signIn(WidgetTester tester) async {
   final fields = find.byType(EditableText);
-  await tester.enterText(fields.first, 'alice');
-  await tester.enterText(fields.at(1), 'hunter2');
+  final suffix = DateTime.now().microsecondsSinceEpoch;
+  await tester.enterText(fields.first, 'widget_$suffix');
+  await tester.enterText(fields.at(1), 'widget_${suffix}_password');
   await tester.tap(find.byKey(const ValueKey('login-continue-button')));
   await tester.pumpAndSettle();
 }

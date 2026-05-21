@@ -32,6 +32,7 @@ Item {
     property int aiEnhanceQualityScale: 2
     property string internalClipboardText: ""
     property double internalClipboardMs: 0
+    property int internalClipboardLeaseMs: 30000
     property var messagesByChatId: ({})
     property var membersByChatId: ({})
     property var typingByChatId: ({})
@@ -1733,8 +1734,7 @@ Item {
     function setClipboardIsolationEnabled(enabled) {
         clipboardIsolationEnabled = enabled === true
         if (!clipboardIsolationEnabled) {
-            internalClipboardText = ""
-            internalClipboardMs = 0
+            clearInternalClipboard()
         }
         if (clientBridge && clientBridge.setClipboardIsolation) {
             clientBridge.setClipboardIsolation(clipboardIsolationEnabled)
@@ -1785,6 +1785,13 @@ Item {
     function setInternalClipboard(text) {
         internalClipboardText = text || ""
         internalClipboardMs = Date.now()
+        internalClipboardTimer.restart()
+    }
+
+    function clearInternalClipboard() {
+        internalClipboardText = ""
+        internalClipboardMs = 0
+        internalClipboardTimer.stop()
     }
 
     function clearAllMessages() {
@@ -2225,6 +2232,12 @@ Item {
         interval: sendErrorTimeoutMs
         repeat: false
         onTriggered: sendErrorMessage = ""
+    }
+
+    property var internalClipboardTimer: Timer {
+        interval: internalClipboardLeaseMs
+        repeat: false
+        onTriggered: clearInternalClipboard()
     }
 
     Component.onCompleted: {

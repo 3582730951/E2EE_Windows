@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mi_e2ee_im_app/bootstrap/app_providers.dart';
-import 'package:mi_e2ee_im_app/native_sdk/fake_sdk_client.dart';
+import 'fakes/fake_sdk_client.dart';
 import 'package:mi_e2ee_im_app/presentation/screens/mobile_contacts_screen.dart';
 import 'package:mi_e2ee_im_app/presentation/theme/app_theme.dart';
 

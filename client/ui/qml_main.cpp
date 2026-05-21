@@ -113,7 +113,47 @@ QString ci_capture_file_name(const QString& scene) {
     return QStringLiteral("post-login.png");
 }
 
-void apply_ci_capture_scene(QQmlApplicationEngine& engine,
+bool ci_capture_requires_auth(const QString& scene) {
+    return scene != QStringLiteral("login");
+}
+
+bool authenticate_ci_capture_session(mi::client::ui::QuickClient& client,
+                                     const QString& scene) {
+    if (!ci_capture_requires_auth(scene)) {
+        return true;
+    }
+    const QString config_path = env_string("MI_E2EE_CI_UI_CAPTURE_CONFIG");
+    const QString user = env_string("MI_E2EE_CI_UI_CAPTURE_USER");
+    const QString pass = env_string("MI_E2EE_CI_UI_CAPTURE_PASS");
+    const QString root_code = env_string("MI_E2EE_CI_UI_CAPTURE_ROOT_CODE");
+    if (config_path.isEmpty() || user.isEmpty() || pass.isEmpty()) {
+        return false;
+    }
+    if (!client.init(config_path)) {
+        qWarning() << "CI UI capture client init failed" << client.lastError();
+        return false;
+    }
+    if (client.loginWithRootCode(user, pass, root_code) && client.loggedIn()) {
+        return true;
+    }
+    if (!root_code.isEmpty()) {
+        qWarning() << "CI UI capture login failed" << client.lastError();
+        return false;
+    }
+    if (!client.registerUser(user, pass)) {
+        qWarning() << "CI UI capture account setup failed" << client.lastError();
+        return false;
+    }
+    const bool logged_in = client.loginWithRootCode(user, pass, root_code) &&
+                           client.loggedIn();
+    if (!logged_in) {
+        qWarning() << "CI UI capture login after account setup failed"
+                   << client.lastError();
+    }
+    return logged_in;
+}
+
+bool apply_ci_capture_scene(QQmlApplicationEngine& engine,
                             const QString& scene,
                             const QString& locale,
                             const QString& theme) {
@@ -133,78 +173,22 @@ QtObject {
         if (scene === "login") {
             Ui.AppStore.currentPage = 0
             Ui.AppStore.syncDomainStores()
-            return
+            return true
         }
-        var chatId = "ci-runtime-chat"
+        if (!clientBridge || clientBridge.loggedIn !== true) {
+            return false
+        }
         Ui.AppStore.currentPage = 1
-        Ui.AppStore.ensureDialog(chatId, "private", Ui.I18n.t("app.title"), 2, Ui.I18n.t("app.title"))
-        Ui.AppStore.setCurrentChat(chatId)
-        var model = Ui.AppStore.messagesModel(chatId)
-        if (model.count === 0) {
-            Ui.AppStore.appendMessage(chatId, {
-                chatId: chatId,
-                msgId: "ci-runtime-in",
-                kind: "in",
-                contentKind: "text",
-                senderName: Ui.I18n.t("app.title"),
-                text: Ui.I18n.t("status.connected"),
-                protectedTextId: "",
-                timeText: "09:41",
-                timestampMs: Date.now() - 60000,
-                statusTicks: "none",
-                edited: false,
-                fileName: "",
-                fileSize: 0,
-                fileId: "",
-                fileKey: "",
-                fileUrl: "",
-                downloadProgress: 0,
-                imageEnhanced: false,
-                stickerId: "",
-                stickerUrl: "",
-                stickerAnimated: false,
-                previewUrl: "",
-                contactUsername: "",
-                contactDisplay: "",
-                locationLabel: "",
-                locationLat: 0,
-                locationLon: 0,
-                callId: "",
-                callVideo: false,
-                animateEmoji: false
-            }, false)
-            Ui.AppStore.appendMessage(chatId, {
-                chatId: chatId,
-                msgId: "ci-runtime-out",
-                kind: "out",
-                contentKind: "text",
-                senderName: Ui.I18n.t("chat.you"),
-                text: Ui.I18n.t("chat.writeMessage"),
-                protectedTextId: "",
-                timeText: "09:42",
-                timestampMs: Date.now() - 30000,
-                statusTicks: "sent",
-                edited: false,
-                fileName: "",
-                fileSize: 0,
-                fileId: "",
-                fileKey: "",
-                fileUrl: "",
-                downloadProgress: 0,
-                imageEnhanced: false,
-                stickerId: "",
-                stickerUrl: "",
-                stickerAnimated: false,
-                previewUrl: "",
-                contactUsername: "",
-                contactDisplay: "",
-                locationLabel: "",
-                locationLat: 0,
-                locationLon: 0,
-                callId: "",
-                callVideo: false,
-                animateEmoji: false
-            }, false)
+        Ui.AppStore.bootstrapAfterLogin()
+        if (Ui.AppStore.dialogsModel.count === 0) {
+            var groupId = clientBridge.createGroup()
+            if (!groupId || groupId.length === 0) {
+                return false
+            }
+            Ui.AppStore.rebuildDialogs()
+            Ui.AppStore.setCurrentChat(groupId)
+        } else if (Ui.AppStore.currentChatId.length === 0) {
+            Ui.AppStore.setCurrentChat(Ui.AppStore.dialogsModel.get(0).chatId)
         }
         if (scene === "calls_home") {
             Ui.AppStore.setShellSurface("calls")
@@ -219,6 +203,7 @@ QtObject {
             }
         }
         Ui.AppStore.syncDomainStores()
+        return true
     }
 }
 )", QUrl(QStringLiteral("qrc:/mi/e2ee/ui/qml/CiRuntimeCapture.qml")));
@@ -228,12 +213,15 @@ QtObject {
         for (const auto& error : errors) {
             qWarning() << error;
         }
-        return;
+        return false;
     }
+    QVariant result;
     QMetaObject::invokeMethod(helper.get(), "apply",
+                              Q_RETURN_ARG(QVariant, result),
                               Q_ARG(QVariant, QVariant(scene)),
                               Q_ARG(QVariant, QVariant(locale)),
                               Q_ARG(QVariant, QVariant(theme)));
+    return result.toBool();
 }
 
 void schedule_ci_capture(QQuickWindow* window, const QString& scene) {
@@ -585,7 +573,10 @@ int main(int argc, char* argv[]) {
                                           QStringLiteral("zh-CN"));
         const QString theme = env_string("MI_E2EE_CI_UI_CAPTURE_THEME",
                                          QStringLiteral("light"));
-        apply_ci_capture_scene(engine, scene, locale, theme);
+        if (!authenticate_ci_capture_session(client, scene) ||
+                !apply_ci_capture_scene(engine, scene, locale, theme)) {
+            QTimer::singleShot(0, [] { QCoreApplication::exit(4); });
+        }
         schedule_ci_capture(window, scene);
     }
     if (window) {

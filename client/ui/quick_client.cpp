@@ -14,7 +14,6 @@
 #include <QCamera>
 #include <QCameraDevice>
 #include <QCoreApplication>
-#include <QClipboard>
 #include <QDataStream>
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -84,16 +83,6 @@ QuickClient::QuickClient(QObject* parent) : QObject(parent) {
   }
   cache_pool_.setMaxThreadCount(std::clamp(ideal, 4, 12));
   cache_pool_.setExpiryTimeout(30000);
-  if (auto* clipboard = QGuiApplication::clipboard()) {
-    last_system_clipboard_text_ = clipboard->text();
-    last_system_clipboard_ms_ = QDateTime::currentMSecsSinceEpoch();
-    connect(clipboard, &QClipboard::dataChanged, this, [this]() {
-      if (auto* cb = QGuiApplication::clipboard()) {
-        last_system_clipboard_text_ = cb->text();
-        last_system_clipboard_ms_ = QDateTime::currentMSecsSinceEpoch();
-      }
-    });
-  }
 }
 
 QuickClient::~QuickClient() {
@@ -1708,14 +1697,6 @@ QUrl QuickClient::defaultDownloadFileUrl(const QString& fileName) const {
   return QUrl::fromLocalFile(
       QDir(base).filePath(sanitize_download_file_name(
           fileName, QStringLiteral("download.bin"))));
-}
-
-QString QuickClient::systemClipboardText() const {
-  return last_system_clipboard_text_;
-}
-
-qint64 QuickClient::systemClipboardTimestamp() const {
-  return last_system_clipboard_ms_;
 }
 
 bool QuickClient::imeAvailable() {

@@ -3757,10 +3757,6 @@ void BackendAdapter::pollMessages() {
             if (!target_->c_api_) {
                 return;
             }
-            const char* token = mi_client_token(target_->c_api_);
-            if ((!token || *token == '\0') && !target_->hasPendingServerTrust()) {
-                mi_client_relogin(target_->c_api_);
-            }
             mi::sdk::ChatPollResult events;
             std::string pollErr;
             mi::sdk::PollResult polled;

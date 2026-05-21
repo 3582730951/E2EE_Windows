@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QtGlobal>
 
 class QApplication;
@@ -16,9 +17,6 @@ public:
     static SecureClipboard *instance();
     static void SetText(const QString &text);
     static QString GetText();
-
-    void setSystemClipboardWriteEnabled(bool enabled);
-    bool systemClipboardWriteEnabled() const;
 
     void setText(const QString &text);
     QString text() const;
@@ -35,8 +33,7 @@ private:
     void handleAppStateChanged(Qt::ApplicationState state);
 
     QByteArray buffer_;
+    QTimer clearTimer_;
     bool hasData_{false};
-    bool allowSystemWrite_{false};
     qint64 lastInternalCopyMs_{0};
-    qint64 lastSystemCopyMs_{0};
 };

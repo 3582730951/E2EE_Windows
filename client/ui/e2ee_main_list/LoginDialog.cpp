@@ -28,12 +28,13 @@ LoginDialog::LoginDialog(BackendAdapter *backend, QWidget *parent)
     layout->setAlignment(Qt::AlignCenter);
 
     authFlow_ = new AuthFlowWidget(this);
-    const bool demoAuth = qEnvironmentVariableIsSet("MI_E2EE_DEMO_AUTH") || backend_ == nullptr;
-    authFlow_->setDemoMode(demoAuth);
     layout->addWidget(authFlow_, 0, Qt::AlignCenter);
 
     connect(authFlow_, &AuthFlowWidget::closeRequested, this, &QDialog::reject);
     connect(authFlow_, &AuthFlowWidget::authSucceeded, this, [this]() {
+        if (authFlow_) {
+            authFlow_->clearAllSecrets();
+        }
         emit authSucceeded();
         accept();
     });
@@ -81,28 +82,34 @@ void LoginDialog::handleLogin(const QString &account, const QString &password, b
     if (acc.isEmpty() || pwd.isEmpty()) {
         if (authFlow_) {
             authFlow_->setErrorMessage(QStringLiteral("????????"));
+            authFlow_->clearLoginSecrets();
         }
         return;
     }
     if (!backend_) {
-        emit authSucceeded();
-        accept();
+        if (authFlow_) {
+            authFlow_->setErrorMessage(QStringLiteral("后端不可用"));
+            authFlow_->clearLoginSecrets();
+        }
         return;
     }
-    pendingAccount_ = acc;
-    pendingPassword_ = pwd;
-    pendingRootCode_ = rootCode;
     if (authFlow_) {
         authFlow_->setErrorMessage(QString());
     }
     setLoginBusy(true);
     backend_->loginAsync(acc, pwd, rootCode);
+    if (authFlow_) {
+        authFlow_->clearLoginSecrets();
+    }
 }
 
 void LoginDialog::onLoginFinished(bool success, const QString &error) {
     setLoginBusy(false);
     if (!success) {
-        if (handlePendingServerTrust(pendingAccount_, pendingPassword_)) {
+        if (authFlow_) {
+            authFlow_->clearLoginSecrets();
+        }
+        if (handlePendingServerTrust()) {
             return;
         }
         const QString err = error.trimmed();
@@ -116,6 +123,7 @@ void LoginDialog::onLoginFinished(bool success, const QString &error) {
         return;
     }
     if (authFlow_) {
+        authFlow_->clearAllSecrets();
         authFlow_->setErrorMessage(QString());
     }
     emit authSucceeded();
@@ -132,28 +140,34 @@ void LoginDialog::handleRegister(const QString &account, const QString &password
     if (acc.isEmpty() || pwd.isEmpty()) {
         if (authFlow_) {
             authFlow_->setErrorMessage(QStringLiteral("?????????"));
+            authFlow_->clearRegisterSecrets();
         }
         return;
     }
     if (!backend_) {
-        emit authSucceeded();
-        accept();
+        if (authFlow_) {
+            authFlow_->setErrorMessage(QStringLiteral("后端不可用"));
+            authFlow_->clearRegisterSecrets();
+        }
         return;
     }
-    pendingAccount_ = acc;
-    pendingPassword_ = pwd;
-    pendingRootCode_.clear();
     if (authFlow_) {
         authFlow_->setErrorMessage(QString());
     }
     setLoginBusy(true);
     backend_->registerUserAsync(acc, pwd);
+    if (authFlow_) {
+        authFlow_->clearRegisterSecrets();
+    }
 }
 
 void LoginDialog::onRegisterFinished(bool success, const QString &error) {
     setLoginBusy(false);
     if (!success) {
-        if (handlePendingServerTrustForRegister(pendingAccount_, pendingPassword_)) {
+        if (authFlow_) {
+            authFlow_->clearRegisterSecrets();
+        }
+        if (handlePendingServerTrustForRegister()) {
             return;
         }
         const QString err = error.trimmed();
@@ -166,8 +180,12 @@ void LoginDialog::onRegisterFinished(bool success, const QString &error) {
         }
         return;
     }
-    setLoginBusy(true);
-    backend_->loginAsync(pendingAccount_, pendingPassword_, pendingRootCode_);
+    if (authFlow_) {
+        authFlow_->clearRegisterSecrets();
+        authFlow_->setErrorMessage(UiSettings::Tr(
+            QStringLiteral("注册成功，请重新输入口令登录。"),
+            QStringLiteral("Registration succeeded. Enter your password again to sign in.")));
+    }
 }
 
 void LoginDialog::handleQrLoginStart() {
@@ -238,7 +256,7 @@ void LoginDialog::pollQrLogin() {
             if (lowered.contains(QStringLiteral("root auth")) ||
                 regErr.contains(QStringLiteral("根"))) {
                 bool ok = false;
-                const QString code = QInputDialog::getText(
+                QString code = QInputDialog::getText(
                     this,
                     QStringLiteral("根授权码"),
                     QStringLiteral("请输入根授权码或授权字符串"),
@@ -252,9 +270,12 @@ void LoginDialog::pollQrLogin() {
                     if (authFlow_) {
                         authFlow_->setErrorMessage(QStringLiteral("需要根授权码"));
                     }
+                    code.clear();
                     return;
                 }
-                if (!backend_->registerDevice(code, regErr)) {
+                const bool registered = backend_->registerDevice(code, regErr);
+                code.clear();
+                if (!registered) {
                     if (backend_) {
                         backend_->logout();
                     }
@@ -278,6 +299,7 @@ void LoginDialog::pollQrLogin() {
             }
         }
         if (authFlow_) {
+            authFlow_->clearAllSecrets();
             authFlow_->setErrorMessage(QString());
         }
         emit authSucceeded();
@@ -292,7 +314,7 @@ void LoginDialog::stopQrPolling() {
     }
 }
 
-bool LoginDialog::handlePendingServerTrust(const QString &account, const QString &password) {
+bool LoginDialog::handlePendingServerTrust() {
     if (!backend_ || !backend_->hasPendingServerTrust()) {
         return false;
     }
@@ -334,12 +356,15 @@ bool LoginDialog::handlePendingServerTrust(const QString &account, const QString
         return true;
     }
 
-    setLoginBusy(true);
-    backend_->loginAsync(account, password, pendingRootCode_);
+    if (authFlow_) {
+        authFlow_->setErrorMessage(UiSettings::Tr(
+            QStringLiteral("服务器身份已信任，请重新输入口令登录。"),
+            QStringLiteral("Server identity trusted. Enter your password again to sign in.")));
+    }
     return true;
 }
 
-bool LoginDialog::handlePendingServerTrustForRegister(const QString &account, const QString &password) {
+bool LoginDialog::handlePendingServerTrustForRegister() {
     if (!backend_ || !backend_->hasPendingServerTrust()) {
         return false;
     }
@@ -381,8 +406,11 @@ bool LoginDialog::handlePendingServerTrustForRegister(const QString &account, co
         return true;
     }
 
-    setLoginBusy(true);
-    backend_->registerUserAsync(account, password);
+    if (authFlow_) {
+        authFlow_->setErrorMessage(UiSettings::Tr(
+            QStringLiteral("服务器身份已信任，请重新输入口令完成注册。"),
+            QStringLiteral("Server identity trusted. Enter your password again to finish registration.")));
+    }
     return true;
 }
 

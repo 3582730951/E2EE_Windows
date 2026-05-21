@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mi_e2ee_im_app/domain/entities/models.dart';
-import 'package:mi_e2ee_im_app/native_sdk/fake_sdk_client.dart';
+import '../fakes/fake_sdk_client.dart';
 
 void main() {
   test(

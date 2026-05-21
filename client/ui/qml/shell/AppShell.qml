@@ -76,9 +76,6 @@ Item {
         }
         rightWidth = Math.max(Ui.Style.rightPaneWidthMin,
                               Math.min(rightWidth, rightMaxWidth))
-        if (!canUseCompactTwoColumn) {
-            Ui.ChatDisplayStore.closeRightPane()
-        }
     }
 
     onHasActiveChatChanged: {

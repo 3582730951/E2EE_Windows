@@ -18,7 +18,6 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 
-#include "SecureClipboard.h"
 #include "UiRuntimePaths.h"
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle(UiSettings::Tr(QStringLiteral("设置"), QStringLiteral("Settings")));
@@ -82,8 +81,8 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent) {
                                      QStringLiteral("Secure clipboard (app-only paste)")),
                       this);
     secureClipboard_->setToolTip(
-        UiSettings::Tr(QStringLiteral("开启后，应用内复制不会写入系统剪贴板；仍可从外部粘贴到本应用。"),
-                       QStringLiteral("When enabled, app copies won't write to system clipboard. External paste still works.")));
+        UiSettings::Tr(QStringLiteral("应用内复制仅保留短时内存副本，离开应用或超时后清除。"),
+                       QStringLiteral("App copies stay in short-lived memory and are cleared on timeout or app deactivation.")));
     layout->addWidget(secureClipboard_);
 
     auto *proxyGroup =
@@ -377,10 +376,6 @@ bool SettingsDialog::applyAndSave() {
 
     UiSettings::setCurrent(next);
     UiSettings::Save(next);
-
-    if (auto *clip = SecureClipboard::instance()) {
-        clip->setSystemClipboardWriteEnabled(!next.secureClipboard);
-    }
 
     if (qApp && fontChanged) {
         Theme::setFontScalePercent(next.fontScalePercent);

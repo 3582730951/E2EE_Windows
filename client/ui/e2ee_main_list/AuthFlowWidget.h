@@ -22,10 +22,12 @@ class AuthFlowWidget : public QWidget {
 public:
     explicit AuthFlowWidget(QWidget *parent = nullptr);
 
-    void setDemoMode(bool enabled);
     void setBusy(bool busy);
     void setErrorMessage(const QString &message);
     void setQrPayload(const QString &payload);
+    void clearLoginSecrets();
+    void clearRegisterSecrets();
+    void clearAllSecrets();
     QString rootCode() const;
     QString account() const;
 
@@ -75,7 +77,6 @@ private:
     QWidget *dragRegion_{nullptr};
     QTimer *qrTimer_{nullptr};
     int qrRemaining_{30};
-    bool demoMode_{true};
     bool busy_{false};
     bool dragging_{false};
     QPoint dragOffset_;

@@ -9,6 +9,114 @@ if "%PYTHON_BIN%"=="" set "PYTHON_BIN=python"
 
 if "%~1"=="--print-menu" goto :menu
 if "%~1"=="--help" goto :usage
+set "NON_INTERACTIVE=0"
+set "MODE=mysql"
+set "OUTPUT=%CONFIG_PATH%"
+set "LISTEN_PORT=9000"
+set "OFFLINE_DIR=database/offline_store"
+set "ROTATION_THRESHOLD=10000"
+set "MYSQL_HOST=127.0.0.1"
+set "MYSQL_PORT=3306"
+set "MYSQL_DB=mi_e2ee"
+set "MYSQL_USER=%MI_E2EE_MYSQL_USERNAME%"
+set "MYSQL_PASSWORD=%MI_E2EE_MYSQL_PASSWORD%"
+set "CERT_HOST=localhost"
+if not "%~1"=="" goto :parse_args
+goto :loop
+
+:parse_args
+if "%~1"=="" goto :after_args
+if /I "%~1"=="--non-interactive" (
+  set "NON_INTERACTIVE=1"
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mode" (
+  set "MODE=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--output" (
+  set "OUTPUT=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--port" (
+  set "LISTEN_PORT=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--offline-dir" (
+  set "OFFLINE_DIR=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--rotation-threshold" (
+  set "ROTATION_THRESHOLD=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mysql-host" (
+  set "MYSQL_HOST=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mysql-port" (
+  set "MYSQL_PORT=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mysql-db" (
+  set "MYSQL_DB=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mysql-user" (
+  set "MYSQL_USER=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--mysql-password" (
+  set "MYSQL_PASSWORD=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--cert-host" (
+  set "CERT_HOST=%~2"
+  shift
+  shift
+  goto :parse_args
+)
+echo unknown option: %~1
+goto :usage
+
+:after_args
+if "%NON_INTERACTIVE%"=="1" goto :non_interactive
+goto :loop
+
+:non_interactive
+if /I "%MODE%"=="mysql" (
+  call :validate_mysql_credentials "%MYSQL_USER%" "%MYSQL_PASSWORD%"
+  if errorlevel 1 exit /b 1
+  set "config=%OUTPUT%"
+  goto :write_mysql_config
+)
+if /I "%MODE%"=="demo" (
+  set "config=%OUTPUT%"
+  goto :write_demo_config
+)
+echo unsupported --mode: %MODE%
+exit /b 1
 
 :loop
 call :menu
@@ -54,33 +162,68 @@ if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%ROOT%\database\offline_store" mkdir "%ROOT%\database\offline_store"
 exit /b 0
 
+:validate_mysql_credentials
+set "CHECK_MYSQL_USER=%~1"
+set "CHECK_MYSQL_PASSWORD=%~2"
+if "%CHECK_MYSQL_USER%"=="" (
+  echo mysql credentials required for --mode mysql
+  exit /b 1
+)
+if "%CHECK_MYSQL_PASSWORD%"=="" (
+  echo mysql credentials required for --mode mysql
+  exit /b 1
+)
+if /I "%CHECK_MYSQL_USER%"=="root" goto :validate_mysql_password_weak
+if /I "%CHECK_MYSQL_USER%"=="admin" goto :validate_mysql_password_weak
+exit /b 0
+
+:validate_mysql_password_weak
+if /I "%CHECK_MYSQL_PASSWORD%"=="123456" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="admin" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="demo" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="mysql" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="pass" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="password" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="root" goto :weak_mysql_credentials
+if /I "%CHECK_MYSQL_PASSWORD%"=="test" goto :weak_mysql_credentials
+exit /b 0
+
+:weak_mysql_credentials
+echo weak mysql credentials are forbidden in server config
+exit /b 1
+
 :first_time
 call :ensure_dirs
 set "config=%CONFIG_PATH%"
 set /p config=Config path [%config%]: 
 if "%config%"=="" set "config=%CONFIG_PATH%"
 echo Auth mode:
-echo 1^) Demo mode
-echo 2^) MySQL mode
+echo 1^) MySQL mode
+echo 2^) Demo mode ^(test only^)
 set /p auth_choice=Select [1-2]: 
-if "%auth_choice%"=="2" goto :setup_mysql
-goto :setup_demo
+if "%auth_choice%"=="2" goto :setup_demo
+goto :setup_mysql
 
 :setup_demo
-set "listen_port=9000"
-set "offline_dir=database/offline_store"
-set /p listen_port=Server listen port [%listen_port%]: 
-if "%listen_port%"=="" set "listen_port=9000"
-set /p offline_dir=Offline store directory [%offline_dir%]: 
-if "%offline_dir%"=="" set "offline_dir=database/offline_store"
+set "LISTEN_PORT=9000"
+set "OFFLINE_DIR=database/offline_store"
+set /p LISTEN_PORT=Server listen port [%LISTEN_PORT%]:
+if "%LISTEN_PORT%"=="" set "LISTEN_PORT=9000"
+set /p OFFLINE_DIR=Offline store directory [%OFFLINE_DIR%]:
+if "%OFFLINE_DIR%"=="" set "OFFLINE_DIR=database/offline_store"
+goto :write_demo_config
+
+:write_demo_config
+call :ensure_dirs
+for %%D in ("%config%") do if not exist "%%~dpD" mkdir "%%~dpD"
 call :generate_kt_if_missing
 > "%config%" (
   echo [mode]
   echo mode=1
   echo [server]
-  echo list_port=%listen_port%
-  echo rotation_threshold=10000
-  echo offline_dir=%offline_dir%
+  echo list_port=%LISTEN_PORT%
+  echo rotation_threshold=%ROTATION_THRESHOLD%
+  echo offline_dir=%OFFLINE_DIR%
   echo debug_log=0
   echo offline_blob_temp_budget_bytes=4294967296
   echo tls_enable=1
@@ -97,40 +240,48 @@ call :generate_kt_if_missing
 )
 call :generate_cert_no_loop
 "%PYTHON_BIN%" "%VERIFY_SCRIPT%" --config "%config%" --privacy-strict
+if "%NON_INTERACTIVE%"=="1" exit /b %ERRORLEVEL%
 goto :loop
 
 :setup_mysql
-set "listen_port=9000"
-set "offline_dir=database/offline_store"
-set "mysql_host=127.0.0.1"
-set "mysql_port=3306"
-set "mysql_db=mi_e2ee"
-set /p listen_port=Server listen port [%listen_port%]: 
-if "%listen_port%"=="" set "listen_port=9000"
-set /p offline_dir=Offline store directory [%offline_dir%]: 
-if "%offline_dir%"=="" set "offline_dir=database/offline_store"
-set /p mysql_host=MySQL host [%mysql_host%]: 
-if "%mysql_host%"=="" set "mysql_host=127.0.0.1"
-set /p mysql_port=MySQL port [%mysql_port%]: 
-if "%mysql_port%"=="" set "mysql_port=3306"
-set /p mysql_db=MySQL database [%mysql_db%]: 
-if "%mysql_db%"=="" set "mysql_db=mi_e2ee"
-set /p mysql_user=MySQL username: 
-set /p mysql_password=MySQL password: 
+set "LISTEN_PORT=9000"
+set "OFFLINE_DIR=database/offline_store"
+set "MYSQL_HOST=127.0.0.1"
+set "MYSQL_PORT=3306"
+set "MYSQL_DB=mi_e2ee"
+set /p LISTEN_PORT=Server listen port [%LISTEN_PORT%]:
+if "%LISTEN_PORT%"=="" set "LISTEN_PORT=9000"
+set /p OFFLINE_DIR=Offline store directory [%OFFLINE_DIR%]:
+if "%OFFLINE_DIR%"=="" set "OFFLINE_DIR=database/offline_store"
+set /p MYSQL_HOST=MySQL host [%MYSQL_HOST%]:
+if "%MYSQL_HOST%"=="" set "MYSQL_HOST=127.0.0.1"
+set /p MYSQL_PORT=MySQL port [%MYSQL_PORT%]:
+if "%MYSQL_PORT%"=="" set "MYSQL_PORT=3306"
+set /p MYSQL_DB=MySQL database [%MYSQL_DB%]:
+if "%MYSQL_DB%"=="" set "MYSQL_DB=mi_e2ee"
+set /p MYSQL_USER=MySQL username:
+set /p MYSQL_PASSWORD=MySQL password:
+goto :write_mysql_config
+
+:write_mysql_config
+call :validate_mysql_credentials "%MYSQL_USER%" "%MYSQL_PASSWORD%"
+if errorlevel 1 exit /b 1
+call :ensure_dirs
+for %%D in ("%config%") do if not exist "%%~dpD" mkdir "%%~dpD"
 call :generate_kt_if_missing
 > "%config%" (
   echo [mode]
   echo mode=0
   echo [mysql]
-  echo mysql_ip=%mysql_host%
-  echo mysql_port=%mysql_port%
-  echo mysql_database=%mysql_db%
-  echo mysql_username=%mysql_user%
-  echo mysql_password=%mysql_password%
+  echo mysql_ip=%MYSQL_HOST%
+  echo mysql_port=%MYSQL_PORT%
+  echo mysql_database=%MYSQL_DB%
+  echo mysql_username=%MYSQL_USER%
+  echo mysql_password=%MYSQL_PASSWORD%
   echo [server]
-  echo list_port=%listen_port%
-  echo rotation_threshold=10000
-  echo offline_dir=%offline_dir%
+  echo list_port=%LISTEN_PORT%
+  echo rotation_threshold=%ROTATION_THRESHOLD%
+  echo offline_dir=%OFFLINE_DIR%
   echo debug_log=0
   echo offline_blob_temp_budget_bytes=4294967296
   echo tls_enable=1
@@ -147,6 +298,7 @@ call :generate_kt_if_missing
 )
 call :generate_cert_no_loop
 "%PYTHON_BIN%" "%VERIFY_SCRIPT%" --config "%config%" --privacy-strict
+if "%NON_INTERACTIVE%"=="1" exit /b %ERRORLEVEL%
 goto :loop
 
 :reconfigure
@@ -175,10 +327,10 @@ goto :loop
 
 :reconfigure_auth
 echo Auth mode:
-echo 1^) Demo mode
-echo 2^) MySQL mode
+echo 1^) MySQL mode
+echo 2^) Demo mode ^(test only^)
 set /p mode_choice=Select [1-2]: 
-if "%mode_choice%"=="2" (
+if not "%mode_choice%"=="2" (
   set /p mysql_host=MySQL host [127.0.0.1]: 
   if "%mysql_host%"=="" set "mysql_host=127.0.0.1"
   set /p mysql_port=MySQL port [3306]: 
@@ -187,6 +339,8 @@ if "%mode_choice%"=="2" (
   if "%mysql_db%"=="" set "mysql_db=mi_e2ee"
   set /p mysql_user=MySQL username: 
   set /p mysql_password=MySQL password: 
+  call :validate_mysql_credentials "%mysql_user%" "%mysql_password%"
+  if errorlevel 1 goto :loop
   powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%CONFIG_PATH%'; $text=Get-Content $p -Raw; $text=$text -replace '(?ms)^\[mode\].*?(?=^\[|$)', \"[mode]`nmode=0`n\"; if($text -notmatch '(?m)^\[mode\]'){ $text=\"[mode]`nmode=0`n\"+$text }; $mysql=\"[mysql]`nmysql_ip=%mysql_host%`nmysql_port=%mysql_port%`nmysql_database=%mysql_db%`nmysql_username=%mysql_user%`nmysql_password=%mysql_password%`n\"; if($text -match '(?ms)^\[mysql\].*?(?=^\[|$)'){ $text=$text -replace '(?ms)^\[mysql\].*?(?=^\[|$)', $mysql } else { $text=$text -replace '(?m)^\[server\]', $mysql+'[server]' }; Set-Content -Encoding utf8 $p $text"
 ) else (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='%CONFIG_PATH%'; $text=Get-Content $p -Raw; $text=$text -replace '(?ms)^\[mode\].*?(?=^\[|$)', \"[mode]`nmode=1`n\"; $text=$text -replace '(?ms)^\[mysql\].*?(?=^\[|$)', ''; Set-Content -Encoding utf8 $p $text"
@@ -240,7 +394,7 @@ goto :loop
 
 :generate_cert_no_loop
 call :ensure_dirs
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $rsa=[System.Security.Cryptography.RSA]::Create(2048); $req=[System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=MI_E2EE_Server',$rsa,[System.Security.Cryptography.HashAlgorithmName]::SHA256,[System.Security.Cryptography.RSASignaturePadding]::Pkcs1); $cert=$req.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1),[DateTimeOffset]::UtcNow.AddYears(2)); $pfx=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,''); [IO.File]::WriteAllBytes('%CONFIG_DIR%\mi_e2ee_server.pfx',$pfx); $der=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert); $hash=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace('-','').ToLower(); Write-Host sha256=$hash"
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $hostName='%CERT_HOST%'; if([string]::IsNullOrWhiteSpace($hostName)){ $hostName='localhost' }; $rsa=[System.Security.Cryptography.RSA]::Create(2048); $req=[System.Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=MI_E2EE_Server',$rsa,[System.Security.Cryptography.HashAlgorithmName]::SHA256,[System.Security.Cryptography.RSASignaturePadding]::Pkcs1); $san=New-Object System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder; $san.AddDnsName('localhost'); $san.AddIpAddress([Net.IPAddress]::Parse('127.0.0.1')); $ip=$null; if($hostName -ne 'localhost'){ if([Net.IPAddress]::TryParse($hostName,[ref]$ip)){ $san.AddIpAddress($ip) } else { $san.AddDnsName($hostName) } }; $req.CertificateExtensions.Add($san.Build()); $cert=$req.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1),[DateTimeOffset]::UtcNow.AddYears(2)); $pfx=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,''); [IO.File]::WriteAllBytes('%CONFIG_DIR%\mi_e2ee_server.pfx',$pfx); $der=$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert); $hash=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($der)).Replace('-','').ToLower(); Write-Host sha256=$hash"
 exit /b %ERRORLEVEL%
 
 :import_cert

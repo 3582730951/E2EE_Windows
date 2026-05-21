@@ -256,6 +256,7 @@ Require-Dir $clientRoot
 Require-Dir $serverRoot
 
 if ($PrivacyOnly) {
+  Require-FileAbsent (Join-Path $serverRoot "test_user.txt")
   Assert-PrivacyPackageTree $clientRoot "client"
   Assert-PrivacyPackageTree $serverRoot "server"
   exit 0
@@ -344,7 +345,7 @@ Require-File (Join-Path $serverRoot "config\\kt_signing_key.bin")
 Require-File (Join-Path $serverRoot "config\\kt_root_pub.bin")
 Require-File (Join-Path $serverRoot "tools\\mi_e2ee_kt_keygen.exe")
 Require-File (Join-Path $serverRoot "tools\\mi_e2ee_kt_pubinfo.exe")
-Require-File (Join-Path $serverRoot "test_user.txt")
+Require-FileAbsent (Join-Path $serverRoot "test_user.txt")
 
 Assert-KcpDisabled (Join-Path $serverRoot "config\\config.ini")
 Assert-BlobBudget (Join-Path $serverRoot "config\\config.ini")

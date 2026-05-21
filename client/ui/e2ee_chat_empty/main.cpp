@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QGuiApplication>
+#include <QMessageBox>
 
 #include "../common/Theme.h"
 #include "../common/SecureClipboard.h"
@@ -25,11 +26,11 @@ int main(int argc, char *argv[]) {
 
     const auto settings = UiSettings::Load();
     UiSettings::ApplyToApp(app);
-    if (auto *clip = SecureClipboard::instance()) {
-        clip->setSystemClipboardWriteEnabled(!settings.secureClipboard);
-    }
 
-    ChatEmptyWindow window;
-    window.show();
-    return app.exec();
+    QMessageBox::critical(
+        nullptr,
+        QStringLiteral("Legacy QWidget entrypoint disabled"),
+        UiSettings::Tr(QStringLiteral("旧 QWidget 空会话入口已停用，请使用 Qt Quick 客户端。"),
+                       QStringLiteral("Legacy QWidget empty chat entrypoint is disabled. Use the Qt Quick client.")));
+    return 2;
 }

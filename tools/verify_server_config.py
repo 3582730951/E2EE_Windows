@@ -21,6 +21,16 @@ PLACEHOLDER_VALUES = {
     "change_me_strong_password",
     "change_me_to_a_random_secret",
 }
+WEAK_MYSQL_PASSWORDS = {
+    "123456",
+    "admin",
+    "demo",
+    "mysql",
+    "pass",
+    "password",
+    "root",
+    "test",
+}
 
 
 class ValidationResult:
@@ -66,6 +76,10 @@ def value(parser: configparser.ConfigParser, section: str, key: str, default: st
     if not parser.has_section(section):
         return default
     return parser.get(section, key, fallback=default).strip()
+
+
+def weak_mysql_credentials(username: str, password: str) -> bool:
+    return username.strip().lower() in {"root", "admin"} and password.strip().lower() in WEAK_MYSQL_PASSWORDS
 
 
 def resolve_relative(raw: str, root_dir: Path, config_dir: Path) -> Path:
@@ -209,6 +223,11 @@ def validate_config(path: Path, *, privacy_strict: bool = False) -> ValidationRe
             raw = value(parser, "mysql", key, "")
             if raw in PLACEHOLDER_VALUES:
                 result.error(f"mysql.{key} must be configured for mode=0")
+        if weak_mysql_credentials(
+            value(parser, "mysql", "mysql_username", ""),
+            value(parser, "mysql", "mysql_password", ""),
+        ):
+            result.error("mysql credentials are too weak for mode=0")
         validate_port(value(parser, "mysql", "mysql_port", "0"), "mysql.mysql_port", result)
 
     if os.name != "nt":

@@ -1,7 +1,6 @@
 #include "SecureClipboard.h"
 
 #include <QApplication>
-#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDateTime>
 #include <QEvent>
@@ -15,6 +14,7 @@
 namespace {
 
 SecureClipboard *g_instance = nullptr;
+constexpr int kClipboardLeaseMs = 30000;
 
 QString NormalizeSelectedText(QString text) {
     text.replace(QChar::ParagraphSeparator, QChar('\n'));
@@ -39,10 +39,6 @@ SecureClipboard *SecureClipboard::instance() {
 void SecureClipboard::SetText(const QString &text) {
     if (auto *inst = SecureClipboard::instance()) {
         inst->setText(text);
-        return;
-    }
-    if (auto *cb = QGuiApplication::clipboard()) {
-        cb->setText(text);
     }
 }
 
@@ -50,28 +46,15 @@ QString SecureClipboard::GetText() {
     if (auto *inst = SecureClipboard::instance()) {
         return inst->text();
     }
-    if (auto *cb = QGuiApplication::clipboard()) {
-        return cb->text();
-    }
     return {};
 }
 
 SecureClipboard::SecureClipboard(QApplication &app) : QObject(&app) {
     connect(&app, &QGuiApplication::applicationStateChanged,
             this, &SecureClipboard::handleAppStateChanged);
-    if (auto *cb = QGuiApplication::clipboard()) {
-        connect(cb, &QClipboard::dataChanged, this, [this]() {
-            lastSystemCopyMs_ = QDateTime::currentMSecsSinceEpoch();
-        });
-    }
-}
-
-void SecureClipboard::setSystemClipboardWriteEnabled(bool enabled) {
-    allowSystemWrite_ = enabled;
-}
-
-bool SecureClipboard::systemClipboardWriteEnabled() const {
-    return allowSystemWrite_;
+    clearTimer_.setSingleShot(true);
+    clearTimer_.setInterval(kClipboardLeaseMs);
+    connect(&clearTimer_, &QTimer::timeout, this, &SecureClipboard::clearInternal);
 }
 
 void SecureClipboard::setText(const QString &text) {
@@ -79,13 +62,9 @@ void SecureClipboard::setText(const QString &text) {
     if (!text.isEmpty()) {
         buffer_ = text.toUtf8();
         hasData_ = true;
+        clearTimer_.start();
     }
     lastInternalCopyMs_ = QDateTime::currentMSecsSinceEpoch();
-    if (allowSystemWrite_) {
-        if (auto *cb = QGuiApplication::clipboard()) {
-            cb->setText(text);
-        }
-    }
 }
 
 QString SecureClipboard::text() const {
@@ -126,12 +105,7 @@ bool SecureClipboard::eventFilter(QObject *obj, QEvent *event) {
             QAction *copy = menu.addAction(QStringLiteral("Copy"));
             QAction *paste = menu.addAction(QStringLiteral("Paste"));
             QAction *selectAll = menu.addAction(QStringLiteral("Select All"));
-            bool canPaste = !text().isEmpty();
-            if (!canPaste) {
-                if (auto *cb = QGuiApplication::clipboard()) {
-                    canPaste = !cb->text().isEmpty();
-                }
-            }
+            const bool canPaste = !text().isEmpty();
             cut->setEnabled(!line->isReadOnly() && line->hasSelectedText());
             copy->setEnabled(line->hasSelectedText());
             paste->setEnabled(!line->isReadOnly() && canPaste);
@@ -155,12 +129,7 @@ bool SecureClipboard::eventFilter(QObject *obj, QEvent *event) {
             QAction *paste = menu.addAction(QStringLiteral("Paste"));
             QAction *selectAll = menu.addAction(QStringLiteral("Select All"));
             const bool hasSel = plain->textCursor().hasSelection();
-            bool canPaste = !text().isEmpty();
-            if (!canPaste) {
-                if (auto *cb = QGuiApplication::clipboard()) {
-                    canPaste = !cb->text().isEmpty();
-                }
-            }
+            const bool canPaste = !text().isEmpty();
             cut->setEnabled(!plain->isReadOnly() && hasSel);
             copy->setEnabled(hasSel);
             paste->setEnabled(!plain->isReadOnly() && canPaste);
@@ -187,6 +156,7 @@ void SecureClipboard::clearInternal() {
     }
     buffer_.clear();
     hasData_ = false;
+    clearTimer_.stop();
 }
 
 bool SecureClipboard::handleCopy(QObject *obj, bool cut) {
@@ -222,19 +192,7 @@ bool SecureClipboard::handleCopy(QObject *obj, bool cut) {
 }
 
 bool SecureClipboard::handlePaste(QObject *obj) {
-    QString internal = text();
-    QString system;
-    qint64 systemMs = 0;
-    if (auto *cb = QGuiApplication::clipboard()) {
-        system = cb->text();
-        systemMs = lastSystemCopyMs_;
-    }
-    QString content;
-    if (!internal.isEmpty() && (system.isEmpty() || lastInternalCopyMs_ >= systemMs)) {
-        content = internal;
-    } else {
-        content = system;
-    }
+    const QString content = text();
     if (content.isEmpty()) {
         return false;
     }
@@ -252,5 +210,7 @@ bool SecureClipboard::handlePaste(QObject *obj) {
 }
 
 void SecureClipboard::handleAppStateChanged(Qt::ApplicationState state) {
-    Q_UNUSED(state);
+    if (state != Qt::ApplicationActive) {
+        clearInternal();
+    }
 }

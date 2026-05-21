@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import '../domain/entities/models.dart';
-import 'sdk_client.dart';
+import 'package:mi_e2ee_im_app/domain/entities/models.dart';
+import 'package:mi_e2ee_im_app/native_sdk/sdk_client.dart';
 
 class FakeSdkClient implements NativeSdkClient {
   FakeSdkClient() {

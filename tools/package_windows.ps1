@@ -223,9 +223,19 @@ $packageSources["kt_keygen"] = $ktKeygen
 & $ktKeygen --out-dir $keysDir --force
 
 $pfxPath = Join-Path $keysDir "mi_e2ee_server.pfx"
+$certSanEntries = @("DNS=localhost", "IPAddress=127.0.0.1")
+if ($clientServerHostValue -and $clientServerHostValue -ne "localhost") {
+  $ipAddress = $null
+  if ([System.Net.IPAddress]::TryParse($clientServerHostValue, [ref]$ipAddress)) {
+    $certSanEntries += "IPAddress=$clientServerHostValue"
+  } else {
+    $certSanEntries += "DNS=$clientServerHostValue"
+  }
+}
+$certSan = "2.5.29.17={text}" + ($certSanEntries -join "&")
 $cert = New-SelfSignedCertificate `
   -Subject "CN=MI_E2EE_Server" `
-  -TextExtension @("2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1") `
+  -TextExtension @($certSan) `
   -CertStoreLocation "Cert:\\CurrentUser\\My"
 $pwd = New-Object System.Security.SecureString
 Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd | Out-Null
@@ -280,15 +290,6 @@ foreach ($helper in @(
     Copy-Item $src $serverTools -Force
   }
 }
-$demoUsers = Find-File (Join-Path $workspace "build\\server") "test_user.txt"
-if ($demoUsers) {
-  Assert-NotDebugPath $demoUsers "test_user"
-  $packageSources["test_user"] = $demoUsers
-  Copy-Item $demoUsers $serverRoot -Force
-} else {
-  "u:p" | Set-Content -Path (Join-Path $serverRoot "test_user.txt") -Encoding ASCII
-}
-
 $ktPubinfo = Find-ConfigFile (Join-Path $workspace "build\\server") "mi_e2ee_kt_pubinfo.exe" $BuildConfig "kt_pubinfo"
 $packageSources["kt_pubinfo"] = $ktPubinfo
 Copy-Item $ktKeygen $serverTools -Force

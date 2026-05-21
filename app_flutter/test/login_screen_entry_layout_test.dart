@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 
 import 'package:mi_e2ee_im_app/bootstrap/app_providers.dart';
 import 'package:mi_e2ee_im_app/bootstrap/device_capability_providers.dart';
-import 'package:mi_e2ee_im_app/native_sdk/fake_sdk_client.dart';
+import 'fakes/fake_sdk_client.dart';
 import 'package:mi_e2ee_im_app/presentation/screens/login_screen.dart';
 import 'package:mi_e2ee_im_app/presentation/theme/app_theme.dart';
 

@@ -43,8 +43,8 @@ usage() {
   cat <<'USAGE'
 
 Non-interactive test/automation:
-  configure_server.sh --non-interactive --mode demo --output config/config.ini
   configure_server.sh --non-interactive --mode mysql --mysql-user USER --mysql-password PASS --output config/config.ini
+  configure_server.sh --non-interactive --mode demo --output config/config.ini
   configure_server.sh --print-menu
 USAGE
 }
@@ -71,6 +71,38 @@ prompt_secret_confirm() {
     fi
     echo "Values did not match." >&2
   done
+}
+
+is_weak_mysql_credentials() {
+  local user="$1"
+  local password="$2"
+  user="$(printf '%s' "$user" | tr '[:upper:]' '[:lower:]')"
+  password="$(printf '%s' "$password" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$user" != "root" && "$user" != "admin" ]]; then
+    return 1
+  fi
+  case "$password" in
+    123456|admin|demo|mysql|pass|password|root|test)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+validate_mysql_credentials() {
+  local user="$1"
+  local password="$2"
+  if [[ -z "$user" || -z "$password" ]]; then
+    echo "mysql credentials required for --mode mysql (use --mysql-user/--mysql-password or MI_E2EE_MYSQL_USERNAME/MI_E2EE_MYSQL_PASSWORD)" >&2
+    return 1
+  fi
+  if is_weak_mysql_credentials "$user" "$password"; then
+    echo "weak mysql credentials are forbidden in server config" >&2
+    return 1
+  fi
+  return 0
 }
 
 find_kt_keygen() {
@@ -143,7 +175,7 @@ show_cert() {
 generate_self_signed() {
   ensure_dirs
   local target="${1:-localhost}"
-  local san="DNS:localhost,IP:127.0.0.1"
+  local san="DNS:localhost"
   if [[ "$target" == dns:* ]]; then
     san="DNS:${target#dns:}"
   elif [[ "$target" == ip:* ]]; then
@@ -191,6 +223,9 @@ write_config() {
   local kt_key="kt_signing_key.bin"
   if [[ "$(basename "$(dirname "$output")")" != "config" ]]; then
     kt_key="config/kt_signing_key.bin"
+  fi
+  if [[ "$mode" == "mysql" ]]; then
+    validate_mysql_credentials "$mysql_user" "$mysql_password" || return 1
   fi
 
   mkdir -p "$(dirname "$output")"
@@ -284,6 +319,9 @@ update_server_auth_mode() {
   local mysql_db="$4"
   local mysql_user="$5"
   local mysql_password="$6"
+  if [[ "$mode" == "mysql" ]]; then
+    validate_mysql_credentials "$mysql_user" "$mysql_password" || return 1
+  fi
   "$PYTHON_BIN" - "$CONFIG_PATH" "$mode" "$mysql_host" "$mysql_port" "$mysql_db" "$mysql_user" "$mysql_password" <<'PY'
 import configparser
 import sys
@@ -357,18 +395,18 @@ update_client_pin_prompt() {
 first_time_setup() {
   ensure_dirs
   echo "Auth mode:"
-  echo "1) Demo mode"
-  echo "2) MySQL mode"
+  echo "1) MySQL mode"
+  echo "2) Demo mode (test only)"
   read -r -p "Select [1-2]: " auth_choice
-  local mode="demo" mysql_host="127.0.0.1" mysql_port="3306" mysql_db="mi_e2ee" mysql_user="" mysql_password=""
-  if [[ "${auth_choice:-1}" == "2" ]]; then
-    mode="mysql"
+  local mode="mysql" mysql_host="127.0.0.1" mysql_port="3306" mysql_db="mi_e2ee" mysql_user="" mysql_password=""
+  if [[ "${auth_choice:-1}" != "2" ]]; then
     mysql_host="$(prompt_default "MySQL host" "$mysql_host")"
     mysql_port="$(prompt_default "MySQL port" "$mysql_port")"
     mysql_db="$(prompt_default "MySQL database" "$mysql_db")"
     read -r -p "MySQL username: " mysql_user
     mysql_password="$(prompt_secret_confirm "MySQL password")"
   else
+    mode="demo"
     local demo_user demo_pass
     demo_user="$(prompt_default "Demo username" "alice")"
     demo_pass="$(prompt_secret_confirm "Demo password")"
@@ -419,10 +457,10 @@ reconfigure_server() {
   case "${choice:-7}" in
     1)
       echo "Auth mode:"
-      echo "1) Demo mode"
-      echo "2) MySQL mode"
+      echo "1) MySQL mode"
+      echo "2) Demo mode (test only)"
       read -r -p "Select [1-2]: " auth_choice
-      if [[ "${auth_choice:-1}" == "2" ]]; then
+      if [[ "${auth_choice:-1}" != "2" ]]; then
         local mysql_host="127.0.0.1" mysql_port="3306" mysql_db="mi_e2ee" mysql_user mysql_password
         mysql_host="$(prompt_default "MySQL host" "$mysql_host")"
         mysql_port="$(prompt_default "MySQL port" "$mysql_port")"
@@ -621,7 +659,7 @@ post_action() {
   [[ "${choice:-1}" == "2" ]] && exit 0
 }
 
-mode="demo"
+mode="mysql"
 output="$CONFIG_PATH"
 port="9000"
 offline_dir="$OFFLINE_DIR"
@@ -653,6 +691,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$non_interactive" == "1" ]]; then
+  if [[ "$mode" == "mysql" ]]; then
+    validate_mysql_credentials "$mysql_user" "$mysql_password" || exit 1
+  fi
   mkdir -p "$(dirname "$output")"
   output_dir="$(cd "$(dirname "$output")" && pwd)"
   if [[ "$(basename "$output_dir")" == "config" ]]; then

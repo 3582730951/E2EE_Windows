@@ -740,7 +740,6 @@ def main(argv: list[str]) -> int:
         env = os.environ.copy()
         configure_android_sdk_env(env)
         env["MI_E2EE_CLIENT_CONFIG"] = config["clients"]["alice"]["config"]  # type: ignore[index]
-        env["MI_E2EE_SDK_MODE"] = "ffi"
         if args.update_goldens:
             env["MI_E2EE_UPDATE_GOLDENS"] = "1"
 

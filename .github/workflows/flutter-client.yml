@@ -50,7 +50,24 @@ jobs:
 
       - name: Capture three-end UI pngs
         continue-on-error: true
-        run: flutter test --dart-define=CAPTURE_PNGS=true --update-goldens test/ui_capture_test.dart
+        run: |
+          capture_user="capture_$(python3 - <<'PY'
+import secrets
+print(secrets.token_hex(8))
+PY
+)"
+          capture_pass="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(24))
+PY
+)"
+          echo "::add-mask::$capture_user"
+          echo "::add-mask::$capture_pass"
+          flutter test \
+            --dart-define=CAPTURE_PNGS=true \
+            --dart-define=MI_E2EE_CAPTURE_USERNAME="$capture_user" \
+            --dart-define=MI_E2EE_CAPTURE_PASSWORD="$capture_pass" \
+            --update-goldens test/ui_capture_test.dart
 
       - name: Widget Tests
         run: flutter test

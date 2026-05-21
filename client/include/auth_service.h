@@ -13,7 +13,6 @@ class AuthService {
                 const std::string& password) const;
   bool Login(ClientCore& core, const std::string& username,
              const std::string& password) const;
-  bool Relogin(ClientCore& core) const;
   bool Logout(ClientCore& core) const;
   bool LoadKtState(ClientCore& core) const;
   bool SaveKtState(ClientCore& core) const;

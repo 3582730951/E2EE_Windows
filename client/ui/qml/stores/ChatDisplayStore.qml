@@ -142,6 +142,10 @@ QtObject {
         Ui.AppStore.setInternalClipboard(text)
     }
 
+    function clearInternalClipboard() {
+        Ui.AppStore.clearInternalClipboard()
+    }
+
     function resolveTitle(chatId) {
         return Ui.AppStore.resolveTitle(chatId)
     }

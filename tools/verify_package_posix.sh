@@ -210,6 +210,7 @@ require_ini_value() {
 }
 
 if [[ "$privacy_only" -eq 1 ]]; then
+  require_absent "$server_root/test_user.txt"
   privacy_scan_tree "$client_root" "client"
   privacy_scan_tree "$server_root" "server"
   exit 0
@@ -244,7 +245,7 @@ require_file "$server_root/config/kt_signing_key.bin"
 require_file "$server_root/config/kt_root_pub.bin"
 require_file "$server_root/tools/mi_e2ee_kt_keygen"
 require_file "$server_root/tools/mi_e2ee_kt_pubinfo"
-require_file "$server_root/test_user.txt"
+require_absent "$server_root/test_user.txt"
 require_file "$server_root/run_server.sh"
 
 if grep -aEq '(^|[^A-Za-z0-9_])(server_ip|server_port|pinned_fingerprint)=' \

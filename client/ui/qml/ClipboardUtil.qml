@@ -91,10 +91,9 @@ QtObject {
     function newest_clipboard_text(client_bridge) {
         var internalText = Ui.ChatDisplayStore.internalClipboardText || ""
         var internalMs = Ui.ChatDisplayStore.internalClipboardMs || 0
-        var systemText = client_bridge ? client_bridge.systemClipboardText() : ""
-        var systemMs = client_bridge ? client_bridge.systemClipboardTimestamp() : 0
-        if (systemText.length > 0 && systemMs > internalMs) {
-            return systemText
+        if (Date.now() - internalMs > 30000) {
+            Ui.ChatDisplayStore.clearInternalClipboard()
+            return ""
         }
         return internalText
     }
@@ -108,6 +107,9 @@ QtObject {
 
     function copy(item, cut, isolated) {
         if (!item) {
+            return
+        }
+        if (is_password_field(item)) {
             return
         }
         if (!isolated) {
@@ -158,7 +160,7 @@ QtObject {
     }
 
     function select_all(item) {
-        if (item && item.selectAll) {
+        if (item && !is_password_field(item) && item.selectAll) {
             item.selectAll()
         }
     }

@@ -916,6 +916,7 @@ def verify_platform_hooks(errors: list[str]) -> None:
     android_security = (ROOT / "android/ui/src/main/java/mi/e2ee/android/ui/SecurityCenterUi.kt").read_text(encoding="utf-8")
     android_settings = (ROOT / "android/ui/src/main/java/mi/e2ee/android/ui/SettingsUi.kt").read_text(encoding="utf-8")
     android_components = (ROOT / "android/ui/src/main/java/mi/e2ee/android/ui/UiComponents.kt").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     windows_app_store = (ROOT / "client/ui/qml/AppStore.qml").read_text(encoding="utf-8")
     windows_chat_store = (ROOT / "client/ui/qml/stores/ChatDisplayStore.qml").read_text(encoding="utf-8")
     windows_qml = (ROOT / "client/ui/qml_main.cpp").read_text(encoding="utf-8")
@@ -930,7 +931,21 @@ def verify_platform_hooks(errors: list[str]) -> None:
     windows_right = (ROOT / "client/ui/qml/shell/RightPane.qml").read_text(encoding="utf-8")
     windows_auth = (ROOT / "client/ui/qml/auth/AuthFlow.qml").read_text(encoding="utf-8")
     windows_style = (ROOT / "client/ui/qml/Style.qml").read_text(encoding="utf-8")
-    expect("MI_E2EE_IOS_SCREENSHOT_MODE" in ios_app_shell, "iOS screenshot hook missing", errors)
+    windows_clipboard = (ROOT / "client/ui/qml/ClipboardUtil.qml").read_text(encoding="utf-8")
+    windows_quick_client = (
+        (ROOT / "client/ui/quick_client.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/quick_client.h").read_text(encoding="utf-8")
+    )
+    for forbidden in (
+        "MI_E2EE_IOS_SCREENSHOT_MODE",
+        "SIMCTL_CHILD_MI_E2EE_IOS_SCREENSHOT_MODE",
+        "ScreenshotScenario",
+        "loadScreenshotFixture",
+        "screenshot://fixture",
+        "fixtureConversations",
+    ):
+        expect(forbidden not in ios_app_shell + workflow, f"iOS production screenshot fixture hook must be removed: {forbidden}", errors)
     expect(".swipeActions(edge: .leading" in ios_workspace, "iOS leading swipe actions missing", errors)
     expect(".swipeActions(edge: .trailing" in ios_workspace, "iOS trailing swipe actions missing", errors)
     expect(".contextMenu {" in ios_workspace, "iOS context menu missing", errors)
@@ -944,6 +959,12 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("Ui.SecurityDialogCoordinator" in windows_main, "Windows Main.qml security coordinator missing", errors)
     expect("Probe" + "Adapter" not in windows_main + windows_qml, "Windows production UI must not mount capture adapters", errors)
     expect("ui" + "Probe" not in windows_main + windows_qml, "Windows production UI must not expose capture globals", errors)
+    expect("MI_E2EE_CI_UI_CAPTURE_CONFIG" in windows_qml, "Windows CI runtime capture must read the real client config", errors)
+    expect("client.loginWithRootCode(user, pass, root_code)" in windows_qml, "Windows CI runtime capture must authenticate through QuickClient", errors)
+    expect("clientBridge.createGroup()" in windows_qml, "Windows CI runtime capture should prepare chat state through the bridge", errors)
+    expect("ci-runtime-chat" not in windows_qml, "Windows CI runtime capture must not synthesize a fake chat id", errors)
+    expect("Ui.AppStore.appendMessage" not in windows_qml, "Windows CI runtime capture must not synthesize fake messages", errors)
+    expect("Ui.AppStore.ensureDialog" not in windows_qml, "Windows CI runtime capture must not synthesize fake dialogs", errors)
     for shortcut in ('sequence: "Ctrl+K"', 'sequence: "Ctrl+F"', 'sequence: "Ctrl+N"', 'sequence: "Esc"'):
         expect(shortcut in windows_main, f"Windows shortcut missing from Main.qml: {shortcut}", errors)
     expect("readonly property var shellLayoutContract" in windows_style, "Windows shellLayoutContract missing from Style.qml", errors)
@@ -997,11 +1018,31 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("id: sharedLinksCard" in windows_right, "Windows shared-links card missing in RightPane.qml", errors)
     expect("id: detailTabsBar" in windows_right, "Windows right-pane detail tabs missing in RightPane.qml", errors)
     expect("id: detailPanels" in windows_right, "Windows right-pane stacked detail panels missing in RightPane.qml", errors)
+    expect("id: closeDetailButton" in windows_right, "Windows right-pane drawer must expose a visible close button", errors)
+    expect("onClicked: Ui.ChatDisplayStore.closeRightPane()" in windows_right, "Windows right-pane close button must close the detail pane", errors)
     expect("Ui.ChatDisplayStore.sharedMediaModel" in windows_right, "Windows right-pane shared media must read runtime sharedMediaModel", errors)
     expect("Ui.ChatDisplayStore.sharedFilesModel" in windows_right, "Windows right-pane shared files must read runtime sharedFilesModel", errors)
     expect("Ui.ChatDisplayStore.sharedLinksModel" in windows_right, "Windows right-pane shared links must read runtime sharedLinksModel", errors)
     expect("id: authModeTabs" in windows_auth, "Windows auth mode tabs missing in AuthFlow.qml", errors)
     expect("id: advancedAccessButton" in windows_auth, "Windows auth advanced toggle missing in AuthFlow.qml", errors)
+    for secret_binding in (
+        "property string passwordInput",
+        "property string rootCodeInput",
+        "property string registerPassword",
+        "property string registerConfirm",
+        "onTextChanged: passwordInput",
+        "onTextChanged: rootCodeInput",
+        "onTextChanged: registerPassword",
+        "onTextChanged: registerConfirm",
+        "attemptLogin(retryAccount",
+    ):
+        expect(secret_binding not in windows_auth, f"Windows auth must not retain secret QML binding: {secret_binding}", errors)
+    expect("clear_login_secrets()" in windows_auth, "Windows auth must clear login secrets after failed auth and completion", errors)
+    expect("if (is_password_field(item))" in windows_clipboard, "Windows clipboard shortcut path must block password fields", errors)
+    expect("systemClipboardText()" not in windows_clipboard, "Windows isolated clipboard must not mirror system clipboard text", errors)
+    expect("last_system_clipboard" not in windows_quick_client, "Windows QuickClient must not retain a long-lived system clipboard mirror", errors)
+    expect("internalClipboardLeaseMs" in windows_app_store, "Windows internal clipboard must have a plaintext lease", errors)
+    expect("property var internalClipboardTimer" in windows_app_store, "Windows internal clipboard lease timer missing", errors)
     expect("property int settingsRowMinHeight" in windows_style, "Windows settings row min-height token missing in Style.qml", errors)
     expect("property real badgeMaxWidthRatio" in windows_style, "Windows badge max-width token missing in Style.qml", errors)
     expect('surface === "contacts"' in windows_app_store, "Windows AppStore contacts surface normalization missing", errors)
@@ -1020,15 +1061,11 @@ def verify_platform_hooks(errors: list[str]) -> None:
         "共享媒体与成员",
     ):
         expect(forbidden not in windows_auth + windows_right, f"Windows shell still carries verbose desktop copy: {forbidden}", errors)
-    detail_copy_index = windows_center.rindex("text: modelData.detail")
-    detail_copy_section = windows_center[max(0, detail_copy_index - 220):detail_copy_index + 40]
-    detail_copy_match = "root.showingCallsSurface" in detail_copy_section
     expect(
-        "root.showingCallsSurface || root.showingSecuritySurface" not in detail_copy_section,
+        "root.showingCallsSurface || root.showingSecuritySurface" not in windows_center,
         "Windows security cards should not keep the older secondary detail visibility rule",
         errors,
     )
-    expect(detail_copy_match is not None, "Windows utility detail copy should only remain on calls surface", errors)
     expect("|| settingsCard" not in windows_center, "Windows settings rows should not keep a second block of explanatory detail copy", errors)
     expect('text: Ui.I18n.usesCjkLocale\n                                          ? "Transport"' not in windows_center, "Windows security hero should prefer compact badges over extra text labels", errors)
     expect("Switch {" not in windows_center.replace("InlineSwitch {", ""), "Windows settings surface should not use the legacy default Switch", errors)
@@ -1064,6 +1101,7 @@ def verify_platform_hooks(errors: list[str]) -> None:
     expect("seedProbe" not in windows_app_store, "Windows AppStore must not keep seeded probe preview state", errors)
     expect("enterProbeShellPreview" not in windows_app_store, "Windows AppStore must not expose probe shell preview entrypoints", errors)
     expect("drawerReserveWidth: root.drawerTightChatColumns" in windows_shell, "Windows drawer reserve binding missing from AppShell.qml", errors)
+    expect("visible: active\n                visible: active" not in windows_shell, "Windows right detail drawer should not keep duplicate visibility bindings", errors)
     expect("property int drawerReserveWidth:" in windows_center, "Windows center pane drawer reserve property missing", errors)
     expect("readonly property real contentCenterOffset: drawerReserveWidth > 0" in windows_center, "Windows center pane must offset content away from the drawer", errors)
     expect("parent.width - root.drawerReserveWidth - width" in windows_center, "Windows message list must lay out inside the drawer-safe width", errors)
@@ -1343,6 +1381,63 @@ def verify_windows_manifest_and_ci(errors: list[str]) -> None:
     stores_qmldir = (ROOT / "client/ui/qml/stores/qmldir").read_text(encoding="utf-8")
     cmake = (ROOT / "client/ui/CMakeLists.txt").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    flutter_workflow = (ROOT / ".github/workflows/flutter-client.yml").read_text(encoding="utf-8")
+    configure_server = (ROOT / "tools/configure_server.sh").read_text(encoding="utf-8")
+    configure_server_cmd = (ROOT / "tools/configure_server.cmd").read_text(encoding="utf-8")
+    package_posix = (ROOT / "tools/package_posix.sh").read_text(encoding="utf-8")
+    package_windows = (ROOT / "tools/package_windows.ps1").read_text(encoding="utf-8")
+    verify_package_posix = (ROOT / "tools/verify_package_posix.sh").read_text(encoding="utf-8")
+    verify_package_windows = (ROOT / "tools/verify_package_windows.ps1").read_text(encoding="utf-8")
+    legacy_login = (
+        (ROOT / "client/ui/e2ee_main_list/LoginDialog.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_main_list/LoginDialog.h").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/widgets/login_dialog.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/widgets/login_dialog.h").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/widget_main.cpp").read_text(encoding="utf-8")
+    )
+    legacy_auth = (
+        (ROOT / "client/ui/e2ee_main_list/AuthFlowWidget.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_main_list/AuthFlowWidget.h").read_text(encoding="utf-8")
+    )
+    secure_clipboard = (
+        (ROOT / "client/ui/common/SecureClipboard.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/common/SecureClipboard.h").read_text(encoding="utf-8")
+    )
+    legacy_widget_surface = (
+        (ROOT / "client/ui/main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/widget_main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/widgets/chat_window.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_login/main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_chat_empty/main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_chat_empty/ChatEmptyWindow.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_group_chat/main.cpp").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "client/ui/e2ee_group_chat/GroupChatWindow.cpp").read_text(encoding="utf-8")
+    )
+    client_core_h = (ROOT / "client/include/client_core.h").read_text(encoding="utf-8")
+    client_auth = (ROOT / "runtime/client/auth/client_auth.cpp").read_text(encoding="utf-8")
+    auth_service = (ROOT / "runtime/client/auth/auth_service.cpp").read_text(encoding="utf-8")
+    backend_adapter = (ROOT / "client/ui/e2ee_main_list/BackendAdapter.cpp").read_text(encoding="utf-8")
+    sdk_c_api_e2e_test = (ROOT / "client/tests/sdk_c_api_e2e_test.cpp").read_text(encoding="utf-8")
+    ui_capture_support = (ROOT / "app_flutter/test/ui_capture_support.dart").read_text(encoding="utf-8")
+    sdk_client = (ROOT / "app_flutter/lib/native_sdk/sdk_client.dart").read_text(encoding="utf-8")
+    ios_shell = (ROOT / "ios_root_app/RootAuthApp/AppShell.swift").read_text(encoding="utf-8")
+    ios_stub = (ROOT / "ios_root_app/RootAuthApp/MIClientStub.mm").read_text(encoding="utf-8")
+    server_example = (ROOT / "server/config.example.ini").read_text(encoding="utf-8")
 
     for alias in (
         'alias="qml/TrustFlowCoordinator.qml"',
@@ -1371,6 +1466,168 @@ def verify_windows_manifest_and_ci(errors: list[str]) -> None:
 
     expect("--allow-missing-golden" not in workflow, "ci workflow must not allow missing Windows golden baselines", errors)
     expect("skip screenshot" not in workflow, "ci workflow must not silently skip screenshots", errors)
+    fixed_runtime_pass = "ui_runtime" + "_pass"
+    fixed_metadata_key = "0011223344556677" + "8899aabbccddeeff" + "102132435465768798a9bacbdcedfe0f"
+    expect(fixed_runtime_pass not in workflow, "ci workflow must not keep a fixed UI runtime password", errors)
+    expect(
+        'MI_E2EE_CI_UI_CAPTURE_USER: "ui_runtime"' not in workflow
+        and "MI_E2EE_CI_UI_CAPTURE_USER: 'ui_runtime'" not in workflow,
+        "ci workflow must not keep a fixed UI runtime account",
+        errors,
+    )
+    expect(
+        fixed_metadata_key not in workflow,
+        "ci workflow must not keep a fixed metadata key",
+        errors,
+    )
+    expect(
+        "RandomNumberGenerator" in workflow and "::add-mask::" in workflow,
+        "ci workflow must generate and mask runtime capture secrets",
+        errors,
+    )
+    flutter_fixed_password = "hunter" + "2"
+    expect(flutter_fixed_password not in ui_capture_support + flutter_workflow, "Flutter UI capture must not use a fixed password", errors)
+    expect("_kCapturePassword" not in ui_capture_support, "Flutter UI capture must not keep a fixed password constant", errors)
+    expect(
+        "MI_E2EE_CAPTURE_USERNAME" in ui_capture_support
+        and "MI_E2EE_CAPTURE_PASSWORD" in ui_capture_support
+        and "MI_E2EE_CAPTURE_PASSWORD" in flutter_workflow
+        and "::add-mask::" in flutter_workflow,
+        "Flutter UI capture must receive generated masked credentials from CI",
+        errors,
+    )
+    workflow_lines = workflow.splitlines()
+    for index, line in enumerate(workflow_lines):
+        if 'runtime = ' + 'node["runtime_artifact_contract"]' in line:
+            previous_lines = "\n".join(workflow_lines[max(0, index - 4):index])
+            expect(
+                "node = acceptance" in previous_lines,
+                "ci workflow runtime gate must define node before reading node['runtime_artifact_contract']",
+                errors,
+            )
+
+    expect('mode="mysql"\noutput="$CONFIG_PATH"' in configure_server, "configure_server.sh must default to mysql mode", errors)
+    expect("1) MySQL mode" in configure_server, "configure_server.sh interactive auth menu must list MySQL first", errors)
+    expect('${auth_choice:-1}" != "2"' in configure_server, "configure_server.sh default interactive auth choice must stay MySQL", errors)
+    expect(
+        "mysql credentials required for --mode mysql" in configure_server,
+        "configure_server.sh non-interactive mysql mode must require credentials",
+        errors,
+    )
+    expect("weak mysql credentials are forbidden in server config" in configure_server, "configure_server.sh must reject weak mysql credentials", errors)
+    expect("IP:192.204.43.94" not in configure_server, "configure_server.sh must not ship stale public SAN IP", errors)
+    expect('set "MODE=mysql"' in configure_server_cmd, "configure_server.cmd must default to mysql mode", errors)
+    expect("--non-interactive" in configure_server_cmd, "configure_server.cmd must support non-interactive mode", errors)
+    expect("mysql credentials required for --mode mysql" in configure_server_cmd, "configure_server.cmd non-interactive mysql mode must require credentials", errors)
+    expect("weak mysql credentials are forbidden in server config" in configure_server_cmd, "configure_server.cmd must reject weak mysql credentials", errors)
+    expect("echo 1^) MySQL mode" in configure_server_cmd, "configure_server.cmd interactive auth menu must list MySQL first", errors)
+    expect('if "%auth_choice%"=="2" goto :setup_demo' in configure_server_cmd, "configure_server.cmd default interactive auth choice must stay MySQL", errors)
+    expect("SubjectAlternativeNameBuilder" in configure_server_cmd, "configure_server.cmd generated cert must include a SAN", errors)
+    expect("echo 1^) Demo mode" not in configure_server_cmd, "configure_server.cmd must not list Demo as the default auth choice", errors)
+    expect("mode=0  # 0=mysql 1=demo" in server_example, "server config example must default to mysql mode", errors)
+    expect(
+        "configure_server.cmd\" --non-interactive --mode mysql --mysql-user" in workflow,
+        "ci workflow must smoke configure_server.cmd mysql mode with generated credentials",
+        errors,
+    )
+    expect("MI_E2EE_ENABLE_MYSQL=OFF" not in workflow, "ci workflow must not disable MySQL in release/package jobs", errors)
+    expect(
+        workflow.count("-DMI_E2EE_ENABLE_MYSQL=ON") >= 4,
+        "ci workflow must build Windows/Linux/Debian/macOS server jobs with MySQL enabled",
+        errors,
+    )
+
+    expect('server_mode="mysql"' in package_posix, "package_posix.sh must default to mysql server mode", errors)
+    expect('"mode=0"' in package_windows, "package_windows.ps1 must package mysql mode config", errors)
+    expect("tools/package_posix.sh" in workflow and "--platform linux" in workflow and "--platform macos" in workflow, "ci workflow must package POSIX artifacts through package_posix.sh", errors)
+    expect(
+        "tools/verify_package_posix.sh --platform linux" in workflow
+        and "tools/verify_package_posix.sh --platform macos" in workflow,
+        "ci workflow must verify POSIX packages before upload",
+        errors,
+    )
+    package_forbidden = (
+        'printf "' + "u:p",
+        'Set-Content -Path (Join-Path $serverRoot "test_user.txt")',
+        "Copy-Item $demo" + "Users",
+        'cp "$demo' + '_users"',
+        'server_mode="' + 'demo"',
+    )
+    for forbidden in package_forbidden:
+        expect(forbidden not in package_posix + package_windows, f"package scripts must not ship demo users/defaults: {forbidden}", errors)
+    expect("Require-FileAbsent" in verify_package_windows, "Windows package verifier must reject bundled test_user.txt", errors)
+    expect('require_absent "$server_root/test_user.txt"' in verify_package_posix, "POSIX package verifier must reject bundled test_user.txt", errors)
+    expect(
+        'if [[ "$privacy_only" -eq 1 ]]; then\n  require_absent "$server_root/test_user.txt"' in verify_package_posix,
+        "POSIX privacy-only package verifier must still reject bundled test_user.txt",
+        errors,
+    )
+    expect(
+        'if ($PrivacyOnly) {\n  Require-FileAbsent (Join-Path $serverRoot "test_user.txt")' in verify_package_windows,
+        "Windows privacy-only package verifier must still reject bundled test_user.txt",
+        errors,
+    )
+
+    legacy_forbidden = ("MI_E2EE" + "_DEMO_AUTH", "demo" + "Mode_", "set" + "DemoMode")
+    for forbidden in legacy_forbidden:
+        expect(forbidden not in legacy_login + legacy_auth, f"legacy widget auth must not keep demo bypass hook: {forbidden}", errors)
+    expect("backend_ == nullptr" not in legacy_login, "legacy login must not treat a missing backend as successful demo auth", errors)
+    for forbidden in ("pendingPassword_", "pendingRootCode_"):
+        expect(forbidden not in legacy_login, f"legacy login must not retain secret auth state: {forbidden}", errors)
+    expect("&QDialog::accept" not in legacy_login, "legacy widget login must not accept without backend authentication", errors)
+    expect("Legacy QWidget entrypoint is disabled" in legacy_login, "legacy QWidget entrypoints must fail closed instead of entering demo UI", errors)
+    expect("AuthFlowWidget::clearLoginSecrets()" in legacy_auth, "legacy auth widget must expose login secret clearing", errors)
+    expect("AuthFlowWidget::clearRegisterSecrets()" in legacy_auth, "legacy auth widget must expose registration secret clearing", errors)
+    expect("AuthFlowWidget::clearAllSecrets()" in legacy_auth, "legacy auth widget must expose all-secret clearing", errors)
+    login_click_block = legacy_auth.split("void AuthFlowWidget::handleLoginClicked()", 1)[-1].split("void AuthFlowWidget::handleRegisterClicked()", 1)[0]
+    register_click_block = legacy_auth.split("void AuthFlowWidget::handleRegisterClicked()", 1)[-1].split("void AuthFlowWidget::handleQrSimulateClicked()", 1)[0]
+    expect("clearLoginSecrets();" in login_click_block, "legacy auth widget must clear login/root-code fields after submit or validation failure", errors)
+    expect("clearRegisterSecrets();" in register_click_block, "legacy auth widget must clear registration password fields after submit or validation failure", errors)
+    expect("authFlow_->clearLoginSecrets();" in legacy_login, "legacy login dialog must clear login/root-code fields after backend login handoff or failure", errors)
+    expect("authFlow_->clearRegisterSecrets();" in legacy_login, "legacy login dialog must clear registration password fields after backend register handoff or failure", errors)
+    expect("authFlow_->clearAllSecrets();" in legacy_login, "legacy login dialog must clear all auth fields before accepted success", errors)
+    expect("std::string password_" not in client_core_h, "client core must not keep a cached account password member", errors)
+    expect("core.password_" not in auth_service, "auth service must not persist password into client core", errors)
+    expect("password_.clear()" not in client_auth, "client auth must not reference a cached password member", errors)
+    expect("LoginWithRootCode(username_, password_" not in client_auth, "client relogin must not replay cached password", errors)
+    expect("mi_client_relogin(target_->c_api_)" not in backend_adapter, "legacy polling must not trigger cached-password relogin", errors)
+    for expected in (
+        "Legacy QWidget login entrypoint is disabled",
+        "Legacy QWidget empty chat entrypoint is disabled",
+        "Legacy QWidget group chat entrypoint is disabled",
+    ):
+        expect(expected in legacy_widget_surface, f"legacy standalone entrypoint must fail closed: {expected}", errors)
+    for forbidden in (
+        "QVector<mi::client::ui::widgets::ListEntry> combined",
+        "欢迎进入安全群",
+        "消息示例，静态展示",
+        "Q群管家",
+        "@天 涩啥",
+        "LV1凡人",
+        "游戏逆向的半壁江山",
+        "推荐群聊",
+        "群聊成员 1036",
+        "逆向思维导图",
+        "逆向学习",
+        "逆向新人",
+        "2 个项目 | 选中 1 个项目 | 291 KB |",
+    ):
+        expect(forbidden not in legacy_widget_surface, f"legacy QWidget surface must not keep seeded demo data: {forbidden}", errors)
+    expect("kTestMetadataKeyHex" not in sdk_c_api_e2e_test, "sdk_c_api_e2e_test must not keep a fixed metadata key constant", errors)
+    expect("GenerateTestMetadataKeyHex()" in sdk_c_api_e2e_test, "sdk_c_api_e2e_test must generate metadata keys per run", errors)
+    for forbidden in ("QClipboard", "QGuiApplication::clipboard", "setSystemClipboardWriteEnabled", "lastSystemCopyMs_", "allowSystemWrite_"):
+        expect(forbidden not in secure_clipboard, f"legacy secure clipboard must not mirror system clipboard: {forbidden}", errors)
+    expect("kClipboardLeaseMs" in secure_clipboard, "legacy secure clipboard must enforce an internal plaintext lease", errors)
+    expect("state != Qt::ApplicationActive" in secure_clipboard and "clearInternal()" in secure_clipboard, "legacy secure clipboard must clear on app deactivation", errors)
+
+    expect(not (ROOT / "app_flutter/lib/native_sdk/fake_sdk_client.dart").exists(), "production Flutter fake SDK must not be shipped", errors)
+    expect((ROOT / "app_flutter/test/fakes/fake_sdk_client.dart").exists(), "Flutter test fake SDK must live under test/fakes", errors)
+    expect("MI_E2EE" + "_SDK_MODE" not in sdk_client, "production Flutter SDK client must not switch to fake mode by env var", errors)
+    expect("FakeSdkClient" not in sdk_client, "production Flutter SDK client must always use the FFI client", errors)
+    expect("stub" + "-token" not in ios_stub, "iOS native stub must not mint a demo auth token", errors)
+    expect("127.0.0.1" + ":9000" not in ios_shell, "iOS app shell must not fallback to a hard-coded local server", errors)
+    for forbidden in ("AppendHistory", "SeedDemoData", "pendingEvents", "lastPolledEvents", "StubMessage", "StubDevice", "std::deque", "std::unordered_map"):
+        expect(forbidden not in ios_stub, f"iOS native fallback must not keep demo runtime state: {forbidden}", errors)
 
 
 def verify_runtime_gate_hooks(errors: list[str]) -> None:

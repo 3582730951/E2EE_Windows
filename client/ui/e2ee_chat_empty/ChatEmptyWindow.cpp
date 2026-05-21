@@ -216,8 +216,10 @@ ChatEmptyWindow::ChatEmptyWindow(QWidget *parent) : FramelessWindowBase(parent) 
     auto *statusLayout = new QHBoxLayout(statusBar);
     statusLayout->setContentsMargins(12, 0, 12, 0);
     statusLayout->setSpacing(6);
-    auto *statusText =
-        new QLabel(QStringLiteral("2 个项目 | 选中 1 个项目 | 291 KB |"), statusBar);
+    auto *statusText = new QLabel(
+        UiSettings::Tr(QStringLiteral("无活动会话"),
+                       QStringLiteral("No active conversation")),
+        statusBar);
     statusText->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;")
                                   .arg(Tokens::textMuted().name()));
     statusLayout->addWidget(statusText, 0, Qt::AlignLeft | Qt::AlignVCenter);

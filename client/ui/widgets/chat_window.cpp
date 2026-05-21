@@ -40,11 +40,6 @@ ChatWindow::ChatWindow(const UiPalette& palette, QWidget* parent, bool showHeade
     buildMessageArea(wrapLayout);
     buildInputArea(wrapLayout);
 
-    addMessage({QStringLiteral("S"), QStringLiteral("欢迎进入安全群"), QStringLiteral("10:00"),
-                false});
-    addMessage({QStringLiteral("我"), QStringLiteral("消息示例，静态展示"), QStringLiteral("10:01"),
-                true});
-
     root->addWidget(wrapper);
 }
 

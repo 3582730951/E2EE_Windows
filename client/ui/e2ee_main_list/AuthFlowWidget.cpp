@@ -52,10 +52,6 @@ AuthFlowWidget::AuthFlowWidget(QWidget *parent) : QWidget(parent) {
     buildUi();
 }
 
-void AuthFlowWidget::setDemoMode(bool enabled) {
-    demoMode_ = enabled;
-}
-
 void AuthFlowWidget::setBusy(bool busy) {
     busy_ = busy;
     const QString loginText = busy ? QStringLiteral("登录中...") : QStringLiteral("登录");
@@ -111,6 +107,29 @@ QString AuthFlowWidget::account() const {
         return {};
     }
     return accountBox_->currentText().trimmed();
+}
+
+void AuthFlowWidget::clearLoginSecrets() {
+    if (passwordEdit_) {
+        passwordEdit_->clear();
+    }
+    if (rootCodeEdit_) {
+        rootCodeEdit_->clear();
+    }
+}
+
+void AuthFlowWidget::clearRegisterSecrets() {
+    if (registerPasswordEdit_) {
+        registerPasswordEdit_->clear();
+    }
+    if (registerConfirmEdit_) {
+        registerConfirmEdit_->clear();
+    }
+}
+
+void AuthFlowWidget::clearAllSecrets() {
+    clearLoginSecrets();
+    clearRegisterSecrets();
 }
 
 void AuthFlowWidget::setQrPayload(const QString &payload) {
@@ -471,14 +490,12 @@ void AuthFlowWidget::handleLoginClicked() {
     const QString password = passwordEdit_ ? passwordEdit_->text() : QString();
     if (account.isEmpty() || password.isEmpty()) {
         setErrorMessage(QStringLiteral("Enter account and password."));
+        clearLoginSecrets();
         return;
     }
     setErrorMessage(QString());
-    if (demoMode_) {
-        emit authSucceeded();
-        return;
-    }
     emit loginRequested(account, password, autoLoginCheck_ && autoLoginCheck_->isChecked());
+    clearLoginSecrets();
 }
 
 void AuthFlowWidget::handleRegisterClicked() {
@@ -490,18 +507,17 @@ void AuthFlowWidget::handleRegisterClicked() {
     const QString confirm = registerConfirmEdit_ ? registerConfirmEdit_->text() : QString();
     if (account.isEmpty() || password.isEmpty() || confirm.isEmpty()) {
         setErrorMessage(QStringLiteral("Complete the registration fields."));
+        clearRegisterSecrets();
         return;
     }
     if (password != confirm) {
         setErrorMessage(QStringLiteral("Passwords do not match."));
+        clearRegisterSecrets();
         return;
     }
     setErrorMessage(QString());
-    if (demoMode_) {
-        emit authSucceeded();
-        return;
-    }
     emit registerRequested(account, password);
+    clearRegisterSecrets();
 }
 
 void AuthFlowWidget::handleQrSimulateClicked() {
@@ -509,10 +525,6 @@ void AuthFlowWidget::handleQrSimulateClicked() {
         return;
     }
     setErrorMessage(QString());
-    if (demoMode_) {
-        emit authSucceeded();
-        return;
-    }
     emit qrLoginRequested();
 }
 
